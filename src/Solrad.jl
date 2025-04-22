@@ -74,7 +74,7 @@ Computes key solar geometry parameters based on McCullough & Porter (1971):
 
 - `ζ`: Auxiliary solar longitude (radians)
 - `δ`: Solar declination (radians)
-- `Z`: Solar zenith angle (radians)
+- `z`: Solar zenith angle (radians)
 - `AR2`: Square of Earth-to-Sun radius factor (unitless)
 
 # Arguments
@@ -87,7 +87,7 @@ Computes key solar geometry parameters based on McCullough & Porter (1971):
 - `se`: Constant for solar declination amplitude (default: `0.39779`)
 
 # Returns
-Tuple: `(ζ, δ, Z, AR2)` with angle quantities in radians and AR2 unitless.
+Tuple: `(ζ, δ, z, AR2)` with angle quantities in radians and AR2 unitless.
 
 # Reference
 McCullough & Porter (1971)
@@ -104,34 +104,34 @@ function solar_geometry(;
     ζ = (ω * (d - d0)) + 2ϵ * (sin(ω * d) - sin(ω * d0))          # Eq.5
     δ = asin(se * sin(ζ))                                         # Eq.4
     cosZ = cos(lat) * cos(δ) * cos(h) + sin(lat) * sin(δ)         # Eq.3
-    Z = acos(cosZ)u"rad"                                          # Zenith angle
+    z = acos(cosZ)u"rad"                                          # Zenith angle
     AR2 = 1 + (2ϵ) * cos(ω * d)                                   # Eq.2
     δ = δ*u"rad"
     ζ = ζ*u"rad"
-    return ζ, δ, Z, AR2
+    return ζ, δ, z, AR2
 end
 
 """
-    check_skylight(Z, nmax, SRINT, GRINT)
+    check_skylight(z, nmax, SRINT, GRINT)
 
 Checks for possible skylight before sunrise or after sunset based on zenith angle.
 Modifies SRINT and GRINT at index `nmax` if skylight is present.
 
 # Arguments
-- `Z::Quantity`: Zenith angle
+- `z::Quantity`: Zenith angle
 - `nmax::Int`: Index into result arrays
 - `SRINT::Vector{Quantity}`: Scattered radiation array [W/m²]
 - `GRINT::Vector{Quantity}`: Global radiation array [W/m²]
 """
 function check_skylight(
-    Z::Quantity,
+    z::Quantity,
     nmax::Int,
     SRINT::Vector,
     GRINT::Vector)
-    Zdeg = uconvert(°, Z).val # convert to degrees
-    if Zdeg < 107.0
-        if Zdeg > 88.0
-            Elog = 41.34615384 - 0.423076923 * Zdeg
+    Z = uconvert(°, z).val # convert to degrees
+    if Z < 107.0
+        if Z > 88.0
+            Elog = 41.34615384 - 0.423076923 * Z
             Skylum = (10.0 ^ Elog)*1.46E-03u"mW * cm^-2"
             SRINT[nmax] = Skylum
             GRINT[nmax] = SRINT[nmax]
@@ -314,7 +314,7 @@ function GAMMA(TAU1::Float64)
     CU4 = 0.5 * (AI[15] + AI[16])
 
     AI[15] = AI[14] * (AI[1] * AI[8] - AI[2] * AI[9])
-    SBAR[] = 1.0 - 0.375 * AI[12] * (AI[4] - AI[6]) *
+    SBAR = 1.0 - 0.375 * AI[12] * (AI[4] - AI[6]) *
              ((CNU2 - CNU1) * AI[8] + (CU4 - CU3) * AI[2] - AI[15] * AI[6])
 
     AI[20] = 0.375 * AI[12] * (CNU2 - CNU1) * (AI[4] - AI[6])
@@ -329,77 +329,65 @@ function GAMMA(TAU1::Float64)
     return GAMR, GAML, SBAR
 end
 
-function dchxy(t::Vector{Float64}, x::Matrix{Float64}, y::Matrix{Float64}, ng::Int)
-    # Constants
-    PI = π
+function dchxy(tau1::Float64, cfa::Vector{Float64}, nst::Int)
+    chx = zeros(Float64, 101)
+    chy = zeros(Float64, 101)
 
-    # Temporary variables
-    a = zeros(Float64, ng)
-    b = zeros(Float64, ng)
-    c = zeros(Float64, ng)
-    d = zeros(Float64, ng)
-    h = zeros(Float64, ng)
-    k = zeros(Float64, ng)
-    p = zeros(Float64, ng)
-    q = zeros(Float64, ng)
-
-    for j in 1:ng
-        tj = t[j]
-        t2 = tj^2
-        t3 = tj^3
-        t4 = tj^4
-
-        # Compute coefficients for each angular quadrature point
-        a[j] = 1.0 + 0.5 * t2
-        b[j] = 0.5 * (3.0 + t2)
-        c[j] = 0.5 * (5.0 + t2)
-        d[j] = (35.0 + 30.0 * t2 + 3.0 * t4) / 8.0
+    if tau1 < 0.0
+        return chx, chy, 1
     end
 
-    # Main integration loop over each pair of directions
-    for i = 1:ng
-        ti = t[i]
-        t2i = ti^2
-        t3i = ti^3
-        t4i = ti^4
-        t5i = ti^5
-        t6i = ti^6
-        t7i = ti^7
+    c = zeros(Float64, 3)
+    u = zeros(Float64, 3)
+    c[1] = cfa[1]
+    c[2] = cfa[2]
+    c[3] = cfa[3]
 
-        for j = 1:ng
-            tj = t[j]
-            t2j = tj^2
-            t3j = tj^3
-            t4j = tj^4
-            t5j = tj^5
-            t6j = tj^6
-            t7j = tj^7
+    # Calculate initial values for root finding
+    cc = 0.0
+    cd = 0.0
+    for n in 1:3
+        cc += (2n - 1) * c[n]
+        cd += (2n - 1)^2 * c[n]
+    end
 
-            den = (ti + tj)^3 * (1 + ti * tj)
+    # Compute roots of characteristic equation (up to 4 roots)
+    q = zeros(ComplexF64, 4)
+    d = zeros(ComplexF64, 4)
+    ntr = 2
+    q[1] = sqrt(Complex(0.25 * cc + 0.5 * sqrt(Complex(cd))))
+    q[2] = sqrt(Complex(0.25 * cc - 0.5 * sqrt(Complex(cd))))
+    d[1] = 1.0 / (2.0 * q[1] * (2.0 * q[1]^2 - cc))
+    d[2] = 1.0 / (2.0 * q[2] * (2.0 * q[2]^2 - cc))
 
-            # Compute X[i,j]
-            xij = ti + tj
-            xij += (3.0 * (ti + tj)) / (1.0 + ti * tj)
-            xij += 1.5 * (ti * t2j + tj * t2i)
-            xij += 0.75 * (ti * t4j + tj * t4i)
-            xij += (5.0 / 8.0) * (ti * t6j + tj * t6i)
-            xij /= den
-            x[i, j] = xij
+    # Compute exponential terms
+    e1 = exp(-q[1] * tau1)
+    e2 = exp(-q[2] * tau1)
 
-            # Compute Y[i,j]
-            yij = ti + tj
-            yij += (3.0 * (ti + tj)) / (1.0 + ti * tj)
-            yij += 1.5 * (ti * t2j + tj * t2i)
-            yij += 0.75 * (ti * t4j + tj * t4i)
-            yij += (5.0 / 8.0) * (ti * t6j + tj * t6i)
-            yij += (63.0 / 128.0) * (ti * t8(tj) + tj * t8(ti)) # helper function below
-            yij /= den
-            y[i, j] = yij
+    # Initialize mu array (Gauss quadrature nodes)
+    mu = zeros(Float64, 101)
+    mu[1] = 0.0
+    for i in 2:101
+        mu[i] = 0.01 * (i - 1)
+    end
+
+    # Compute chx and chy using X and Y function definitions
+    for i in 1:101
+        sumx = 0.0 + 0im
+        sumy = 0.0 + 0im
+        for j in 1:ntr
+            qq = q[j]
+            dj = d[j]
+            sumx += dj * mu[i] / (mu[i]^2 - qq^2)
+            sumy += dj * qq / (mu[i]^2 - qq^2)
         end
+        chx[i] = real(1.0 + 2.0 * mu[i] * sumx)
+        chy[i] = real(2.0 * sumy)
     end
 
-    return x, y
+    return chx, chy, ntr
 end
+
 
 """
     solrad(; days, hours, lat...[, year, lonc, elev, slope, aspect, hori, refl, cmH2O, ϵ,
@@ -648,9 +636,9 @@ function solrad(;
             d = days[i]
             t = hours[j]
             h, tsn = hour_angle(t, lonc) # hour angle (radians)
-            ζ, δ, Z, AR2 = solar_geometry(d=d, lat=lat, h=h, d0=d0, ω=ω, ϵ=ϵ, se=se) # compute ecliptic, declination, zenith angle and (a/r)^2
-            ZZ = uconvert(°, Z)
-            check_skylight(Z, nmax, SRINT, GRINT) # checking zenith angle for possible skylight before sunrise or after sunset
+            ζ, δ, z, AR2 = solar_geometry(d=d, lat=lat, h=h, d0=d0, ω=ω, ϵ=ϵ, se=se) # compute ecliptic, declination, zenith angle and (a/r)^2
+            ZZ = uconvert(°, z)
+            check_skylight(z, nmax, SRINT, GRINT) # checking zenith angle for possible skylight before sunrise or after sunset
             # testing cos(h) to see if it exceeds +1 or -1
             TDTL = -tan(δ) * tan(lat) # from eq.7 McCullough & Porter 1971
             if abs(TDTL) >= 1 # long day or night
@@ -663,9 +651,9 @@ function solrad(;
             ts = t - tsn
             if !((ts <= 0 && abs(ts) - HH > 0) || (ts > 0 && ts - HH >= 0) || (TDTL >= 1)) # sun is up, proceed
                 h, tsn = hour_angle(t, lonc) # hour angle (radians)
-                ζ, δ, Z, AR2 = solar_geometry(d=d, lat=lat, h=h, d0=d0, ω=ω, ϵ=ϵ, se=se) # compute ecliptic, declination, zenith angle and (a/r)^2 - redundant?
-                alt = (π / 2 - Z)rad
-cazsun = (sin(δ) - sin(lat) * sin(alt)) / (cos(lat) * cos(alt)) # cos(solar azimuth)
+                ζ, δ, z, AR2 = solar_geometry(d=d, lat=lat, h=h, d0=d0, ω=ω, ϵ=ϵ, se=se) # compute ecliptic, declination, zenith angle and (a/r)^2 - redundant?
+                alt = (π / 2 - z)rad
+                cazsun = (sin(δ) - sin(lat) * sin(alt)) / (cos(lat) * cos(alt)) # cos(solar azimuth)
                 #      Error checking for instability in trig function
                 if cazsun < -0.9999999
                     azsun = π
@@ -688,33 +676,38 @@ cazsun = (sin(δ) - sin(lat) * sin(alt)) / (cos(lat) * cos(alt)) # cos(solar azi
                     end
                 end
 
+                cz = cos(z)
+                intcz = Int(floor(100.0 * cz + 1.0))
+                Z = uconvert(°, z)  # zenith angle in degrees
+
                 # horizon angle - check this works when starting at 0 rather than e.g. 15 deg
                 azi = range(0°, stop=360° - 360° / length(hori), length=length(hori))
                 ahoriz = hori[argmin(abs.(dazsun .- azi))]
 
                 # slope zenith angle calculation (Eq. 3.15 in Sellers 1965. Physical Climatology. U. Chicago Press)
                 if slope > 0°
-                    czsl = cos(Z) * cos(slope) + sin(Z) * sin(slope) * cos(dazsun - aspect)
+                    czsl = cos(z) * cos(slope) + sin(z) * sin(slope) * cos(dazsun - aspect)
                     zsl = acos(czsl)
-                    dzsl = min(uconvert(°, zsl), 90°) # cap at 90 degrees if sun is below slope horizon
+                    Zsl = min(uconvert(°, zsl), 90°) # cap at 90 degrees if sun is below slope horizon
+                    intczsl = Int(floor(100.0 * czsl + 1.0))
                 else
-                    dzsl = 0°
+                    czsl = cz
+                    zsl = z
+                    Zsl = Z
+                    intczsl = intcz
                 end
 
                 # refraction correction check
-                if Z < 1.5358896
+                if z < 1.5358896
                     # skip refraction correction
                 else
-                    refr = 16.0 + ((Z - 1.53589) * 15) / (π / 90)
+                    refr = 16.0 + ((z - 1.53589) * 15) / (π / 90)
                     refr = (refr / 60) * (π / 180)
-                    Z -= refr
+                    z -= refr
                 end
 
                 # optical air mass (Rozenberg 1966 formula p.159 in book 'Twilight') ---
-                airms = 1.0 / (cos(Z) + (0.025 * exp(-11.0 * cos(Z))))
-                cz = cos(Z)
-                intcz = Int(floor(100.0 * cz + 1.0))
-                Zdeg = uconvert(°, Z)  # zenith angle in degrees
+                airms = 1.0 / (cos(z) + (0.025 * exp(-11.0 * cos(z))))
 
                 # atmospheric ozone lookup
                 # convert latitude in degrees to nearest 10-degree index
@@ -771,7 +764,7 @@ cazsun = (sin(δ) - sin(lat) * sin(alt)) / (cos(lat) * cos(alt)) # cos(solar azi
                     end
 
                     # Sky (SRλ) and Global Radiation (GRλ)
-                    if noscat == 0 || N > 11
+                    if noscat == false || N > 11
                         # skip to 400
                         SRλ[N] = 0.0u"mW / cm^2 / nm"
                     elseif iuv
@@ -781,12 +774,12 @@ cazsun = (sin(δ) - sin(lat) * sin(alt)) / (cos(lat) * cos(alt)) # cos(solar azi
                                          ((float(GAML[intcz]) + float(GAMR[intcz])) / (2.0 * (1.0 - refl * float(SBAR))))
                                          -
                                          exp(-float(τλ1) * airms)
-                                     ) * CZ * Sλ[N] * AR2 / 1000.0
+                                     ) * cz * Sλ[N] * AR2 / 1000.0
                         else
                             SRλ[N] = 0.0u"mW / cm^2 / nm"
                         end
                     else
-                        I = round(Int, (ustrip(Zdeg) + 5) / 5)
+                        I = round(Int, (ustrip(Z) + 5) / 5)
                         FDAV = FD[N, I]
                         FDQDAV = FDQ[N, I]
                         SRλ[N] = (Sλ[N] / π) * (FDAV + FDQDAV * (refl / (1.0 - (refl * S[N])))) / 1000.0
@@ -844,6 +837,5 @@ cazsun = (sin(δ) - sin(lat) * sin(alt)) / (cos(lat) * cos(alt)) # cos(solar azi
         λRayleigh  = DRRINTs .* (10u"W/m^2" / 1u"mW/cm^2"),
         λScattered = SRINTs .* (10u"W/m^2" / 1u"mW/cm^2"),
         λGlobal    = GRINTs .* (10u"W/m^2" / 1u"mW/cm^2"),
-
     )
 end

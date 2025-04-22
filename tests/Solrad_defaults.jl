@@ -1,4 +1,6 @@
 using Unitful
+using Unitful: °, rad, R
+using Dates
 
 days = [15, 46, 74, 105, 135, 166, 196, 227, 258, 288, 319, 349]
 hours = collect(0.0:24.0)
