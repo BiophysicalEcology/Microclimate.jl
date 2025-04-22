@@ -62,13 +62,13 @@ Compute the solar hour angle `h` in radians.
 McCullough & Porter 1971, Eq. 6
 """
 function hour_angle(t::Real, lonc::Real = 0)
-    tsn = 12.0 + lonc                        # solar noon time
-    h = (2π / 24) * (t - tsn) * u"rad"      # convert hours to radians
+    tsn = 12.0 + lonc                      # solar noon time
+    h = (π / 12) * (t - tsn) * u"rad"      # convert hours to radians
     return h, tsn
 end
 
 """
-    solar_geometry(d::Real, lat::Quantity, h::Quantity; d0::Real = 80, ω::Real = 2π/365, ϵ::Real = 0.0167, SE::Real = 0.39779)
+    solar_geometry(d::Real, lat::Quantity, h::Quantity; d0::Real = 80, ω::Real = 2π/365, ϵ::Real = 0.0167, se::Real = 0.39779)
 
 Computes key solar geometry parameters based on McCullough & Porter (1971):
 
@@ -84,7 +84,7 @@ Computes key solar geometry parameters based on McCullough & Porter (1971):
 - `d0`: Reference day (default: 80)
 - `ω`: Angular frequency of Earth’s orbit (default: `2π/365`)
 - `ϵ`: Orbital eccentricity (default: `0.0167`)
-- `SE`: Constant for solar declination amplitude (default: `0.39779`)
+- `se`: Constant for solar declination amplitude (default: `0.39779`)
 
 # Returns
 Tuple: `(ζ, δ, Z, AR2)` with angle quantities in radians and AR2 unitless.
@@ -99,33 +99,33 @@ function solar_geometry(;
     d0::Real = 80,
     ω::Real = 2π / 365,
     ϵ::Real = 0.0167238,
-    SE::Real = 0.39779
+    se::Real = 0.39779
 )
     ζ = (ω * (d - d0)) + 2ϵ * (sin(ω * d) - sin(ω * d0))          # Eq.5
-    δ = (asin(SE * sin(ζ)) * sign(lat))                             # Eq.4
-    cosZ = cos(lat) * cos(δ) * cos(h) + sin(lat) * sin(δ)           # Eq.3
-    Z = acos(cosZ)u"rad"                                            # Zenith angle
-    AR2 = 1 + (2ϵ) * cos(ω * d)                                     # Eq.2
+    δ = asin(se * sin(ζ))                                         # Eq.4
+    cosZ = cos(lat) * cos(δ) * cos(h) + sin(lat) * sin(δ)         # Eq.3
+    Z = acos(cosZ)u"rad"                                          # Zenith angle
+    AR2 = 1 + (2ϵ) * cos(ω * d)                                   # Eq.2
     δ = δ*u"rad"
     ζ = ζ*u"rad"
     return ζ, δ, Z, AR2
 end
 
 """
-    check_skylight(Z, NMAX, SRINT, GRINT)
+    check_skylight(Z, nmax, SRINT, GRINT)
 
 Checks for possible skylight before sunrise or after sunset based on zenith angle.
-Modifies SRINT and GRINT at index `NMAX` if skylight is present.
+Modifies SRINT and GRINT at index `nmax` if skylight is present.
 
 # Arguments
 - `Z::Quantity`: Zenith angle
-- `NMAX::Int`: Index into result arrays
+- `nmax::Int`: Index into result arrays
 - `SRINT::Vector{Quantity}`: Scattered radiation array [W/m²]
 - `GRINT::Vector{Quantity}`: Global radiation array [W/m²]
 """
 function check_skylight(
     Z::Quantity,
-    NMAX::Int,
+    nmax::Int,
     SRINT::Vector,
     GRINT::Vector)
     Zdeg = uconvert(°, Z).val # convert to degrees
@@ -133,8 +133,8 @@ function check_skylight(
         if Zdeg > 88.0
             Elog = 41.34615384 - 0.423076923 * Zdeg
             Skylum = (10.0 ^ Elog)*1.46E-03u"mW * cm^-2"
-            SRINT[NMAX] = Skylum
-            GRINT[NMAX] = SRINT[NMAX]
+            SRINT[nmax] = Skylum
+            GRINT[nmax] = SRINT[nmax]
         end
     end
 
@@ -402,8 +402,8 @@ function dchxy(t::Vector{Float64}, x::Matrix{Float64}, y::Matrix{Float64}, ng::I
 end
 
 """
-    solrad(; days, hours, lat...[, year, lonc, elev, slope, aspect, hori, REFL, cmH2O, ϵ,
-           ω, SE, d0, lamb, IUV, NOSCAT, AMR, NMAX, Iλ, OZ, τR, τO, τA, τW, Sλ, FD, FDQ,
+    solrad(; days, hours, lat...[, year, lonc, elev, slope, aspect, hori, refl, cmH2O, ϵ,
+           ω, se, d0, lamb, iuv, noscat, amr, nmax, Iλ, OZ, τR, τO, τA, τW, Sλ, FD, FDQ,
            S, ER, ERλ]) -> NamedTuple
 
 Compute solar radiation at a given place and time using a detailed atmospheric radiative transfer model.
@@ -420,25 +420,22 @@ Compute solar radiation at a given place and time using a detailed atmospheric r
 - `slope::Quantity=0u"°"`: Slope angle of the surface.
 - `aspect::Quantity=0u"°"`: Azimuth of slope aspect (from north).
 - `hori::Vector{Quantity}`: Horizon angles for each of 24 azimuth sectors (default 0°).
-- `REFL::Real=0.10`: Ground reflectance (albedo), fraction [0, 1].
+- `refl::Real=0.10`: Ground reflectance (albedo), fraction [0, 1].
 - `cmH2O::Real=1`: Precipitable water in cm for atmospheric column (e.g. 0.1: dry, 1.0: moist, 2.0: humid).
 - `ϵ::Real=0.0167238`: Orbital eccentricity of Earth.
 - `ω::Real=2π/365`: Mean angular orbital velocity of Earth (radians/day).
-- `SE::Real=0.39779`: Precomputed solar elevation constant.
+- `se::Real=0.39779`: Precomputed solar elevation constant.
 - `d0::Real=80`: Reference day for declination calculations.
 - `lamb::Bool=false`: If `true`, returns wavelength-specific irradiance components.
-- `IUV::Bool=false`: If `true`, uses the full gamma-function model for diffuse radiation (expensive).
-- `NOSCAT::Bool=true`: If `true`, disables scattered light computations (faster).
-- `AMR::Quantity=25.0u"km"`: Mixing ratio height of the atmosphere.
-- `NMAX::Integer=111`: Maximum number of wavelength intervals.
+- `iuv::Bool=false`: If `true`, uses the full gamma-function model for diffuse radiation (expensive).
+- `noscat::Bool=true`: If `true`, disables scattered light computations (faster).
+- `amr::Quantity=25.0u"km"`: Mixing ratio height of the atmosphere.
+- `nmax::Integer=111`: Maximum number of wavelength intervals.
 - `Iλ::Vector{Quantity}`: Vector of wavelength bins (e.g. in `nm`).
 - `OZ::Matrix{Float64}`: Ozone column depth table indexed by latitude band and month (size 19×12).
 - `τR`, `τO`, `τA`, `τW`: Vectors of optical depths per wavelength for Rayleigh scattering, ozone, aerosols, and water vapor.
 - `Sλ::Vector{Quantity}`: Solar spectral irradiance per wavelength bin (e.g. in `mW * cm^-2 * nm^-1`).
 - `FD`, `FDQ`: Auxiliary data vectors for biologically effective radiation models.
-- `S::Vector{Float64}`: Effective sensitivity weights for biologically effective radiation.
-- `ER::Vector{Float64}`: Spectral effectiveness response data.
-- `ERλ::Vector{Quantity}`: Spectral effectiveness wavelengths (e.g. `mW/cm²/nm/s`).
 
 # Returns
 A named tuple containing:
@@ -462,29 +459,30 @@ A named tuple containing:
 - Topographic shading is included via the `hori` input (horizon angle mask).
 - Outputs are computed for each (day, hour) combination in the input vectors.
 - The function can be run in a high-resolution spectral mode (`lamb=true`) or in a broadband mode (`lamb=false`).
+- In optical air mass 'arims' calculation the difference between apparent and true zenith angle is neglected for z less than 88 degrees
+- Variation of airms with altitude is ignored since it is negligible up to at least 6 km above sea level
 """
 function solrad(;
-    days::Vector{Float64}=collect(1.0:365.0),
-    hours::Vector{Float64}=collect(0.0:24.0),
-    year::Real=2001,
-    lat::Quantity=43.07305u"°",
+    days::Vector{<:Real}=[15, 46, 74, 105, 135, 166, 196, 227, 258, 288, 319, 349],
+    hours::Vector{<:Real}=collect(0.0:24.0),
+    year::Real=2001., # needed to determine if a leap year
+    lat::Quantity=43.1379u"°",
     lonc::Real=0.0, # longitude correction, hours
-    elev::Quantity=0.0u"m", # elevation, m
+    elev::Quantity=276.0u"m", # elevation, m
     slope::Quantity=0u"°",
     aspect::Quantity=0u"°",
-    hori=fill(0.0, 24) * u"°",
-    REFL::Real=0.10, # substrate solar reflectivity (decimal %)
+    hori::Vector{typeof(0.0u"°")}=fill(0.0, 24) .* u"°",
+    refl::Real=0.15, # substrate solar reflectivity (decimal %)
     cmH2O::Real=1, # precipitable cm H2O in air column, 0.1 = VERY DRY; 1 = MOIST AIR CONDITIONS; 2 = HUMID, TROPICAL CONDITIONS (note this is for the whole atmospheric profile, not just near the ground)
     ϵ::Real=0.0167238,
     ω::Real=2π / 365,
-    SE::Real=0.39779,
-    d0::Real=80,
-    lamb::Bool=false, # Return wavelength-specific solar radiation output?
-    IUV::Bool=false, # Use gamma function for scattered solar radiation? (computationally intensive)
-    NOSCAT::Bool=true,
-    AMR::Quantity=25.0u"km",
-    NMAX::Integer=111, # maximum number of wavelengths
-    Iλ=[ # wavelengths across which to integrate
+    se::Real=0.39779,
+    d0::Real=80.0,
+    iuv::Bool=false, # Use gamma function for scattered solar radiation? (computationally intensive)
+    noscat::Bool=true,
+    amr::Quantity=25.0u"km",
+    nmax::Integer=111, # maximum number of wavelengths
+    Iλ::Vector{typeof(0.0u"nm")}=float.([ # wavelengths across which to integrate
         290, 295, 300, 305, 310, 315, 320, 330, 340, 350, 360, 370, 380, 390,
         400, 420, 440, 460, 480, 500, 520, 540, 560, 580, 600, 620, 640, 660, 680, 700,
         720, 740, 760, 780, 800, 820, 840, 860, 880, 900, 920, 940, 960, 980, 1000, 1020,
@@ -493,29 +491,27 @@ function solrad(;
         1700, 1720, 1780, 1800, 1860, 1900, 1950, 2000, 2020, 2050, 2100, 2120, 2150,
         2200, 2260, 2300, 2320, 2350, 2380, 2400, 2420, 2450, 2490, 2500, 2600, 2700,
         2800, 2900, 3000, 3100, 3200, 3300, 3400, 3500, 3600, 3700, 3800, 3900, 4000
-    ] * u"nm",
-    OZ=reshape([
-            0.31, 0.30, 0.30, 0.27, 0.34, 0.38, 0.43, 0.45, 0.41, 0.37, 0.34, 0.31,
-            0.31, 0.31, 0.31, 0.28, 0.35, 0.40, 0.44, 0.46, 0.42, 0.38, 0.36, 0.32,
-            0.32, 0.31, 0.31, 0.29, 0.34, 0.39, 0.43, 0.45, 0.43, 0.40, 0.38, 0.34,
-            0.32, 0.31, 0.30, 0.30, 0.33, 0.38, 0.41, 0.42, 0.42, 0.40, 0.39, 0.35,
-            0.31, 0.30, 0.29, 0.30, 0.32, 0.36, 0.39, 0.40, 0.40, 0.39, 0.37, 0.35,
-            0.30, 0.29, 0.28, 0.29, 0.31, 0.33, 0.35, 0.37, 0.38, 0.37, 0.34, 0.32,
-            0.27, 0.28, 0.26, 0.27, 0.28, 0.28, 0.29, 0.31, 0.32, 0.32, 0.29, 0.29,
-            0.24, 0.25, 0.24, 0.25, 0.25, 0.25, 0.25, 0.26, 0.26, 0.26, 0.26, 0.25,
-            0.23, 0.24, 0.24, 0.24, 0.24, 0.24, 0.24, 0.24, 0.24, 0.24, 0.24, 0.23,
-            0.22, 0.22, 0.23, 0.23, 0.24, 0.24, 0.24, 0.23, 0.23, 0.22, 0.22, 0.22,
-            0.23, 0.24, 0.24, 0.25, 0.26, 0.25, 0.25, 0.24, 0.24, 0.23, 0.23, 0.23,
-            0.24, 0.26, 0.26, 0.27, 0.28, 0.27, 0.26, 0.26, 0.26, 0.25, 0.25, 0.25,
-            0.27, 0.28, 0.29, 0.30, 0.30, 0.30, 0.29, 0.28, 0.27, 0.26, 0.26, 0.27,
-            0.30, 0.32, 0.33, 0.34, 0.34, 0.33, 0.31, 0.30, 0.28, 0.27, 0.28, 0.29,
-            0.32, 0.36, 0.38, 0.38, 0.37, 0.35, 0.33, 0.31, 0.30, 0.28, 0.29, 0.30,
-            0.33, 0.39, 0.42, 0.40, 0.39, 0.36, 0.34, 0.32, 0.30, 0.28, 0.30, 0.31,
-            0.34, 0.40, 0.45, 0.42, 0.40, 0.36, 0.34, 0.31, 0.29, 0.28, 0.29, 0.31,
-            0.34, 0.40, 0.46, 0.43, 0.40, 0.36, 0.33, 0.30, 0.28, 0.27, 0.29, 0.31,
-            0.33, 0.39, 0.46, 0.42, 0.39, 0.34, 0.32, 0.30, 0.27, 0.26, 0.28, 0.30
-        ], (19, 12)),
-    τR=[
+    ]) * u"nm",
+    OZ::Matrix{<:Real}=reshape([
+        0.31, 0.31, 0.32, 0.32, 0.31, 0.3, 0.27, 0.24, 0.23, 0.22, 0.23, 0.24,
+        0.27, 0.3, 0.32, 0.33, 0.34, 0.34, 0.33, 0.3, 0.31, 0.31, 0.31, 0.3, 0.29, 0.28,
+        0.25, 0.24, 0.22, 0.24, 0.26, 0.28, 0.32, 0.36, 0.39, 0.4, 0.4, 0.39, 0.3, 0.31,
+        0.31, 0.3, 0.29, 0.28, 0.26, 0.24, 0.24, 0.23, 0.24, 0.26, 0.29, 0.33, 0.38, 0.42,
+        0.45, 0.46, 0.46, 0.27, 0.28, 0.29, 0.3, 0.3, 0.29, 0.27, 0.25, 0.24, 0.23, 0.25,
+        0.27, 0.3, 0.34, 0.38, 0.4, 0.42, 0.43, 0.42, 0.34, 0.35, 0.34, 0.33, 0.32, 0.31,
+        0.28, 0.25, 0.24, 0.24, 0.26, 0.28, 0.3, 0.34, 0.37, 0.39, 0.4, 0.4, 0.39, 0.38,
+        0.4, 0.39, 0.38, 0.36, 0.33, 0.28, 0.25, 0.24, 0.24, 0.25, 0.27, 0.3, 0.33, 0.35,
+        0.36, 0.36, 0.36, 0.34, 0.43, 0.44, 0.43, 0.41, 0.39, 0.35, 0.29, 0.25, 0.24, 0.24,
+        0.25, 0.26, 0.29, 0.31, 0.33, 0.34, 0.34, 0.33, 0.32, 0.45, 0.46, 0.45, 0.42, 0.4,
+        0.37, 0.31, 0.26, 0.24, 0.23, 0.24, 0.26, 0.28, 0.3, 0.31, 0.32, 0.31, 0.3, 0.3,
+        0.41, 0.42, 0.43, 0.42, 0.4, 0.38, 0.32, 0.26, 0.24, 0.23, 0.24, 0.26, 0.27, 0.28,
+        0.3, 0.3, 0.29, 0.28, 0.27, 0.37, 0.38, 0.4, 0.4, 0.39, 0.37, 0.32, 0.26, 0.24,
+        0.22, 0.23, 0.25, 0.26, 0.27, 0.28, 0.28, 0.28, 0.27, 0.26, 0.34, 0.36, 0.38, 0.39,
+        0.37, 0.34, 0.29, 0.26, 0.24, 0.22, 0.23, 0.25, 0.26, 0.28, 0.29, 0.3, 0.29, 0.29,
+        0.28, 0.31, 0.32, 0.34, 0.35, 0.35, 0.32, 0.29, 0.25, 0.23, 0.22, 0.23, 0.25, 0.27,
+        0.29, 0.3, 0.31, 0.31, 0.31, 0.3
+    ], (19, 12)),
+    τR::Vector{<:Real}=[
         1.41, 1.31, 1.23, 1.14, 1.05, 0.99, 0.92, 0.81, 0.72, 0.63, 0.56, 0.5,
         0.45, 0.4, 0.36, 0.3, 0.25, 0.2, 0.17, 0.15, 0.12, 0.1, 0.09, 0.08, 0.07, 0.06,
         0.06, 0.05, 0.04, 0.04, 0.03, 0.03, 0.03, 0.02, 0.02, 0.02, 0.02, 0.01, 0.01,
@@ -523,13 +519,13 @@ function solrad(;
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0
     ],
-    τO=[
+    τO::Vector{<:Real}=[
         11.5, 6.3, 3.2, 1.62, 0.83, 0.44, 0.26, 0.03, 0.02, 0.01, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
     ],
-    τA=[0.269904738, 0.266147825, 0.262442906, 0.258789404, 0.255186744, 0.251634356, 0.248131676, 0.2412732,
+    τA::Vector{<:Real}=[0.269904738, 0.266147825, 0.262442906, 0.258789404, 0.255186744, 0.251634356, 0.248131676, 0.2412732,
         0.234606887, 0.228128378, 0.221833385, 0.215717692, 0.20977715, 0.204007681, 0.198405272, 0.187685927,
         0.177588357, 0.168082846, 0.159140695, 0.150734206, 0.142836655, 0.135422274, 0.128466227, 0.12194459,
         0.115834329, 0.110113284, 0.104760141, 0.099754417, 0.09507644, 0.090707328, 0.086628967, 0.082823998,
@@ -544,17 +540,16 @@ function solrad(;
         0.008539475, 0.009015237, 0.009748444, 0.010586023, 0.011359647, 0.011901268, 0.012062153, 0.011735443,
         0.010882215, 0.009561062, 0.007961182, 0.006438984, 0.005558204, 0.006133532, 0.009277754
     ],
-    τW=[
-        1.06, 1.03, 1.01, 0.99, 0.97, 0.95, 0.93, 0.91, 0.89, 0.87, 0.85, 0.84, 0.83,
-        0.82, 0.81, 0.8, 0.8, 0.79, 0.78, 0.77, 0.76, 0.75, 0.74, 0.73, 0.72, 0.71, 0.7,
-        0.7, 0.69, 0.68, 0.67, 0.66, 0.66, 0.65, 0.64, 0.63, 0.63, 0.62, 0.61, 0.6, 0.59,
-        0.58, 0.58, 0.57, 0.56, 0.55, 0.54, 0.53, 0.52, 0.51, 0.5, 0.49, 0.48, 0.47,
-        0.46, 0.45, 0.44, 0.43, 0.42, 0.41, 0.4, 0.39, 0.38, 0.37, 0.36, 0.35, 0.34,
-        0.33, 0.32, 0.31, 0.3, 0.29, 0.28, 0.27, 0.26, 0.25, 0.24, 0.23, 0.22, 0.21,
-        0.2, 0.19, 0.18, 0.17, 0.16, 0.15, 0.14, 0.13, 0.12, 0.11, 0.1, 0.09, 0.08, 0.07,
-        0.06, 0.05, 0.04, 0.03, 0.02, 0.01, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+    τW::Vector{<:Real}=[
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0.123, 0.117, 0.1, 0.23, 0.174, 0.058, 0, 0.024, 0.027,
+        0.036, 0.215, 0.25, 0.136, 0.058, 0.047, 0.036, 0.042, 0.098, 0.044, 0, 0.038,
+        0.83, 0, 0, 0.38, 0.289, 0.258, 0.173, 0.008, 0, 0, 0, 0, 0, 0, 0, 0, 0.57, 0.76, 0,
+        0.185, 0.291, 0.178, 0.196, 0.112, 0.075, 0.074, 0.07, 0.007, 0, 0, 0, 0.086,
+        0.122, 0.132, 0.14, 0.207, 0.259, 0, 0, 0, 0.549, 0.297, 0.462, 0.52, 0.374, 0.222,
+        0.614, 0.058, 0.038, 0.03, 0.04, 0.16
     ],
-    Sλ=[
+    Sλ::Vector{typeof(0.0u"mW * cm^-2 * nm^-1")}=[
            48.2, 58.4, 51.4, 60.2, 68.6, 75.7, 81.9, 103.7, 105, 107.4, 105.5,
            117.3, 111.7, 109.9, 143.3, 175.8, 182.3, 208, 208.5, 194.6, 183.3, 178.3,
            169.5, 170.5, 164.6, 157.6, 151.7, 146.8, 141.8, 136.9, 131.4, 126, 120, 115,
@@ -562,109 +557,72 @@ function solrad(;
            42, 41, 40, 39, 38, 34, 33, 32, 31, 30, 29, 28, 26, 25, 24, 24, 23, 22, 21, 19, 16, 15,
            12, 11, 10.7, 10.3, 10, 9.7, 9, 8.8, 8.5, 7.9, 7.4, 6.8, 6.7, 6.6, 6.5, 6.4, 6.2,
            5.9, 5.5, 5.4, 4.8, 4.3, 3.9, 3.5, 3.1, 2.6, 2.3, 1.9, 1.7, 1.5, 1.4, 1.2, 1.1, 1, 1
-       ] * 10 * u"mW * cm^-2 * nm^-1",
-    FD=[
-        8.00e-05, 6.50e-05, 4.00e-05, 2.30e-05, 1.00e-05, 4.50e-06, 1.00e-06, 1.00e-07, 5.50e-09,
-        1.00e-09, 3.50e-10, 1.60e-10, 1.00e-10, 1.00e-10, 1.00e-10, 1.00e-10, 1.00e-10, 1.00e-10,
-        1.00e-10, 1.00e-03, 9.50e-04, 9.00e-04, 8.00e-04, 7.00e-04, 6.00e-04, 4.50e-04, 3.00e-04,
-        1.70e-04, 8.00e-05, 3.30e-05, 1.80e-05, 1.00e-05, 8.00e-06, 6.30e-06, 5.00e-06, 4.10e-06,
-        3.50e-06, 3.00e-06, 3.50e-02, 3.30e-02, 3.10e-02, 2.90e-02, 2.50e-02, 2.20e-02, 1.75e-02,
-        1.30e-02, 7.50e-03, 4.50e-03, 2.50e-03, 1.30e-03, 5.60e-04, 2.70e-04, 1.40e-04, 7.10e-05,
-        4.20e-05, 2.60e-05, 1.70e-05, 1.55e-01, 1.40e-01, 1.40e-01, 1.30e-01, 1.20e-01, 1.10e-01,
-        1.00e-01, 9.00e-02, 8.20e-02, 7.00e-02, 5.20e-02, 3.50e-02, 2.20e-02, 1.00e-02, 4.00e-03,
-        1.20e-03, 4.50e-04, 1.90e-04, 8.00e-05, 3.70e-01, 3.70e-01, 3.60e-01, 3.50e-01, 3.30e-01,
-        3.10e-01, 2.90e-01, 2.60e-01, 2.30e-01, 2.00e-01, 1.70e-01, 1.50e-01, 1.00e-01, 7.00e-02,
-        3.80e-02, 1.60e-02, 5.00e-03, 1.20e-03, 3.00e-04, 5.50e-01, 5.50e-01, 5.50e-01, 5.30e-01,
-        5.10e-01, 5.00e-01, 4.70e-01, 4.40e-01, 4.00e-01, 3.60e-01, 3.10e-01, 2.70e-01, 2.25e-01,
-        1.80e-01, 1.20e-01, 6.00e-02, 2.50e-02, 4.50e-03, 7.00e-04, 6.50e-01, 6.50e-01, 6.50e-01,
-        6.50e-01, 6.20e-01, 6.00e-01, 5.70e-01, 5.50e-01, 5.00e-01, 4.50e-01, 4.20e-01, 3.80e-01,
-        3.25e-01, 2.70e-01, 1.90e-01, 1.15e-01, 5.00e-02, 1.10e-02, 1.20e-03, 7.88e-01, 7.80e-01,
-        8.00e-01, 8.00e-01, 8.00e-01, 7.60e-01, 7.35e-01, 7.10e-01, 7.00e-01, 6.50e-01, 6.00e-01,
-        5.50e-01, 5.14e-01, 4.50e-01, 3.50e-01, 2.68e-01, 1.50e-01, 6.27e-02, 1.20e-02, 7.48e-01,
-        7.40e-01, 7.40e-01, 7.30e-01, 7.20e-01, 7.10e-01, 7.04e-01, 6.90e-01, 6.70e-01, 6.20e-01,
-        5.70e-01, 5.30e-01, 5.16e-01, 4.80e-01, 3.90e-01, 2.90e-01, 1.70e-01, 7.62e-02, 3.00e-02,
-        7.00e-01, 7.00e-01, 7.00e-01, 6.90e-01, 6.80e-01, 6.80e-01, 6.60e-01, 6.50e-01, 6.30e-01,
-        6.00e-01, 5.60e-01, 5.21e-01, 5.00e-01, 4.70e-01, 3.90e-01, 3.00e-01, 1.85e-01, 9.00e-02,
-        2.60e-02, 6.51e-01, 6.50e-01, 6.50e-01, 6.40e-01, 6.30e-01, 6.25e-01, 6.22e-01, 6.00e-01,
-        5.90e-01, 5.70e-01, 5.50e-01, 5.20e-01, 4.89e-01, 4.60e-01, 3.90e-01, 3.08e-01, 2.00e-01,
-        9.55e-02, 2.20e-02
-    ],
-    FDQ=[
-        8.00e-06, 7.00e-06, 5.20e-06, 3.50e-06, 1.70e-06, 5.50e-07, 1.0e-07, 2.50e-08,
-        6.00e-09, 1.50e-09, 3.00e-10, 6.00e-11, 1.00e-11, 1.00e-11, 1.00e-11, 1.00e-11,
-        1.00e-11, 1.00e-11, 1.00e-11, 6.10e-04, 6.00e-04, 5.50e-04, 4.50e-04, 3.40e-04,
-        2.30e-04, 1.20e-04, 5.50e-05, 2.60e-05, 1.20e-05, 6.00e-06, 3.50e-06, 2.00e-06,
-        1.50e-06, 1.00e-06, 6.00e-07, 4.00e-07, 2.30e-07, 1.00e-07, 2.40e-02, 2.30e-02,
-        2.20e-02, 2.10e-02, 1.80e-02, 1.50e-02, 1.20e-02, 7.50e-03, 4.80e-03, 2.50e-03,
-        1.20e-03, 5.00e-04, 2.50e-04, 1.00e-04, 4.50e-05, 2.00e-05, 1.00e-05, 5.50e-06,
-        2.50e-06, 1.30e-01, 1.20e-01, 1.10e-01, 1.00e-01, 9.10e-02, 8.50e-02, 7.20e-02,
-        6.50e-02, 5.20e-02, 4.00e-02, 2.80e-02, 1.70e-02, 1.00e-02, 3.00e-03, 1.00e-03,
-        4.00e-04, 1.70e-04, 6.70e-05, 2.50e-05, 3.40e-01, 3.30e-01, 3.20e-01, 3.00e-01,
-        2.90e-01, 2.70e-01, 2.50e-01, 2.00e-01, 1.70e-01, 1.50e-01, 1.20e-01, 8.00e-02,
-        5.80e-02, 3.00e-02, 1.30e-02, 6.20e-03, 2.00e-03, 6.00e-04, 1.90e-04, 5.40e-01,
-        5.30e-01, 5.10e-01, 5.00e-01, 4.80e-01, 4.50e-01, 4.20e-01, 3.70e-01, 3.20e-01,
-        2.70e-01, 2.20e-01, 1.70e-01, 1.20e-01, 8.00e-02, 5.00e-02, 2.30e-02, 8.00e-03,
-        4.70e-03, 9.00e-04, 6.50e-01, 6.40e-01, 6.20e-01, 6.10e-01, 6.00e-01, 5.60e-01,
-        5.10e-01, 4.70e-01, 4.20e-01, 3.60e-01, 3.00e-01, 2.50e-01, 1.80e-01, 1.30e-01,
-        8.00e-02, 5.00e-02, 2.00e-02, 4.60e-03, 1.50e-03, 8.20e-01, 8.10e-01, 8.10e-01,
-        8.00e-01, 7.90e-01, 7.50e-01, 7.00e-01, 6.50e-01, 6.00e-01, 5.40e-01, 4.60e-01,
-        3.80e-01, 3.20e-01, 2.50e-01, 1.80e-01, 1.30e-01, 7.00e-02, 2.90e-02, 1.10e-02,
-        7.50e-01, 7.40e-01, 7.30e-01, 7.20e-01, 7.00e-01, 6.70e-01, 6.10e-01, 5.50e-01,
-        5.00e-01, 4.50e-01, 4.00e-01, 3.60e-01, 3.20e-01, 2.60e-01, 1.90e-01, 1.40e-01,
-        8.00e-02, 3.10e-02, 1.20e-02
-    ],
-    S=[0.2, 0.255, 0.315, 0.365, 0.394, 0.405, 0.405, 0.395, 0.37, 0.343, 0.32],
-    ER=[6.19, 6.86, 11.6, 25.1, 224.0, 560.0, 1160.0],
-    ERλ=[12, 15, 20, 34, 88, 224, 300, 430, 600, 830, 1160] * u"mW/cm^2/nm/s"
+       ] * u"mW * cm^-2 * nm^-1",
+    FD::Matrix{<:Real}=reshape([
+        8.00e-5, 6.50e-5, 4.00e-5, 2.30e-5, 1.00e-5, 4.50e-6, 1.00e-6, 1.00e-7, 5.50e-9,
+        1.00e-9, 3.50e-10, 1.60e-10, 1.00e-10, 1.00e-10, 1.00e-10, 1.00e-10, 1.00e-10,
+        1.00e-10, 1.00e-10, 1.00e-3, 9.50e-4, 9.00e-4, 8.00e-4, 7.00e-4, 6.00e-4,
+        4.50e-4, 3.00e-4, 1.70e-4, 8.00e-5, 3.30e-5, 1.80e-5, 1.00e-5, 8.00e-6,
+        6.30e-6, 5.00e-6, 4.10e-6, 3.50e-6, 3.00e-6, 3.50e-2, 3.30e-2, 3.10e-2,
+        2.90e-2, 2.50e-2, 2.20e-2, 1.75e-2, 1.30e-2, 7.50e-3, 4.50e-3, 2.50e-3,
+        1.30e-3, 5.60e-4, 2.70e-4, 1.40e-4, 7.10e-5, 4.20e-5, 2.60e-5, 1.70e-5,
+        1.55e-1, 1.40e-1, 1.40e-1, 1.30e-1, 1.20e-1, 1.10e-1, 1.00e-1, 9.00e-2,
+        8.20e-2, 7.00e-2, 5.20e-2, 3.50e-2, 2.20e-2, 1.00e-2, 4.00e-3, 1.20e-3,
+        4.50e-4, 1.90e-4, 8.00e-5, 3.70e-1, 3.70e-1, 3.60e-1, 3.50e-1, 3.30e-1,
+        3.10e-1, 2.90e-1, 2.60e-1, 2.30e-1, 2.00e-1, 1.70e-1, 1.50e-1, 1.00e-1,
+        7.00e-2, 3.80e-2, 1.60e-2, 5.00e-3, 1.20e-3, 3.00e-4, 5.50e-1, 5.50e-1,
+        5.50e-1, 5.30e-1, 5.10e-1, 5.00e-1, 4.70e-1, 4.40e-1, 4.00e-1, 3.60e-1,
+        3.10e-1, 2.70e-1, 2.25e-1, 1.80e-1, 1.20e-1, 6.00e-2, 2.50e-2, 4.50e-3,
+        7.00e-4, 6.50e-1, 6.50e-1, 6.50e-1, 6.50e-1, 6.20e-1, 6.00e-1, 5.70e-1,
+        5.50e-1, 5.00e-1, 4.50e-1, 4.20e-1, 3.80e-1, 3.25e-1, 2.70e-1, 1.90e-1,
+        1.15e-1, 5.00e-2, 1.10e-2, 1.20e-3, 7.88e-1, 7.80e-1, 8.00e-1, 8.00e-1,
+        8.00e-1, 7.60e-1, 7.35e-1, 7.10e-1, 7.00e-1, 6.50e-1, 6.00e-1, 5.50e-1,
+        5.14e-1, 4.50e-1, 3.50e-1, 2.68e-1, 1.50e-1, 6.27e-2, 1.20e-2, 7.48e-1,
+        7.40e-1, 7.40e-1, 7.30e-1, 7.20e-1, 7.10e-1, 7.04e-1, 6.90e-1, 6.70e-1,
+        6.20e-1, 5.70e-1, 5.30e-1, 5.16e-1, 4.80e-1, 3.90e-1, 2.90e-1, 1.70e-1,
+        7.62e-2, 3.00e-2, 7.00e-1, 7.00e-1, 7.00e-1, 6.90e-1, 6.80e-1, 6.80e-1,
+        6.60e-1, 6.50e-1, 6.30e-1, 6.00e-1, 5.60e-1, 5.21e-1, 5.00e-1, 4.70e-1,
+        3.90e-1, 3.00e-1, 1.85e-1, 9.00e-2, 2.60e-2, 6.51e-1, 6.50e-1, 6.50e-1,
+        6.40e-1, 6.30e-1, 6.25e-1, 6.22e-1, 6.00e-1, 5.90e-1, 5.70e-1, 5.50e-1,
+        5.20e-1, 4.89e-1, 4.60e-1, 3.90e-1, 3.08e-1, 2.00e-1, 9.55e-2, 2.20e-2
+    ], (11, 19)),
+    FDQ::Matrix{<:Real}=reshape([
+        8.00e-6, 7.00e-6, 5.20e-6, 3.50e-6, 1.70e-6, 5.50e-7, 1.00e-7, 2.50e-8, 6.00e-9,
+        1.50e-9, 3.00e-10, 6.00e-11, 1.00e-11, 1.00e-11, 1.00e-11, 1.00e-11, 1.00e-11,
+        1.00e-11, 1.00e-11, 6.10e-4, 6.00e-4, 5.50e-4, 4.50e-4, 3.40e-4, 2.30e-4,
+        1.20e-4, 5.50e-5, 2.60e-5, 1.20e-5, 6.00e-6, 3.50e-6, 2.00e-6, 1.50e-6,
+        1.00e-6, 6.00e-7, 4.00e-7, 2.30e-7, 1.00e-7, 2.40e-2, 2.30e-2, 2.20e-2,
+        2.10e-2, 1.80e-2, 1.50e-2, 1.20e-2, 7.50e-3, 4.80e-3, 2.50e-3, 1.20e-3,
+        5.00e-4, 2.50e-4, 1.00e-4, 4.50e-5, 2.00e-5, 1.00e-5, 5.50e-6, 2.50e-6,
+        1.30e-1, 1.20e-1, 1.10e-1, 1.00e-1, 9.10e-2, 8.50e-2, 7.20e-2, 6.50e-2,
+        5.20e-2, 4.00e-2, 2.80e-2, 1.70e-2, 1.00e-2, 3.00e-3, 1.00e-3, 4.00e-4,
+        1.70e-4, 6.70e-5, 2.50e-5, 3.40e-1, 3.30e-1, 3.20e-1, 3.00e-1, 2.90e-1,
+        2.70e-1, 2.50e-1, 2.00e-1, 1.70e-1, 1.50e-1, 1.20e-1, 8.00e-2, 5.80e-2,
+        3.00e-2, 1.30e-2, 6.20e-3, 2.00e-3, 6.00e-4, 1.90e-4, 5.40e-1, 5.30e-1,
+        5.10e-1, 5.00e-1, 4.80e-1, 4.50e-1, 4.20e-1, 3.70e-1, 3.20e-1, 2.70e-1,
+        2.20e-1, 1.70e-1, 1.20e-1, 8.00e-2, 5.00e-2, 2.30e-2, 8.00e-3, 4.70e-3,
+        9.00e-4, 6.50e-1, 6.40e-1, 6.20e-1, 6.10e-1, 6.00e-1, 5.60e-1, 5.10e-1,
+        4.70e-1, 4.20e-1, 3.60e-1, 3.00e-1, 2.50e-1, 1.80e-1, 1.30e-1, 8.00e-2,
+        5.00e-2, 2.00e-2, 4.60e-3, 1.50e-3, 8.20e-1, 8.10e-1, 8.10e-1, 8.00e-1,
+        7.90e-1, 7.50e-1, 7.00e-1, 6.50e-1, 6.00e-1, 5.40e-1, 4.60e-1, 3.80e-1,
+        3.20e-1, 2.50e-1, 1.80e-1, 1.20e-1, 6.00e-2, 2.50e-2, 8.00e-3, 8.60e-1,
+        8.40e-1, 8.20e-1, 8.00e-1, 7.50e-1, 7.00e-1, 6.80e-1, 6.30e-1, 5.80e-1,
+        5.00e-1, 4.40e-1, 3.70e-1, 3.20e-1, 2.40e-1, 1.70e-1, 1.20e-1, 6.00e-2,
+        2.70e-2, 1.00e-2, 8.00e-1, 7.90e-1, 7.70e-1, 7.60e-1, 7.30e-1, 6.85e-1,
+        6.40e-1, 5.90e-1, 5.40e-1, 4.75e-1, 4.20e-1, 3.65e-1, 3.20e-1, 2.50e-1,
+        1.80e-1, 1.30e-1, 7.00e-2, 2.90e-2, 1.10e-2, 7.50e-1, 7.40e-1, 7.30e-1,
+        7.20e-1, 7.00e-1, 6.70e-1, 6.10e-1, 5.50e-1, 5.00e-1, 4.50e-1, 4.00e-1,
+        3.60e-1, 3.20e-1, 2.60e-1, 1.90e-1, 1.40e-1, 8.00e-2, 3.10e-2, 1.20e-2
+    ], (11, 19)),
+    S::Vector{<:Real}=[0.2, 0.255, 0.315, 0.365, 0.394, 0.405, 0.405, 0.395, 0.37, 0.343, 0.32]
 )
-
-    # ILAM(N)      NTH WAVELENGTH (NM)
-    # DRLAM(N)     DIRECT COMPONENT RADIATION-NTH SPECTRAL ESTIMATE
-    # DRRLAM(N)    DIRECT RAYLEIGH COMPONENT RADIATION-NTH SPECTRAL ESTIMATE
-    # SRLAM(N)     DIFFUSE COMPONENT RADIATION-NTH SPECTRAL ESTIMATE
-    # GRLAM(N)     GLOBAL RADIATION-NTH SPECTRAL ESTIMATE (GRLAM=DRLAM+SRLAM)
-    # EPLAM(N)     ERYTHYMAL PRODUCT (GRLAM TIMES ACTION SPECTRUM ER)-NTH SPEC-
-    #              TRAL ESTIMATE
-    # IELAM(N)     WAVELENGTHS-BETWEEN 300 AND 320 NMS IN 2 NM STEPS
     # GPL(N)       GLOBAL RADIATION BETWEEN 300 AND 320 NM IN 2 NM STEPS
-    # EPL(N)       ERYTHEMAL PRODUCT BETWEEN 300 AND 320 NM IN 2 NM STEPS
-    # LAMAX        WVLTH AT WHICH MAX OF ERYTHEMA PROD. CURVE OCCURS
-
-    # THE FOLLOWING CONTAIN THE INTEGRATED VALUES FOR THE SPECTRAL ESTIMATE
-    # DESIGNATED, THAT IS, INTEGRATED OVER WAVELENGTH FROM 290 NM TO THE NTH
-    # WAVELENGTH ILAM(N)-------
-
-    # DRINT(N)     DIRECT RADIATION COMPONENT
-    # DRRINT(N)    DIRECT RAYLEIGH RADIATION COMPONENT
-    # SRINT(N)     SCATTERED RADIATION COMPONENT
-    # GRINT(N)     GLOBAL RADIATION COMPONENT
-    # EPINT(N)     ERYTHEMA PRODUCT
-    # REPINT(N)    RECIPROCAL OF EPINT
-
-    # Define ER as a constant array - action spectrum 
-
-
-    # Define S as a constant array
-
-
-    # CRIPPS AND RAMSAY ( BR. JOURNAL OF DERMATOL.-JUNE 1970) HAVE
-    # DETERMINED THE MINIMAL ENERGY TO PRODUCE AN ERYTHEMA (SUNBURN) AS
-    # A FUNCTION OF WAVELENGTH. THE ARRAY ER(N) ARE THESE VALUES FOR WAVE-
-    # LENGTHS FROM 290 TO 320 NANOMETERS (NM) IN  5 NM STEPS. THE ARRAY
-    # ERλ(N) ARE VALUES FOR WAVELENGTHS FROM 300 TO 320 NM IN 2 NM STEPS.
-
-    # Arrays with NMAX elements set to 0.0
-    GRINT = fill(0.0, NMAX)u"mW/cm^2" # GLOBAL RADIATION COMPONENT (DIRECT + SCATTERED)
-    DRRINT = fill(0.0, NMAX)u"mW/cm^2" # DIRECT RAYLEIGH RADIATION COMPONENT
-    DRINT = fill(0.0, NMAX)u"mW/cm^2" # DIRECT RADIATION COMPONENT
-    SRINT = fill(0.0, NMAX)u"mW/cm^2" # SCATTERED RADIATION COMPONENT
-    AIλ = fill(0.0, NMAX)u"nm"
-    GRλ = fill(0.0, NMAX)u"mW/cm^2/nm" # integrated global radiation component
-
-    EPINT = fill(0.0, 7) * u"mW * cm^-2"
-    REPINT = fill(0.0, 7) * u"cm^2 * mW^-1"
-    EPλ = fill(0.0, 7) * u"mW/cm^2/nm"
-
+    GRINT = fill(0.0, nmax)u"mW/cm^2" # GLOBAL RADIATION COMPONENT (DIRECT + SCATTERED)
+    DRRINT = fill(0.0, nmax)u"mW/cm^2" # DIRECT RAYLEIGH RADIATION COMPONENT
+    DRINT = fill(0.0, nmax)u"mW/cm^2" # DIRECT RADIATION COMPONENT
+    SRINT = fill(0.0, nmax)u"mW/cm^2" # SCATTERED RADIATION COMPONENT
+    AIλ = fill(0.0, nmax)u"nm"
+    GRλ = fill(0.0, nmax)u"mW/cm^2/nm" # integrated global radiation component
     DRRλ = GRINT * u"1/nm"
     DRλ = GRINT * u"1/nm"
     SRλ = GRINT * u"1/nm"
@@ -673,27 +631,26 @@ function solrad(;
     ndays = length(days)
     ntimes = length(hours)
     nsteps = ndays * ntimes  # total time steps
-    # Radiation arrays indexed by [day, hour]
-    GRINTs = fill(0.0, nsteps, NMAX)u"mW/cm^2"   # wavelength-specific GLOBAL RADIATION
-    DRRINTs = fill(0.0, nsteps, NMAX)u"mW/cm^2"  # wavelength-specific DIRECT RAYLEIGH RADIATION
-    DRINTs = fill(0.0, nsteps, NMAX)u"mW/cm^2"   # wavelength-specific DIRECT RADIATION
-    SRINTs = fill(0.0, nsteps, NMAX)u"mW/cm^2"   # wavelength-specific SCATTERED RADIATION
+    GRINTs = fill(0.0, nsteps, nmax)u"mW/cm^2"   # wavelength-specific GLOBAL RADIATION
+    DRRINTs = fill(0.0, nsteps, nmax)u"mW/cm^2"  # wavelength-specific DIRECT RAYLEIGH RADIATION
+    DRINTs = fill(0.0, nsteps, nmax)u"mW/cm^2"   # wavelength-specific DIRECT RADIATION
+    SRINTs = fill(0.0, nsteps, nmax)u"mW/cm^2"   # wavelength-specific SCATTERED RADIATION
     GRs = fill(0.0, nsteps)u"mW/cm^2"   # total GLOBAL RADIATION
     DRRs = fill(0.0, nsteps)u"mW/cm^2"  # total DIRECT RAYLEIGH RADIATION
     DRs = fill(0.0, nsteps)u"mW/cm^2"   # total DIRECT RADIATION
     SRs = fill(0.0, nsteps)u"mW/cm^2"   # total SCATTERED RADIATION
     Zs = fill(0.0, nsteps)u"°"   # zenith angle
     DOYs = Vector{Int}(undef, nsteps)
-    TIMEs = Vector{Int}(undef, nsteps)
+    times = Vector{Real}(undef, nsteps)
     step = 1
     for i in 1:ndays
         for j in 1:ntimes
             d = days[i]
             t = hours[j]
             h, tsn = hour_angle(t, lonc) # hour angle (radians)
-            ζ, δ, Z, AR2 = solar_geometry(d=d, lat=lat, h=h, d0=d0, ω=ω, ϵ=ϵ, SE=SE) # compute ecliptic, declination, zenith angle and (a/r)^2
+            ζ, δ, Z, AR2 = solar_geometry(d=d, lat=lat, h=h, d0=d0, ω=ω, ϵ=ϵ, se=se) # compute ecliptic, declination, zenith angle and (a/r)^2
             ZZ = uconvert(°, Z)
-            check_skylight(Z, NMAX, SRINT, GRINT) # checking zenith angle for possible skylight before sunrise or after sunset
+            check_skylight(Z, nmax, SRINT, GRINT) # checking zenith angle for possible skylight before sunrise or after sunset
             # testing cos(h) to see if it exceeds +1 or -1
             TDTL = -tan(δ) * tan(lat) # from eq.7 McCullough & Porter 1971
             if abs(TDTL) >= 1 # long day or night
@@ -705,10 +662,10 @@ function solrad(;
             HH = 12 * H / π
             ts = t - tsn
             if !((ts <= 0 && abs(ts) - HH > 0) || (ts > 0 && ts - HH >= 0) || (TDTL >= 1)) # sun is up, proceed
-                h, tsn = hour_angle(t) # hour angle (radians) - redundant?
-                ζ, δ, Z, AR2 = solar_geometry(d=d, lat=lat, h=h, d0=d0, ω=ω, ϵ=ϵ, SE=SE) # compute ecliptic, declination, zenith angle and (a/r)^2 - redundant?
+                h, tsn = hour_angle(t, lonc) # hour angle (radians)
+                ζ, δ, Z, AR2 = solar_geometry(d=d, lat=lat, h=h, d0=d0, ω=ω, ϵ=ϵ, se=se) # compute ecliptic, declination, zenith angle and (a/r)^2 - redundant?
                 alt = (π / 2 - Z)rad
-                cazsun = (sin(lat) * sin(alt) - sin(δ)) / (cos(lat) * cos(alt)) # cos(solar azimuth)
+cazsun = (sin(δ) - sin(lat) * sin(alt)) / (cos(lat) * cos(alt)) # cos(solar azimuth)
                 #      Error checking for instability in trig function
                 if cazsun < -0.9999999
                     azsun = π
@@ -744,14 +701,6 @@ function solrad(;
                     dzsl = 0°
                 end
 
-                # computing optical air mass (airms) from knowledge of true zenith angle
-                # using the Rozenberg formula (see p.159 in book 'Twilight' by G.V.
-                # Rozenberg, Plenum Press, New York, 1966)
-                # the difference between apparent and true zenith angle is neglected
-                # for z less than 88 degrees
-                # variation of airms with altitude is ignored since it is negligible up to
-                # at least 6 km above sea level
-
                 # refraction correction check
                 if Z < 1.5358896
                     # skip refraction correction
@@ -761,28 +710,25 @@ function solrad(;
                     Z -= refr
                 end
 
-                # optical air mass (Rozenberg formula) ---
+                # optical air mass (Rozenberg 1966 formula p.159 in book 'Twilight') ---
                 airms = 1.0 / (cos(Z) + (0.025 * exp(-11.0 * cos(Z))))
                 cz = cos(Z)
                 intcz = Int(floor(100.0 * cz + 1.0))
                 Zdeg = uconvert(°, Z)  # zenith angle in degrees
 
-                # ATMOSPHERIC OZONE LOOKUP
-                # Convert latitude in degrees to nearest 10-degree index
-                tlat = (lat + 100.0) / 10.0
+                # atmospheric ozone lookup
+                # convert latitude in degrees to nearest 10-degree index
+                tlat = (lat + 100.0°) / 10.0°
                 llat = Int(floor(tlat))
                 allat = llat
                 ala = allat + 0.5
                 if tlat > ala
                     llat += 1
                 end
-
-                # Clamp llat index to valid range
+                # clamp llat index to valid range
                 m = month(Date(year, 1, 1) + Day(d - 1)) # month from day of year
                 llat = clamp(llat, 1, size(OZ, 1))
                 ozone = OZ[llat, m]  # ozone thickness (cm) from lookup table
-
-                #had = 15.0 * (t - tsn) # hour angle, degrees
                 ELEVFCT1, ELEVFCT2, ELEVFCT3, ELEVFCT4 = elev_corr(elev)
 
                 # deal with this:
@@ -793,9 +739,9 @@ function solrad(;
                 #    &  CCMAXX(IDAY))/ 2. / 100.)) ! from Butt et al. 2010 Agricultural and Forest Meteorology 150 (2010) 361–368
                 #     endif
 
-                for N in 1:NMAX
+                for N in 1:nmax
                     τλ1 = (P / 101300u"Pa") * τR[N] * ELEVFCT1
-                    τλ2 = (25u"km" / AMR) * τA[N] * ELEVFCT2
+                    τλ2 = (25u"km" / amr) * τA[N] * ELEVFCT2
                     τλ3 = (ozone / 0.34) * τO[N] * ELEVFCT3
                     τλ4 = τW[N] * sqrt(airms * cmH2O * ELEVFCT4)
                     τλ = ((float(τλ1) + τλ2 + τλ3) * airms) + τλ4
@@ -813,26 +759,26 @@ function solrad(;
                     end
 
                     # so the integrator doesn't get confused at very low sun angles
-                    if DRλ[N] < 1.0e-24u"mW / cm^2 / nm"
-                        DRλ[N] = 1.0e-24u"mW / cm^2 / nm"
+                    if DRλ[N] < 1.0e-25u"mW / cm^2 / nm"
+                        DRλ[N] = 1.0e-25u"mW / cm^2 / nm"
                     end
 
                     DRRλ[N] = (Sλ[N] * AR2 * cz) * exp(-float(τλ1) * airms) / 1000.0
 
                     if alt < ahoriz
-                        DRλ[N] = 1.0e-24u"mW / cm^2"
-                        DRRλ[N] = 1.0e-24u"mW / cm^2"
+                        DRλ[N] = 1.0e-24u"mW / cm^2 / nm"
+                        DRRλ[N] = 1.0e-24u"mW / cm^2 / nm"
                     end
 
                     # Sky (SRλ) and Global Radiation (GRλ)
-                    if NOSCAT == 0 || N > 11
+                    if noscat == 0 || N > 11
                         # skip to 400
                         SRλ[N] = 0.0u"mW / cm^2 / nm"
-                    elseif IUV
+                    elseif iuv
                         if τλ1 >= 0.03
                             GAMR, GAML, SBAR = GAMMA(τλ1)
                             SRλ[N] = (
-                                         ((float(GAML[INTCZ]) + float(GAMR[INTCZ])) / (2.0 * (1.0 - REFL * float(SBAR))))
+                                         ((float(GAML[intcz]) + float(GAMR[intcz])) / (2.0 * (1.0 - refl * float(SBAR))))
                                          -
                                          exp(-float(τλ1) * airms)
                                      ) * CZ * Sλ[N] * AR2 / 1000.0
@@ -840,20 +786,11 @@ function solrad(;
                             SRλ[N] = 0.0u"mW / cm^2 / nm"
                         end
                     else
-                        B = Zdeg / 5.0
-                        IA = floor(Int, B)
-                        C = B - IA
-                        I = C > 0.50 ? IA + 2 : IA + 1
-
+                        I = round(Int, (ustrip(Zdeg) + 5) / 5)
                         FDAV = FD[N, I]
                         FDQDAV = FDQ[N, I]
-
-                        SRλ[N] = (Sλ[N] / π) * (FDAV + FDQDAV * (REFL / (1.0 - (REFL * S[N])))) / 1000.0
+                        SRλ[N] = (Sλ[N] / π) * (FDAV + FDQDAV * (refl / (1.0 - (refl * S[N])))) / 1000.0
                         SRλ[N] *= AR2
-
-                        if N <= 7
-                            EPλ[N] = (SRλ[N] + DRλ[N]) / ER[N]
-                        end
                     end
 
                     GRλ[N] = SRλ[N] + DRλ[N]
@@ -863,7 +800,6 @@ function solrad(;
                         DRRINT[1] = 0.0u"mW / cm^2"
                         DRINT[1] = 0.0u"mW / cm^2"
                         GRINT[1] = 0.0u"mW / cm^2"
-                        EPINT[1] = 0.0u"mW / cm^2"
                     else
                         AIλ[N] = Iλ[N]
                         AIλ[N-1] = Iλ[N-1]
@@ -874,13 +810,6 @@ function solrad(;
                         DRRINT[N] = DRRINT[N-1] + (Δλ * DRRλ[N-1]) + (0.5 * Δλ * (DRRλ[N] - DRRλ[N-1]))
                         SRINT[N] = SRINT[N-1] + (Δλ * SRλ[N-1]) + (0.5 * Δλ * (SRλ[N] - SRλ[N-1]))
                         GRINT[N] = GRINT[N-1] + (Δλ * GRλ[N-1]) + (0.5 * Δλ * (GRλ[N] - GRλ[N-1]))
-
-                        if N <= 7
-                            EPINT[N] = EPINT[N-1] + (Δλ * EPλ[N-1]) + (0.5 * Δλ * (EPλ[N] - EPλ[N-1]))
-                            if EPINT[N] != 0.0
-                                REPINT[N] = 1 / EPINT[N]
-                            end
-                        end
                     end
                 end
             else # sunrise, sunset or long day
@@ -891,29 +820,30 @@ function solrad(;
             DRRINTs[step, :] .= DRRINT
             DRINTs[step, :] .= DRINT
             SRINTs[step, :] .= SRINT
-            GRs[step] = GRINT[NMAX]
-            DRRs[step] = DRRINT[NMAX]
-            DRs[step] = DRINT[NMAX]
-            SRs[step] = SRINT[NMAX]
+            GRs[step] = GRINT[nmax]
+            DRRs[step] = DRRINT[nmax]
+            DRs[step] = DRINT[nmax]
+            SRs[step] = SRINT[nmax]
             Zs[step] = ZZ
             DOYs[step] = d
-            TIMEs[step] = t  # optional: start hours from 0
+            times[step] = t  # optional: start hours from 0
             Zs[Zs .> 90°] .= 90°
             step += 1
         end
     end
     return (
+        Zenith     = Zs,
+        doy        = DOYs,
+        hour       = times,
+        Rayleigh   = DRRs .* (10u"W/m^2" / 1u"mW/cm^2"),
+        Direct     = DRs .* (10u"W/m^2" / 1u"mW/cm^2"),
+        Scattered  = SRs .* (10u"W/m^2" / 1u"mW/cm^2"),
+        Global     = GRs .* (10u"W/m^2" / 1u"mW/cm^2"),
         λ          = Iλ,
         λDirect    = DRINTs .* (10u"W/m^2" / 1u"mW/cm^2"),
         λRayleigh  = DRRINTs .* (10u"W/m^2" / 1u"mW/cm^2"),
         λScattered = SRINTs .* (10u"W/m^2" / 1u"mW/cm^2"),
         λGlobal    = GRINTs .* (10u"W/m^2" / 1u"mW/cm^2"),
-        Rayleigh   = DRRs .* (10u"W/m^2" / 1u"mW/cm^2"),
-        Direct     = DRs .* (10u"W/m^2" / 1u"mW/cm^2"),
-        Scattered  = SRs .* (10u"W/m^2" / 1u"mW/cm^2"),
-        Global     = GRs .* (10u"W/m^2" / 1u"mW/cm^2"),
-        Zenith     = Zs,
-        doy        = DOYs,
-        hour       = TIMEs,
+
     )
 end
