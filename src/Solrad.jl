@@ -51,12 +51,12 @@ end
 Compute the solar hour angle `h` in radians.
 
 # Arguments
-- `t`: Local solar time (e.g., `14.0u"hr"`)
-- `lonc`: Longitude correction (e.g., `0.5u"hr"`)
+- `t`: Local solar hour (e.g., `14.0`)
+- `lonc`: Longitude correction in hours (e.g., `0.5`)
 
 # Returns
 - Hour angle `h` as a `Quantity` in radians
-- Time at solar noon, `tsn`  as a time in hours
+- Time at solar noon, `tsn` as a time in hours
 
 # Reference
 McCullough & Porter 1971, Eq. 6
@@ -360,9 +360,9 @@ function dchxy(tau1::Float64, cfa::Vector{Float64}, nst::Int)
     d[1] = 1.0 / (2.0 * q[1] * (2.0 * q[1]^2 - cc))
     d[2] = 1.0 / (2.0 * q[2] * (2.0 * q[2]^2 - cc))
 
-    # Compute exponential terms
-    e1 = exp(-q[1] * tau1)
-    e2 = exp(-q[2] * tau1)
+    # Compute exponential terms using dexpi
+    e1 = dexpi(-real(q[1]) * tau1)
+    e2 = dexpi(-real(q[2]) * tau1)
 
     # Initialize mu array (Gauss quadrature nodes)
     mu = zeros(Float64, 101)
@@ -388,6 +388,91 @@ function dchxy(tau1::Float64, cfa::Vector{Float64}, nst::Int)
     return chx, chy, ntr
 end
 
+function dexpi(x::Float64)
+    # Constants
+    gamma = 0.57721566490153286
+
+    # Coefficients
+    A1 = [0.1193095930415985, 0.3306046932331323, 0.4662347571015760]
+    B1 = [0.4679139345726910, 0.3607615730481386, 0.1713244923791703]
+    A2 = [0.02823912701457739, 30.52042817823067, 215.8885931211323,
+          410.4611319636983, 278.5527592726121, 71.33086969436196, 0.5758931590224375]
+    B2 = [10.0, 138.3869728490638, 488.08581830736, 634.8804630786363,
+          344.1289899236299, 77.08964199043784, 0.5758934565014882]
+    A3 = [0.07630772325814641, 21.23699219410890, 47.45350785776186,
+          29.66421696379266, 6.444800036068992, 0.04295808082119383]
+    B3 = [10.0, 52.78950049492932, 71.96111390658517, 35.67945294128107,
+          6.874380519301884, 0.04295808112146861]
+    A4 = [0.1157221173580207, 0.6117574845151307, 1.512610269776419,
+          2.833751337743507, 4.599227639418348, 6.844525453115177,
+          9.621316842456867, 13.00605499330635, 17.11685518746226,
+          22.15109037939701, 28.48796725098400, 37.09912104446692]
+    B4 = [0.2647313710554432, 0.3777592758731380, 0.2440820113198776,
+          0.09044922221168093, 0.02010238115463410, 0.002663973541865316,
+          0.0002032315926629994, 8.365055856819799e-5, 1.668493876540910e-6,
+          1.342391030515004e-8, 3.061601635035021e-11, 8.148077467426242e-15]
+    A5 = [0.03202844643130281, 0.09555943373680816, 0.1575213398480817,
+          0.2168967538130226, 0.2727107356944198, 0.3240468259684878,
+          0.3700620957892772, 0.4100009929869515, 0.4432077635022005,
+          0.4691372760013664, 0.4873642779856547, 0.4975936099985107]
+    B5 = [0.1279381953467522, 0.1258374563468283, 0.1216704729278034,
+          0.1155056680537256, 0.1074442701159656, 0.09761865210411389,
+          0.08619016153195328, 0.07334648141108031, 0.05929858491543678,
+          0.04427743881741981, 0.02853138862893366, 0.01234122979998720]
+
+    if x == 0.0
+        error("The argument of DEXPI is very close to zero.")
+    elseif x < 0.0
+        ax = abs(x)
+        if x > -1e-20
+            return log(ax) + gamma
+        elseif x > -1.5
+            yy = exp(-0.5 * ax)
+            s = 0.0
+            for i in 1:3
+                yz = exp(A1[i] * ax)
+                s += B1[i] * ((1 - yy / yz) / (0.5 + A1[i]) + (1 - yy * yz) / (0.5 - A1[i]))
+            end
+            return -0.5 * s + log(ax) + gamma
+        elseif x > -4.65
+            sumn = evalpoly(ax, reverse(A2))
+            sumd = evalpoly(ax, reverse(B2))
+            return (sumn / (sumd * x)) * exp(x)
+        elseif x > -12.0
+            sumn = evalpoly(ax, reverse(A3))
+            sumd = evalpoly(ax, reverse(B3))
+            return (sumn / (sumd * x)) * exp(x)
+        elseif x > -170.0
+            dexpi = 0.0
+            for j in 1:12
+                dexpi += B4[j] / (1 + A4[j] / ax)
+            end
+            return (exp(x) / ax) * (-dexpi)
+        else
+            return 0.0
+        end
+    else
+        if x <= 1e-20
+            return log(x) + gamma
+        elseif x <= 40.0
+            yy = exp(0.5 * x)
+            dexpi = 0.0
+            for j in 1:12
+                yz = exp(-A5[j] * x)
+                dexpi += ((1 - yy / yz) / (0.5 + A5[j]) + (1 - yy * yz) / (0.5 - A5[j])) * B5[j]
+            end
+            return -0.5 * dexpi + log(x) + gamma
+        elseif x <= 173.0
+            dexpi = 0.0
+            for j in 1:12
+                dexpi += B4[j] / (1 - A4[j] / x)
+            end
+            return (exp(x) / x) * dexpi
+        else
+            error("The argument of DEXPI is very large.")
+        end
+    end
+end
 
 """
     solrad(; days, hours, lat...[, year, lonc, elev, slope, aspect, hori, refl, cmH2O, ϵ,
