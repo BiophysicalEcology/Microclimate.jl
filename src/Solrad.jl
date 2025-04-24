@@ -11,7 +11,7 @@ Computes atmospheric pressure at a given altitude using the barometric formula,
 assuming a constant temperature lapse rate (standard tropospheric approximation).
 
 # Arguments
-- `h`: Altitude at which to compute pressure (with length units, e.g. `u"m"`).
+- `h`: Elevation at which to compute pressure (with length units, e.g. `u"m"`).
 - `h_ref`: Reference altitude (default: `0u"m"`).
 - `P_ref`: Pressure at the reference altitude (default: `101325u"Pa"`, standard sea-level pressure).
 - `L_ref`: Temperature lapse rate (default: `-0.0065u"K/m"`).
@@ -713,16 +713,22 @@ function solrad(;
     DRs = fill(0.0, nsteps)u"mW/cm^2"   # total DIRECT RADIATION
     SRs = fill(0.0, nsteps)u"mW/cm^2"   # total SCATTERED RADIATION
     Zs = fill(0.0, nsteps)u"°"   # zenith angle
+    ZSLs = fill(0.0, nsteps)u"°"   # slope zenith angle
+    HHs = fill(0.0, ndays)
+    tsns = fill(0.0, ndays)
     DOYs = Vector{Int}(undef, nsteps)
     times = Vector{Real}(undef, nsteps)
     step = 1
+    HH = 0. # initialise sunrise hour angle
+    tsn = 12. # initialise time of solar noon
     for i in 1:ndays
         for j in 1:ntimes
             d = days[i]
             t = hours[j]
             h, tsn = hour_angle(t, lonc) # hour angle (radians)
             ζ, δ, z, AR2 = solar_geometry(d=d, lat=lat, h=h, d0=d0, ω=ω, ϵ=ϵ, se=se) # compute ecliptic, declination, zenith angle and (a/r)^2
-            ZZ = uconvert(°, z)
+            Z = uconvert(°, z)
+            Zsl = Z
             check_skylight(z, nmax, SRINT, GRINT) # checking zenith angle for possible skylight before sunrise or after sunset
             # testing cos(h) to see if it exceeds +1 or -1
             TDTL = -tan(δ) * tan(lat) # from eq.7 McCullough & Porter 1971
@@ -902,26 +908,32 @@ function solrad(;
             DRRs[step] = DRRINT[nmax]
             DRs[step] = DRINT[nmax]
             SRs[step] = SRINT[nmax]
-            Zs[step] = ZZ
+            Zs[step] = Z
+            ZSLs[step] = Zsl
             DOYs[step] = d
             times[step] = t  # optional: start hours from 0
             Zs[Zs .> 90°] .= 90°
             step += 1
         end
+        HHs[i] = HH # save today's sunrise hour angle
+        tsns[i] = tsn # save today's time of sunrise
     end
     return (
-        Zenith     = Zs,
-        doy        = DOYs,
-        hour       = times,
-        Rayleigh   = DRRs .* (10u"W/m^2" / 1u"mW/cm^2"),
-        Direct     = DRs .* (10u"W/m^2" / 1u"mW/cm^2"),
-        Scattered  = SRs .* (10u"W/m^2" / 1u"mW/cm^2"),
-        Global     = GRs .* (10u"W/m^2" / 1u"mW/cm^2"),
-        λ          = Iλ,
-        λDirect    = DRINTs .* (10u"W/m^2" / 1u"mW/cm^2"),
-        λRayleigh  = DRRINTs .* (10u"W/m^2" / 1u"mW/cm^2"),
-        λScattered = SRINTs .* (10u"W/m^2" / 1u"mW/cm^2"),
-        λGlobal    = GRINTs .* (10u"W/m^2" / 1u"mW/cm^2"),
+        Zenith      = Zs,
+        ZenithSlope = ZSLs,
+        HHsr        = HHs,
+        tsn         = tsns,
+        doy         = DOYs,
+        hour        = times,
+        Rayleigh    = DRRs .* (10u"W/m^2" / 1u"mW/cm^2"),
+        Direct      = DRs .* (10u"W/m^2" / 1u"mW/cm^2"),
+        Scattered   = SRs .* (10u"W/m^2" / 1u"mW/cm^2"),
+        Global      = GRs .* (10u"W/m^2" / 1u"mW/cm^2"),
+        λ           = Iλ,
+        λDirect     = DRINTs .* (10u"W/m^2" / 1u"mW/cm^2"),
+        λRayleigh   = DRRINTs .* (10u"W/m^2" / 1u"mW/cm^2"),
+        λScattered  = SRINTs .* (10u"W/m^2" / 1u"mW/cm^2"),
+        λGlobal     = GRINTs .* (10u"W/m^2" / 1u"mW/cm^2"),
     )
 end
 
@@ -1063,20 +1075,6 @@ function dry_air(T_drybulb, P_atmos, elev, fO2, fCO2, fN2)
     return (;P_atmos, ρ_air, μ, ν, dif_vpr, k_fluid, L_v, tcoeff, ggroup, bbemit, emtmax)
 end
 
-Refhyt=1.2u"m"
-RUF=0.004u"m"
-ZH=0.0u"m"
-D0=0.0u"m"
-TAREF=27.77818u"°C"
-VREF=2.749575u"m/s"
-RH=49.0415
-D0cm=48.58942u"°C" 
-maxsurf=95.0u"°C"
-ZEN=21.50564u"°"
-a=0.15
-heights=[0.01, 0.05, 0.1, 0.2, 0.3, 0.4, 0.5, 0.75, 1.0]*u"m"
-
-
 function get_profile(;
     Refhyt=1.2u"m",
     RUF=0.004u"m",
@@ -1090,6 +1088,7 @@ function get_profile(;
     ZEN=21.50564u"°",
     a=0.15,
     heights=[0.01, 0.05, 0.1, 0.2, 0.3, 0.4, 0.5, 0.75, 1.0] * u"m",
+    elev=0.0u"m",
     warn=false)
 
     if minimum(heights) < RUF
@@ -1111,22 +1110,29 @@ function get_profile(;
     heights = filter(h -> h < Refhyt, heights_orig)
 
     function RHOCP(TAVE)
-        return 0.08472 / TAVE
+        return u"(cal*g)/(g*cm^3*K)"*(0.08472 / ustrip(TAVE))
+    end
+    function RHOCP(TAVE, elev, rh)
+        dry_air_out = dry_air(u"K"(TAVE), elev=elev)
+        wet_air_out = wet_air(u"K"(TAVE), rh=rh)
+        ρ = dry_air_out.ρ_air
+        cp = wet_air_out.cp
+        return u"(cal*g)/(g*cm^3*K)"(ρ * cp)
+    end
+    function PHI(Z, GAM, AMOL)
+        return (1 - min(1, GAM * Z / AMOL))^0.25
+    end
+
+    function PSI1(X)
+        return 2 * log((1 + X) / 2) + log((1 + X^2) / 2) - 2 * atan(X) + π / 2
+    end
+
+    function PSI2(X)
+        return 2 * log((1 + X^2) / 2)
     end
 
     function get_Obukhov(TA, TS, VEL, z, z0, rcptkg)
 
-        function PHI(Z, GAM, AMOL)
-            return (1 - min(1, GAM * Z / AMOL))^0.25
-        end
-
-        function PSI1(X)
-            return 2 * log((1 + X) / 2) + log((1 + X^2) / 2) - 2 * atan(X) + π / 2
-        end
-
-        function PSI2(X)
-            return 2 * log((1 + X^2) / 2)
-        end
         AMOL = -30.0u"cm" # initial Monin-Obukhov length cm
         GAM = 16.0 # -
         κ = 0.4 # Kármán constant
@@ -1136,7 +1142,7 @@ function get_profile(;
         ZRATIO = Z / Z0 + 1
         DUM = log(ZRATIO)
         DIFFT = TA - TS
-        TAVE = (TA + TS + 546.3) / 2
+        TAVE = (TA + TS) / 2.0
         RCP = RHOCP(TAVE)
         DEL = 1.0
         count = 0
@@ -1154,11 +1160,11 @@ function get_profile(;
             USTAR = κ * (VEL * 100 * 60) / (log(Z / Z0) - Y)
 
             if AMOL > 0.0u"cm"
-                STS = 0.62 / (Z0 * USTAR / 12)^0.45
+                STS = 0.62 / (ustrip(Z0) * ustrip(USTAR) / 12)^0.45
                 STB = 0.64 / DUM
-                QC = RCP * DIFFT * USTAR * STB / (1 + STB / STS)
+                QC = RCP * DIFFT * USTAR * STB / (1.0 + STB / STS)
             else
-                STS = 0.62 / (Z0 * USTAR / 12)^0.45
+                STS = 0.62 / (ustrip(Z0) * ustrip(USTAR) / 12)^0.45
                 STB = (0.64 / DUM) * (1 - 0.1 * Z / AMOL)
                 STO = STB / (1 + STB / STS)
                 QC = RCP * DIFFT * USTAR * STO
@@ -1175,24 +1181,24 @@ function get_profile(;
     T1 = u"K"(TAREF)
     T3 = u"K"(D0cm)
 
-       # Units: m to cm
-       Z = u"cm"(Refhyt)
-       Z0 = u"cm"(RUF)
-       ZH_cm = u"cm"(ZH)
-       D0_cm = u"cm"(D0)
-       V = u"cm/minute"(VREF)
-# define air heights
-       AIRDP = vcat(Z, reverse(u"cm".(heights)))
-       ZZ = AIRDP
-       NAIR = length(AIRDP)
-       VV = (zeros(Float64, NAIR)) .* 1u"cm/minute" # output wind speeds
-       T = Vector{typeof(0.0u"K")}(undef, NAIR) # output temperatures, need to do this otherwise get InexactError
-       RHs = zeros(Float64, NAIR) # output relative humidities
-       VV[1] = V
-       T[1] = T1
+    # Units: m to cm
+    Z = u"cm"(Refhyt)
+    Z0 = u"cm"(RUF)
+    ZH_cm = u"cm"(ZH)
+    D0_cm = u"cm"(D0)
+    V = u"cm/minute"(VREF)
+    # define air heights
+    AIRDP = vcat(Z, reverse(u"cm".(heights)))
+    ZZ = AIRDP
+    NAIR = length(AIRDP)
+    VV = (zeros(Float64, NAIR)) .* 1u"cm/minute" # output wind speeds
+    T = Vector{typeof(0.0u"K")}(undef, NAIR) # output temperatures, need to do this otherwise get InexactError
+    RHs = zeros(Float64, NAIR) # output relative humidities
+    VV[1] = V
+    T[1] = T1
 
     # compute rcptkg (was a constant in original Fortran version)
-    dry_air_out = dry_air(u"K"(TAREF), elev = elev)
+    dry_air_out = dry_air(u"K"(TAREF), elev=elev)
     wet_air_out = wet_air(u"K"(TAREF), rh=RH)
     ρ = dry_air_out.ρ_air
     cp = wet_air_out.cp
@@ -1207,13 +1213,12 @@ function get_profile(;
     USTAR = κ * V / DUM
     DIFFT = T1 - T3
     TAVE = (T3 + T1) / 2
-    RCP = RHOCP(TAVE)
+    RCP = RHOCP(TAVE, elev, rh)
     AMOL = -30.0
-    ITER = 0
     if ZH > 0.0u"m"
-        STS = 0.62 / (Z0 * USTAR / 12)^0.45
+        STS = 0.62 / (ustrip(Z0) * ustrip(USTAR) / 12)^0.45
         STB = 0.64 / DUM
-        QC = RCP * DIFFT * USTAR * STB / (1 + STB / STS)
+        QC = RCP * DIFFT * USTAR * STB / (1.0 + STB / STS)
 
         for i in 2:NAIR
             if T1 ≥ T3 || T3 ≤ maxsurf || ZEN ≥ 90
@@ -1233,12 +1238,12 @@ function get_profile(;
         if T1 ≥ T3 || T3 ≤ u"K"(maxsurf) || ZEN ≥ 90
             STS = 0.62 / (ustrip(Z0) * ustrip(USTAR) / 12)^0.45
             STB = 0.64 / DUM
-            QC = RCP * DIFFT * USTAR * STB / (1 + STB / STS)
+            QC = RCP * DIFFT * USTAR * STB / (1.0 + STB / STS)
 
             for i in 2:NAIR
-                VV[i] = (USTAR / κ) * log(ZZ[i] / Z0 + 1)
+                VV[i] = (USTAR / κ) * log(ZZ[i] / Z0 + 1.0)
                 TZO = (T1 * STB + T3 * STS) / (STB + STS)
-                T[i] = TZO + (T1 - TZO) * log(ZZ[i] / Z0 + 1) / DUM
+                T[i] = TZO + (T1 - TZO) * log(ZZ[i] / Z0 + 1.0) / DUM
             end
         else
             for i in 2:NAIR
@@ -1263,7 +1268,7 @@ function get_profile(;
     T = [T3; reverse(T)]
 
     e = wet_air(T1, rh=RH).P_vap
-    wet_air_out =  wet_air.(T; rh=RH)
+    wet_air_out = wet_air.(T; rh=RH)
     es = getproperty.(wet_air_out, :P_vap_sat)
     RHs = clamp.(e ./ es .* 100, 0, 100)
 
@@ -1286,11 +1291,300 @@ function get_profile(;
     end
 
     return (
-        heights = heights,
-        VELs = u"m/s".(VV),      # m/s
-        TAs = u"°C".(T),         # deg C
-        RHs = RHs,               # %
-        QCONV = QC * 4.185 * 10000 / 60,  # W
-        USTAR = u"m/s"(USTAR)     # m/s
+        heights=heights,
+        VELs=u"m/s".(VV),      # m/s
+        TAs=u"°C".(T),         # deg C
+        RHs=RHs,               # %
+        QCONV=QC * 4.185 * 10000 / 60,  # W
+        USTAR=u"m/s"(USTAR)     # m/s
     )
+end
+
+function sinec!(
+    ITAIR, TIMARY, TAIRRY, TMIN, TMAX, TMIN2, TMAX2, TIMSR, TIMSS, TIMTMX, daily, iday
+)
+    TMIN = u"K"(TMIN)
+    TMAX = u"K"(TMAX)
+    TMIN2 = u"K"(TMIN2)
+    TMAX2 = u"K"(TMAX2)
+    T=TMIN[1] # initialise T
+    A = (TMAX - TMIN) / 2
+    TSR = TMIN
+    TREF = (TIMTMX - TIMSR) / 2 + TIMSR
+    SS = 360.0 * (TIMSS - TREF) / (2.0 * (TIMTMX - TIMSR))
+    SY = SS / 57.29577
+    ZS = sin(SY)
+    TSS = A * ZS + TMIN + A
+    TAU = 3.0 / ((2400.0 - TIMSS) + TIMSR)
+
+    for I in 1:24
+        J = I + 1
+        TIME = I * 100.0
+        if TIME <= TIMSR
+            T = TMIN
+        elseif TIME >= TIMSS
+            TI = (2400.0 - TIMSS) - (2400.0 - TIME)
+            E = TI * TAU
+            if daily
+                T = (TSS - TMIN2) / exp(E) + TMIN2
+            else
+                T = (TSS - TSR) / exp(E) + TSR
+            end
+        elseif TIME > TIMSR && TIME < TIMSS
+            X = 360.0 * (TIME - TREF) / (2.0 * (TIMTMX - TIMSR))
+            Y = X / 57.29577
+            Z = sin(Y)
+            T = A * Z + TMIN + A
+        else
+            TI = (2400.0 - TIMSS) + TIME
+            if daily && iday > 1
+                T = ((TMIN - 273.0 - ITAIR) / TIMSR) * TIME + ITAIR
+            else
+                E = TI * TAU
+                T = (TSS - TSR) / exp(E) + TSR
+            end
+        end
+
+        T = u"°C"(T)
+        ITIME = Int(floor(TIME / 100.0))
+        FRMIN = TIME / 100.0 - ITIME
+        ITIME *= 60
+        FRMIN *= 100.0
+        TIMEC = ITIME + FRMIN
+
+        TIMARY[J] = TIMEC
+        TAIRRY[J] = T
+    end
+
+    # Set first time step
+    TIMARY[1] = 0.0
+    if daily == 1 && iday > 1
+        TAIRRY[1] = ITAIR
+    else
+        TAIRRY[1] = T
+    end
+    ITAIR = TAIRRY[25]
+end
+
+function vsine(VMIN, VMAX, TIMSR, TIMSS, TIMIN, TIMAX, daily, iday, IVAR)
+    vinit = 0.0 * VMIN[1]
+    XA = fill(0.0, 25)
+    YA = fill(vinit, 25)
+    TIMARY = fill(0.0, 25)  
+    vave = (VMAX + VMIN) / 2.0
+
+    if daily == 1 && iday > 1
+        vinit = IVAR
+    end
+
+    vsmIN = VMIN + 0.01 * vave
+    vsmAX = VMAX - 0.01 * vave
+
+    if TIMIN < TIMAX
+        # morning min, afternoon max
+        ITEST1 = Int(floor(TIMIN / 100))
+        ITEST2 = Int(floor(TIMAX / 100))
+        slope1 = (vave - vsmIN) / (100.0 - TIMIN)
+        slope2 = (vsmIN - vsmAX) / (TIMIN - TIMAX)
+        slope3 = (vsmAX - vave) / (TIMAX - 2400.0)
+    else
+        # morning max, afternoon min
+        ITEST1 = Int(floor(TIMAX / 100))
+        ITEST2 = Int(floor(TIMIN / 100))
+        slope1 = (vave - vsmAX) / (100.0 - TIMAX)
+        slope2 = (vsmAX - vsmIN) / (TIMAX - TIMIN)
+        slope3 = (vsmIN - vave) / (TIMIN - 2400.0)
+    end
+
+
+    for I in 1:25
+        XA[I] = I * 100.0 - 100.0
+        TIME = XA[I]
+
+        ITIME = Int(floor(TIME / 100.0))
+        FRMIN = (TIME / 100.0) - ITIME
+        ITIME *= 60
+        FRMIN *= 100.0
+        TIMEC = ITIME + FRMIN
+        TIMARY[I] = TIMEC
+
+        if I == 1
+            YA[I] = (daily == 1 && iday > 1) ? vinit : vave
+            continue
+        end
+
+        if I < ITEST1
+            YA[I] = YA[1] - slope1 * (XA[1] - XA[I])
+            continue
+        end
+
+        if I == ITEST1
+            YA[I] = (TIMIN < TIMAX) ? vsmIN : vsmAX
+            continue
+        end
+
+        if I < ITEST2
+            if TIMIN < TIMAX
+                YA[I] = vsmIN - slope2 * (TIMIN - XA[I])
+            else
+                YA[I] = vsmAX - slope2 * (TIMAX - XA[I])
+                if YA[I] > vsmAX
+                    YA[I] = vsmAX
+                end
+            end
+            continue
+        end
+
+        if I == ITEST2
+            YA[I] = (TIMIN < TIMAX) ? vsmAX : vsmIN
+            continue
+        end
+
+        if I > ITEST2
+            if TIMIN < TIMAX
+                YA[I] = vsmAX - slope3 * (TIMAX - XA[I])
+            else
+                YA[I] = vsmIN - slope3 * (TIMIN - XA[I])
+            end
+        end
+    end
+
+    # Fix any negative values
+    for JCT in 1:25
+        if YA[JCT] < 0.0 * VMIN[1]
+            if JCT < 25 && YA[JCT + 1] > 0.0 * VMIN[1]
+                YA[JCT] = (YA[JCT - 1] + YA[JCT + 1]) / 2.0
+            else
+                YA[JCT] = abs(YA[JCT])
+            end
+        end
+    end
+
+    return YA
+end
+
+function hourly_vars(;
+    TMINN::Vector,
+    TMAXX::Vector,
+    WNMINN::Vector,
+    WNMAXX::Vector,
+    RHMINN::Vector,
+    RHMAXX::Vector,
+    CCMINN::Vector,
+    CCMAXX::Vector,
+    solrad_out::Any,
+    TIMINS::Vector=[0, 0, 1, 1],
+    TIMAXS::Vector=[1, 1, 0, 0],
+    daily::Bool=false)
+
+    ndays = length(TMINN)
+    Tairs = fill(TMINN[1], 25 * ndays)
+    Clds = fill(CCMINN[1], 25 * ndays)
+    RHs = fill(RHMINN[1], 25 * ndays)
+    WNs = fill(WNMINN[1], 25 * ndays)
+
+    ITAIR = TMINN[1] # initial air temperature for daily
+    IWN = WNMINN[1]
+    IRH = RHMAXX[1]
+    ICLD = CCMINN[1]
+
+    for iday in 1:ndays
+        TIMARY = fill(0.0, 25)
+        TAIRRY = fill(0.0u"°C", 25)
+        WNARRY = fill(IWN, 25)
+        RHARRY = fill(IRH, 25)
+        CLDARRY = fill(ICLD, 25)
+
+        HH = solrad_out.HHsr[iday]
+        tsn = solrad_out.tsn[iday]
+
+        #     Air temperature calculations
+        #     SUNSET IN MILITARY TIME
+        HHINT = trunc(HH)
+        FRACT = (HH - HHINT) * 60.0
+        HSINT = trunc(tsn)
+        FRACTS = (tsn - HSINT) * 60.0
+        TIMSS = (HSINT * 100.0 + FRACTS) + (HHINT * 100.0 + FRACT)
+        #     SUNRISE IN MILITARY TIME
+        DELT = tsn - HH
+        HRINT = trunc(DELT)
+        FRACTR = (DELT - HRINT) * 60.0
+        #     TIME OF AIR TEMPERATURE MINIMUM (NOTE: A KLUGE OF 200, I.E. 2
+        #     HOURS IS BEING USED TO MAKE SINEC WORK WHEN MORNING MINIMUM
+        #     IS NOT AT TRUE SUNRISE, THE ALGORITHM IS 2 HOURS OFF FOR SOME
+        #     UNKNOWN (6/7/89) REASON)
+        if TIMINS[1] > 0
+            TSRHR = TIMINS[1] + 2.0
+        else
+            TSRHR = TIMINS[1]
+        end
+        TIMSR = (HRINT * 100.0 + FRACTR) + (TSRHR * 100.0)
+        #     TIME OF AIR TEMPERATURE MAXIMUM
+        TSNHR = TIMAXS[1]# + TIMCOR (TIMCOR never used in Fortran version - uninitialised?)
+        TIMTMX = (HSINT * 100.0 + FRACTS) + (TSNHR * 100.0)
+        #     SETTING TMIN, TMAX FROM ARRAYS OBTAINED FROM SUB. IOSOLR
+        TMIN = TMINN[iday]
+        TMAX = TMAXX[iday]
+        if iday < ndays & ndays > 1
+            TMIN2 = TMINN[iday+1]
+            TMAX2 = TMAXX[iday+1]
+        else
+            TMIN2 = TMIN
+            TMAX2 = TMAX
+        end
+
+        #     SETTING TIME OF MIN & MAX (HOURS BEFORE SUNRISE OR
+        #     AFTER SOLAR NOON)
+        TIMIN = TIMSR
+        TIMAX = TIMTMX
+        sinec!(ITAIR, TIMARY, TAIRRY, TMIN, TMAX, TMIN2, TMAX2, TIMSR, TIMSS, TIMTMX, daily, iday)
+
+        # wind speed
+        VMIN = WNMINN[iday]
+        VMAX = WNMAXX[iday]
+        #      SETTING MAX & MIN TIMES RELATIVE TO SUNRISE & SOLAR NOON
+        #     TIME OF MINIMUM
+        TSRHR = TIMINS[2]
+        TIMSR = (HRINT * 100.0 + FRACTR) + (TSRHR * 100.0)
+        #      TIME OF MAXIMUM at sunrise for relative humidity
+        TSNHR = TIMAXS[2] #+ TIMCOR
+        TIMTMX = (HSINT * 100.0 + FRACTS) + (TSNHR * 100.0)
+        TIMIN = TIMTMX
+        TIMAX = TIMSR
+        WNARRY = vsine(VMIN, VMAX, TIMSR, TIMSS, TIMIN, TIMAX, daily, iday, IVAR)
+
+        # relative humidity
+        VMIN = RHMINN[iday]
+        VMAX = RHMAXX[iday]
+        #      SETTING MAX & MIN TIMES RELATIVE TO SUNRISE & SOLAR NOON
+        #     TIME OF MINIMUM
+        TSRHR = TIMINS[3]
+        TIMSR = (HRINT * 100.0 + FRACTR) + (TSRHR * 100.0)
+        #      TIME OF MAXIMUM at sunrise for relative humidity
+        TSNHR = TIMAXS[3] #+ TIMCOR
+        TIMTMX = (HSINT * 100.0 + FRACTS) + (TSNHR * 100.0)
+        TIMIN = TIMTMX
+        TIMAX = TIMSR
+        RHARRY = vsine(VMIN, VMAX, TIMSR, TIMSS, TIMIN, TIMAX, daily, iday, IVAR)
+
+        # cloud cover
+        VMIN = CCMINN[iday]
+        VMAX = CCMAXX[iday]
+        #      SETTING MAX & MIN TIMES RELATIVE TO SUNRISE & SOLAR NOON
+        #     TIME OF MINIMUM
+        TSRHR = TIMINS[4]
+        TIMSR = (HRINT * 100.0 + FRACTR) + (TSRHR * 100.0)
+        #      TIME OF MAXIMUM at sunrise for relative humidity
+        TSNHR = TIMAXS[4] #+ TIMCOR
+        TIMTMX = (HSINT * 100.0 + FRACTS) + (TSNHR * 100.0)
+        TIMIN = TIMTMX
+        TIMAX = TIMSR
+        CLDARRY = vsine(VMIN, VMAX, TIMSR, TIMSS, TIMIN, TIMAX, daily, iday, IVAR)
+
+        Tairs[(iday*25-24):(iday*25)] = TAIRRY[1:25]
+        WNs[(iday*25-24):(iday*25)] = WNARRY[1:25]
+        RHs[(iday*25-24):(iday*25)] = RHARRY[1:25]
+        Clds[(iday*25-24):(iday*25)] = CLDARRY[1:25]
+    end
+    return Tairs, WNs, RHs, Clds
 end
