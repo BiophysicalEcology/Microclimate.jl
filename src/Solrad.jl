@@ -924,3 +924,373 @@ function solrad(;
         λGlobal    = GRINTs .* (10u"W/m^2" / 1u"mW/cm^2"),
     )
 end
+
+"""
+    vapour_pressure(T)
+
+Calculates saturation vapour pressure (Pa) for a given air temperature.
+
+# Arguments
+- `T`: air temperature in K.
+"""
+function vapour_pressure(T)
+    T = Unitful.ustrip(T)# + 273.15
+    logP_vap = T
+    if T <= 273.15
+        logP_vap = -9.09718 * (273.16 / T - 1) - 3.56654 * log10(273.16 / T) + 0.876793 * (1 - T / 273.16) + log10(6.1071)
+    else
+        logP_vap = -7.90298 * (373.16 / T - 1) + 5.02808 * log10(373.16 / T) - 1.3816E-07 * (10^(11.344 * (1 - T / 373.16)) - 1) + 8.1328E-03 * (10^(-3.49149 * (373.16 / T - 1)) - 1) + log10(1013.246)
+    end
+    (10^logP_vap) * 100u"Pa"
+end
+
+"""
+    wet_air(T_drybulb, T_wetbulb, rh, T_dew, P_atmos, fO2, fCO2, fN2)
+    wet_air(T_drybulb; kw...)
+
+Calculates several properties of humid air as output variables below. The program
+is based on equations from List, R. J. 1971. Smithsonian Meteorological Tables. Smithsonian
+Institution Press. Washington, DC. wet_air must be used in conjunction with function vapour_pressure.
+
+Input variables are shown below. The user must supply known values for T_drybulb and P (P at one standard
+atmosphere is 101 325 pascals). Values for the remaining variables are determined by whether the user has
+either (1) psychrometric data (T_wetbulb or rh), or (2) hygrometric data (T_dew)
+
+# TODO fix this desctiption
+(1) Psychrometric data:
+If T_wetbulb is known but not rh, then set rh=-1 and dp=999
+If rh is known but not T_wetbulb then set T_wetbulb=0 and dp=999
+
+(2) Hygrometric data:
+If T_dew is known then set T_wetublb = 0 and rh = 0.
+
+# Arguments
+
+- `T_drybulb`: Dry bulb temperature (K)
+- `T_wetbulb`: Wet bulb temperature (K)
+- `rh`: Relative humidity (%)
+- `T_dew`: Dew point temperature (K)
+- `P`: Barometric pressure (Pa)
+- `fO2`; fractional O2 concentration in atmosphere, -
+- `fCO2`; fractional CO2 concentration in atmosphere, -
+- `fN2`; fractional N2 concentration in atmosphere, -
+# - `P_vap`: Vapour pressure (Pa)
+# - `P_vap_sat`: Saturation vapour pressure (Pa)
+# - `ρ_vap`: Vapour density (kg m-3)
+# - `r_w Mixing`: ratio (kg kg-1)
+# - `T_vir`: Virtual temperature (K)
+# - `T_vinc`: Virtual temperature increment (K)
+# - `ρ_air`: Density of the air (kg m-3)
+# - `cp`: Specific heat of air at constant pressure (J kg-1 K-1)
+# - `ψ`: Water potential (Pa)
+# - `rh`: Relative humidity (%)
+
+"""
+function wet_air(T_drybulb; 
+    T_wetbulb=T_drybulb, 
+    rh=0, 
+    T_dew=nothing, 
+    P_atmos=101325u"Pa",
+    fO2=0.2095,
+    fCO2=0.0004,
+    fN2=0.79
+)
+    return wet_air(T_drybulb, T_wetbulb, rh, T_dew, P_atmos, fO2, fCO2, fN2)
+end
+function wet_air(T_drybulb, T_wetbulb=T_drybulb, rh=0, T_dew=nothing, P_atmos=101325u"Pa", fO2 = 0.2095, fCO2 = 0.0004, fN2 = 0.79)
+    f_w = 1.0053 # (-) correction factor for the departure of the mixture of air and water vapour from ideal gas laws
+    M_w = (1molH₂O |> u"kg")/1u"mol" # molar mass of water
+    M_a = ((fO2*molO₂ + fCO2*molCO₂ + fN2*molN₂) |> u"kg")/1u"mol" # molar mass of air
+    P_vap_sat = vapour_pressure(T_drybulb)
+    if T_dew !== nothing
+        P_vap = vapour_pressure(T_dew)
+        rh = (P_vap / P_vap_sat) * 100
+    else
+        if rh !== nothing
+            P_vap = P_vap_sat * rh / 100
+        else
+            δ_bulb = T_drybulb - T_wetbulb
+            δ_P_vap = (0.000660 * (1 + 0.00115 * (Unitful.ustrip(T_wetbulb)-273.15)) * Unitful.ustrip(P) * Unitful.ustrip(δ_bulb))u"Pa"
+            P_vap = vapour_pressure(T_wetbulb) - δ_P_vap
+            relhumid = (P_vap / P_vap_sat) * 100
+        end
+    end
+    r_w = ((0.62197 * f_w * P_vap) / (P_atmos - f_w * P_vap))u"kg/kg"
+    ρ_vap = P_vap * M_w / (0.998 * Unitful.R * T_drybulb)
+    ρ_vap = Unitful.uconvert(u"kg/m^3",ρ_vap) # simplify units
+    T_vir = T_drybulb * ((1.0 + r_w / (18.016 / 28.966)) / (1 + r_w))
+    T_vinc = T_vir - T_drybulb
+    ρ_air = (M_a / Unitful.R) * P_atmos / (0.999 * T_vir)
+    ρ_air = Unitful.uconvert(u"kg/m^3",ρ_air) # simplify units
+    cp = ((1004.84 + (r_w * 1846.40)) / (1 + r_w))u"J/K/kg"
+    ψ = if min(rh) <= 0
+        -999u"Pa"
+    else
+        (4.615e+5 * Unitful.ustrip(T_drybulb) * log(rh / 100))u"Pa"
+    end
+
+    return (;P_vap, P_vap_sat, ρ_vap, r_w, T_vinc, ρ_air, cp, ψ, rh)
+end
+
+"""
+    dry_air(T_drybulb; kw...)
+    dry_air(T_drybulb, P_atmos, elev, fO2, fCO2, fN2)
+
+"""
+dry_air(T_drybulb; P_atmos=nothing, elev=0m, fO2 = 0.2095, fCO2 = 0.0004, fN2 = 0.79) = dry_air(T_drybulb, P_atmos, elev, fO2, fCO2, fN2)
+function dry_air(T_drybulb, P_atmos, elev, fO2, fCO2, fN2)
+    σ = Unitful.uconvert(u"W/m^2/K^4",Unitful.σ) # Stefan-Boltzmann constant, W/m^2/K^4, extract σ when calling Unitful when units issue is fixed in Unitful
+    M_a = ((fO2*molO₂ + fCO2*molCO₂ + fN2*molN₂) |> u"kg")/1u"mol" # molar mass of air
+    if isnothing(P_atmos)
+        P_atmos = get_pressure(elev)#P_std * ((1 - (0.0065 * elev / 288m))^(1 / 0.190284))
+    end
+    ρ_air = (M_a / Unitful.R) * P_atmos / (T_drybulb)
+    ρ_air = Unitful.uconvert(u"kg/m^3",ρ_air) # simplify units
+    vis_not = 1.8325e-5u"kg/m/s"
+    T_not = 296.16u"K"
+    c = 120u"K"
+    μ = (vis_not * (T_not + c) / (T_drybulb + c)) * (T_drybulb / T_not)^1.5 # kg / m.s
+    ν = μ / ρ_air # m2 / s or J.s/kg
+    dif_vpr = 2.26e-5u"m^2/s" * ((T_drybulb / 273.15u"K")^1.81) * (1.e5u"Pa" / P_atmos) # m2 / s
+    k_fluid = (0.02425 + (7.038e-5 * (Unitful.ustrip(T_drybulb) - 273.15)))u"W/m/K"
+    L_v = (2.5012e6 - 2.3787e3 * (Unitful.ustrip(T_drybulb) - 273.15))u"J/kg"
+
+    tcoeff = 1 / T_drybulb
+    ggroup = 0.0980616u"m/s^2" * tcoeff / (ν^2) # 1 / m3.K
+    bbemit = σ * ((T_drybulb)^4) # W/m2
+    emtmax = 2.897e-3u"K*m" / (T_drybulb) # m
+
+    return (;P_atmos, ρ_air, μ, ν, dif_vpr, k_fluid, L_v, tcoeff, ggroup, bbemit, emtmax)
+end
+
+Refhyt=1.2u"m"
+RUF=0.004u"m"
+ZH=0.0u"m"
+D0=0.0u"m"
+TAREF=27.77818u"°C"
+VREF=2.749575u"m/s"
+RH=49.0415
+D0cm=48.58942u"°C" 
+maxsurf=95.0u"°C"
+ZEN=21.50564u"°"
+a=0.15
+heights=[0.01, 0.05, 0.1, 0.2, 0.3, 0.4, 0.5, 0.75, 1.0]*u"m"
+
+
+function get_profile(;
+    Refhyt=1.2u"m",
+    RUF=0.004u"m",
+    ZH=0.0u"m",
+    D0=0.0u"m",
+    TAREF=27.77818u"°C",
+    VREF=2.749575u"m/s",
+    RH=49.0415,
+    D0cm=48.58942u"°C",
+    maxsurf=95.0u"°C",
+    ZEN=21.50564u"°",
+    a=0.15,
+    heights=[0.01, 0.05, 0.1, 0.2, 0.3, 0.4, 0.5, 0.75, 1.0] * u"m",
+    warn=false)
+
+    if minimum(heights) < RUF
+        error("ERROR: the minimum height is not greater than the roughness height (RUF).")
+    end
+
+    addheight = false
+    heights_extra = nothing
+    if minimum(heights) > Refhyt
+        addheight = true
+        heights = vcat([0.01], heights)
+    end
+
+    if maximum(heights) >= Refhyt && warn
+        println("Warning: some heights are ≥ reference height. Using constant air temperature and adjusting wind speed.")
+    end
+
+    heights_orig = copy(heights)
+    heights = filter(h -> h < Refhyt, heights_orig)
+
+    function RHOCP(TAVE)
+        return 0.08472 / TAVE
+    end
+
+    function get_Obukhov(TA, TS, VEL, z, z0, rcptkg)
+
+        function PHI(Z, GAM, AMOL)
+            return (1 - min(1, GAM * Z / AMOL))^0.25
+        end
+
+        function PSI1(X)
+            return 2 * log((1 + X) / 2) + log((1 + X^2) / 2) - 2 * atan(X) + π / 2
+        end
+
+        function PSI2(X)
+            return 2 * log((1 + X^2) / 2)
+        end
+        AMOL = -30.0u"cm" # initial Monin-Obukhov length cm
+        GAM = 16.0 # -
+        κ = 0.4 # Kármán constant
+        #RCPTKG = 6.003e-8u"cal/minute/cm/K" #CAL-MIN-CM-C
+        Z = u"cm"(z)
+        Z0 = u"cm"(z0)
+        ZRATIO = Z / Z0 + 1
+        DUM = log(ZRATIO)
+        DIFFT = TA - TS
+        TAVE = (TA + TS + 546.3) / 2
+        RCP = RHOCP(TAVE)
+        DEL = 1.0
+        count = 0
+        USTAR = 0.0
+        QC = 0.0
+        STO = 0.0
+        STB = 0.0
+        STS = 0.0
+
+        while DEL > 1e-2 && count < 500
+            count += 1
+            X = PHI(Z, GAM, AMOL)
+            Y = PSI1(X)
+            YY = PSI2(X)
+            USTAR = κ * (VEL * 100 * 60) / (log(Z / Z0) - Y)
+
+            if AMOL > 0.0u"cm"
+                STS = 0.62 / (Z0 * USTAR / 12)^0.45
+                STB = 0.64 / DUM
+                QC = RCP * DIFFT * USTAR * STB / (1 + STB / STS)
+            else
+                STS = 0.62 / (Z0 * USTAR / 12)^0.45
+                STB = (0.64 / DUM) * (1 - 0.1 * Z / AMOL)
+                STO = STB / (1 + STB / STS)
+                QC = RCP * DIFFT * USTAR * STO
+            end
+
+            AMOLN = rcptkg * USTAR^3 / QC
+            DEL = abs((AMOLN - AMOL) / AMOL)
+            AMOL = AMOLN
+        end
+
+        return (; AMOL=u"m"(AMOL), STS, STO, STB, USTAR, QC)
+    end
+
+    T1 = u"K"(TAREF)
+    T3 = u"K"(D0cm)
+
+       # Units: m to cm
+       Z = u"cm"(Refhyt)
+       Z0 = u"cm"(RUF)
+       ZH_cm = u"cm"(ZH)
+       D0_cm = u"cm"(D0)
+       V = u"cm/minute"(VREF)
+# define air heights
+       AIRDP = vcat(Z, reverse(u"cm".(heights)))
+       ZZ = AIRDP
+       NAIR = length(AIRDP)
+       VV = (zeros(Float64, NAIR)) .* 1u"cm/minute" # output wind speeds
+       T = Vector{typeof(0.0u"K")}(undef, NAIR) # output temperatures, need to do this otherwise get InexactError
+       RHs = zeros(Float64, NAIR) # output relative humidities
+       VV[1] = V
+       T[1] = T1
+
+    # compute rcptkg (was a constant in original Fortran version)
+    dry_air_out = dry_air(u"K"(TAREF), elev = elev)
+    wet_air_out = wet_air(u"K"(TAREF), rh=RH)
+    ρ = dry_air_out.ρ_air
+    cp = wet_air_out.cp
+    g = 9.80665u"m/s^2"
+    TREF = u"K"(TAREF)
+    κ = 0.4 # Kármán constant
+    rcptkg = u"cal*minute^2/m^4"(ρ * cp * TREF / (κ * g))
+
+    GAM = 16
+    ZRATIO = Z / Z0 + 1.0
+    DUM = log(ZRATIO)
+    USTAR = κ * V / DUM
+    DIFFT = T1 - T3
+    TAVE = (T3 + T1) / 2
+    RCP = RHOCP(TAVE)
+    AMOL = -30.0
+    ITER = 0
+    if ZH > 0.0u"m"
+        STS = 0.62 / (Z0 * USTAR / 12)^0.45
+        STB = 0.64 / DUM
+        QC = RCP * DIFFT * USTAR * STB / (1 + STB / STS)
+
+        for i in 2:NAIR
+            if T1 ≥ T3 || T3 ≤ maxsurf || ZEN ≥ 90
+                VV[i] = (USTAR / κ) * log(ZZ[i] / Z0 + 1)
+            else
+                X1 = PHI(ZZ[i])
+                Y1 = PSI1(X1)
+                ADUM = ZZ[i] / Z0 - Y1
+                VV[i] = (USTAR / κ) * log(ADUM)
+            end
+
+            A = (T1 - T3) / (1 - log((Z - D0_cm) / ZH_cm))
+            T0 = T1 + A * log((Z - D0_cm) / ZH_cm)
+            T[i] = T0 - A * log((ZZ[i] - D0_cm) / ZH_cm)
+        end
+    else
+        if T1 ≥ T3 || T3 ≤ u"K"(maxsurf) || ZEN ≥ 90
+            STS = 0.62 / (ustrip(Z0) * ustrip(USTAR) / 12)^0.45
+            STB = 0.64 / DUM
+            QC = RCP * DIFFT * USTAR * STB / (1 + STB / STS)
+
+            for i in 2:NAIR
+                VV[i] = (USTAR / κ) * log(ZZ[i] / Z0 + 1)
+                TZO = (T1 * STB + T3 * STS) / (STB + STS)
+                T[i] = TZO + (T1 - TZO) * log(ZZ[i] / Z0 + 1) / DUM
+            end
+        else
+            for i in 2:NAIR
+                X1 = PHI(ZZ[i])
+                Y1 = PSI1(X1)
+                YY2 = PSI2(X1)
+                X = PHI(Z)
+                Y = PSI1(X)
+                YY = PSI2(X)
+                ADUM = ZZ[i] / Z0 - Y1
+                VV[i] = (USTAR / κ) * log(ADUM)
+
+                Obukhov_out = get_Obukhov(T1, T3, V, ZZ[i], Z0)
+                TZO = (T1 * Obukhov_out.STB + T3 * Obukhov_out.STS) / (Obukhov_out.STB + Obukhov_out.STS)
+                T[i] = TZO + (T1 - TZO) * log(ZZ[i] / Z0 - YY2) / log(Z / Z0 - YY)
+            end
+        end
+    end
+
+    heights = [0.0u"cm"; reverse(ZZ); u"cm"(Refhyt)]
+    VV = [0.0u"cm/minute"; reverse(VV)]
+    T = [T3; reverse(T)]
+
+    e = wet_air(T1, rh=RH).P_vap
+    wet_air_out =  wet_air.(T; rh=RH)
+    es = getproperty.(wet_air_out, :P_vap_sat)
+    RHs = clamp.(e ./ es .* 100, 0, 100)
+
+    if heights_extra !== nothing
+        VV_extra = V .* (heights_extra ./ Refhyt) .^ a
+        T_extra = fill(TAREF, length(heights_extra))
+        RH_extra = fill(RH, length(heights_extra))
+
+        heights = vcat(heights, heights_extra)
+        VV = vcat(VV, VV_extra)
+        T = vcat(T, T_extra)
+        RHs = vcat(RHs, RH_extra)
+    end
+
+    if addheight
+        VV = deleteat!(VV, 2)
+        T = deleteat!(T, 2)
+        RHs = deleteat!(RHs, 2)
+        heights = deleteat!(heights, 2)
+    end
+
+    return (
+        heights = heights,
+        VELs = u"m/s".(VV),      # m/s
+        TAs = u"°C".(T),         # deg C
+        RHs = RHs,               # %
+        QCONV = QC * 4.185 * 10000 / 60,  # W
+        USTAR = u"m/s"(USTAR)     # m/s
+    )
+end

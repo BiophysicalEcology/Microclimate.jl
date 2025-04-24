@@ -1,8 +1,9 @@
 using Unitful
-using Unitful: °, rad, R
+using Unitful: °, rad, R, kg
 using ModelParameters
 using Dates
 using Plots
+#@unit pct "pct" Percent 0.01 false
 
 #days = collect(1.:365.) # day of year
 days = [15, 46, 74, 105, 135, 166, 196, 227, 258, 288, 319, 349]
@@ -14,7 +15,7 @@ hori = fill(0.0°, 24) # enter the horizon angles (degrees) so that they go from
 slope = 90.0° # slope (degrees, range 0-90)
 aspect = 0.0° # aspect (degrees, 0 = North, range 0-360)
 refl = 0.10 # substrate solar reflectivity (decimal %)
-iuv = true
+iuv = false
 #solrad_out = solrad()
 #plot(solrad_out.Global)
 #maximum(solrad_out.Global)
@@ -23,3 +24,8 @@ solrad_out = solrad(days = days, hours = hours, lat = lat, elev = elev, hori = h
 plot(solrad_out.Global)
 #plot!(solrad_out.Global)
 #plot(solrad_out.Zenith)
+
+profile = get_profile()
+plot(profile.VELs, profile.heights[2:12])
+plot(profile.TAs, profile.heights[2:12])
+plot(profile.RHs, profile.heights[2:12])
