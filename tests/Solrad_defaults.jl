@@ -1,6 +1,11 @@
 using Unitful
 using Unitful: °, rad, R
+using UnitfulMoles
 using Dates
+@compound H2O
+@compound O2
+@compound CO2
+@compound N2
 
 days = [15, 46, 74, 105, 135, 166, 196, 227, 258, 288, 319, 349]
 hours = collect(0.0:24.0)
