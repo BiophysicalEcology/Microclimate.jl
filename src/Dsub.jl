@@ -1,7 +1,17 @@
 using DifferentialEquations
 using Interpolations
+using Statistics
+using Unitful
+using Unitful: °
+using UnitfulMoles
+using Dates
+using Plots
+@compound H2O
+@compound O2
+@compound CO2
+@compound N2
 
-
+DEP = [0, 2.5, 5.0, 10.0, 15.0, 20.0, 30.0, 50.0, 100.0, 200.0]u"cm" # Soil nodes (cm) - keep spacing close near the surface, last value is where it is assumed that the soil temperature is at the annual mean air temperature
 days = [15, 46, 74, 105, 135, 166, 196, 227, 258, 288, 319, 349]
 #days = [196]
 hours = collect(0.:1:24.) # hour of day
@@ -11,22 +21,71 @@ hori = fill(0.0°, 24) # enter the horizon angles (degrees) so that they go from
 slope = 90.0° # slope (degrees, range 0-90)
 aspect = 0.0° # aspect (degrees, 0 = North, range 0-360)
 refl = 0.10 # substrate solar reflectivity (decimal %)
+shade = 0.0 # % shade cast by vegetation
+pctwet = 0.0 # % surface wetness
+sle = 0.95 # - surface emissivity
 iuv = false
+# soil properties# soil thermal parameters 
+λ_m = 1.25u"W/m/K" # soil minerals thermal conductivity (W/mC)
+ρ_m = 2.560u"Mg/m^3" # soil minerals density (Mg/m3)
+cp_m = 870.0u"J/kg/K" # soil minerals specific heat (J/kg-K)
+ρ_b_dry = 2.56u"Mg/m^3" # dry soil bulk density (Mg/m3)
+θ_sat = 0.26u"m^3/m^3" # volumetric water content at saturation (0.1 bar matric potential) (m3/m3)
 # Time varying environmental data
 TIMINS = [0, 0, 1, 1] # time of minima for air temp, wind, humidity and cloud cover (h), air & wind mins relative to sunrise, humidity and cloud cover mins relative to solar noon
 TIMAXS = [1, 1, 0, 0] # time of maxima for air temp, wind, humidity and cloud cover (h), air temp & wind maxs relative to solar noon, humidity and cloud cover maxs relative to sunrise
 TMINN = [-14.3, -12.1, -5.1, 1.2, 6.9, 12.3, 15.2, 13.6, 8.9, 3, -3.2, -10.6]u"°C" # minimum air temperatures (°C)
 TMAXX = [-3.2, 0.1, 6.8, 14.6, 21.3, 26.4, 29, 27.7, 23.3, 16.6, 7.8, -0.4]u"°C" # maximum air temperatures (°C)
 RHMINN = [50.2, 48.4, 48.7, 40.8, 40, 42.1, 45.5, 47.3, 47.6, 45, 51.3, 52.8] # min relative humidity (%)
-RHMAXX = [100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100] # max relative humidity (%)
+RHMAXX = [100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0] # max relative humidity (%)
 WNMINN = [4.9, 4.8, 5.2, 5.3, 4.6, 4.3, 3.8, 3.7, 4, 4.6, 4.9, 4.8]u"m/s" # min wind speed (m/s)
 WNMAXX = [4.9, 4.8, 5.2, 5.3, 4.6, 4.3, 3.8, 3.7, 4, 4.6, 4.9, 4.8]u"m/s" # max wind speed (m/s)
 CCMINN = [50.3, 47, 48.2, 47.5, 40.9, 35.7, 34.1, 36.6, 42.6, 48.4, 61.1, 60.1] # min cloud cover (%)
 CCMAXX = [50.3, 47, 48.2, 47.5, 40.9, 35.7, 34.1, 36.6, 42.6, 48.4, 61.1, 60.1] # max cloud cover (%)
 RAINFALL = ([28, 28.2, 54.6, 79.7, 81.3, 100.1, 101.3, 102.5, 89.7, 62.4, 54.9, 41.2]) / 1000u"m" # monthly mean rainfall (mm)
+SoilMoist = [0.42, 0.42, 0.42, 0.43, 0.44, 0.44, 0.43, 0.42, 0.41, 0.42, 0.42, 0.43] # soil moisture (decimal %, 1 means saturated)
 daily = false
 
-# compute solar radiation
+# creating the arrays of environmental variables that are assumed not to change with month for this simulation
+ndays = length(TMAXX)
+SHADES = fill(shade, ndays) # daily shade (%)
+SLES = fill(sle, ndays) # set up vector of ground emissivities for each day
+REFLS = fill(refl, ndays) # set up vector of soil reflectances for each day
+PCTWETS = fill(pctwet, ndays) # set up vector of soil wetness for each day
+tannul = mean(Unitful.ustrip.(vcat(TMAXX, TMINN)))u"°C" # annual mean temperature for getting monthly deep soil temperature (°C)
+tannulrun = fill(tannul, ndays) # monthly deep soil temperature (2m) (°C)
+
+# defining view factor based on horizon angles
+viewf = 1 - sum(sin.(hori)) / length(hori) # convert horizon angles to radians and calc view factor(s)
+
+# Soil properties
+# set up a profile of soil properites with depth for each day to be run
+numtyps = 1 # number of soil types
+numnodes = length(DEP) # number of soil nodes
+nodes = zeros(numnodes, ndays) # array of all possible soil nodes
+nodes[1, 1:ndays] .= 10 # deepest node for first substrate type
+# Create an empty 10×5 matrix that can store any type (including different units)
+soilprops = Matrix{Any}(undef, numnodes, 5)
+# Fill row 1 (top layer) with the defined values
+soilprops[1, 1] = ρ_b_dry
+soilprops[1, 2] = θ_sat
+soilprops[1, 3] = λ_m
+soilprops[1, 4] = cp_m
+soilprops[1, 5] = ρ_m
+# Copy the same properties to all other layers (if desired)
+for i in 2:numnodes
+    soilprops[i, :] .= soilprops[1, :]
+end
+# Initial conditions
+soilinit = collect(fill(tannul, 20)) # make initial soil temps equal to mean annual
+
+# example application of soil_properties getting bulk properties from soil temperature, moisture and mineral properties
+T_soil = soilinit # for test of soil_properties
+θ_soil = collect(fill(SoilMoist[1], numnodes)) # for test of soil_properties
+node = nodes[:, 1]
+λ_b, cp_b, ρ_b = soil_properties(T_soil, θ_soil, node, soilprops, numtyps, elev)
+
+# compute solar radiation (need to make refl time varying)
 solrad_out = solrad(days = days, hours = hours, lat = lat, elev = elev, hori = hori, slope = slope, aspect = aspect, refl = refl, iuv = iuv)
 
 # interpolate air temperature to hourly
@@ -37,14 +96,20 @@ plot(RHs)
 plot(CLDs)
 
 # simulate a day
-iday = 2
+iday = 1
 ndays = length(days)
 sub = (iday*25-24):(iday*25)
+REFL = REFLS[iday]
+SHADE = SHADES[iday] # daily shade (%)
+SLE = SLES[iday] # set up vector of ground emissivities for each day
+PCTWET = PCTWETS[iday] # set up vector of soil wetness for each day
+tannul = tannulrun[iday] # annual mean temperature for getting monthly deep soil temperature (°C)
+node = nodes[:, iday]
 
 # get today's weather
-SOLR = solrad_out.Global[sub1]
-ZENR = solrad_out.Zenith[sub1]
-ZSL = solrad_out.ZenithSlope[sub1]
+SOLR = solrad_out.Global[sub]
+ZENR = solrad_out.Zenith[sub]
+ZSL = solrad_out.ZenithSlope[sub]
 TAIR = TAIRs[sub]
 VEL = WNs[sub]
 RH = RHs[sub]
@@ -76,170 +141,35 @@ plot(tspan, RHt(tspan))
 plot(tspan, CLDt(tspan))
 
 
-# Initial conditions
-T0 = [15.0, 14.0].*u"°C"
+T0 = u"K".(soilinit)
 
 # Parameters
-params = SoilParams(
-    density = [1300.0, 1400.0],
-    spheat = [1000.0, 1000.0],
-    thconduct = [0.3, 0.4],
-    depp = [0.0, 0.05, 0.20],
-    n = 2,
-    slope = 10.0,
-    shayd = 30.0,
-    viewf = 0.95,
-    altt = 500.0,
-    refls = [0.15],
-    sles = [0.95],
-    sigp = 5.67e-8,
-    irmode = 0,
-    runsnow = 0
+params = MicroParamsTest6(
+    soilprops = soilprops,
+    dep = DEP,
+    slope = slope,
+    shade = shade,
+    viewf = viewf,
+    elev = elev,
+    refl = refl,
+    sle = sle,
+    slep = 1,
+    pctwet = pctwet,
+    runmoist = false,
+    runsnow = false
 )
 
-tspan = (0.0, 48.0)  # 2 days
+tspan = (0.0u"minute", 1440.0u"minute")  # 1 hour
 prob = ODEProblem(soil_energy_balance!, T0, tspan, params)
-sol = solve(prob, Tsit5())
-
-plot(sol, xlabel="Time (hr)", ylabel="Soil Temperature (°C)", label=["Top layer" "Bottom layer"], lw=2)
-
-
-
+sol = solve(prob, Tsit5(); saveat=60.0u"minute")
+plot(sol, xlabel="Time (min)", ylabel="Soil Temperature (K)", label=["Top layer" "Bottom layer"], lw=2)
+soiltemps = hcat(sol.u...) 
+T0 = sol.
 
 
 
-
-
-
-
-# Parameters for the simplified model
-β = 1.0    # absorption coefficient
-γ = 0.5    # scattering coefficient
-S = 0.1    # source term
-
-function radiative_transfer!(du, u, τ, p)
-    I⁺, I⁻ = u
-    du[1] = -β * I⁺ + γ * I⁻ + S      # dI⁺/dτ
-    du[2] = β * I⁻ - γ * I⁺ + S       # dI⁻/dτ
-end
-
-# Initial conditions at τ = 0
-u0 = [1.0, 0.0]  # e.g., I⁺(0)=1 (incoming), I⁻(0)=0 (no reflection initially)
-τspan = (0.0, 1.0)  # Optical depth from 0 to 1
-
-# Solve the system
-prob = ODEProblem(radiative_transfer!, u0, τspan)
-sol = solve(prob, Tsit5())
-
-# Plot the result
-using Plots
-plot(sol, labels=["I⁺(τ)" "I⁻(τ)"], xlabel="Optical Depth τ", ylabel="Intensity", lw=2)
-
-
-Base.@kwdef struct SoilParams
-    density::Vector{Float64}
-    spheat::Vector{Float64}
-    thconduct::Vector{Float64}
-    depp::Vector{Float64}
-    n::Int
-    slope::Float64
-    shayd::Float64
-    viewf::Float64
-    altt::Float64
-    refl::Float64
-    sle::Float64
-    sigp::Float64
-end
-
-dT = zeros(Float64, N)
-function soil_energy_balance!(dT, T, p::SoilParams, t)
-    N = p.n
-    dT .= 0.0
-
-    # Get environmental data at time t
-    tair = TAIRt(t)
-    zenr = ZENRt(t)
-    solr = SOLRt(t)
-    cloud = CLDt(t)
-    rh = RHt(t)
-    zslr = ZSLt(t)
-
-    # Surface properties
-    sabnew = 1.0 - p.refls[1]#[Int(floor(t))]  # simplistic time index
-    sle = p.sles[1]#[Int(floor(t))]
-    refl = p.refls[1]#[Int(floor(t))]
-
-    # Compute soil layer properties
-    wc = zeros(N)
-    c = zeros(N)
-    for i in 1:N
-        rcsp = p.density[i] * p.spheat[i]
-        if i == 1
-            wc[i] = rcsp * p.depp[2] / 2
-            sok = p.thconduct[1]
-            c[i] = sok / p.depp[2]
-        else
-            wc[i] = rcsp * (p.depp[i+1] - p.depp[i-1]) / 2
-            sok = p.thconduct[i]
-            c[i] = sok / (p.depp[i+1] - p.depp[i])
-        end
-    end
-
-    # Solar radiation
-    qsolar = sabnew * solr * ((100 - p.shayd) / 100)
-    if p.slope > 0 && zenr < 90
-        cz = cosd(zenr)
-        czsl = cosd(zslr)
-        qsolar = (qsolar / cz) * czsl
-    end
-
-    # Longwave radiation (handle both IR modes)
-# Constants
-SIGP = 5.67e-8  # Stefan-Boltzmann constant (W/m²/K⁴)
-
-# Atmospheric radiation (based on empirical model)
-arad = (0.0000092 * (tair + 273.16)^2) * SIGP * (tair + 273.16)^4 * 60 / (4.185 * 10000)
-
-# Cloud radiation temperature (shade approximation, TAIR - 2°C)
-crad = SIGP * SLEP * (tair + 271)^4
-
-# Hillshade radiation temperature (approximated as air temperature)
-hrad = SIGP * SLEP * (tair + 273)^4
-
-# Ground surface radiation temperature
-srad = SIGP * SLE * (T[1] + 273)^4
-
-# Clear sky fraction
-clr = 1.0 - cloud / 100
-    clod = crad * (cloud / 100)
-    qradsk = (arad * clr + clod) * ((100 - p.shayd) / 100)
-    qradvg = (p.shayd / 100) * hrad
-    qradgr = ((100 - p.shayd) / 100) * srad + (p.shayd / 100) * hrad
-    qradhl = hrad
-    qrad = (qradsk + qradvg) * p.viewf + qradhl * (1.0 - p.viewf) - qradgr
-
-    # get convection
-    profile_out = get_profile(D0cm=T[1], TAREF=u"°C"(tair), ZEN=zenr, heights=[0.01].*u"m", RH = rh) # Stub
-    qconv = profile_out.QCONV
-    # Air properties
-    bp = get_pressure(p.altt)
-    dry_air_out = dry_air(u"K"(TAREF), elev = elev)
-    wet_air_out = wet_air(u"K"(TAREF), rh=RH)
-    e, cp, denair = wetair(tair, rh, bp) # Stub
-
-    # Convection and evaporation
-    hc = max(abs((qconv * 4.184 / 60 * 10000) / (T[1] - tair)), 0.5)
-    hd = (hc / (cp * denair)) * (0.71 / 0.60)^0.666
-    qevap = evap(T[1], tair, rh, hd) # Stub
-
-    # Energy balance at surface
-    dT[1] = (qsolar + qrad + qconv - qevap) / wc[1]
-
-    # Soil conduction for internal nodes
-    for i in 2:N-1
-        dT[i] = (c[i-1] * (T[i-1] - T[i]) + c[i] * (T[i+1] - T[i])) / wc[i]
-    end
-
-    # Lower boundary condition
-    dT[N] = 0.0  # or set T[N] = T_surface from data
-end
+numnodes
+dT = zeros(Float64, numnodes)*u"K/minute"
+N = numnodes
+T = T0
+t = 0.0
