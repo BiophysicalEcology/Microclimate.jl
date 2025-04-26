@@ -1,3 +1,15 @@
+using DifferentialEquations
+using Interpolations
+using Statistics
+using Unitful
+using Unitful: °
+using UnitfulMoles
+using Dates
+using Plots
+@compound H2O
+@compound O2
+@compound CO2
+@compound N2
 """
     get_pressure(h::Quantity;
                  h_ref::Quantity = 0u"m",
@@ -1881,6 +1893,8 @@ function soil_energy_balance!(dT, T, p::MicroParams, t)
     qradgr = ((100.0 - shade) / 100.0) * srad + (shade / 100.0) * hrad
     qradhl = hrad
     qrad = (qradsk + qradvg) * viewf + qradhl * (1.0 - viewf) - qradgr
+    # Conduction
+    qcond = c[1] * (T[2] - T[1])
 
     # Convection
     profile_out = get_profile(
@@ -1909,7 +1923,7 @@ function soil_energy_balance!(dT, T, p::MicroParams, t)
     qevap = u"cal/cm^2/minute"(qevap) # now to cal/cm/g/C units
 
     # Energy balance at surface
-    dT[1] = (qsolar + qrad + qconv - qevap) / wc[1]
+    dT[1] = (qsolar + qrad + qcond + qconv - qevap) / wc[1]
 
     # Soil conduction for internal nodes
     for i in 2:N-1

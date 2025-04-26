@@ -90,6 +90,7 @@ node = nodes[:, 1]
 
 # compute solar radiation (need to make refl time varying)
 solrad_out = solrad(days = days, hours = hours, lat = lat, elev = elev, hori = hori, slope = slope, aspect = aspect, refl = refl, iuv = iuv)
+plot(solrad_out.Global)
 
 # interpolate air temperature to hourly
 TAIRs, WNs, RHs, CLDs = hourly_vars(TMINN=TMINN, TMAXX=TMAXX, WNMINN=WNMINN, WNMAXX=WNMAXX, RHMINN=RHMINN, RHMAXX=RHMAXX, CCMINN=CCMINN, CCMAXX=CCMAXX,solrad_out=solrad_out, TIMINS=TIMINS, TIMAXS=TIMAXS, daily=daily)
@@ -99,7 +100,7 @@ plot(RHs)
 plot(CLDs)
 
 # simulate a day
-iday = 1
+iday = 6
 sub = (iday*25-24):(iday*25)
 REFL = REFLS[iday]
 SHADE = SHADES[iday] # daily shade (%)
@@ -174,10 +175,16 @@ T0[numnodes]=tdeep
 T0[numnodes-2]=(u"K"(TMINN[iday])+u"K"(TMAXX[iday]))/2.0
 T0[numnodes-1]=(T0[numnodes]+T0[numnodes-2])/2.0
 
+tspan = (0.0u"minute", 1440.0u"minute")  # 1 hour
+prob = ODEProblem(soil_energy_balance!, T0, tspan, params)
+sol = solve(prob, Tsit5(); saveat=60.0u"minute")
+soiltemps = hcat(sol.u...)
+#plot(u"hr".(sol.t), u"°C".(soiltemps'), xlabel="Time", ylabel="Soil Temperature", lw=2)
+T0 = soiltemps[:, 25] # new initial soil temps
+
 # iterate through to get final soil temperature profile
-niter = 3 # number of interations for steady periodic
+niter = 2 # number of interations for steady periodic
 for iter in 1:niter
-    tspan = (0.0u"minute", 1440.0u"minute")  # 1 hour
     prob = ODEProblem(soil_energy_balance!, T0, tspan, params)
     sol = solve(prob, Tsit5(); saveat=60.0u"minute")
     soiltemps = hcat(sol.u...)
