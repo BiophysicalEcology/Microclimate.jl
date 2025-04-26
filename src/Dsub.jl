@@ -24,7 +24,7 @@ aspect = 0.0° # aspect (degrees, 0 = North, range 0-360)
 refl = 0.10 # substrate solar reflectivity (decimal %)
 shade = 0.0 # % shade cast by vegetation
 pctwet = 0.0 # % surface wetness
-sle = 0.95 # - surface emissivity
+sle = 0.96 # - surface emissivity
 ruf = 0.004u"m" # m roughness height
 zh = 0u"m" # m heat transfer roughness height
 d0 = 0u"m" # zero plane displacement correction factor
@@ -99,7 +99,7 @@ plot(RHs)
 plot(CLDs)
 
 # simulate a day
-iday = 6
+iday = 1
 sub = (iday*25-24):(iday*25)
 REFL = REFLS[iday]
 SHADE = SHADES[iday] # daily shade (%)
@@ -222,3 +222,4 @@ dT = zeros(Float64, numnodes)*u"K/minute"
 N = numnodes
 T = T0
 t = 0.0
+T_soil=T0

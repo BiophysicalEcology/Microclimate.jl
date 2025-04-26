@@ -1121,7 +1121,7 @@ function get_profile(;
         return u"(cal*g)/(g*cm^3*K)"(ρ * cp)
     end
     function PHI(z, GAM, AMOL)
-        return (1 - min(1, GAM * z / AMOL))^0.25
+        return (1 - min(1, GAM * ustrip(z / AMOL)))^0.25
     end
 
     function PSI1(X)
@@ -1132,7 +1132,7 @@ function get_profile(;
         return 2 * log((1 + X^2) / 2)
     end
 
-    function get_Obukhov(TA, TS, VEL, z, z0, rcptkg, κ)
+    function get_Obukhov(TA, TS, V, z, z0, rcptkg, κ)
 
         AMOL = -30.0u"cm" # initial Monin-Obukhov length cm
         GAM = 16.0 # -
@@ -1156,8 +1156,7 @@ function get_profile(;
             count += 1
             X = PHI(z, GAM, AMOL)
             Y = PSI1(X)
-            YY = PSI2(X)
-            USTAR = κ * (VEL * 100 * 60) / (log(z / z0) - Y)
+            USTAR = κ * V / (log(z / z0) - Y)
 
             if AMOL > 0.0u"cm"
                 STS = 0.62 / (ustrip(z0) * ustrip(USTAR) / 12)^0.45
@@ -1220,10 +1219,10 @@ function get_profile(;
         QC = RCP * DIFFT * USTAR * STB / (1.0 + STB / STS)
 
         for i in 2:NAIR
-            if T1 ≥ T3 || T3 ≤ maxsurf || ZEN ≥ 90
+            if T1 ≥ T3 || T3 ≤ u"K"(maxsurf) || ZEN ≥ 90
                 VV[i] = (USTAR / κ) * log(ZZ[i] / z0 + 1)
             else
-                X1 = PHI(ZZ[i])
+                X1 = PHI(ZZ[i], GAM, AMOL)
                 Y1 = PSI1(X1)
                 ADUM = ZZ[i] / z0 - Y1
                 VV[i] = (USTAR / κ) * log(ADUM)
@@ -1235,7 +1234,7 @@ function get_profile(;
         end
     else
         if T1 ≥ T3 || T3 ≤ u"K"(maxsurf) || ZEN ≥ 90
-            STS = 0.62 / (ustrip(z0) * ustrip(USTAR) / 12)^0.45
+            STS = 0.62 / (ustrip(z0) * ustrip(USTAR) / 12.)^0.45
             STB = 0.64 / DUM
             QC = RCP * DIFFT * USTAR * STB / (1.0 + STB / STS)
 
@@ -1246,11 +1245,11 @@ function get_profile(;
             end
         else
             for i in 2:NAIR
-                X1 = PHI(ZZ[i])
+                X1 = PHI(ZZ[i], GAM, AMOL)
                 Y1 = PSI1(X1)
                 YY2 = PSI2(X1)
                 X = PHI(z)
-                Y = PSI1(X)
+                #Y = PSI1(X)
                 YY = PSI2(X)
                 ADUM = ZZ[i] / z0 - Y1
                 VV[i] = (USTAR / κ) * log(ADUM)
@@ -1816,7 +1815,7 @@ function soil_energy_balance!(dT, T, p::MicroParams, t)
     # Get environmental data at time t
     tair = TAIRt(ustrip(t))
     vel = VELt(ustrip(t))
-    zenr = ZENRt(ustrip(t))
+    zenr = min(90u"°", u"°"(round(ZENRt(ustrip(t)), digits=3)))
     solr = u"cal/cm^2/minute"(max(0.0u"W/m^2", SOLRt(ustrip(t))))
     cloud = CLDt(ustrip(t))
     rh = RHt(ustrip(t))
@@ -1825,7 +1824,7 @@ function soil_energy_balance!(dT, T, p::MicroParams, t)
     T[N] = tdeep # set boundary condition of deep soil temperature
 
     depp = fill(0.0u"cm", N + 1)
-    depp[1:10] = dep
+    depp[1:N] = dep
     # Compute soil layer properties
     wc = fill(1.0u"cal/K/cm^2", N)
     c = fill(1.0u"cal/K/cm^2/minute", N)
@@ -1862,7 +1861,7 @@ function soil_energy_balance!(dT, T, p::MicroParams, t)
 
     # Atmospheric radiation
     P_vap = wet_air_out.P_vap
-    arad = ustrip(1.72 * (ustrip(u"kPa"(P_vap))/ustrip(u"K"(tair))) ^ (1.0/7.0)) * σ * (u"K"(tair)) ^ 4 # Campbell and Norman 1998 eq. 10.10 to get emissivity of sky
+    arad = u"cal/cm^2/minute"(ustrip(1.72 * (ustrip(u"kPa"(P_vap))/ustrip(u"K"(tair))) ^ (1.0/7.0)) * Unitful.uconvert(u"W/m^2/K^4", Unitful.σ) * (u"K"(tair)) ^ 4) # Campbell and Norman 1998 eq. 10.10 to get emissivity of sky
     #arad = ((0.0000092 * (u"K"(tair))^2) * σ * (u"K"(tair))^4) / 1u"K^2" # Swinbank, Eq. 10.11 in Campbell and Norman 1998
 
     # Cloud radiation temperature (shade approximation, TAIR - 2°C)
@@ -1885,6 +1884,7 @@ function soil_energy_balance!(dT, T, p::MicroParams, t)
 
     # Convection
     profile_out = get_profile(
+        refhyt = refhyt,
         ruf = ruf, 
         d0 = d0, 
         zh = zh, 
