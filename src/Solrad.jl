@@ -1076,13 +1076,14 @@ function dry_air(T_drybulb, P_atmos, elev, fO2, fCO2, fN2)
 end
 
 function get_profile(;
-    Refhyt=1.2u"m",
-    RUF=0.004u"m",
-    ZH=0.0u"m",
-    D0=0.0u"m",
+    refhyt=1.2u"m",
+    ruf=0.004u"m",
+    zh=0.0u"m",
+    d0=0.0u"m",
+    κ = 0.4, # Kármán constant
     TAREF=27.77818u"°C",
     VREF=2.749575u"m/s",
-    RH=49.0415,
+    rh=49.0415,
     D0cm=48.58942u"°C",
     maxsurf=95.0u"°C",
     ZEN=21.50564u"°",
@@ -1091,23 +1092,23 @@ function get_profile(;
     elev=0.0u"m",
     warn=false)
 
-    if minimum(heights) < RUF
-        error("ERROR: the minimum height is not greater than the roughness height (RUF).")
+    if minimum(heights) < ruf
+        error("ERROR: the minimum height is not greater than the roughness height (ruf).")
     end
 
     addheight = false
     heights_extra = nothing
-    if minimum(heights) > Refhyt
+    if minimum(heights) > refhyt
         addheight = true
         heights = vcat([0.01], heights)
     end
 
-    if maximum(heights) >= Refhyt && warn
+    if maximum(heights) >= refhyt && warn
         println("Warning: some heights are ≥ reference height. Using constant air temperature and adjusting wind speed.")
     end
 
     heights_orig = copy(heights)
-    heights = filter(h -> h < Refhyt, heights_orig)
+    heights = filter(h -> h < refhyt, heights_orig)
 
     function RHOCP(TAVE)
         return u"(cal*g)/(g*cm^3*K)"*(0.08472 / ustrip(TAVE))
@@ -1119,8 +1120,8 @@ function get_profile(;
         cp = wet_air_out.cp
         return u"(cal*g)/(g*cm^3*K)"(ρ * cp)
     end
-    function PHI(Z, GAM, AMOL)
-        return (1 - min(1, GAM * Z / AMOL))^0.25
+    function PHI(z, GAM, AMOL)
+        return (1 - min(1, GAM * z / AMOL))^0.25
     end
 
     function PSI1(X)
@@ -1131,15 +1132,14 @@ function get_profile(;
         return 2 * log((1 + X^2) / 2)
     end
 
-    function get_Obukhov(TA, TS, VEL, z, z0, rcptkg)
+    function get_Obukhov(TA, TS, VEL, z, z0, rcptkg, κ)
 
         AMOL = -30.0u"cm" # initial Monin-Obukhov length cm
         GAM = 16.0 # -
-        κ = 0.4 # Kármán constant
         #RCPTKG = 6.003e-8u"cal/minute/cm/K" #CAL-MIN-CM-C
-        Z = u"cm"(z)
-        Z0 = u"cm"(z0)
-        ZRATIO = Z / Z0 + 1
+        z = u"cm"(z)
+        z0 = u"cm"(z0)
+        ZRATIO = z / z0 + 1
         DUM = log(ZRATIO)
         DIFFT = TA - TS
         TAVE = (TA + TS) / 2.0
@@ -1154,18 +1154,18 @@ function get_profile(;
 
         while DEL > 1e-2 && count < 500
             count += 1
-            X = PHI(Z, GAM, AMOL)
+            X = PHI(z, GAM, AMOL)
             Y = PSI1(X)
             YY = PSI2(X)
-            USTAR = κ * (VEL * 100 * 60) / (log(Z / Z0) - Y)
+            USTAR = κ * (VEL * 100 * 60) / (log(z / z0) - Y)
 
             if AMOL > 0.0u"cm"
-                STS = 0.62 / (ustrip(Z0) * ustrip(USTAR) / 12)^0.45
+                STS = 0.62 / (ustrip(z0) * ustrip(USTAR) / 12)^0.45
                 STB = 0.64 / DUM
                 QC = RCP * DIFFT * USTAR * STB / (1.0 + STB / STS)
             else
-                STS = 0.62 / (ustrip(Z0) * ustrip(USTAR) / 12)^0.45
-                STB = (0.64 / DUM) * (1 - 0.1 * Z / AMOL)
+                STS = 0.62 / (ustrip(z0) * ustrip(USTAR) / 12)^0.45
+                STB = (0.64 / DUM) * (1 - 0.1 * z / AMOL)
                 STO = STB / (1 + STB / STS)
                 QC = RCP * DIFFT * USTAR * STO
             end
@@ -1182,13 +1182,13 @@ function get_profile(;
     T3 = u"K"(D0cm)
 
     # Units: m to cm
-    Z = u"cm"(Refhyt)
-    Z0 = u"cm"(RUF)
-    ZH_cm = u"cm"(ZH)
-    D0_cm = u"cm"(D0)
+    z = u"cm"(refhyt)
+    z0 = u"cm"(ruf)
+    zh_cm = u"cm"(zh)
+    d0_cm = u"cm"(d0)
     V = u"cm/minute"(VREF)
     # define air heights
-    AIRDP = vcat(Z, reverse(u"cm".(heights)))
+    AIRDP = vcat(z, reverse(u"cm".(heights)))
     ZZ = AIRDP
     NAIR = length(AIRDP)
     VV = (zeros(Float64, NAIR)) .* 1u"cm/minute" # output wind speeds
@@ -1199,83 +1199,82 @@ function get_profile(;
 
     # compute rcptkg (was a constant in original Fortran version)
     dry_air_out = dry_air(u"K"(TAREF), elev=elev)
-    wet_air_out = wet_air(u"K"(TAREF), rh=RH)
+    wet_air_out = wet_air(u"K"(TAREF), rh=rh)
     ρ = dry_air_out.ρ_air
     cp = wet_air_out.cp
     g = 9.80665u"m/s^2"
     TREF = u"K"(TAREF)
-    κ = 0.4 # Kármán constant
     rcptkg = u"cal*minute^2/m^4"(ρ * cp * TREF / (κ * g))
 
     GAM = 16
-    ZRATIO = Z / Z0 + 1.0
+    ZRATIO = z / z0 + 1.0
     DUM = log(ZRATIO)
     USTAR = κ * V / DUM
     DIFFT = T1 - T3
     TAVE = (T3 + T1) / 2
-    RCP = RHOCP(TAVE, elev, RH)
+    RCP = RHOCP(TAVE, elev, rh)
     AMOL = -30.0
-    if ZH > 0.0u"m"
-        STS = 0.62 / (ustrip(Z0) * ustrip(USTAR) / 12)^0.45
+    if zh > 0.0u"m"
+        STS = 0.62 / (ustrip(z0) * ustrip(USTAR) / 12)^0.45
         STB = 0.64 / DUM
         QC = RCP * DIFFT * USTAR * STB / (1.0 + STB / STS)
 
         for i in 2:NAIR
             if T1 ≥ T3 || T3 ≤ maxsurf || ZEN ≥ 90
-                VV[i] = (USTAR / κ) * log(ZZ[i] / Z0 + 1)
+                VV[i] = (USTAR / κ) * log(ZZ[i] / z0 + 1)
             else
                 X1 = PHI(ZZ[i])
                 Y1 = PSI1(X1)
-                ADUM = ZZ[i] / Z0 - Y1
+                ADUM = ZZ[i] / z0 - Y1
                 VV[i] = (USTAR / κ) * log(ADUM)
             end
 
-            A = (T1 - T3) / (1 - log((Z - D0_cm) / ZH_cm))
-            T0 = T1 + A * log((Z - D0_cm) / ZH_cm)
-            T[i] = T0 - A * log((ZZ[i] - D0_cm) / ZH_cm)
+            A = (T1 - T3) / (1 - log((z - d0_cm) / zh_cm))
+            T0 = T1 + A * log((z - d0_cm) / zh_cm)
+            T[i] = T0 - A * log((ZZ[i] - d0_cm) / zh_cm)
         end
     else
         if T1 ≥ T3 || T3 ≤ u"K"(maxsurf) || ZEN ≥ 90
-            STS = 0.62 / (ustrip(Z0) * ustrip(USTAR) / 12)^0.45
+            STS = 0.62 / (ustrip(z0) * ustrip(USTAR) / 12)^0.45
             STB = 0.64 / DUM
             QC = RCP * DIFFT * USTAR * STB / (1.0 + STB / STS)
 
             for i in 2:NAIR
-                VV[i] = (USTAR / κ) * log(ZZ[i] / Z0 + 1.0)
+                VV[i] = (USTAR / κ) * log(ZZ[i] / z0 + 1.0)
                 TZO = (T1 * STB + T3 * STS) / (STB + STS)
-                T[i] = TZO + (T1 - TZO) * log(ZZ[i] / Z0 + 1.0) / DUM
+                T[i] = TZO + (T1 - TZO) * log(ZZ[i] / z0 + 1.0) / DUM
             end
         else
             for i in 2:NAIR
                 X1 = PHI(ZZ[i])
                 Y1 = PSI1(X1)
                 YY2 = PSI2(X1)
-                X = PHI(Z)
+                X = PHI(z)
                 Y = PSI1(X)
                 YY = PSI2(X)
-                ADUM = ZZ[i] / Z0 - Y1
+                ADUM = ZZ[i] / z0 - Y1
                 VV[i] = (USTAR / κ) * log(ADUM)
 
-                Obukhov_out = get_Obukhov(T1, T3, V, ZZ[i], Z0)
+                Obukhov_out = get_Obukhov(T1, T3, V, ZZ[i], z0, RCP, κ)
                 TZO = (T1 * Obukhov_out.STB + T3 * Obukhov_out.STS) / (Obukhov_out.STB + Obukhov_out.STS)
-                T[i] = TZO + (T1 - TZO) * log(ZZ[i] / Z0 - YY2) / log(Z / Z0 - YY)
+                T[i] = TZO + (T1 - TZO) * log(ZZ[i] / z0 - YY2) / log(z / z0 - YY)
             end
         end
     end
 
-    heights = [0.0u"cm"; reverse(ZZ); u"cm"(Refhyt)]
+    heights = [0.0u"cm"; reverse(ZZ); u"cm"(refhyt)]
     VV = [0.0u"cm/minute"; reverse(VV)]
     T = [T3; reverse(T)]
 
-    e = wet_air(T1, rh=RH).P_vap
-    wet_air_out = wet_air.(T; rh=RH)
+    e = wet_air(T1, rh=rh).P_vap
+    wet_air_out = wet_air.(T; rh=rh)
     es = getproperty.(wet_air_out, :P_vap_sat)
     RHs = clamp.(e ./ es .* 100, 0, 100)
 
     if heights_extra !== nothing
-        VV_extra = V .* (heights_extra ./ Refhyt) .^ a
+        VV_extra = V .* (heights_extra ./ refhyt) .^ a
         T_extra = fill(TAREF, length(heights_extra))
-        RH_extra = fill(RH, length(heights_extra))
+        RH_extra = fill(rh, length(heights_extra))
 
         heights = vcat(heights, heights_extra)
         VV = vcat(VV, VV_extra)
@@ -1295,7 +1294,7 @@ function get_profile(;
         VELs=u"m/s".(VV),      # m/s
         TAs=u"°C".(T),         # deg C
         RHs=RHs,               # %
-        QCONV=u"W/m^2"(QC),              # W
+        QCONV=u"W/m^2"(QC),    # W
         USTAR=u"m/s"(USTAR)    # m/s
     )
 end
@@ -1597,17 +1596,16 @@ end
 
 function soil_properties(T_soil, θ_soil, node, soilprops, numtyps, elev)
     NON = length(node)
-    HTOFN = 333500.0  # J/kg
     runmoist = false # to do
     runsnow = false # to do
-    ρ_dry = soilprops[:, 1] # dry density, Mg/m^3
     θ_sat = soilprops[:, 2] # volumetric water content at saturation (0.1 bar matric potential) (m3/m3)
     λ_m = soilprops[:, 3] # mineral thermal conductivity, W/m/K
     cp_m = soilprops[:, 4] # mineral specific heat capacity, J/kg/K
-    ρ_m = soilprops[:, 5] # mineral density, Mg/m^3
+    ρ_m = u"kg/m^3".(soilprops[:, 5]) # mineral density, kg/m^3
+    ρ_dry = u"kg/m^3".(soilprops[:, 1]) # dry density, kg/m^3
     λ_b = fill(λ_m[1], NON) # bulk thermal conductivity, W/m/K
     cp_b = fill(cp_m[1], NON) # bulk specific heat capacity, J/kg/K
-    ρ_b = fill(ρ_m[1], NON) # bulk density, Mg/m^3
+    ρ_b = fill(ρ_m[1], NON) # bulk density, kg/m^3
 
     ii, ij = runsnow ? (9, 8) : (1, 0)
     j = 1
@@ -1625,16 +1623,16 @@ function soil_properties(T_soil, θ_soil, node, soilprops, numtyps, elev)
         # constants from Campbell and Norman 1998, Table 8.2
         if runmoist
             m = runsnow ? θ_soil[i-8] : θ_soil[i]
-            ρ_b[i] = m * 1000.0u"kg/m^3" + ρ_dry[j] * 1000.0
+            ρ_b[i] = m * 1000.0u"kg/m^3" + ρ_dry[j]
         else
-            ρ_b[i] = θ_sat[j] * θ_soil[j] * 1000.0u"kg/m^3" + ρ_dry[j] * 1000.0
+            ρ_b[i] = θ_sat[j] * θ_soil[j] * 1000.0u"kg/m^3" + ρ_dry[j]
         end
 
         p_a0 = 101325.0u"Pa" # standard sea level air pressure, Pa
         p_a = get_pressure(elev)
 
-        T_C = T_soil[i]
-        T_K = u"K"(T_C)
+        T_K = T_soil[i]
+        T_C = u"°C"(T_K)
         λ_a = (0.024 + 7.73e-5 * ustrip(T_C) - 2.6e-8 * ustrip(T_C)^2)u"W/m/K" # thermal conductivity of dry air (equation 9 in Campbell et al. 1994)
         λ_w = (0.554 + 2.24e-3 * ustrip(T_C) - 9.87e-6 * ustrip(T_C)^2)u"W/m/K" # thermal conductivity of water (equation 8 in Campbell et al. 1994)
 
@@ -1646,10 +1644,10 @@ function soil_properties(T_soil, θ_soil, node, soilprops, numtyps, elev)
         ρ_hat = ρ_hat0 * (p_a / p_a0) * (273.15 / T_K) # temperature/pressure-corrected molar density of air (mol/m3) (p. 309 in Campbell et al. 1994)
         λ_vap = (45144.0 - 48.0 * ustrip(T_C))u"J/mol" # J/mol latent heat of vaporization (Cambell et al. 1994, p. 309)
 
-        RH = 99.0
-        e_a = wet_air(T_K; rh=RH, P_atmos = p_a).P_vap
-        e_a1 = wet_air(T_K-1u"K"; rh=RH, P_atmos = p_a).P_vap
-        e_a2 = wet_air(T_K+1u"K"; rh=RH, P_atmos = p_a).P_vap
+        rh = 99.0
+        e_a = wet_air(T_K; rh=rh, P_atmos = p_a).P_vap
+        e_a1 = wet_air(T_K-1u"K"; rh=rh, P_atmos = p_a).P_vap
+        e_a2 = wet_air(T_K+1u"K"; rh=rh, P_atmos = p_a).P_vap
 
         ∇x = (e_a2 - e_a1) / 2.0 # slope of the vapour pressure function centred at focal temperature
 
@@ -1674,13 +1672,13 @@ function soil_properties(T_soil, θ_soil, node, soilprops, numtyps, elev)
         g_c = 1.0 - 2.0 * g_a # p 125, Campbell and Norman
 
         # equation 8.20 in Campbell and Norman 1988
-        epsilon_g = 2.0 / (3.0 * (1.0 + g_a * (λ_g / λ_f - 1.0))) + 1.0 / (3.0 * (1.0 + g_c * (λ_g / λ_f - 1.0))) 
-        epsilon_w = 2.0 / (3.0 * (1.0 + g_a * (λ_w / λ_f - 1.0))) + 1.0 / (3.0 * (1.0 + g_c * (λ_w / λ_f - 1.0)))
-        epsilon_m = 2.0 / (3.0 * (1.0 + g_a * (λ_m[j] / λ_f - 1.0))) + 1.0 / (3.0 * (1.0 + g_c * (λ_m[j] / λ_f - 1.0)))
+        ϵ_g = 2.0 / (3.0 * (1.0 + g_a * (λ_g / λ_f - 1.0))) + 1.0 / (3.0 * (1.0 + g_c * (λ_g / λ_f - 1.0))) 
+        ϵ_w = 2.0 / (3.0 * (1.0 + g_a * (λ_w / λ_f - 1.0))) + 1.0 / (3.0 * (1.0 + g_c * (λ_w / λ_f - 1.0)))
+        ϵ_m = 2.0 / (3.0 * (1.0 + g_a * (λ_m[j] / λ_f - 1.0))) + 1.0 / (3.0 * (1.0 + g_c * (λ_m[j] / λ_f - 1.0)))
         
         # equation 8.13 in Campbell and Norman 1988
-        λ_b[i] = (θ * epsilon_w * λ_w + ϕ_m * epsilon_m * λ_m[j] + ϕ_g * epsilon_g * λ_g) /
-                       (θ * epsilon_w + ϕ_m * epsilon_m + ϕ_g * epsilon_g)
+        λ_b[i] = (θ * ϵ_w * λ_w + ϕ_m * ϵ_m * λ_m[j] + ϕ_g * ϵ_g * λ_g) /
+                       (θ * ϵ_w + ϕ_m * ϵ_m + ϕ_g * ϵ_g)
 
         #convert to cal/min/g
         #λ_b[i] = λ_b[i] / 418.6 * 60.0
@@ -1688,6 +1686,7 @@ function soil_properties(T_soil, θ_soil, node, soilprops, numtyps, elev)
         #ρ_b[i] /= 1000.0
     end
 
+    #HTOFN = 333500.0  # J/kg
     # if runsnow
     #     snowdens = 0.0
     #     if densfun[1] > 0
@@ -1770,20 +1769,24 @@ end
 Base.@kwdef struct MicroParams
     soilprops::Matrix{Union{Unitful.AbstractQuantity, Float64}}
     dep::Vector{<:Unitful.AbstractQuantity}
+    refhyt::Quantity
+    ruf::Quantity
+    d0::Quantity
+    zh::Quantity
     slope::Quantity
     shade::Float64
     viewf::Float64
     elev::Quantity
     refl::Float64
     sle::Float64
-    slep::Float64 # fix at 1
+    slep::Float64 # fix at 1?
     pctwet::Float64
+    tdeep::Quantity
+    θ_soil::Vector{Float64}
     runmoist::Bool
     runsnow::Bool
 end
-function soil_energy_balance!(dT, T, p::MicroParamsTest6, t)
-    dT .= (0.0u"K/minute")
-
+function soil_energy_balance!(dT, T, p::MicroParams, t)
     # extract parameters
     sle = p.sle
     slep = p.slep
@@ -1794,8 +1797,15 @@ function soil_energy_balance!(dT, T, p::MicroParamsTest6, t)
     slope = p.slope
     shade = p.shade
     dep = p.dep
+    refhyt = p.refhyt
+    d0 = p.d0
+    zh = p.zh
+    tdeep = p.tdeep
+    θ_soil = p.θ_soil # parameter for now
 
     N = length(dep)
+    #dT = fill(0.0u"K/minute", N)
+    #dT .= (0.0u"K/minute")
 
     # get soil properties and convert to cal/cm/g/C
     λ_b, cp_b, ρ_b = soil_properties(T, θ_soil, node, soilprops, numtyps, elev)
@@ -1805,11 +1815,14 @@ function soil_energy_balance!(dT, T, p::MicroParamsTest6, t)
 
     # Get environmental data at time t
     tair = TAIRt(ustrip(t))
+    vel = VELt(ustrip(t))
     zenr = ZENRt(ustrip(t))
     solr = u"cal/cm^2/minute"(max(0.0u"W/m^2", SOLRt(ustrip(t))))
     cloud = CLDt(ustrip(t))
     rh = RHt(ustrip(t))
     zslr = ZSLt(ustrip(t))
+
+    T[N] = tdeep # set boundary condition of deep soil temperature
 
     depp = fill(0.0u"cm", N + 1)
     depp[1:10] = dep
@@ -1830,6 +1843,9 @@ function soil_energy_balance!(dT, T, p::MicroParamsTest6, t)
     end
 
     # Solar radiation
+    if cloud > 0.0
+        solr = solr * (0.36 + 0.64 * (1.0-(cloud / 100.0))) # Angstrom formula (formula 5.33 on P. 177 of "Climate Data and Resources" by Edward Linacre 1992
+    end
     qsolar = sabnew * solr * ((100.0 - shade) / 100.0)
     if slope > 0 && zenr < 90u"°"
         cz = cosd(zenr)
@@ -1841,9 +1857,13 @@ function soil_energy_balance!(dT, T, p::MicroParamsTest6, t)
     # Constants
     #σ = Unitful.uconvert(u"W/m^2/K^4", Unitful.σ) # Stefan-Boltzmann constant, W/m^2/K^4
     σ = Unitful.uconvert(u"cal/cm^2/K^4/minute", Unitful.σ) # Stefan-Boltzmann constant
+    P_atmos = get_pressure(elev)
+    wet_air_out = wet_air(u"K"(tair); rh=rh, P_atmos=P_atmos)
 
-    # Atmospheric radiation (based on empirical model)
-    arad = ((0.0000092 * (u"K"(tair))^2) * σ * (u"K"(tair))^4) / 1u"K^2"
+    # Atmospheric radiation
+    P_vap = wet_air_out.P_vap
+    arad = ustrip(1.72 * (ustrip(u"kPa"(P_vap))/ustrip(u"K"(tair))) ^ (1.0/7.0)) * σ * (u"K"(tair)) ^ 4 # Campbell and Norman 1998 eq. 10.10 to get emissivity of sky
+    #arad = ((0.0000092 * (u"K"(tair))^2) * σ * (u"K"(tair))^4) / 1u"K^2" # Swinbank, Eq. 10.11 in Campbell and Norman 1998
 
     # Cloud radiation temperature (shade approximation, TAIR - 2°C)
     crad = σ * slep * (u"K"(tair) - 2u"K")^4
@@ -1852,7 +1872,7 @@ function soil_energy_balance!(dT, T, p::MicroParamsTest6, t)
     hrad = σ * slep * (u"K"(tair))^4
 
     # Ground surface radiation temperature
-    srad = σ * SLE * (u"K"(T[1]))^4
+    srad = σ * sle * (u"K"(T[1]))^4
 
     # Clear sky fraction
     clr = 1.0 - cloud / 100.0
@@ -1864,13 +1884,23 @@ function soil_energy_balance!(dT, T, p::MicroParamsTest6, t)
     qrad = (qradsk + qradvg) * viewf + qradhl * (1.0 - viewf) - qradgr
 
     # Convection
-    profile_out = get_profile(D0cm=T[1], TAREF=u"°C"(tair), ZEN=zenr, heights=[0.01] .* u"m", RH=rh) # Stub
+    profile_out = get_profile(
+        ruf = ruf, 
+        d0 = d0, 
+        zh = zh, 
+        D0cm=u"°C"(T[1]), 
+        TAREF=u"°C"(tair), 
+        VREF=vel, 
+        ZEN=zenr, 
+        heights=[0.01] .* u"m", 
+        rh=rh, 
+        elev=elev
+        )
     qconv = profile_out.QCONV
     hc = max(abs(qconv / (T[1] - tair)), 0.5u"W/m^2/K")
     qconv = u"cal/cm^2/minute"(qconv) # now to cal/cm/g/C units
 
     # Evaporation
-    P_atmos = get_pressure(elev)
     wet_air_out = wet_air(u"K"(tair); rh=rh, P_atmos=P_atmos)
     cp_air = wet_air_out.cp
     ρ_air = wet_air_out.ρ_air

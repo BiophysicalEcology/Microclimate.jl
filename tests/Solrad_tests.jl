@@ -9,7 +9,7 @@ using Plots
 days = [15, 46, 74, 105, 135, 166, 196, 227, 258, 288, 319, 349]
 #days = [196]
 hours = collect(0.:1:24.) # hour of day
-lat = -40° # latitude
+lat = 43.1379° # latitude
 elev = 0u"m" # elevation (m)
 hori = fill(0.0°, 24) # enter the horizon angles (degrees) so that they go from 0 degrees azimuth (north) clockwise in 15 degree intervals
 slope = 90.0° # slope (degrees, range 0-90)

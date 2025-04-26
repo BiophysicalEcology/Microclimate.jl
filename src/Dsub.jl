@@ -11,19 +11,24 @@ using Plots
 @compound CO2
 @compound N2
 
-DEP = [0, 2.5, 5.0, 10.0, 15.0, 20.0, 30.0, 50.0, 100.0, 200.0]u"cm" # Soil nodes (cm) - keep spacing close near the surface, last value is where it is assumed that the soil temperature is at the annual mean air temperature
+DEP = [0.0, 2.5, 5.0, 10.0, 15.0, 20.0, 30.0, 50.0, 100.0, 200.0]u"cm" # Soil nodes (cm) - keep spacing close near the surface, last value is where it is assumed that the soil temperature is at the annual mean air temperature
+refhyt = 2u"m"
 days = [15, 46, 74, 105, 135, 166, 196, 227, 258, 288, 319, 349]
 #days = [196]
 hours = collect(0.:1:24.) # hour of day
-lat = -40° # latitude
+lat = 43.1379° # latitude
 elev = 0u"m" # elevation (m)
 hori = fill(0.0°, 24) # enter the horizon angles (degrees) so that they go from 0 degrees azimuth (north) clockwise in 15 degree intervals
-slope = 90.0° # slope (degrees, range 0-90)
+slope = 0.0° # slope (degrees, range 0-90)
 aspect = 0.0° # aspect (degrees, 0 = North, range 0-360)
 refl = 0.10 # substrate solar reflectivity (decimal %)
 shade = 0.0 # % shade cast by vegetation
 pctwet = 0.0 # % surface wetness
 sle = 0.95 # - surface emissivity
+ruf = 0.004u"m" # m roughness height
+zh = 0u"m" # m heat transfer roughness height
+d0 = 0u"m" # zero plane displacement correction factor
+
 iuv = false
 # soil properties# soil thermal parameters 
 λ_m = 1.25u"W/m/K" # soil minerals thermal conductivity (W/mC)
@@ -43,11 +48,11 @@ WNMAXX = [4.9, 4.8, 5.2, 5.3, 4.6, 4.3, 3.8, 3.7, 4, 4.6, 4.9, 4.8]u"m/s" # max 
 CCMINN = [50.3, 47, 48.2, 47.5, 40.9, 35.7, 34.1, 36.6, 42.6, 48.4, 61.1, 60.1] # min cloud cover (%)
 CCMAXX = [50.3, 47, 48.2, 47.5, 40.9, 35.7, 34.1, 36.6, 42.6, 48.4, 61.1, 60.1] # max cloud cover (%)
 RAINFALL = ([28, 28.2, 54.6, 79.7, 81.3, 100.1, 101.3, 102.5, 89.7, 62.4, 54.9, 41.2]) / 1000u"m" # monthly mean rainfall (mm)
-SoilMoist = [0.42, 0.42, 0.42, 0.43, 0.44, 0.44, 0.43, 0.42, 0.41, 0.42, 0.42, 0.43] # soil moisture (decimal %, 1 means saturated)
+SoilMoist = fill(0.2, 10)
 daily = false
 
 # creating the arrays of environmental variables that are assumed not to change with month for this simulation
-ndays = length(TMAXX)
+ndays = length(days)
 SHADES = fill(shade, ndays) # daily shade (%)
 SLES = fill(sle, ndays) # set up vector of ground emissivities for each day
 REFLS = fill(refl, ndays) # set up vector of soil reflectances for each day
@@ -76,11 +81,9 @@ soilprops[1, 5] = ρ_m
 for i in 2:numnodes
     soilprops[i, :] .= soilprops[1, :]
 end
-# Initial conditions
-soilinit = collect(fill(tannul, 20)) # make initial soil temps equal to mean annual
 
 # example application of soil_properties getting bulk properties from soil temperature, moisture and mineral properties
-T_soil = soilinit # for test of soil_properties
+T_soil = collect(fill(u"K"(tannul), numnodes)) # for test of soil_properties
 θ_soil = collect(fill(SoilMoist[1], numnodes)) # for test of soil_properties
 node = nodes[:, 1]
 λ_b, cp_b, ρ_b = soil_properties(T_soil, θ_soil, node, soilprops, numtyps, elev)
@@ -97,13 +100,12 @@ plot(CLDs)
 
 # simulate a day
 iday = 1
-ndays = length(days)
 sub = (iday*25-24):(iday*25)
 REFL = REFLS[iday]
 SHADE = SHADES[iday] # daily shade (%)
 SLE = SLES[iday] # set up vector of ground emissivities for each day
 PCTWET = PCTWETS[iday] # set up vector of soil wetness for each day
-tannul = tannulrun[iday] # annual mean temperature for getting monthly deep soil temperature (°C)
+tdeep = u"K"(tannulrun[iday]) # annual mean temperature for getting daily deep soil temperature (°C)
 node = nodes[:, iday]
 
 # get today's weather
@@ -114,6 +116,10 @@ TAIR = TAIRs[sub]
 VEL = WNs[sub]
 RH = RHs[sub]
 CLD = CLDs[sub]
+
+# Initial conditions
+soilinit = u"K"(mean(ustrip(TAIR))u"°C") # make initial soil temps equal to mean daily temperature
+θ_soil = collect(fill(SoilMoist[iday], numnodes)) # initial soil moisture, constant for now
 
 # create forcing weather variable splines
 tspan = 0.:60:1440
@@ -140,32 +146,45 @@ plot(tspan, VELt(tspan))
 plot(tspan, RHt(tspan))
 plot(tspan, CLDt(tspan))
 
-
-T0 = u"K".(soilinit)
-
 # Parameters
-params = MicroParamsTest6(
+params = MicroParams(
     soilprops = soilprops,
     dep = DEP,
+    refhyt = refhyt,
+    ruf = ruf,
+    d0 = d0,
+    zh = zh,
     slope = slope,
     shade = shade,
     viewf = viewf,
     elev = elev,
     refl = refl,
     sle = sle,
-    slep = 1,
+    slep = sle, # check if this is what it should be - sle vs. slep (set as 1 in PAR in Fortran but then changed to user SLE later)
     pctwet = pctwet,
+    tdeep = tdeep,
+    θ_soil = θ_soil,
     runmoist = false,
     runsnow = false
 )
 
-tspan = (0.0u"minute", 1440.0u"minute")  # 1 hour
-prob = ODEProblem(soil_energy_balance!, T0, tspan, params)
-sol = solve(prob, Tsit5(); saveat=60.0u"minute")
-plot(sol, xlabel="Time (min)", ylabel="Soil Temperature (K)", label=["Top layer" "Bottom layer"], lw=2)
-soiltemps = hcat(sol.u...) 
-T0 = sol.
+# initial soil temperatures
+T0 = fill(soilinit, numnodes)
+T0[numnodes]=tdeep
+T0[numnodes-2]=(u"K"(TMINN[iday])+u"K"(TMAXX[iday]))/2.0
+T0[numnodes-1]=(T0[numnodes]+T0[numnodes-2])/2.0
 
+# iterate through to get final soil temperature profile
+niter = 3 # number of interations for steady periodic
+for iter in 1:niter
+    tspan = (0.0u"minute", 1440.0u"minute")  # 1 hour
+    prob = ODEProblem(soil_energy_balance!, T0, tspan, params)
+    sol = solve(prob, Tsit5(); saveat=60.0u"minute")
+    soiltemps = hcat(sol.u...)
+    #plot(u"hr".(sol.t), u"°C".(soiltemps'), xlabel="Time", ylabel="Soil Temperature", label=["Top layer" "Bottom layer"], lw=2)
+    T0 = soiltemps[:, 25] # new initial soil temps
+end
+plot(u"hr".(sol.t), u"°C".(soiltemps'), xlabel="Time", ylabel="Soil Temperature", label=["Top layer" "Bottom layer"], lw=2)
 
 
 numnodes
