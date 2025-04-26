@@ -15,7 +15,7 @@ DEP = [0.0, 2.5, 5.0, 10.0, 15.0, 20.0, 30.0, 50.0, 100.0, 200.0]u"cm" # Soil no
 refhyt = 2u"m"
 days = [15, 46, 74, 105, 135, 166, 196, 227, 258, 288, 319, 349]
 #days = [196]
-hours = collect(0.:1:24.) # hour of day
+hours = collect(0.:1:24.) # hour of day for solrad
 lat = 43.1379° # latitude
 elev = 0u"m" # elevation (m)
 hori = fill(0.0°, 24) # enter the horizon angles (degrees) so that they go from 0 degrees azimuth (north) clockwise in 15 degree intervals
@@ -99,7 +99,7 @@ plot(RHs)
 plot(CLDs)
 
 # simulate a day
-iday = 1
+iday = 6
 sub = (iday*25-24):(iday*25)
 REFL = REFLS[iday]
 SHADE = SHADES[iday] # daily shade (%)
@@ -181,11 +181,41 @@ for iter in 1:niter
     prob = ODEProblem(soil_energy_balance!, T0, tspan, params)
     sol = solve(prob, Tsit5(); saveat=60.0u"minute")
     soiltemps = hcat(sol.u...)
-    #plot(u"hr".(sol.t), u"°C".(soiltemps'), xlabel="Time", ylabel="Soil Temperature", label=["Top layer" "Bottom layer"], lw=2)
+    #plot(u"hr".(sol.t), u"°C".(soiltemps'), xlabel="Time", ylabel="Soil Temperature", lw=2)
     T0 = soiltemps[:, 25] # new initial soil temps
 end
-plot(u"hr".(sol.t), u"°C".(soiltemps'), xlabel="Time", ylabel="Soil Temperature", label=["Top layer" "Bottom layer"], lw=2)
+labels = ["$(d)" for d in DEP]
+plot(u"hr".(sol.t), u"°C".(soiltemps'), xlabel="Time", ylabel="Soil Temperature", lw=2, label = string.(DEP'))
 
+# now get wind air temperature and humidity profiles
+nsteps = 24
+heights = [0.01, 0.05, 0.1, 0.2, 0.3, 0.4, 0.5, 0.75, 1.0] .* u"m"
+profiles = Vector{NamedTuple}(undef, nsteps)  # or whatever you have from your loop
+for i in 1:nsteps
+    profiles[i] = get_profile(
+        refhyt = refhyt,
+        ruf = ruf,
+        zh = zh,
+        d0 = d0,
+        TAREF = TAIRs[i],
+        VREF = VEL[i],
+        rh = RH[i],
+        D0cm = u"°C"(soiltemps[1, i]),  # top layer temp at time i
+        ZEN = ZENR[i],
+        heights = heights,
+        elev = elev
+    )
+end
+
+VEL_matrix = hcat([getfield.(profiles, :VELs)[i] for i in 1:length(profiles)]...)    # velocities at all time steps and heights
+TA_matrix   = hcat([getfield.(profiles, :TAs)[i]   for i in 1:length(profiles)]...)  # air temperatures at all time steps and heights
+RH_matrix   = hcat([getfield.(profiles, :RHs)[i]   for i in 1:length(profiles)]...)       # relative humidity at all time steps and heights
+Qconv_vec   = [getfield(p, :QCONV) for p in profiles]    # convective fluxes at all time steps
+ustar_vec   = [getfield(p, :USTAR) for p in profiles]    # friction velocities
+heights_vec = getfield(profiles[1], :heights)                     # constant across time
+plot(u"hr".(sol.t[1:24]), VEL_matrix', xlabel="Time", ylabel="wind speed", lw=2, label = string.(last(heights_vec, 11)'))
+plot(u"hr".(sol.t[1:24]), TA_matrix', xlabel="Time", ylabel="air temperature", lw=2, label = string.(last(heights_vec, 11)'))
+plot(u"hr".(sol.t[1:24]), RH_matrix', xlabel="Time", ylabel="humidity (%)", lw=2, label = string.(last(heights_vec, 11)'))
 
 numnodes
 dT = zeros(Float64, numnodes)*u"K/minute"
