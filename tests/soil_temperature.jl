@@ -1,22 +1,17 @@
-using DifferentialEquations
-using Interpolations
-using Statistics
+using Microclimate
 using Unitful
-using Unitful: °
-using UnitfulMoles
-using Dates
+using Unitful: °, rad, R, kg, m
 using Plots
-@compound H2O
-@compound O2
-@compound CO2
-@compound N2
+using Statistics
+using Interpolations
+using DifferentialEquations
 
 DEP = [0.0, 2.5, 5.0, 10.0, 15.0, 20.0, 30.0, 50.0, 100.0, 200.0]u"cm" # Soil nodes (cm) - keep spacing close near the surface, last value is where it is assumed that the soil temperature is at the annual mean air temperature
 refhyt = 2u"m"
 days = [15, 46, 74, 105, 135, 166, 196, 227, 258, 288, 319, 349]
-#days = [196]
 hours = collect(0.:1:24.) # hour of day for solrad
 lat = 43.1379° # latitude
+iuv = false
 elev = 0u"m" # elevation (m)
 hori = fill(0.0°, 24) # enter the horizon angles (degrees) so that they go from 0 degrees azimuth (north) clockwise in 15 degree intervals
 slope = 0.0° # slope (degrees, range 0-90)
@@ -28,8 +23,6 @@ sle = 0.96 # - surface emissivity
 ruf = 0.004u"m" # m roughness height
 zh = 0u"m" # m heat transfer roughness height
 d0 = 0u"m" # zero plane displacement correction factor
-
-iuv = false
 # soil properties# soil thermal parameters 
 λ_m = 1.25u"W/m/K" # soil minerals thermal conductivity (W/mC)
 ρ_m = 2.560u"Mg/m^3" # soil minerals density (Mg/m3)
@@ -67,8 +60,8 @@ viewf = 1 - sum(sin.(hori)) / length(hori) # convert horizon angles to radians a
 # set up a profile of soil properites with depth for each day to be run
 numtyps = 1 # number of soil types
 numnodes = length(DEP) # number of soil nodes
-nodes = zeros(numnodes, ndays) # array of all possible soil nodes
-nodes[1, 1:ndays] .= 10 # deepest node for first substrate type
+nodes_day = zeros(numnodes, ndays) # array of all possible soil nodes
+nodes_day[1, 1:ndays] .= 10 # deepest node for first substrate type
 # Create an empty 10×5 matrix that can store any type (including different units)
 soilprops = Matrix{Any}(undef, numnodes, 5)
 # Fill row 1 (top layer) with the defined values
@@ -82,22 +75,11 @@ for i in 2:numnodes
     soilprops[i, :] .= soilprops[1, :]
 end
 
-# example application of soil_properties getting bulk properties from soil temperature, moisture and mineral properties
-T_soil = collect(fill(u"K"(tannul), numnodes)) # for test of soil_properties
-θ_soil = collect(fill(SoilMoist[1], numnodes)) # for test of soil_properties
-node = nodes[:, 1]
-λ_b, cp_b, ρ_b = soil_properties(T_soil, θ_soil, node, soilprops, numtyps, elev)
-
 # compute solar radiation (need to make refl time varying)
 solrad_out = solrad(days = days, hours = hours, lat = lat, elev = elev, hori = hori, slope = slope, aspect = aspect, refl = refl, iuv = iuv)
-plot(solrad_out.Global)
 
 # interpolate air temperature to hourly
 TAIRs, WNs, RHs, CLDs = hourly_vars(TMINN=TMINN, TMAXX=TMAXX, WNMINN=WNMINN, WNMAXX=WNMAXX, RHMINN=RHMINN, RHMAXX=RHMAXX, CCMINN=CCMINN, CCMAXX=CCMAXX,solrad_out=solrad_out, TIMINS=TIMINS, TIMAXS=TIMAXS, daily=daily)
-plot(TAIRs)
-plot(WNs)
-plot(RHs)
-plot(CLDs)
 
 # simulate a day
 iday = 6
@@ -107,7 +89,7 @@ SHADE = SHADES[iday] # daily shade (%)
 SLE = SLES[iday] # set up vector of ground emissivities for each day
 PCTWET = PCTWETS[iday] # set up vector of soil wetness for each day
 tdeep = u"K"(tannulrun[iday]) # annual mean temperature for getting daily deep soil temperature (°C)
-node = nodes[:, iday]
+nodes = nodes_day[:, iday]
 
 # get today's weather
 SOLR = solrad_out.Global[sub]
@@ -140,13 +122,6 @@ VELt = scale(interpVEL, tspan)
 RHt = scale(interpRH, tspan)
 CLDt = scale(interpCLD, tspan)
 
-plot(tspan, SOLRt(tspan))
-plot(tspan, ZENRt(tspan))
-plot(tspan, TAIRt(tspan))
-plot(tspan, VELt(tspan))
-plot(tspan, RHt(tspan))
-plot(tspan, CLDt(tspan))
-
 # Parameters
 params = MicroParams(
     soilprops = soilprops,
@@ -163,10 +138,26 @@ params = MicroParams(
     sle = sle,
     slep = sle, # check if this is what it should be - sle vs. slep (set as 1 in PAR in Fortran but then changed to user SLE later)
     pctwet = pctwet,
+    nodes = nodes,
     tdeep = tdeep,
     θ_soil = θ_soil,
     runmoist = false,
     runsnow = false
+)
+
+forcing = MicroForcing(
+    SOLRt = SOLRt,
+    ZENRt = ZENRt,
+    ZSLt = ZSLt,
+    TAIRt = TAIRt,
+    VELt = VELt,
+    RHt = RHt,
+    CLDt = CLDt
+)
+
+input = MicroInput(
+    params,
+    forcing
 )
 
 # initial soil temperatures
@@ -176,7 +167,7 @@ T0[numnodes-2]=(u"K"(TMINN[iday])+u"K"(TMAXX[iday]))/2.0
 T0[numnodes-1]=(T0[numnodes]+T0[numnodes-2])/2.0
 
 tspan = (0.0u"minute", 1440.0u"minute")  # 1 hour
-prob = ODEProblem(soil_energy_balance!, T0, tspan, params)
+prob = ODEProblem(soil_energy_balance!, T0, tspan, input)
 sol = solve(prob, Tsit5(); saveat=60.0u"minute")
 soiltemps = hcat(sol.u...)
 #plot(u"hr".(sol.t), u"°C".(soiltemps'), xlabel="Time", ylabel="Soil Temperature", lw=2)
@@ -185,7 +176,7 @@ T0 = soiltemps[:, 25] # new initial soil temps
 # iterate through to get final soil temperature profile
 niter = 2 # number of interations for steady periodic
 for iter in 1:niter
-    prob = ODEProblem(soil_energy_balance!, T0, tspan, params)
+    prob = ODEProblem(soil_energy_balance!, T0, tspan, input)
     sol = solve(prob, Tsit5(); saveat=60.0u"minute")
     soiltemps = hcat(sol.u...)
     #plot(u"hr".(sol.t), u"°C".(soiltemps'), xlabel="Time", ylabel="Soil Temperature", lw=2)
@@ -223,10 +214,3 @@ heights_vec = getfield(profiles[1], :heights)                     # constant acr
 plot(u"hr".(sol.t[1:24]), VEL_matrix', xlabel="Time", ylabel="wind speed", lw=2, label = string.(last(heights_vec, 11)'))
 plot(u"hr".(sol.t[1:24]), TA_matrix', xlabel="Time", ylabel="air temperature", lw=2, label = string.(last(heights_vec, 11)'))
 plot(u"hr".(sol.t[1:24]), RH_matrix', xlabel="Time", ylabel="humidity (%)", lw=2, label = string.(last(heights_vec, 11)'))
-
-numnodes
-dT = zeros(Float64, numnodes)*u"K/minute"
-N = numnodes
-T = T0
-t = 0.0
-T_soil=T0
