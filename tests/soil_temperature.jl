@@ -5,14 +5,19 @@ using Plots
 using Statistics
 using Interpolations
 using DifferentialEquations
+using CSV, DataFrames
+
+# read in output from Norman
+soiltemps_NMR = (DataFrame(CSV.File("data/soil.csv"))[:, 4:13]).*u"°C"
+metout_NMR = DataFrame(CSV.File("data/metout.csv"))
 
 DEP = [0.0, 2.5, 5.0, 10.0, 15.0, 20.0, 30.0, 50.0, 100.0, 200.0]u"cm" # Soil nodes (cm) - keep spacing close near the surface, last value is where it is assumed that the soil temperature is at the annual mean air temperature
 refhyt = 2u"m"
 days = [15, 46, 74, 105, 135, 166, 196, 227, 258, 288, 319, 349]
 hours = collect(0.:1:24.) # hour of day for solrad
 lat = 43.1379° # latitude
-iuv = false
-elev = 0u"m" # elevation (m)
+iuv = true
+elev = 226u"m" # elevation (m)
 hori = fill(0.0°, 24) # enter the horizon angles (degrees) so that they go from 0 degrees azimuth (north) clockwise in 15 degree intervals
 slope = 0.0° # slope (degrees, range 0-90)
 aspect = 0.0° # aspect (degrees, 0 = North, range 0-360)
@@ -82,7 +87,7 @@ solrad_out = solrad(days = days, hours = hours, lat = lat, elev = elev, hori = h
 TAIRs, WNs, RHs, CLDs = hourly_vars(TMINN=TMINN, TMAXX=TMAXX, WNMINN=WNMINN, WNMAXX=WNMAXX, RHMINN=RHMINN, RHMAXX=RHMAXX, CCMINN=CCMINN, CCMAXX=CCMAXX,solrad_out=solrad_out, TIMINS=TIMINS, TIMAXS=TIMAXS, daily=daily)
 
 # simulate a day
-iday = 6
+iday = 1
 sub = (iday*25-24):(iday*25)
 REFL = REFLS[iday]
 SHADE = SHADES[iday] # daily shade (%)
@@ -183,7 +188,8 @@ for iter in 1:niter
     T0 = soiltemps[:, 25] # new initial soil temps
 end
 labels = ["$(d)" for d in DEP]
-plot(u"hr".(sol.t), u"°C".(soiltemps'), xlabel="Time", ylabel="Soil Temperature", lw=2, label = string.(DEP'))
+plot(u"hr".(sol.t), u"°C".(soiltemps'), xlabel="Time", ylabel="Soil Temperature", lw=2, label = string.(DEP'), linecolor="black")
+plot!(u"hr".(sol.t[1:24]), Matrix(soiltemps_NMR[(iday*24-23):(iday*24), :]), xlabel="Time", ylabel="Soil Temperature", lw=2, label = string.(DEP'), linestyle = :dash, linecolor="grey")
 
 # now get wind air temperature and humidity profiles
 nsteps = 24
