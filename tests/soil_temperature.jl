@@ -10,13 +10,19 @@ using CSV, DataFrames
 # read in output from Norman
 soiltemps_NMR = (DataFrame(CSV.File("data/soil.csv"))[:, 4:13]).*u"째C"
 metout_NMR = DataFrame(CSV.File("data/metout.csv"))
+vel1cm_NMR = collect(metout_NMR[(iday*24-23):(iday*24), 8]).*1u"m/s"
+vel2m_NMR = collect(metout_NMR[(iday*24-23):(iday*24), 9]).*1u"m/s"
+ta1cm_NMR = collect(metout_NMR[(iday*24-23):(iday*24), 4] .+ 273.15).*1u"K"
+ta2m_NMR = collect(metout_NMR[(iday*24-23):(iday*24), 5] .+ 273.15).*1u"K"
+rh1cm_NMR = collect(metout_NMR[(iday*24-23):(iday*24), 6])
+rh2m_NMR = collect(metout_NMR[(iday*24-23):(iday*24), 7])
 
 DEP = [0.0, 2.5, 5.0, 10.0, 15.0, 20.0, 30.0, 50.0, 100.0, 200.0]u"cm" # Soil nodes (cm) - keep spacing close near the surface, last value is where it is assumed that the soil temperature is at the annual mean air temperature
 refhyt = 2u"m"
 days = [15, 46, 74, 105, 135, 166, 196, 227, 258, 288, 319, 349]
 hours = collect(0.:1:24.) # hour of day for solrad
 lat = 43.1379째 # latitude
-iuv = true
+iuv = false # this makes it take ages if true!
 elev = 226u"m" # elevation (m)
 hori = fill(0.0째, 24) # enter the horizon angles (degrees) so that they go from 0 degrees azimuth (north) clockwise in 15 degree intervals
 slope = 0.0째 # slope (degrees, range 0-90)
@@ -41,12 +47,12 @@ TMINN = [-14.3, -12.1, -5.1, 1.2, 6.9, 12.3, 15.2, 13.6, 8.9, 3, -3.2, -10.6]u"�
 TMAXX = [-3.2, 0.1, 6.8, 14.6, 21.3, 26.4, 29, 27.7, 23.3, 16.6, 7.8, -0.4]u"째C" # maximum air temperatures (째C)
 RHMINN = [50.2, 48.4, 48.7, 40.8, 40, 42.1, 45.5, 47.3, 47.6, 45, 51.3, 52.8] # min relative humidity (%)
 RHMAXX = [100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0] # max relative humidity (%)
-WNMINN = [4.9, 4.8, 5.2, 5.3, 4.6, 4.3, 3.8, 3.7, 4, 4.6, 4.9, 4.8]u"m/s" # min wind speed (m/s)
+WNMINN = 0.1 .* [4.9, 4.8, 5.2, 5.3, 4.6, 4.3, 3.8, 3.7, 4, 4.6, 4.9, 4.8]u"m/s" # min wind speed (m/s)
 WNMAXX = [4.9, 4.8, 5.2, 5.3, 4.6, 4.3, 3.8, 3.7, 4, 4.6, 4.9, 4.8]u"m/s" # max wind speed (m/s)
-CCMINN = [50.3, 47, 48.2, 47.5, 40.9, 35.7, 34.1, 36.6, 42.6, 48.4, 61.1, 60.1] # min cloud cover (%)
-CCMAXX = [50.3, 47, 48.2, 47.5, 40.9, 35.7, 34.1, 36.6, 42.6, 48.4, 61.1, 60.1] # max cloud cover (%)
+CCMINN = 0.0 .* [50.3, 47, 48.2, 47.5, 40.9, 35.7, 34.1, 36.6, 42.6, 48.4, 61.1, 60.1] # min cloud cover (%)
+CCMAXX = 0.0 .* [50.3, 47, 48.2, 47.5, 40.9, 35.7, 34.1, 36.6, 42.6, 48.4, 61.1, 60.1] # max cloud cover (%)
 RAINFALL = ([28, 28.2, 54.6, 79.7, 81.3, 100.1, 101.3, 102.5, 89.7, 62.4, 54.9, 41.2]) / 1000u"m" # monthly mean rainfall (mm)
-SoilMoist = fill(0.2, 10)
+SoilMoist = fill(0.2, 12)
 daily = false
 
 # creating the arrays of environmental variables that are assumed not to change with month for this simulation
@@ -84,10 +90,23 @@ end
 solrad_out = solrad(days = days, hours = hours, lat = lat, elev = elev, hori = hori, slope = slope, aspect = aspect, refl = refl, iuv = iuv)
 
 # interpolate air temperature to hourly
-TAIRs, WNs, RHs, CLDs = hourly_vars(TMINN=TMINN, TMAXX=TMAXX, WNMINN=WNMINN, WNMAXX=WNMAXX, RHMINN=RHMINN, RHMAXX=RHMAXX, CCMINN=CCMINN, CCMAXX=CCMAXX,solrad_out=solrad_out, TIMINS=TIMINS, TIMAXS=TIMAXS, daily=daily)
+TAIRs, WNs, RHs, CLDs = hourly_vars(
+    TMINN=TMINN, 
+    TMAXX=TMAXX, 
+    WNMINN=WNMINN, 
+    WNMAXX=WNMAXX, 
+    RHMINN=RHMINN, 
+    RHMAXX=RHMAXX, 
+    CCMINN=CCMINN, 
+    CCMAXX=CCMAXX,
+    solrad_out=solrad_out, 
+    TIMINS=TIMINS, 
+    TIMAXS=TIMAXS, 
+    daily=daily
+    )
 
 # simulate a day
-iday = 1
+iday = 2
 sub = (iday*25-24):(iday*25)
 REFL = REFLS[iday]
 SHADE = SHADES[iday] # daily shade (%)
@@ -167,9 +186,9 @@ input = MicroInput(
 
 # initial soil temperatures
 T0 = fill(soilinit, numnodes)
-T0[numnodes]=tdeep
-T0[numnodes-2]=(u"K"(TMINN[iday])+u"K"(TMAXX[iday]))/2.0
-T0[numnodes-1]=(T0[numnodes]+T0[numnodes-2])/2.0
+#T0[numnodes]=tdeep
+#T0[numnodes-2]=(u"K"(TMINN[iday])+u"K"(TMAXX[iday]))/2.0
+#T0[numnodes-1]=(T0[numnodes]+T0[numnodes-2])/2.0
 
 tspan = (0.0u"minute", 1440.0u"minute")  # 1 hour
 prob = ODEProblem(soil_energy_balance!, T0, tspan, input)
@@ -188,8 +207,8 @@ for iter in 1:niter
     T0 = soiltemps[:, 25] # new initial soil temps
 end
 labels = ["$(d)" for d in DEP]
-plot(u"hr".(sol.t), u"째C".(soiltemps'), xlabel="Time", ylabel="Soil Temperature", lw=2, label = string.(DEP'), linecolor="black")
-plot!(u"hr".(sol.t[1:24]), Matrix(soiltemps_NMR[(iday*24-23):(iday*24), :]), xlabel="Time", ylabel="Soil Temperature", lw=2, label = string.(DEP'), linestyle = :dash, linecolor="grey")
+plot(u"hr".(sol.t), u"째C".(soiltemps'), xlabel="time", ylabel="soil temperature", lw=2, label = string.(DEP'), linecolor="black")
+plot!(u"hr".(sol.t[1:24]), Matrix(soiltemps_NMR[(iday*24-23):(iday*24), :]), xlabel="time", ylabel="soil temperature", lw=2, label = string.(DEP'), linestyle = :dash, linecolor="grey")
 
 # now get wind air temperature and humidity profiles
 nsteps = 24
@@ -201,7 +220,7 @@ for i in 1:nsteps
         ruf = ruf,
         zh = zh,
         d0 = d0,
-        TAREF = TAIRs[i],
+        TAREF = TAIR[i],
         VREF = VEL[i],
         rh = RH[i],
         D0cm = u"째C"(soiltemps[1, i]),  # top layer temp at time i
@@ -217,6 +236,14 @@ RH_matrix   = hcat([getfield.(profiles, :RHs)[i]   for i in 1:length(profiles)].
 Qconv_vec   = [getfield(p, :QCONV) for p in profiles]    # convective fluxes at all time steps
 ustar_vec   = [getfield(p, :USTAR) for p in profiles]    # friction velocities
 heights_vec = getfield(profiles[1], :heights)                     # constant across time
-plot(u"hr".(sol.t[1:24]), VEL_matrix', xlabel="Time", ylabel="wind speed", lw=2, label = string.(last(heights_vec, 11)'))
-plot(u"hr".(sol.t[1:24]), TA_matrix', xlabel="Time", ylabel="air temperature", lw=2, label = string.(last(heights_vec, 11)'))
-plot(u"hr".(sol.t[1:24]), RH_matrix', xlabel="Time", ylabel="humidity (%)", lw=2, label = string.(last(heights_vec, 11)'))
+plot(u"hr".(sol.t[1:24]), VEL_matrix', xlabel="time", ylabel="wind speed", lw=2, label = string.(first(heights_vec, 11)'))
+plot!(u"hr".(sol.t[1:24]), vel1cm_NMR, xlabel="time", ylabel="wind speed", lw=2, label = "1cm NMR", linestyle = :dash, linecolor="grey")
+plot!(u"hr".(sol.t[1:24]), vel2m_NMR, xlabel="time", ylabel="wind speed", lw=2, label = "200cm NMR", linestyle = :dash, linecolor="grey")
+
+plot(u"hr".(sol.t[1:24]), TA_matrix', xlabel="time", ylabel="air temperature", lw=2, label = string.(first(heights_vec, 11)'))
+plot!(u"hr".(sol.t[1:24]), ta1cm_NMR, xlabel="time", ylabel="air temperature", lw=2, label = "1cm NMR", linestyle = :dash, linecolor="grey")
+plot!(u"hr".(sol.t[1:24]), ta2m_NMR, xlabel="time", ylabel="air temperature", lw=2, label = "200cm NMR", linestyle = :dash, linecolor="grey")
+
+plot(u"hr".(sol.t[1:24]), RH_matrix', xlabel="time", ylabel="humidity (%)", lw=2, label = string.(first(heights_vec, 11)'))
+plot!(u"hr".(sol.t[1:24]), rh1cm_NMR, xlabel="time", ylabel="humidity (%)", lw=2, label = "1cm NMR", linestyle = :dash, linecolor="grey")
+plot!(u"hr".(sol.t[1:24]), rh2m_NMR, xlabel="time", ylabel="humidity (%)", lw=2, label = "200cm NMR", linestyle = :dash, linecolor="grey")

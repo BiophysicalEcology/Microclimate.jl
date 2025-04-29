@@ -247,8 +247,8 @@ function hourly_vars(;
         #      TIME OF MAXIMUM at sunrise for relative humidity
         TSNHR = TIMAXS[2] #+ TIMCOR
         TIMTMX = (HSINT * 100.0 + FRACTS) + (TSNHR * 100.0)
-        TIMIN = TIMTMX
-        TIMAX = TIMSR
+        TIMIN = TIMSR
+        TIMAX = TIMTMX
         IVAR = IWN
         WNARRY = vsine(VMIN, VMAX, TIMSR, TIMSS, TIMIN, TIMAX, daily, iday, IVAR)
 
@@ -277,8 +277,8 @@ function hourly_vars(;
         #      TIME OF MAXIMUM at sunrise for relative humidity
         TSNHR = TIMAXS[4] #+ TIMCOR
         TIMTMX = (HSINT * 100.0 + FRACTS) + (TSNHR * 100.0)
-        TIMIN = TIMTMX
-        TIMAX = TIMSR
+        TIMIN = TIMSR
+        TIMAX = TIMTMX
         IVAR = ICLD
         CLDARRY = vsine(VMIN, VMAX, TIMSR, TIMSS, TIMIN, TIMAX, daily, iday, IVAR)
 
