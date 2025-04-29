@@ -22,7 +22,7 @@ cmH2O = 1 # precipitable cm H2O in air column, 0.1 = VERY DRY; 1 = MOIST AIR CON
 ω = 2π / 365
 se = 0.39779
 d0 = 80.0
-iuv = false # Use gamma function for scattered solar radiation? (computationally intensive)
+iuv = true # Use gamma function for scattered solar radiation? (computationally intensive)
 noscat = true
 amr = 25.0u"km"
 nmax = 111 # maximum number of wavelengths
