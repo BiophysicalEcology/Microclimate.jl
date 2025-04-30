@@ -26,10 +26,10 @@ export soil_energy_balance!, evap
 
 export MicroParams, MicroForcing, MicroInput
 
-include("air_properties.jl")
+include("fluid_properties.jl")
 include("landscape.jl")      
 include("interpolation.jl")
-include("solar_radiation.jl")
+include("radiation.jl")
 include("boundary_layer.jl")
 include("soil_properties.jl")
 include("soil_balance.jl")

@@ -1,4 +1,4 @@
-using Microclimate
+#using Microclimate
 using Unitful
 using Unitful: °, rad, R, kg, m
 using Plots
@@ -28,12 +28,23 @@ sle = 0.96 # - surface emissivity
 ruf = 0.004u"m" # m roughness height
 zh = 0u"m" # m heat transfer roughness height
 d0 = 0u"m" # zero plane displacement correction factor
+
 # soil properties# soil thermal parameters 
 λ_m = 1.25u"W/m/K" # soil minerals thermal conductivity (W/mC)
 ρ_m = 2.560u"Mg/m^3" # soil minerals density (Mg/m3)
 cp_m = 870.0u"J/kg/K" # soil minerals specific heat (J/kg-K)
 ρ_b_dry = 2.56u"Mg/m^3" # dry soil bulk density (Mg/m3)
 θ_sat = 0.26u"m^3/m^3" # volumetric water content at saturation (0.1 bar matric potential) (m3/m3)
+
+# soil moisture model parametersrw=2.5E+10u"m^3/kg/s", # resistance per unit length of root, m3 kg-1 s-1
+pc = -1500.0u"J/kg" # critical leaf water potential for stomatal closure, J kg-1
+rl = 2000000.0u"m^3/kg/s" # resistance per unit length of leaf, m3 kg-1 s-1
+sp = 10.0 # stability parameter, -
+r1 = 0.001u"m" # root radius, m
+im = 0.000001 # maximum overall mass balance error allowed, kg
+maxcount = 500
+timestep = 360.0u"s"
+
 # Time varying environmental data
 TIMINS = [0, 0, 1, 1] # time of minima for air temp, wind, humidity and cloud cover (h), air & wind mins relative to sunrise, humidity and cloud cover mins relative to solar noon
 TIMAXS = [1, 1, 0, 0] # time of maxima for air temp, wind, humidity and cloud cover (h), air temp & wind maxs relative to solar noon, humidity and cloud cover maxs relative to sunrise
@@ -101,6 +112,13 @@ TAIRs, WNs, RHs, CLDs = hourly_vars(
 
 # simulate a day
 iday = 2
+
+vel1cm_NMR = collect(metout_NMR[(iday*24-23):(iday*24), 8]).*1u"m/s"
+vel2m_NMR = collect(metout_NMR[(iday*24-23):(iday*24), 9]).*1u"m/s"
+ta1cm_NMR = collect(metout_NMR[(iday*24-23):(iday*24), 4] .+ 273.15).*1u"K"
+ta2m_NMR = collect(metout_NMR[(iday*24-23):(iday*24), 5] .+ 273.15).*1u"K"
+rh1cm_NMR = collect(metout_NMR[(iday*24-23):(iday*24), 6])
+rh2m_NMR = collect(metout_NMR[(iday*24-23):(iday*24), 7])
 
 sub = (iday*25-24):(iday*25)
 REFL = REFLS[iday]
@@ -185,69 +203,58 @@ T0 = fill(soilinit, numnodes)
 #T0[numnodes-2]=(u"K"(TMINN[iday])+u"K"(TMAXX[iday]))/2.0
 #T0[numnodes-1]=(T0[numnodes]+T0[numnodes-2])/2.0
 
-tspan = (0.0u"minute", 1440.0u"minute")  # 1 day
+# intitial soil moisture
+θ_soil18 = similar(θ_soil, 18)  # preallocate vector of length 18
+j = 1
+for i in 1:18
+    if isodd(i)
+        θ_soil18[i] = θ_soil[j]
+        j += 1
+    else
+        θ_soil18[i] = θ_soil18[i - 1]
+    end
+end
+θ_soil0 = θ_soil18
+
+i=1
+tspan = (0.0u"minute", 60.0u"minute")  # 1 hour
 prob = ODEProblem(soil_energy_balance!, T0, tspan, input)
 sol = solve(prob, Tsit5(); saveat=60.0u"minute")
 soiltemps = hcat(sol.u...)
-#plot(u"hr".(sol.t), u"°C".(soiltemps'), xlabel="Time", ylabel="Soil Temperature", lw=2)
-T0 = soiltemps[:, 25] # new initial soil temps
+T0 = soiltemps[:, 2] # new initial soil temps
 
-# iterate through to get final soil temperature profile
-niter = 2 # number of interations for steady periodic
-for iter in 1:niter
-    prob = ODEProblem(soil_energy_balance!, T0, tspan, input)
-    sol = solve(prob, Tsit5(); saveat=60.0u"minute")
-    soiltemps = hcat(sol.u...)
-    #plot(u"hr".(sol.t), u"°C".(soiltemps'), xlabel="Time", ylabel="Soil Temperature", lw=2)
-    T0 = soiltemps[:, 25] # new initial soil temps
-end
+# compute scalar profiles
+heights = [0.01] .* u"m"
+profile_out = get_profile(
+    refhyt=refhyt,
+    ruf=ruf,
+    zh=zh,
+    d0=d0,
+    TAREF=TAIR[i],
+    VREF=VEL[i],
+    rh=RH[i],
+    D0cm=u"°C"(T0[1]),  # top layer temp at time i
+    ZEN=ZENR[i],
+    heights=heights,
+    elev=elev,
+    warn=true
+)
 
-# subset NicheMapR predictions
-vel1cm_NMR = collect(metout_NMR[(iday*24-23):(iday*24), 8]).*1u"m/s"
-vel2m_NMR = collect(metout_NMR[(iday*24-23):(iday*24), 9]).*1u"m/s"
-ta1cm_NMR = collect(metout_NMR[(iday*24-23):(iday*24), 4] .+ 273.15).*1u"K"
-ta2m_NMR = collect(metout_NMR[(iday*24-23):(iday*24), 5] .+ 273.15).*1u"K"
-rh1cm_NMR = collect(metout_NMR[(iday*24-23):(iday*24), 6])
-rh2m_NMR = collect(metout_NMR[(iday*24-23):(iday*24), 7])
+# convection
+qconv = profile_out.QCONV
 
-labels = ["$(d)" for d in DEP]
-plot(u"hr".(sol.t), u"°C".(soiltemps'), xlabel="time", ylabel="soil temperature", lw=2, label = string.(DEP'), linecolor="black")
-plot!(u"hr".(sol.t[1:24]), Matrix(soiltemps_NMR[(iday*24-23):(iday*24), :]), xlabel="time", ylabel="soil temperature", lw=2, label = string.(DEP'), linestyle = :dash, linecolor="grey")
+# evaporation
+P_atmos = get_pressure(elev)
+rh_loc = profile_out.RHs
+hc = max(abs(qconv / (T0[1] - u"K"(TAIR[i]))), 0.5u"W/m^2/K")
+wet_air_out = wet_air(u"K"(TAIR[i]); rh=RH[i], P_atmos=P_atmos)
+cp_air = wet_air_out.cp
+ρ_air = wet_air_out.ρ_air
+hd = (hc / (cp_air * ρ_air)) * (0.71 / 0.60)^0.666
+qevap, gwsurf = evap(tsurf=u"K"(T0[1]), tair=u"K"(TAIR[i]), rh=RH[i], rhsurf=100.0, hd=hd, elev=elev, pctwet=100.0, sat=false)
+λ_evap = get_λ_evap(T0[1]) 
+EP = qevap / λ_evap # evaporation potential, mm/s (kg/s)
 
-# now get wind air temperature and humidity profiles
-nsteps = 24
-heights = [0.01, 0.05, 0.1, 0.2, 0.3, 0.4, 0.5, 0.75, 1.0] .* u"m"
-profiles = Vector{NamedTuple}(undef, nsteps)  # or whatever you have from your loop
-for i in 1:nsteps
-    profiles[i] = get_profile(
-        refhyt = refhyt,
-        ruf = ruf,
-        zh = zh,
-        d0 = d0,
-        TAREF = TAIR[i],
-        VREF = VEL[i],
-        rh = RH[i],
-        D0cm = u"°C"(soiltemps[1, i]),  # top layer temp at time i
-        ZEN = ZENR[i],
-        heights = heights,
-        elev = elev
-    )
-end
-
-VEL_matrix = hcat([getfield.(profiles, :VELs)[i] for i in 1:length(profiles)]...)    # velocities at all time steps and heights
-TA_matrix   = hcat([getfield.(profiles, :TAs)[i]   for i in 1:length(profiles)]...)  # air temperatures at all time steps and heights
-RH_matrix   = hcat([getfield.(profiles, :RHs)[i]   for i in 1:length(profiles)]...)       # relative humidity at all time steps and heights
-Qconv_vec   = [getfield(p, :QCONV) for p in profiles]    # convective fluxes at all time steps
-ustar_vec   = [getfield(p, :USTAR) for p in profiles]    # friction velocities
-heights_vec = getfield(profiles[1], :heights)                     # constant across time
-plot(u"hr".(sol.t[1:24]), VEL_matrix', xlabel="time", ylabel="wind speed", lw=2, label = string.(first(heights_vec, 11)'))
-plot!(u"hr".(sol.t[1:24]), vel1cm_NMR, xlabel="time", ylabel="wind speed", lw=2, label = "1cm NMR", linestyle = :dash, linecolor="grey")
-plot!(u"hr".(sol.t[1:24]), vel2m_NMR, xlabel="time", ylabel="wind speed", lw=2, label = "200cm NMR", linestyle = :dash, linecolor="grey")
-
-plot(u"hr".(sol.t[1:24]), TA_matrix', xlabel="time", ylabel="air temperature", lw=2, label = string.(first(heights_vec, 11)'))
-plot!(u"hr".(sol.t[1:24]), ta1cm_NMR, xlabel="time", ylabel="air temperature", lw=2, label = "1cm NMR", linestyle = :dash, linecolor="grey")
-plot!(u"hr".(sol.t[1:24]), ta2m_NMR, xlabel="time", ylabel="air temperature", lw=2, label = "200cm NMR", linestyle = :dash, linecolor="grey")
-
-plot(u"hr".(sol.t[1:24]), RH_matrix', xlabel="time", ylabel="humidity (%)", lw=2, label = string.(first(heights_vec, 11)'))
-plot!(u"hr".(sol.t[1:24]), rh1cm_NMR, xlabel="time", ylabel="humidity (%)", lw=2, label = "1cm NMR", linestyle = :dash, linecolor="grey")
-plot!(u"hr".(sol.t[1:24]), rh2m_NMR, xlabel="time", ylabel="humidity (%)", lw=2, label = "200cm NMR", linestyle = :dash, linecolor="grey")
+# run infiltration algorithm
+infil_out = infil(rh_loc, θ_soil0, EP, T0, dep, timestep, elev, rw, pc, rl, sp, r1, im, maxcount)
+ 

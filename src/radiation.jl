@@ -1432,3 +1432,46 @@ function solrad(;
         λGlobal=GRλs .* (10u"W/m^2" / 1u"mW/cm^2"),
     )
 end
+
+function get_longwave(;
+    elev,
+    rh,
+    tair,
+    tsurf,
+    slep,
+    sle,
+    cloud,
+    viewf
+)
+    # Longwave radiation (handle both IR modes)
+    # Constants
+    σ = Unitful.uconvert(u"W/m^2/K^4", Unitful.σ) # Stefan-Boltzmann constant, W/m^2/K^4
+    P_atmos = get_pressure(elev)
+    wet_air_out = wet_air(u"K"(tair); rh=rh, P_atmos=P_atmos)
+
+    # Atmospheric radiation
+    P_vap = wet_air_out.P_vap
+    arad = u"W/m^2"(ustrip(1.72 * (ustrip(u"kPa"(P_vap))/ustrip(u"K"(tair))) ^ (1.0/7.0)) * σ * (u"K"(tair)) ^ 4) # Campbell and Norman 1998 eq. 10.10 to get emissivity of sky
+    #arad = ((0.0000092 * (u"K"(tair))^2) * σ * (u"K"(tair))^4) / 1u"K^2" # Swinbank, Eq. 10.11 in Campbell and Norman 1998
+
+    # Cloud radiation temperature (shade approximation, TAIR - 2°C)
+    crad = σ * slep * (u"K"(tair) - 2u"K")^4
+
+    # Hillshade radiation temperature (approximated as air temperature)
+    hrad = σ * slep * (u"K"(tair))^4
+
+    # Ground surface radiation temperature
+    srad = σ * sle * (u"K"(tsurf))^4
+
+    # Clear sky fraction
+    clr = 1.0 - cloud / 100.0
+    clear = arad * clr
+    clod = crad * (cloud / 100)
+    qradsk = (clear + clod) * ((100 - shade) / 100.0)
+    qradvg = (shade / 100.0) * hrad
+    qradgr = ((100.0 - shade) / 100.0) * srad + (shade / 100.0) * hrad
+    qradhl = hrad
+    qrad = (qradsk + qradvg) * viewf + qradhl * (1.0 - viewf) - qradgr
+    tsky = (((qradsk + qradvg) * viewf + qradhl * (1.0 - viewf)) / σ)^0.25
+    return tsky, qrad, arad, crad, hrad, srad, qradsk, qradvg, qradgr, qradhl
+end

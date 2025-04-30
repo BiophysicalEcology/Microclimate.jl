@@ -186,3 +186,12 @@ function dry_air(T_drybulb, P_atmos, elev, fO2, fCO2, fN2)
 
     return (;P_atmos, ρ_air, μ, ν, dif_vpr, k_fluid, L_v, tcoeff, ggroup, bbemit, emtmax)
 end
+
+function get_λ_evap(T)
+    Tw = Unitful.ustrip(u"°C"(T))
+    if Tw > 0
+        return (2500.8 - 2.36 * Tw + 0.0016 * Tw^2 - 0.00006 * Tw^3)*1000u"J/kg"
+    else
+        return (834.1 - 0.29 * Tw - 0.004 * Tw^2)*1000u"J/kg"
+    end
+end

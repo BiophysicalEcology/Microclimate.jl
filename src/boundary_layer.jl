@@ -212,7 +212,7 @@ function get_profile(;
     end
 
     return (
-        heights=heights,
+        heights=unique(heights),
         VELs=u"m/s".(VV),      # m/s
         TAs=u"°C".(T),         # deg C
         RHs=RHs,               # %
