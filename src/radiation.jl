@@ -1434,14 +1434,14 @@ function solrad(;
 end
 
 function get_longwave(;
-    elev,
-    rh,
-    tair,
-    tsurf,
-    slep,
-    sle,
-    cloud,
-    viewf
+    elev::Quantity,
+    rh::Real,
+    tair::Quantity,
+    tsurf::Quantity,
+    slep::Real,
+    sle::Real,
+    cloud::Real,
+    viewf::Real
 )
     # Longwave radiation (handle both IR modes)
     # Constants
@@ -1473,5 +1473,12 @@ function get_longwave(;
     qradhl = hrad
     qrad = (qradsk + qradvg) * viewf + qradhl * (1.0 - viewf) - qradgr
     tsky = (((qradsk + qradvg) * viewf + qradhl * (1.0 - viewf)) / σ)^0.25
-    return tsky, qrad, arad, crad, hrad, srad, qradsk, qradvg, qradgr, qradhl
+    return(
+        Tsky = tsky,
+        Qrad = qrad,
+        Qrad_sky = qradsk,
+        Qrad_veg = qradvg,
+        Qrad_ground = qradgr,
+        Qrad_hill = qradhl
+        )
 end

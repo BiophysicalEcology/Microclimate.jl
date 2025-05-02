@@ -17,7 +17,7 @@ days = [15, 46, 74, 105, 135, 166, 196, 227, 258, 288, 319, 349]
 hours = collect(0.:1:24.) # hour of day for solrad
 lat = 43.1379° # latitude
 iuv = false # this makes it take ages if true!
-elev = 226u"m" # elevation (m)
+elev = 226.0u"m" # elevation (m)
 hori = fill(0.0°, 24) # enter the horizon angles (degrees) so that they go from 0 degrees azimuth (north) clockwise in 15 degree intervals
 slope = 0.0° # slope (degrees, range 0-90)
 aspect = 0.0° # aspect (degrees, 0 = North, range 0-360)
