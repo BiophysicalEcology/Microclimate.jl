@@ -1,4 +1,4 @@
-using Microclimate
+#using Microclimate
 using Unitful
 using Unitful: °, rad, R, kg, m
 using Plots
@@ -8,8 +8,8 @@ using DifferentialEquations
 using CSV, DataFrames, Dates
 
 # read in output from Norman
-soiltemps_NMR = (DataFrame(CSV.File("data/soil.csv"))[:, 4:13]).*u"°C"
-metout_NMR = DataFrame(CSV.File("data/metout.csv"))
+soiltemps_NMR = (DataFrame(CSV.File("data/soil_monthly.csv"))[:, 4:13]).*u"°C"
+metout_NMR = DataFrame(CSV.File("data/metout_monthly.csv"))
 
 DEP = [0.0, 2.5, 5.0, 10.0, 15.0, 20.0, 30.0, 50.0, 100.0, 200.0]u"cm" # Soil nodes (cm) - keep spacing close near the surface, last value is where it is assumed that the soil temperature is at the annual mean air temperature
 refhyt = 2u"m"
@@ -25,6 +25,7 @@ refl = 0.10 # substrate solar reflectivity (decimal %)
 shade = 0.0 # % shade cast by vegetation
 pctwet = 0.0 # % surface wetness
 sle = 0.96 # - surface emissivity
+slep = 0.96 # - cloud emissivity
 ruf = 0.004u"m" # m roughness height
 zh = 0u"m" # m heat transfer roughness height
 d0 = 0u"m" # zero plane displacement correction factor
@@ -46,7 +47,8 @@ WNMAXX = [4.9, 4.8, 5.2, 5.3, 4.6, 4.3, 3.8, 3.7, 4, 4.6, 4.9, 4.8]u"m/s" # max 
 CCMINN = 0.0 .* [50.3, 47, 48.2, 47.5, 40.9, 35.7, 34.1, 36.6, 42.6, 48.4, 61.1, 60.1] # min cloud cover (%)
 CCMAXX = 0.0 .* [50.3, 47, 48.2, 47.5, 40.9, 35.7, 34.1, 36.6, 42.6, 48.4, 61.1, 60.1] # max cloud cover (%)
 RAINFALL = ([28, 28.2, 54.6, 79.7, 81.3, 100.1, 101.3, 102.5, 89.7, 62.4, 54.9, 41.2]) / 1000u"m" # monthly mean rainfall (mm)
-SoilMoist = fill(0.2, 12)
+SoilMoist = fill(0.2, ndays)
+#SoilMoist = [0.42, 0.42, 0.42, 0.43, 0.44, 0.44, 0.43, 0.42, 0.41, 0.42, 0.42, 0.43]
 daily = false
 
 # creating the arrays of environmental variables that are assumed not to change with month for this simulation
@@ -81,7 +83,17 @@ for i in 2:numnodes
 end
 
 # compute solar radiation (need to make refl time varying)
-solrad_out = solrad(days = days, hours = hours, lat = lat, elev = elev, hori = hori, slope = slope, aspect = aspect, refl = refl, iuv = iuv)
+solrad_out = solrad(
+    days = days, 
+    hours = hours, 
+    lat = lat, 
+    elev = elev, 
+    hori = hori, 
+    slope = slope, 
+    aspect = aspect, 
+    refl = refl, 
+    iuv = iuv,
+    )
 
 # interpolate air temperature to hourly
 TAIRs, WNs, RHs, CLDs = hourly_vars(
@@ -100,7 +112,7 @@ TAIRs, WNs, RHs, CLDs = hourly_vars(
     )
 
 # simulate a day
-iday = 2
+iday = 5
 
 sub = (iday*25-24):(iday*25)
 REFL = REFLS[iday]
@@ -155,7 +167,7 @@ params = MicroParams(
     elev = elev,
     refl = refl,
     sle = sle,
-    slep = sle, # check if this is what it should be - sle vs. slep (set as 1 in PAR in Fortran but then changed to user SLE later)
+    slep = slep, # check if this is what it should be - sle vs. slep (set as 1 in PAR in Fortran but then changed to user SLE later)
     pctwet = pctwet,
     nodes = nodes,
     tdeep = tdeep,
@@ -216,7 +228,7 @@ plot!(u"hr".(sol.t[1:24]), Matrix(soiltemps_NMR[(iday*24-23):(iday*24), :]), xla
 
 # now get wind air temperature and humidity profiles
 nsteps = 24
-heights = [0.01, 0.05, 0.1, 0.2, 0.3, 0.4, 0.5, 0.75, 1.0] .* u"m"
+heights = [0.01] .* u"m"
 profiles = Vector{NamedTuple}(undef, nsteps)  # or whatever you have from your loop
 for i in 1:nsteps
     profiles[i] = get_profile(

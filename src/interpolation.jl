@@ -5,6 +5,7 @@ function sinec!(
     TMAX = u"K"(TMAX)
     TMIN2 = u"K"(TMIN2)
     TMAX2 = u"K"(TMAX2)
+    ITAIR = u"K"(ITAIR)
     T=TMIN[1] # initialise T
     A = (TMAX - TMIN) / 2
     TSR = TMIN
@@ -18,28 +19,32 @@ function sinec!(
     for I in 1:24
         J = I + 1
         TIME = I * 100.0
-        if TIME <= TIMSR
+        if TIME == TIMSR # sunrise
             T = TMIN
-        elseif TIME >= TIMSS
-            TI = (2400.0 - TIMSS) - (2400.0 - TIME)
-            E = TI * TAU
-            if daily
-                T = (TSS - TMIN2) / exp(E) + TMIN2
-            else
-                T = (TSS - TSR) / exp(E) + TSR
-            end
-        elseif TIME > TIMSR && TIME < TIMSS
-            X = 360.0 * (TIME - TREF) / (2.0 * (TIMTMX - TIMSR))
-            Y = X / 57.29577
-            Z = sin(Y)
-            T = A * Z + TMIN + A
-        else
+        end
+        if TIME < TIMSR
             TI = (2400.0 - TIMSS) + TIME
             if daily && iday > 1
-                T = ((TMIN - 273.0 - ITAIR) / TIMSR) * TIME + ITAIR
+                T = ((TMIN - ITAIR) / TIMSR) * TIME + ITAIR   
             else
                 E = TI * TAU
                 T = (TSS - TSR) / exp(E) + TSR
+            end
+        end
+        if TIME > TIMSR
+            if TIME <= TIMSS # before or at sunset
+                X = 360.0 * (TIME - TREF) / (2.0 * (TIMTMX - TIMSR))
+                Y = X / 57.29577
+                Z = sin(Y)
+                T = A * Z + TMIN + A
+            else # after suset
+                TI = (2400.0 - TIMSS) - (2400. - TIME)
+                E = TI * TAU
+                if daily
+                    T = (TSS - TMIN2) / exp(E) + TMIN2
+                else
+                    T = (TSS - TSR) / exp(E) + TSR
+                end
             end
         end
 

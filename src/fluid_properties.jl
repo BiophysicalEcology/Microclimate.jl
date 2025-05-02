@@ -37,7 +37,6 @@ using Unitful
 P = get_pressure(1500u"m")
 """
 function get_pressure(h::Quantity;
-    h_ref::Quantity = 0u"m",
     P_ref::Quantity = 101325u"Pa",
     L_ref::Quantity = -0.0065u"K/m",
     T_ref::Quantity = 288u"K",
