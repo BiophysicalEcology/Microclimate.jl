@@ -20,7 +20,7 @@ solrad_out = solrad(
     slope = 0.0°,               # slope (degrees, range 0-90)
     aspect = 0.0°,              # aspect (degrees, 0 = North, range 0-360)
     refl = 0.10,                # substrate solar reflectivity (decimal %)
-    iuv = true                 # use Dave_Furkawa theory for UV radiation (290-360 nm)?
+    iuv = false                 # use Dave_Furkawa theory for UV radiation (290-360 nm)?
     )
 
 # extract output

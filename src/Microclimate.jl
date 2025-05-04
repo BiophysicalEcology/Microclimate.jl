@@ -12,8 +12,6 @@ using Unitful: °, rad, °C#, K, Pa, kPa, MPa, J, kJ, W, L, g, kg, cm, m, s, hr,
 
 export air_pressure, vapour_pressure, wet_air, dry_air, λ_evap
 
-export MicroParams
-
 export sinec!, vsine, hourly_vars
 
 export hour_angle, solar_geometry, check_skylight, elev_corr, gamma, dchxy, dexpi, solrad

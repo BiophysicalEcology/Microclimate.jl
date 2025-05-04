@@ -3,7 +3,7 @@ function get_profile(;
     ruf=0.004u"m",
     zh=0.0u"m",
     d0=0.0u"m",
-    κ = 0.4, # Kármán constant
+    κ=0.4, # Kármán constant
     TAREF=27.77818u"°C",
     VREF=2.749575u"m/s",
     rh=49.0415,
@@ -64,13 +64,15 @@ function get_profile(;
         z0 = u"cm"(z0)
         ZRATIO = z / z0 + 1
         DUM = log(ZRATIO)
+        TA = u"K"(TA)
+        TS = u"K"(TS)
         DIFFT = TA - TS
         TAVE = (TA + TS) / 2.0
         RCP = RHOCP(TAVE)
         DEL = 1.0
         count = 0
-        USTAR = 0.0
-        QC = 0.0
+        USTAR = 0.0u"cm/minute"
+        QC = 0.0u"cal/minute/cm^2"
         STO = 0.0
         STB = 0.0
         STS = 0.0
@@ -126,8 +128,8 @@ function get_profile(;
     cp = wet_air_out.cp
     g = 9.80665u"m/s^2"
     TREF = u"K"(TAREF)
-    rcptkg = u"cal*minute^2/m^4"(ρ * cp * TREF / (κ * g))
-
+    rcptkg = u"cal*minute^2/cm^4"(ρ * cp * TREF / (κ * g))
+    #rcptkg = 6.003e-8u"cal*minute^2/cm^4"
     GAM = 16
     ZRATIO = z / z0 + 1.0
     DUM = log(ZRATIO)
@@ -135,14 +137,14 @@ function get_profile(;
     DIFFT = T1 - T3
     TAVE = (T3 + T1) / 2
     RCP = RHOCP(TAVE, elev, rh)
-    AMOL = -30.0
+    AMOL = -30.0u"cm"
     if zh > 0.0u"m"
         STS = 0.62 / (ustrip(z0) * ustrip(USTAR) / 12)^0.45
         STB = 0.64 / DUM
         QC = RCP * DIFFT * USTAR * STB / (1.0 + STB / STS)
 
         for i in 2:NAIR
-            if T1 ≥ T3 || T3 ≤ u"K"(maxsurf) || ZEN ≥ 90
+            if T1 ≥ T3 || T3 ≤ u"K"(maxsurf) || ZEN ≥ 90°
                 VV[i] = (USTAR / κ) * log(ZZ[i] / z0 + 1)
             else
                 X1 = PHI(ZZ[i], GAM, AMOL)
@@ -156,7 +158,7 @@ function get_profile(;
             T[i] = T0 - A * log((ZZ[i] - d0_cm) / zh_cm)
         end
     else
-        if T1 ≥ T3 || T3 ≤ u"K"(maxsurf) || ZEN ≥ 90
+        if T1 ≥ T3 || T3 ≤ u"K"(maxsurf) || ZEN ≥ 90°
             STS = 0.62 / (ustrip(z0) * ustrip(USTAR) / 12.)^0.45
             STB = 0.64 / DUM
             QC = RCP * DIFFT * USTAR * STB / (1.0 + STB / STS)
@@ -171,13 +173,13 @@ function get_profile(;
                 X1 = PHI(ZZ[i], GAM, AMOL)
                 Y1 = PSI1(X1)
                 YY2 = PSI2(X1)
-                X = PHI(z)
+                X = PHI(z, GAM, AMOL)
                 #Y = PSI1(X)
                 YY = PSI2(X)
                 ADUM = ZZ[i] / z0 - Y1
                 VV[i] = (USTAR / κ) * log(ADUM)
 
-                Obukhov_out = get_Obukhov(T1, T3, V, ZZ[i], z0, RCP, κ)
+                Obukhov_out = get_Obukhov(T1, T3, V, ZZ[i], z0, rcptkg, κ)
                 TZO = (T1 * Obukhov_out.STB + T3 * Obukhov_out.STS) / (Obukhov_out.STB + Obukhov_out.STS)
                 T[i] = TZO + (T1 - TZO) * log(ZZ[i] / z0 - YY2) / log(z / z0 - YY)
             end
