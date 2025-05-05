@@ -11,7 +11,7 @@ Base.@kwdef struct MicroParams
     elev::Quantity
     refl::Float64
     sle::Float64
-    slep::Float64 # fix at 1?
+    slep::Float64
     pctwet::Float64
     nodes::Vector{Float64}
     tdeep::Quantity
