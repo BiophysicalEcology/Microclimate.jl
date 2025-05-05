@@ -389,7 +389,7 @@ function soil_water_balance(;
         # Thomas algorithm (Gauss elimination)
         for i in 2:M-1
             C2[i] = C[i] / B[i]
-            C[i] = C2[i] < 1e-8 ? 1e-8u"kg*s/m^4" : C[i]
+            #C[i] = C2[i] < 1e-8 ? 1e-8u"kg*s/m^4" : C[i]
             #C2[i] = C2[i] < 1e-8 ? 1e-8 : C2[i]
             F2[i] = F[i] / B[i]
             B[i+1] -= A[i+1] * C2[i]

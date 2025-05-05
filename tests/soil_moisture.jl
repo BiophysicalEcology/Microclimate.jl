@@ -126,13 +126,13 @@ solrad_out = solrad(
 # Initial conditions
 soilinit = u"K"(mean(ustrip(TAIRs))u"°C") # make initial soil temps equal to mean daily temperature
 T0 = fill(soilinit, numnodes)
-θ_soil10 = collect(fill(SoilMoist[1], numnodes)) # initial soil moisture
+θ_soil0_10 = collect(fill(SoilMoist[1], numnodes)) # initial soil moisture
 # intitial soil moisture
-θ_soil18 = similar(θ_soil10, 18)  # preallocate vector of length 18
+θ_soil18 = similar(θ_soil0_10, 18)  # preallocate vector of length 18
 jj = 1
 for ii in 1:18
     if isodd(ii)
-        θ_soil18[ii] = θ_soil10[jj]
+        θ_soil18[ii] = θ_soil0_10[jj]
         jj += 1
     else
         θ_soil18[ii] = θ_soil18[ii-1]
@@ -142,43 +142,13 @@ end
 #θ_soil0[1] = 1 - BD[1] / DD[1]
 pctwet = 0.0
 
-days = collect(1:12)
+days = collect(1:11)
 # output arrays
 nsteps = length(days) * (length(hours) - 1)
 T_soils = Array{Float64}(undef, nsteps, numnodes)u"K"
 θ_soils = Array{Float64}(undef, nsteps, numnodes)
 ψ_soils = Array{Float64}(undef, nsteps, numnodes)u"J/kg"
 rh_soils = Array{Float64}(undef, nsteps, numnodes)
-
-
-# get today's weather
-#SOLR = solrad_out.Global[sub]
-# SOLR = solrad_out.Global[Not(25:25:end)]#SOLRs
-# ZENR = solrad_out.Zenith[Not(25:25:end)] # skip every 25th element
-# ZSL = solrad_out.ZenithSlope[Not(25:25:end)]
-# TAIR = TAIRs
-# VEL = WNs
-# RH = RHs
-# CLD = CLDs
-
-# create forcing weather variable splines
-# tspan = 0.0:60:(60*24*(365)-60)
-# tmin = tspan .* u"minute"
-# interpSOLR = interpolate(SOLR, BSpline(Cubic(Line(OnGrid()))))
-# interpZENR = interpolate(ZENR, BSpline(Cubic(Line(OnGrid()))))
-# interpZSL = interpolate(ZSL, BSpline(Cubic(Line(OnGrid()))))
-# interpTAIR = interpolate(u"K".(TAIR), BSpline(Cubic(Line(OnGrid()))))
-# interpVEL = interpolate(VEL, BSpline(Cubic(Line(OnGrid()))))
-# interpRH = interpolate(RH, BSpline(Cubic(Line(OnGrid()))))
-# interpCLD = interpolate(CLD, BSpline(Cubic(Line(OnGrid()))))
-# SOLRt = scale(interpSOLR, tspan)
-# ZENRt = scale(interpZENR, tspan)
-# ZSLt = scale(interpZSL, tspan)
-# TAIRt = scale(interpTAIR, tspan)
-# VELt = scale(interpVEL, tspan)
-# RHt = scale(interpRH, tspan)
-# CLDt = scale(interpCLD, tspan)
-# tspan = (0.0u"minute", (60*24*(365)-60)u"minute")  # 1 hour
 
 # simulate all days
 step = 0
@@ -239,15 +209,9 @@ for j in 1:length(days)
         CLDt=CLDt
     )
 
-    # initial soil temperatures
-    #T0 = fill(soilinit, numnodes)
-    #T0[numnodes]=tdeep
-    #T0[numnodes-2]=(u"K"(TMINN[iday])+u"K"(TMAXX[iday]))/2.0
-    #T0[numnodes-1]=(T0[numnodes]+T0[numnodes-2])/2.0
-
     # loop through hours of day
     for i in 1:length(hours)-1
-            # Parameters
+        # Parameters
         params = MicroParams(
             soilprops=soilprops,
             dep=DEP,
@@ -261,11 +225,11 @@ for j in 1:length(days)
             elev=elev,
             refl=refl,
             sle=sle,
-            slep=sle, # check if this is what it should be - sle vs. slep (set as 1 in PAR in Fortran but then changed to user SLE later)
+            slep=sle,
             pctwet=pctwet,
             nodes=nodes,
             tdeep=tdeep,
-            θ_soil=θ_soil10,
+            θ_soil=θ_soil0_10,
             runmoist=false,
             runsnow=false
         )
@@ -275,15 +239,19 @@ for j in 1:length(days)
         )
 
         tspan = ((0.0 + (i - 1) * 60)u"minute", (60.0 + (i - 1) * 60)u"minute")  # 1 hour
-        # if j == 1 && i == 1
-        #     niter_soil = 3
-        # else
-        #     niter_soil = 1
-        # end
+
         prob = ODEProblem(soil_energy_balance!, T0, tspan, input)
         sol = solve(prob, Tsit5(); saveat=60.0u"minute")
         soiltemps = hcat(sol.u...)
         T0 = soiltemps[:, 2] # new initial soil temps
+        # if j == 1 && i == 1
+        #     for jj in 1:3
+        #     prob = ODEProblem(soil_energy_balance!, T0, tspan, input)
+        #     sol = solve(prob, Tsit5(); saveat=60.0u"minute")
+        #     soiltemps = hcat(sol.u...)
+        #     T0 = soiltemps[:, 2] # new initial soil temps
+        #     end
+        # end
 
         # compute scalar profiles
         heights = [0.01] .* u"m"
@@ -307,7 +275,7 @@ for j in 1:length(days)
 
         # evaporation
         P_atmos = get_pressure(elev)
-        rh_loc = profile_out.RHs[2]
+        rh_loc = profile_out.RHs[2]/100
         hc = max(abs(qconv / (T0[1] - u"K"(TAIR[i]))), 0.5u"W/m^2/K")
         wet_air_out = wet_air(u"K"(TAIR[i]); rh=RH[i], P_atmos=P_atmos)
         cp_air = wet_air_out.cp
@@ -318,13 +286,6 @@ for j in 1:length(days)
         EP = max(1e-7u"kg/m^2/s", qevap / λ_evap) # evaporation potential, mm/s (kg/s)
 
         # run infiltration algorithm
-        #T0 = u"K".([-14.947471488535426, -13.401168200078198, -12.482770331140387, -11.211433151563928, -10.799624779589632, -10.81365342874745, -11.104267771849331, -11.010673704296568, -10.134577542510105, 7.741666666666674]u"°C")
-        #θ_soil0[1] = 1 - BD[1] / DD[1]
-        # θ_soil = θ_soil0
-        T10 = T0
-        # EP = 3.544e-6u"kg/m^2/s"
-        # ET = EP
-
         niter = ustrip(3600 / timestep) # number of interations for soil moisture calc
         infil_out = soil_water_balance(
             PE=PE,
@@ -350,7 +311,6 @@ for j in 1:length(days)
             maxcount=maxcount
         )
         θ_soil0 = infil_out.θ_soil
-        surflux = infil_out.surflux
         for iter in 1:niter
             infil_out = soil_water_balance(
                 PE=PE,
@@ -376,12 +336,11 @@ for j in 1:length(days)
                 maxcount=maxcount
             )
             θ_soil0 = infil_out.θ_soil
-            surflux = infil_out.surflux
         end
         step += 1
         surflux = max(0.0u"kg*s*W/(J*m^2)", infil_out.flux_soil)
-        pctwet=abs(surflux/(EP*timestep)*100)
-        T_soils[step, :] = T10
+        pctwet = abs(surflux/(EP*timestep)*100)
+        T_soils[step, :] = T0
         sub = vcat(findall(isodd, 1:18), 18)
         θ_soil0_10 = θ_soil0[sub]
         θ_soils[step, :] = infil_out.θ_soil[sub]
@@ -391,9 +350,9 @@ for j in 1:length(days)
 end
 nsteps = 240
 plot(1:nsteps, u"°C".(T_soils[1:nsteps, :]), xlabel="time", ylabel="soil temperature", lw=2, label=string.(DEP'), legend = :none, ylim = (-10u"°C", 85u"°C"))
-plot!(1:nsteps, Matrix(soiltemps_NMR[1:nsteps, :]), xlabel="time", ylabel="soil temperature", lw=2, label = string.(DEP'), linestyle = :dash, ylim = (-10u"°C", 85u"°C"))
-plot(1:nsteps, θ_soils[1:nsteps, :], xlabel="time", ylabel="soil moisture (m^3/m^3)", lw=2, label = string.(DEP'), legend = :none, ylim = (0, 1))
-plot!(1:nsteps, Matrix(soilmoists_NMR[1:nsteps, :]), xlabel="time", ylabel="soil moisture", lw=2, label = string.(DEP'), linestyle = :dash, linecolor="grey", ylim = (0, 1))
-plot(1:nsteps, ψ_soils[1:nsteps, :], xlabel="time", ylabel="soil water potential", lw=2, label = string.(DEP'), legend = :none, ylim = (-3e2, 0))
-plot!(1:nsteps, (Matrix(soilpots_NMR[1:nsteps, :]))u"J/kg", xlabel="time", ylabel="soil water potential", lw=2, label = string.(DEP'), linestyle = :dash, linecolor="grey")
-plot(1:nsteps, rh_soils[1:nsteps, :], xlabel="time", ylabel="soil humidity", lw=2, label = string.(DEP'), ylim = (0, 1))
+plot(1:nsteps, Matrix(soiltemps_NMR[1:nsteps, :]), xlabel="time", ylabel="soil temperature", lw=2, label = string.(DEP'), linestyle = :dash, ylim = (-10u"°C", 85u"°C"))
+#plot(1:nsteps, θ_soils[1:nsteps, :], xlabel="time", ylabel="soil moisture (m^3/m^3)", lw=2, label = string.(DEP'), legend = :none, ylim = (0, 1))
+#plot!(1:nsteps, Matrix(soilmoists_NMR[1:nsteps, :]), xlabel="time", ylabel="soil moisture", lw=2, label = string.(DEP'), linestyle = :dash, linecolor="grey", ylim = (0, 1))
+#plot(1:nsteps, ψ_soils[1:nsteps, :], xlabel="time", ylabel="soil water potential", lw=2, label = string.(DEP'), legend = :none, ylim = (-3e5, 0))
+#plot!(1:nsteps, (Matrix(soilpots_NMR[1:nsteps, :]))u"J/kg", xlabel="time", ylabel="soil water potential", lw=2, label = string.(DEP'), linestyle = :dash, linecolor="grey")
+#plot(1:nsteps, rh_soils[1:nsteps, :], xlabel="time", ylabel="soil humidity", lw=2, label = string.(DEP'), ylim = (0, 1))
