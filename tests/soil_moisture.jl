@@ -232,14 +232,14 @@ for j in 1:length(days)
         sol = solve(prob, Tsit5(); saveat=60.0u"minute")
         soiltemps = hcat(sol.u...)
         T0 = soiltemps[:, 2] # new initial soil temps
-        # if j == 1 && i == 1
-        #     for jj in 1:3
-        #     prob = ODEProblem(soil_energy_balance!, T0, tspan, input)
-        #     sol = solve(prob, Tsit5(); saveat=60.0u"minute")
-        #     soiltemps = hcat(sol.u...)
-        #     T0 = soiltemps[:, 2] # new initial soil temps
-        #     end
-        # end
+        if j == 1 && i == 1
+            for jj in 1:2
+            prob = ODEProblem(soil_energy_balance!, T0, tspan, input)
+            sol = solve(prob, Tsit5(); saveat=60.0u"minute")
+            soiltemps = hcat(sol.u...)
+            T0 = soiltemps[:, 2] # new initial soil temps
+            end
+        end
 
         # compute scalar profiles
         heights = [0.01] .* u"m"
