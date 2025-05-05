@@ -40,12 +40,12 @@ function soil_energy_balance!(dT, T, i::MicroInput, t)
 
     # Get environmental data at time t
     tair = f.TAIRt(ustrip(t))
-    vel = f.VELt(ustrip(t))
+    vel = max(0.1u"m/s", f.VELt(ustrip(t)))
     zenr = min(90u"°", u"°"(round(f.ZENRt(ustrip(t)), digits=3)))
     solr = u"cal/cm^2/minute"(max(0.0u"W/m^2", f.SOLRt(ustrip(t))))
-    cloud = f.CLDt(ustrip(t))
-    rh = f.RHt(ustrip(t))
-    zslr = f.ZSLt(ustrip(t))
+    cloud = max(0.0, f.CLDt(ustrip(t)))
+    rh = max(0.0, f.RHt(ustrip(t)))
+    zslr = min(90u"°", f.ZSLt(ustrip(t)))
 
     T[N] = tdeep # set boundary condition of deep soil temperature
 
@@ -326,8 +326,8 @@ function soil_water_balance(;
     RB = (1.0 / RB1) # denominator of first and second terms on right in EQ11.18
 
     # Newton-Raphson to estimate PL
-    count = 0
-    while count < maxcount
+    counter = 0
+    while counter < maxcount
         if PL > PB
             PL = PB - TP * (RB + rl) # variation on EQ11.18
         end
@@ -335,7 +335,7 @@ function soil_water_balance(;
         SL = TP * (RB + rl) * sp * XP / (PL * (1.0 + XP)^2) - 1.0 # derivative of stomatal function 
         FF = PB - PL - TP * (RB + rl) / (1.0 + XP) # transpiration mass balance (variation on EQ11.18)
         PL -= FF / SL
-        count += 1
+        counter += 1
         if abs(FF) <= 10.0u"J/kg"
             break
         end
@@ -359,10 +359,10 @@ function soil_water_balance(;
     F = zeros(M + 1)u"kg/m^2/s"
     F2 = zeros(M + 1)u"J/kg"
     DP = zeros(M + 1)u"J/kg"
-    count = 0
-    while count < maxcount
+    counter = 0
+    while counter < maxcount
         SE = 0.0u"kg/m^2/s"
-        count += 1
+        counter += 1
         for i in 2:M
             K[i] = KS[i] * (PE[i] / P[i])^N[i]
         end
@@ -414,7 +414,6 @@ function soil_water_balance(;
             H[i] = exp(MW * P[i] / (Unitful.R * T[i-1]))
         end
         H[M+1] = H[M]
-
         if SE <= im
             break
         end
@@ -426,25 +425,19 @@ function soil_water_balance(;
         θ_soil[i-1] = WN[i]
     end
 
-    flux_soil = EP * (H[2] - rh_loc) / (1.0 - rh_loc) * dt
-    rh_soil .= H[2:19]
-    ψ_soil .= P[2:19]
-
     for i in 2:M
         PR[i] = -1.0 * (TR * RS[i] - P[i])
     end
-    ψ_root = PR[2:19]
-    ψ_leaf = PL
-    flux_leaf = TR
-
+    
     return(
-        flux_soil = flux_soil,
-        flux_leaf = flux_leaf,
+        evap = EP * (H[2] - rh_loc) / (1.0 - rh_loc) * dt,
+        trans = TR,
         θ_soil = θ_soil,
-        ψ_soil = ψ_soil,
-        ψ_root = ψ_root,
-        ψ_leaf = ψ_leaf,
-        rh_soil = rh_soil,
-        surflux = SW
+        ψ_soil = P[2:(M+1)],
+        ψ_root = PR[2:(M+1)],
+        ψ_leaf = PL,
+        rh_soil = H[2:(M+1)],
+        Δ_H2O = SW,
+        drain = Unitful.gn * K[M]
     ) 
 end
