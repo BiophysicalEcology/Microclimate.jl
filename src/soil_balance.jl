@@ -186,7 +186,7 @@ function soil_water_balance(;
     θ_soil = fill(0.2, M),
     ET = 1.3e-5u"kg/m^2/s",
     depth = [0.0, 2.5, 5.0, 10.0, 15.0, 20.0, 30.0, 50.0, 100.0, 200.0]u"cm",
-    T10 = fill(293.15u"K", (M+2)/2),
+    T10 = fill(293.15u"K", div(M+2,2)),
     dt = 360u"s",
     elev = 0.0u"m",
     L = [0, 0, 8.2, 8.0, 7.8, 7.4, 7.1, 6.4, 5.8, 4.8, 4.0, 1.8, 0.9, 0.6, 0.8, 0.4 ,0.4, 0, 0]*10000u"m/m^3", # root density, m m-3
@@ -236,7 +236,7 @@ function soil_water_balance(;
     WS = 1.0 .- BD ./ DD
 
     # Depth to lower boundary (m)
-    Z[M+1] = u"m"(depth[(M+2)/2])
+    Z[M+1] = u"m"(depth[div(M+2,2)])
 
 
     # Soil hydraulic properties
