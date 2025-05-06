@@ -98,11 +98,12 @@ viewf = 1 - sum(sin.(hori)) / length(hori) # convert horizon angles to radians a
 # Soil properties
 # set up a profile of soil properites with depth for each day to be run
 numtyps = 1 # number of soil types
-numnodes = length(DEP) # number of soil nodes
-nodes_day = zeros(numnodes, ndays) # array of all possible soil nodes
-nodes_day[1, 1:ndays] .= 10 # deepest node for first substrate type
+numnodes_a = length(DEP) # number of soil nodes for temperature calcs and final output
+numnodes_b = numnodes_a * 2 - 2 # number of soil nodes for soil moisture calcs
+nodes_day = zeros(numnodes_a, ndays) # array of all possible soil nodes
+nodes_day[1, 1:ndays] .= numnodes_a # deepest node for first substrate type
 # Create an empty 10×5 matrix that can store any type (including different units)
-soilprops = Matrix{Any}(undef, numnodes, 5)
+soilprops = Matrix{Any}(undef, numnodes_a, 5)
 # Fill row 1 (top layer) with the defined values
 soilprops[1, 1] = ρ_b_dry
 soilprops[1, 2] = θ_sat
@@ -110,7 +111,7 @@ soilprops[1, 3] = λ_m
 soilprops[1, 4] = cp_m
 soilprops[1, 5] = ρ_m
 # Copy the same properties to all other layers (if desired)
-for i in 2:numnodes
+for i in 2:numnodes_a
     soilprops[i, :] .= soilprops[1, :]
 end
 
@@ -158,34 +159,35 @@ forcing = MicroForcing(
 
 # Initial conditions
 soilinit = u"K"(mean(ustrip(TAIRs))u"°C") # make initial soil temps equal to mean daily temperature
-T0 = fill(soilinit, numnodes)
-θ_soil0_10 = collect(fill(SoilMoist[1], numnodes)) # initial soil moisture
+T0 = fill(soilinit, numnodes_a)
+θ_soil0_a = collect(fill(SoilMoist[1], numnodes_a)) # initial soil moisture
 # intitial soil moisture
-θ_soil18 = similar(θ_soil0_10, 18)  # preallocate vector of length 18
+θ_soil0_b = similar(θ_soil0_a, numnodes_b)  # preallocate vector of length 18
 jj = 1
-for ii in 1:18
+for ii in 1:numnodes_b
     if isodd(ii)
-        θ_soil18[ii] = θ_soil0_10[jj]
+        θ_soil0_b[ii] = θ_soil0_a[jj]
         jj += 1
     else
-        θ_soil18[ii] = θ_soil18[ii-1]
+        θ_soil0_b[ii] = θ_soil0_b[ii-1]
     end
 end
-θ_soil0 = θ_soil18
 pctwet = 0.0
 
-days = collect(1:365)
+days = collect(1:14)
 # output arrays
 nsteps = length(days) * (length(hours) - 1)
-T_soils = Array{Float64}(undef, nsteps, numnodes)u"K"
-θ_soils = Array{Float64}(undef, nsteps, numnodes)
-ψ_soils = Array{Float64}(undef, nsteps, numnodes)u"J/kg"
-rh_soils = Array{Float64}(undef, nsteps, numnodes)
+T_soils = Array{Float64}(undef, nsteps, numnodes_a)u"K"
+θ_soils = Array{Float64}(undef, nsteps, numnodes_a)
+ψ_soils = Array{Float64}(undef, nsteps, numnodes_a)u"J/kg"
+rh_soils = Array{Float64}(undef, nsteps, numnodes_a)
 pools = Array{Float64}(undef, nsteps)u"kg/m^2"
 
 # simulate all days
 step = 0
 pool = 0.0u"kg/m^2"
+heights = [0.01] .* u"m"
+niter = ustrip(3600 / timestep)
 for j in 1:length(days)
     iday = j
     LAI = LAIs[iday]
@@ -217,7 +219,7 @@ for j in 1:length(days)
             pctwet=pctwet,
             nodes=nodes,
             tdeep=tdeep,
-            θ_soil=θ_soil0_10,
+            θ_soil=θ_soil0_b,
             runmoist=false,
             runsnow=false
         )
@@ -228,21 +230,15 @@ for j in 1:length(days)
 
         tspan = ((0.0 + step * 60)u"minute", (60.0 + step * 60)u"minute")  # 1 hour
 
-        prob = ODEProblem(soil_energy_balance!, T0, tspan, input)
-        sol = solve(prob, Tsit5(); saveat=60.0u"minute")
-        soiltemps = hcat(sol.u...)
-        T0 = soiltemps[:, 2] # new initial soil temps
+        T0 = solve(ODEProblem(soil_energy_balance!, T0, tspan, input), Tsit5(); saveat=60.0u"minute").u[end]
+
         if j == 1 && i == 1
-            for jj in 1:2
-            prob = ODEProblem(soil_energy_balance!, T0, tspan, input)
-            sol = solve(prob, Tsit5(); saveat=60.0u"minute")
-            soiltemps = hcat(sol.u...)
-            T0 = soiltemps[:, 2] # new initial soil temps
+            for _ in 1:2
+                T0 = solve(ODEProblem(soil_energy_balance!, T0, tspan, input), Tsit5(); saveat=60.0u"minute").u[end]
             end
         end
 
         # compute scalar profiles
-        heights = [0.01] .* u"m"
         profile_out = get_profile(
             refhyt=refhyt,
             ruf=ruf,
@@ -275,10 +271,8 @@ for j in 1:length(days)
 
         # run infiltration algorithm
         if pool > 0.0u"kg/m^2" # surface is wet - saturate it for infiltration
-            θ_soil0[1] = 1 - BD[1] / DD[1]
-            θ_soil0_10[1] = 1 - BD[1] / DD[1]
+            θ_soil0_a[1] = θ_soil0_b[1] = 1 - BD[1] / DD[1]
         end
-        niter = ustrip(3600 / timestep) # number of interations for soil moisture calc
         infil_out = soil_water_balance(
             PE=PE,
             KS=KS,
@@ -286,7 +280,7 @@ for j in 1:length(days)
             BD=BD,
             DD=DD,
             rh_loc=rh_loc,
-            θ_soil=θ_soil0,
+            θ_soil=θ_soil0_b,
             ET=EP,
             T10=T0,
             depth=DEP,
@@ -302,15 +296,14 @@ for j in 1:length(days)
             im=im,
             maxcount=maxcount
         )
-        θ_soil0 = infil_out.θ_soil
+        θ_soil0_a = infil_out.θ_soil
         surf_evap = max(0.0u"kg/m^2", infil_out.evap)
         Δ_H2O = max(0.0u"kg/m^2", infil_out.Δ_H2O)
         pool = clamp(pool - Δ_H2O - surf_evap, 0u"kg/m^2", maxpool) # pooling surface water
         if pool > 0.0u"kg/m^2" # surface is wet - saturate it for infiltration
-            θ_soil0[1] = 1 - BD[1] / DD[1]
-            θ_soil0_10[1] = 1 - BD[1] / DD[1]
+            θ_soil0_a[1] = θ_soil0_b[1] = 1 - BD[1] / DD[1]
         end
-        for iter in 1:niter
+        for _ in 1:niter
             infil_out = soil_water_balance(
                 PE=PE,
                 KS=KS,
@@ -318,7 +311,7 @@ for j in 1:length(days)
                 BD=BD,
                 DD=DD,
                 rh_loc=rh_loc,
-                θ_soil=θ_soil0,
+                θ_soil=θ_soil0_a,
                 ET=EP,
                 T10=T0,
                 depth=DEP,
@@ -334,22 +327,22 @@ for j in 1:length(days)
                 im=im,
                 maxcount=maxcount
             )
-            θ_soil0 = infil_out.θ_soil
+            θ_soil0_b = infil_out.θ_soil
             surf_evap = max(0.0u"kg/m^2", infil_out.evap)
             Δ_H2O = max(0.0u"kg/m^2", infil_out.Δ_H2O)
-            pool = clamp(pool - Δ_H2O - surf_evap, 0u"kg/m^2", maxpool) # pooling surface water
-            if pool > 0.0u"kg/m^2" # surface is wet - saturate it for infiltration
-                θ_soil0[1] = 1 - BD[1] / DD[1]
-                θ_soil0_10[1] = 1 - BD[1] / DD[1]
+            pool = clamp(pool - Δ_H2O - surf_evap, 0u"kg/m^2", maxpool)
+            if pool > 0.0u"kg/m^2"
+                θ_soil0_a[1] = θ_soil0_b[1] = 1 - BD[1] / DD[1]
             end
         end
+
         step += 1
         T_soils[step, :] = T0
         pctwet = abs(surf_evap / (EP * timestep) * 100)
         pools[step] = pool
         
-        sub = vcat(findall(isodd, 1:18), 18)
-        θ_soil0_10 = θ_soil0[sub]
+        sub = vcat(findall(isodd, 1:numnodes_b), numnodes_b)
+        θ_soil0_a = θ_soil0_b[sub]
         θ_soils[step, :] = infil_out.θ_soil[sub]
         ψ_soils[step, :] = infil_out.ψ_soil[sub]
         rh_soils[step, :] = infil_out.rh_soil[sub]

@@ -176,16 +176,17 @@ function evap(;tsurf, tair, rh, rhsurf, hd, elev, pctwet, sat)
 end
 
 function soil_water_balance(;
-    PE = fill(1.1, 19)u"J/kg", # Air entry potential (J/kg) (19 values descending through soil for specified soil nodes in parameter DEP and points half way between)
-    KS = fill(0.0037, 19)u"kg*s/m^3", # Saturated conductivity, (kg s/m3) (19 values descending through soil for specified soil nodes in parameter DEP and points half way between)
-    BB = fill(4.5, 19), # Campbell's soil 'b' parameter (-) (19 values descending through soil for specified soil nodes in parameter DEP and points half way between)
-    BD = fill(1.3, 19)u"Mg/m^3", # Soil bulk density (Mg/m3)  (19 values descending through soil for specified soil nodes in parameter DEP and points half way between)
-    DD = fill(2.56, 19)u"Mg/m^3", # Soil density (Mg/m3)  (19 values descending through soil for specified soil nodes in parameter DEP and points half way between)
+    M = 18,
+    PE = fill(1.1, M+1)u"J/kg", # Air entry potential (J/kg) (M+1 values descending through soil for specified soil nodes in parameter DEP and points half way between)
+    KS = fill(0.0037, M+1)u"kg*s/m^3", # Saturated conductivity, (kg s/m3) (M+1 values descending through soil for specified soil nodes in parameter DEP and points half way between)
+    BB = fill(4.5, M+1), # Campbell's soil 'b' parameter (-) (M+1 values descending through soil for specified soil nodes in parameter DEP and points half way between)
+    BD = fill(1.3, M+1)u"Mg/m^3", # Soil bulk density (Mg/m3)  (M+1 values descending through soil for specified soil nodes in parameter DEP and points half way between)
+    DD = fill(2.56, M+1)u"Mg/m^3", # Soil density (Mg/m3)  (M+1 values descending through soil for specified soil nodes in parameter DEP and points half way between)
     rh_loc = 20.0,
-    θ_soil = fill(0.2, 18),
+    θ_soil = fill(0.2, M),
     ET = 1.3e-5u"kg/m^2/s",
-    T10 = fill(293.15u"K", 10),
     depth = [0.0, 2.5, 5.0, 10.0, 15.0, 20.0, 30.0, 50.0, 100.0, 200.0]u"cm",
+    T10 = fill(293.15u"K", (M+2)/2),
     dt = 360u"s",
     elev = 0.0u"m",
     L = [0, 0, 8.2, 8.0, 7.8, 7.4, 7.1, 6.4, 5.8, 4.8, 4.0, 1.8, 0.9, 0.6, 0.8, 0.4 ,0.4, 0, 0]*10000u"m/m^3", # root density, m m-3
@@ -199,25 +200,24 @@ function soil_water_balance(;
     maxcount=500
 )
 
-    P = zeros(Float64, 19)*u"J/kg"       # matric potential J/kg
-    Z = zeros(Float64, 19)u"m"                # depth nodes
-    V = zeros(Float64, 19)u"kg/m^2"
-    W = zeros(Float64, 19)*u"m^3/m^3"    # water content m3/m3
-    WN = zeros(Float64, 19)*u"m^3/m^3"   # water content m3/m3
-    K = zeros(Float64, 19)*u"kg*s/m^3"   # hydraulic conductivity, kg s/m3
-    H = zeros(Float64, 19)
-    T = zeros(Float64, 19)u"K"
-    rh_soil = zeros(Float64, 18)
-    ψ_soil = zeros(Float64, 18)u"J/kg"
-    ψ_root = zeros(Float64, 18)u"J/kg"
-    PR = zeros(Float64, 19)u"J/kg"
-    PP = zeros(Float64, 19)u"J/kg"
-    B1 = zeros(Float64, 19)
-    N = zeros(Float64, 19)
-    N1 = zeros(Float64, 19)
-    WS = zeros(Float64, 19)
+    P = zeros(Float64, M+1)*u"J/kg"       # matric potential J/kg
+    Z = zeros(Float64, M+1)u"m"                # depth nodes
+    V = zeros(Float64, M+1)u"kg/m^2"
+    W = zeros(Float64, M+1)*u"m^3/m^3"    # water content m3/m3
+    WN = zeros(Float64, M+1)*u"m^3/m^3"   # water content m3/m3
+    K = zeros(Float64, M+1)*u"kg*s/m^3"   # hydraulic conductivity, kg s/m3
+    H = zeros(Float64, M+1)
+    T = zeros(Float64, M+1)u"K"
+    rh_soil = zeros(Float64, M)
+    ψ_soil = zeros(Float64, M)u"J/kg"
+    ψ_root = zeros(Float64, M)u"J/kg"
+    PR = zeros(Float64, M+1)u"J/kg"
+    PP = zeros(Float64, M+1)u"J/kg"
+    B1 = zeros(Float64, M+1)
+    N = zeros(Float64, M+1)
+    N1 = zeros(Float64, M+1)
+    WS = zeros(Float64, M+1)
 
-    M = 18 # number of elements, 10 user-specified depths, adding an extra depth between each of these, but not including the boundary condition depth at node 19
     P_atmos = get_pressure(elev)
 
     # Constants
@@ -236,7 +236,7 @@ function soil_water_balance(;
     WS = 1.0 .- BD ./ DD
 
     # Depth to lower boundary (m)
-    Z[M+1] = u"m"(depth[10])
+    Z[M+1] = u"m"(depth[(M+2)/2])
 
 
     # Soil hydraulic properties
@@ -246,7 +246,7 @@ function soil_water_balance(;
 
     # Fill Z using provided depth vector
     j = 2
-    for i in 3:18
+    for i in 3:M
         if isodd(i)
             Z[i] = depth[j]
             j += 1
@@ -257,7 +257,7 @@ function soil_water_balance(;
 
     # Interpolate T from temp
     j = 1
-    for i in 1:19
+    for i in 1:M+1
         if isodd(i)
             T[i] = T10[j]
             j += 1
