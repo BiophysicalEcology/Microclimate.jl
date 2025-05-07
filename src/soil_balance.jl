@@ -274,7 +274,7 @@ function soil_water_balance(;
     for i in 2:M
         WN[i] = θ_soil[i-1]
         P[i] = PE[i] * (WS[i] / WN[i])^BB[i] # matric water potential, EQ5.9 (note thetas=W are inverted so not raised to -BB)
-        H[i] = exp(MW * P[i] / (R * T[i-1])) # fractional humidity, EQ5.14
+        H[i] = exp(MW * P[i] / (Unitful.R * T[i-1])) # fractional humidity, EQ5.14
         K[i] = KS[i] * (PE[i] / P[i])^N[i] # hydraulic conductivity, EQ6.14
         W[i] = θ_soil[i-1] #  water content
     end
@@ -374,7 +374,7 @@ function soil_water_balance(;
             VP = wet_air(u"K"(T[i]); rh=100.0, P_atmos=P_atmos).ρ_vap # VP is vapour density = c'_v in EQ9.7
             KV = 0.66 * DV * VP * (WS[i] - (WN[i] + WN[i+1]) / 2.0) / (Z[i+1] - Z[i]) # vapour conductivity, EQ9.7, assuming epsilon(psi_g) = b*psi_g^m (eq. 3.10) where b = 0.66 and m = 1 (p.99)
             JV[i] = KV * (H[i+1] - H[i]) # fluxes of vapour within soil, EQ9.14
-            DJ[i] = MW * H[i] * KV / (R * T[i-1]) # derivatives of vapour fluxes within soil, combination of EQ9.14 and EQ5.14
+            DJ[i] = MW * H[i] * KV / (Unitful.R * T[i-1]) # derivatives of vapour fluxes within soil, combination of EQ9.14 and EQ5.14
             CP[i] = -1.0 * V[i] * WN[i] / (BB[i] * P[i] * dt) # hydraulic capacity = capacitance, d_theta/d_psi
             # Jacobian components
             A[i] = -1.0 * K[i-1] / (Z[i] - Z[i-1]) + Unitful.gn * N[i] * K[i-1] / P[i-1] # sub-diagonal element in tridagonal matrix

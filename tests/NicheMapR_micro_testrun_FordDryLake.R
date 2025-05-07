@@ -17,7 +17,7 @@ write_input <- 0
 writecsv <- 0 # make Fortran code write output as csv files
 runshade <- 1 # run the model twice, once for each shade level (1) or just for the first shade level (0)?
 runmoist <- 1 # run soil moisture model (0 = no, 1 = yes)?
-snowmodel <- 0 # run the snow model (0 = no, 1 = yes)? - note that this runs slower
+snowmodel <- 1 # run the snow model (0 = no, 1 = yes)? - note that this runs slower
 hourly <- 1 # run the model with hourly input data
 rainhourly <- 1 # run the model with hourly rainfall input data (irrelevant if hourly = 1)
 microdaily <- 1 # run microclimate model where one iteration of each day occurs and last day gives initial conditions for present day

@@ -194,3 +194,86 @@ function get_λ_evap(T)
         return (834.1 - 0.29 * Tw - 0.004 * Tw^2)*1000u"J/kg"
     end
 end
+
+function waterprop(T::Quantity)
+    # Ensure temperature is in °C
+    T = ustrip(u"°C", T)  # Convert to Float64 in °C
+
+    # Specific heat capacity (J/kg·K)
+    cp = (4220.02 - 4.5531 * T + 0.182958 * T^2 -
+         0.00310614 * T^3 + 1.89399e-5 * T^4) * u"J/kg/K"
+
+    # Density (kg/m^3)
+    if T < 30
+        ρ = 1000.0 * u"kg/m^3"
+    elseif T <= 60
+        ρ = (1017.0 - 0.6 * T) * u"kg/m^3"
+    else
+        # Clamp to 60°C
+        ρ = (1017.0 - 0.6 * 60.0) * u"kg/m^3"
+    end
+
+    # Thermal conductivity (W/m·K)
+    K = (0.551666 + 0.00282144 * T - 2.02383e-5 * T^2) * u"W/m/K"
+
+    # Dynamic viscosity (kg/m·s)
+    μ = (0.0017515 - 4.31502e-5 * T + 3.71431e-7 * T^2) * u"kg/m/s"
+
+    return (
+        cp_H2O = cp,
+        ρ_H2O = ρ,
+        k_H2O = K,
+        μ_H2O = μ,
+    )
+end
+
+function phase_transition!(
+    T::Vector,       # current temps at nodes
+    T_past::Vector,      # temps at previous step
+    sumphase::Vector,    # accumulated latent heat
+    θ::Vector,       # soil moisture by layer
+    dep::Vector         # soil depth boundaries (cm)
+)
+    HTOFN = 333500u"J/kg" # latent heat of fusion of waterper unit mass
+    cp = 4.186u"J/kg/K" # specific heat of water
+    nodes = length(dep)
+    layermass = zeros(Float64, nodes)u"kg"
+    qphase = zeros(Float64, nodes)u"J"
+    meanT = similar(T)
+    meanTpast = similar(T)
+    for j in 1:nodes
+        if j < nodes
+            meanT[j] = (T[j] + T[j+1]) / 2
+            meanTpast[j] = (T_past[j] + T_past[j+1]) / 2
+        else
+            meanT[j] = T[j]
+            meanTpast[j] = T_past[j]
+        end
+
+        if meanTpast[j] > 273.15u"K" && meanT[j] <= 273.15u"K"
+            if j < nodes
+                layermass[j] = u"m"(dep[j+1] - dep[j]) * 1000u"kg/m" * θ[j]
+            else
+                layermass[j] = u"m"(dep[j] + 100u"cm" - dep[j]) * 1000u"kg/m" * θ[j]
+            end
+
+            qphase[j] = (meanTpast[j] - meanT[j]) * layermass[j] * cp
+            sumphase[j] += qphase[j]
+
+            if sumphase[j] > HTOFN * layermass[j]
+                # Fully frozen
+                T[j] = 273.14u"K"
+                if j < nodes
+                    T[j+1] = 273.14u"K"
+                end
+                sumphase[j] = 0.0u"J"
+            else
+                # In the process of freezing
+                T[j] = 273.16u"K"
+                if j < nodes
+                    T[j+1] = 273.16u"K"
+                end
+            end
+        end
+    end
+end
