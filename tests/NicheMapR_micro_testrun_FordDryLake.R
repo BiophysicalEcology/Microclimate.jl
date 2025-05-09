@@ -158,7 +158,7 @@ REFLS <- rep(REFL, doynum) # set up vector of soil reflectances for each day
 PCTWET <- rep(PCTWET, doynum) # set up vector of soil wetness for each day
 
 # set up a profile of soil properites with depth for each day to be run
-Numtyps <- 1 # number of soil types
+Numtyps <- 10 # number of soil types
 Nodes <- matrix(data = 0, nrow = 10, ncol = doynum) # array of all possible soil nodes for max time span of 20 years
 Nodes[1, 1:doynum]<-10 # deepest node for first substrate type
 
@@ -170,12 +170,12 @@ Nodes[1, 1:doynum]<-10 # deepest node for first substrate type
 #4) specific heat capacity (J/kg-K)
 #5) mineral density (Mg/m3)
 soilprops <- matrix(data = 0, nrow = 10, ncol = 5) # create an empty soil properties matrix
-soilprops[1, 1]<-BulkDensity # insert soil bulk density to profile 1
-soilprops[1, 2]<-SatWater # insert saturated water content to profile 1
-soilprops[1, 3]<-Thcond # insert thermal conductivity to profile 1
-soilprops[1, 4]<-SpecHeat # insert specific heat to profile 1
-soilprops[1, 5]<-Density # insert mineral density to profile 1
-soilinit <- rep(tannul, 20) # make iniital soil temps equal to mean annual
+soilprops[, 1]<-BulkDensity # insert soil bulk density to profile 1
+soilprops[, 2]<-SatWater # insert saturated water content to profile 1
+soilprops[, 3]<-Thcond # insert thermal conductivity to profile 1
+soilprops[, 4]<-SpecHeat # insert specific heat to profile 1
+soilprops[, 5]<-Density # insert mineral density to profile 1
+soilinit <- rep(tannul, 20) # make initial soil temps equal to mean annual
 
 #use Campbell and Norman Table 9.1 soil moisture properties
 soiltype <- 3 # 3 = sandy loam
@@ -204,7 +204,7 @@ evenrain <- 0 # spread daily rainfall evenly across 24hrs (1) or one event at mi
 SoilMoist_Init <- rep(0.2, 10) # initial soil water content for each node, m3/m3
 moists <- matrix(nrow = 10, ncol = doynum, data = 0) # set up an empty vector for soil moisture values through time
 moists[1:10,] <- SoilMoist_Init # insert initial soil moisture
-spinup <- 1 # repeat first day 3 times for steady state
+spinup <- 0 # repeat first day 3 times for steady state
 dewrain <- 0 # don't feed dew back into soil as rain
 moiststep <- 360 # how many steps within the hour is soil moisture solved over
 maxsurf <- 95 # what is the maximum allowable soil surface temp (for stability purposes), deg C

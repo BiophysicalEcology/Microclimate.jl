@@ -1446,6 +1446,7 @@ function get_longwave(;
     # Longwave radiation (handle both IR modes)
     # Constants
     σ = Unitful.uconvert(u"W/m^2/K^4", Unitful.σ) # Stefan-Boltzmann constant, W/m^2/K^4
+    #σ = u"W/m^2/K^4"(0.8126e-10u"cal/minute/cm^2/K^4") # value used in NicheMapR (sigp)
     P_atmos = get_pressure(elev)
     wet_air_out = wet_air(u"K"(tair); rh=rh, P_atmos=P_atmos)
 

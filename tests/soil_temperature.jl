@@ -112,7 +112,7 @@ TAIRs, WNs, RHs, CLDs = hourly_vars(
     )
 
 # simulate a day
-iday = 5
+iday = 1
 
 sub = (iday*25-24):(iday*25)
 REFL = REFLS[iday]
@@ -225,6 +225,7 @@ rh2m_NMR = collect(metout_NMR[(iday*24-23):(iday*24), 7])
 labels = ["$(d)" for d in DEP]
 plot(u"hr".(sol.t), u"°C".(soiltemps'), xlabel="time", ylabel="soil temperature", lw=2, label = string.(DEP'), linecolor="black")
 plot!(u"hr".(sol.t[1:24]), Matrix(soiltemps_NMR[(iday*24-23):(iday*24), :]), xlabel="time", ylabel="soil temperature", lw=2, label = string.(DEP'), linestyle = :dash, linecolor="grey")
+
 
 # now get wind air temperature and humidity profiles
 nsteps = 24
