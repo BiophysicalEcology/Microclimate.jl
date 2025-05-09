@@ -11,7 +11,7 @@ using CSV, DataFrames, Dates
 soiltemps_NMR = (DataFrame(CSV.File("data/soil_FordDryLake.csv"))[:, 5:14]).*u"°C"
 soilmoists_NMR = (DataFrame(CSV.File("data/soilmoist_FordDryLake.csv"))[:, 5:14])
 #soilpots_NMR = (DataFrame(CSV.File("data/soilpot_FordDryLake.csv"))[:, 5:14])
-metout_NMR = DataFrame(CSV.File("data/metout_FordDryLake.csv"))
+#metout_NMR = DataFrame(CSV.File("data/metout_FordDryLake.csv"))
 
 DEP = [0.0, 2.5, 5.0, 10.0, 15.0, 20.0, 30.0, 50.0, 100.0, 200.0]u"cm" # Soil nodes (cm) - keep spacing close near the surface, last value is where it is assumed that the soil temperature is at the annual mean air temperature
 refhyt = 2u"m"
@@ -175,7 +175,7 @@ for ii in 1:numnodes_b
 end
 pctwet = 0.0
 
-days = collect(1:300)
+days = collect(1:7)
 # output arrays
 nsteps = length(days) * (length(hours))
 T_soils = Array{Float64}(undef, nsteps, numnodes_a)u"K"
@@ -244,9 +244,7 @@ for j in 1:length(days)
             pctwet=pctwet,
             nodes=nodes,
             tdeep=tdeep,
-            θ_soil=θ_soil0_a,
-            runmoist=false,
-            runsnow=false
+            θ_soil=θ_soil0_a
         )
         input = MicroInput(
             params,
@@ -392,7 +390,7 @@ for j in 1:length(days)
 end
 nsteps = 24*length(days)
 pstart = 1
-pfinish = 48
+pfinish = 7*24
 plot(pstart:pfinish, u"°C".(T_soils[pstart:pfinish, :]), xlabel="time", ylabel="soil temperature", lw=2, label=string.(DEP'), legend = :none, ylim = (-10u"°C", 85u"°C"))
 plot(pstart:pfinish, Matrix(soiltemps_NMR[pstart:pfinish, :]), xlabel="time", ylabel="soil temperature", lw=2, label = string.(DEP'), legend = :none, ylim = (-10u"°C", 85u"°C"))
 plot(pstart:pfinish, θ_soils[pstart:pfinish, :], xlabel="time", ylabel="soil moisture (m^3/m^3)", lw=2, label = string.(DEP'), legend = :none, ylim = (0, 0.5))

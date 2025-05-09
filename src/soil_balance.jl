@@ -22,27 +22,22 @@ function soil_energy_balance!(dT, T, i::MicroInput, t)
     tdeep = p.tdeep
     nodes = p.nodes
     soilprops = p.soilprops
-    #maxsurf = p.maxsurf
     θ_soil = p.θ_soil
 
     # check for unstable conditions of ground surface temperature
     T .= clamp.(T, (-81.0+273.15)u"K", (95.0+273.15)u"K")
 
     N = length(dep)
-    #dT = fill(0.0u"K/minute", N)
-    #dT .= (0.0u"K/minute")
 
     # get soil properties and convert to cal/cm/g/C
     λ_b, cp_b, ρ_b = soil_properties(T, θ_soil, nodes, soilprops, elev)
-    λ_b = u"cal/cm/K/minute".(λ_b)
-    cp_b = u"cal/g/K".(cp_b)
-    ρ_b = u"g/cm^3".(ρ_b)
 
     # Get environmental data at time t
     tair = f.TAIRt(ustrip(t))
     vel = max(0.1u"m/s", f.VELt(ustrip(t)))
     zenr = min(90u"°", u"°"(round(f.ZENRt(ustrip(t)), digits=3)))
-    solr = u"cal/cm^2/minute"(max(0.0u"W/m^2", f.SOLRt(ustrip(t))))
+    #solr = u"cal/cm^2/minute"(max(0.0u"W/m^2", f.SOLRt(ustrip(t))))
+    solr = max(0.0u"W/m^2", f.SOLRt(ustrip(t)))
     cloud = max(0.0, f.CLDt(ustrip(t)))
     rh = max(0.0, f.RHt(ustrip(t)))
     zslr = min(90u"°", f.ZSLt(ustrip(t)))
@@ -52,8 +47,8 @@ function soil_energy_balance!(dT, T, i::MicroInput, t)
     depp = fill(0.0u"cm", N + 1)
     depp[1:N] = dep
     # Compute soil layer properties
-    wc = fill(1.0u"cal/K/cm^2", N)
-    c = fill(1.0u"cal/K/cm^2/minute", N)
+    wc = fill(1.0u"J/K/m^2", N)
+    c = fill(1.0u"W/K/m^2", N)
     for i in 1:N
         rcsp = ρ_b[i] * cp_b[i]
         if i == 1
@@ -90,7 +85,7 @@ function soil_energy_balance!(dT, T, i::MicroInput, t)
         cloud = cloud, 
         viewf = viewf
         )
-    qrad = u"cal/cm^2/minute"(longwave_out.Qrad)
+    qrad = longwave_out.Qrad
 
     # Conduction
     qcond = c[1] * (T[2] - T[1])
@@ -111,7 +106,6 @@ function soil_energy_balance!(dT, T, i::MicroInput, t)
         )
     qconv = profile_out.QCONV
     hc = max(abs(qconv / (T[1] - tair)), 0.5u"W/m^2/K")
-    qconv = u"cal/cm^2/minute"(qconv) # now to cal/cm/g/C units
     P_atmos = get_pressure(elev)
     
     # Evaporation
@@ -120,7 +114,6 @@ function soil_energy_balance!(dT, T, i::MicroInput, t)
     ρ_air = wet_air_out.ρ_air
     hd = (hc / (cp_air * ρ_air)) * (0.71 / 0.60)^0.666
     qevap, gwsurf = evap(tsurf=u"K"(T[1]), tair=u"K"(tair), rh=rh, rhsurf=100.0, hd=hd, elev=elev, pctwet=pctwet, sat=false)
-    qevap = u"cal/cm^2/minute"(qevap) # now to cal/cm/g/C units
 
     # Energy balance at surface
     dT[1] = (qsolar + qrad + qcond + qconv - qevap) / wc[1]

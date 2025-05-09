@@ -16,8 +16,6 @@ Base.@kwdef struct MicroParams
     nodes::Vector{Float64}
     tdeep::Quantity
     θ_soil::Vector{Float64}
-    runmoist::Bool
-    runsnow::Bool
 end
 
 Base.@kwdef struct MicroForcing
