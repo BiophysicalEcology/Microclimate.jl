@@ -230,12 +230,12 @@ end
 function phase_transition!(
     T::Vector,       # current temps at nodes
     T_past::Vector,      # temps at previous step
-    sumphase::Vector,    # accumulated latent heat
+    ∑phase::Vector,    # accumulated latent heat
     θ::Vector,       # soil moisture by layer
     dep::Vector         # soil depth boundaries (cm)
 )
     HTOFN = 333500u"J/kg" # latent heat of fusion of waterper unit mass
-    cp = 4.186u"J/kg/K" # specific heat of water
+    cp = 4186u"J/kg/K" # specific heat of water
     nodes = length(dep)
     layermass = zeros(Float64, nodes)u"kg"
     qphase = zeros(Float64, nodes)u"J"
@@ -258,15 +258,15 @@ function phase_transition!(
             end
 
             qphase[j] = (meanTpast[j] - meanT[j]) * layermass[j] * cp
-            sumphase[j] += qphase[j]
+            ∑phase[j] += qphase[j]
 
-            if sumphase[j] > HTOFN * layermass[j]
+            if ∑phase[j] > HTOFN * layermass[j]
                 # Fully frozen
                 T[j] = 273.14u"K"
                 if j < nodes
                     T[j+1] = 273.14u"K"
                 end
-                sumphase[j] = 0.0u"J"
+                ∑phase[j] = 0.0u"J"
             else
                 # In the process of freezing
                 T[j] = 273.16u"K"
