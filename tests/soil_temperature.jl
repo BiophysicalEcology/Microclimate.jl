@@ -1,6 +1,5 @@
 #using Microclimate
 using Unitful
-using Unitful: °, rad, R, kg, m
 using Plots
 using Statistics
 using Interpolations
@@ -15,12 +14,12 @@ DEP = [0.0, 2.5, 5.0, 10.0, 15.0, 20.0, 30.0, 50.0, 100.0, 200.0]u"cm" # Soil no
 refhyt = 2u"m"
 days = [15, 46, 74, 105, 135, 166, 196, 227, 258, 288, 319, 349]
 hours = collect(0.:1:24.) # hour of day for solrad
-lat = 43.1379° # latitude
+lat = 43.1379u"°" # latitude
 iuv = false # this makes it take ages if true!
 elev = 226.0u"m" # elevation (m)
-hori = fill(0.0°, 24) # enter the horizon angles (degrees) so that they go from 0 degrees azimuth (north) clockwise in 15 degree intervals
-slope = 0.0° # slope (degrees, range 0-90)
-aspect = 0.0° # aspect (degrees, 0 = North, range 0-360)
+hori = fill(0.0u"°", 24) # enter the horizon angles (degrees) so that they go from 0 degrees azimuth (north) clockwise in 15 degree intervals
+slope = 0.0u"°" # slope (degrees, range 0-90)
+aspect = 0.0u"°" # aspect (degrees, 0 = North, range 0-360)
 refl = 0.10 # substrate solar reflectivity (decimal %)
 shade = 0.0 # % shade cast by vegetation
 pctwet = 0.0 # % surface wetness
@@ -47,6 +46,7 @@ WNMAXX = [4.9, 4.8, 5.2, 5.3, 4.6, 4.3, 3.8, 3.7, 4, 4.6, 4.9, 4.8]u"m/s" # max 
 CCMINN = 0.0 .* [50.3, 47, 48.2, 47.5, 40.9, 35.7, 34.1, 36.6, 42.6, 48.4, 61.1, 60.1] # min cloud cover (%)
 CCMAXX = 0.0 .* [50.3, 47, 48.2, 47.5, 40.9, 35.7, 34.1, 36.6, 42.6, 48.4, 61.1, 60.1] # max cloud cover (%)
 RAINFALL = ([28, 28.2, 54.6, 79.7, 81.3, 100.1, 101.3, 102.5, 89.7, 62.4, 54.9, 41.2]) / 1000u"m" # monthly mean rainfall (mm)
+ndays = length(days)
 SoilMoist = fill(0.2, ndays)
 #SoilMoist = [0.42, 0.42, 0.42, 0.43, 0.44, 0.44, 0.43, 0.42, 0.41, 0.42, 0.42, 0.43]
 daily = false
@@ -171,9 +171,7 @@ params = MicroParams(
     pctwet = pctwet,
     nodes = nodes,
     tdeep = tdeep,
-    θ_soil = θ_soil,
-    runmoist = false,
-    runsnow = false
+    θ_soil = θ_soil
 )
 
 forcing = MicroForcing(
