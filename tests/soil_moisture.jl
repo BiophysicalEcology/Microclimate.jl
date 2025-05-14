@@ -9,8 +9,10 @@ using CSV, DataFrames, Dates
 # read in output from NicheMapR
 soiltemps_NMR = (DataFrame(CSV.File("data/soil_FordDryLake.csv"))[:, 5:14]).*u"°C"
 soilmoists_NMR = (DataFrame(CSV.File("data/soilmoist_FordDryLake.csv"))[:, 5:14])
+soilconds_NMR = (DataFrame(CSV.File("data/tcond_FordDryLake.csv"))[:, 5:14])
 #soilpots_NMR = (DataFrame(CSV.File("data/soilpot_FordDryLake.csv"))[:, 5:14])
 #metout_NMR = DataFrame(CSV.File("data/metout_FordDryLake.csv"))
+date = DateTime(2015, 1, 1):Hour(1):DateTime(2015, 12, 31, 23)
 
 DEP = [0.0, 2.5, 5.0, 10.0, 15.0, 20.0, 30.0, 50.0, 100.0, 200.0]u"cm" # Soil nodes (cm) - keep spacing close near the surface, last value is where it is assumed that the soil temperature is at the annual mean air temperature
 refhyt = 2u"m"
@@ -39,7 +41,6 @@ cp_m = 870.0u"J/kg/K" # soil minerals specific heat (J/kg-K)
 θ_sat = 0.26u"m^3/m^3" # volumetric water content at saturation (0.1 bar matric potential) (m3/m3)
 
 # soil moisture model parameters
-runmoist = true
 CampNormTbl9_1 = DataFrame(CSV.File("data/CampNormTbl9_1.csv"))
 soiltype = 3 # 3 = sandy loam
 PE = fill(CampNormTbl9_1[soiltype, 4], 19)u"J/kg" #air entry potential J/kg
@@ -70,18 +71,23 @@ RHs = Float64.(CSV.File("data/RHhr_FordDryLake.csv").x)
 VELs = Float64.(CSV.File("data/WNhr_FordDryLake.csv").x)u"m/s"
 SOLRs = Float64.(CSV.File("data/SOLRhr_FordDryLake.csv").x)u"W/m^2"
 CLDs = Float64.(CSV.File("data/CLDhr_FordDryLake.csv").x)
-RAINs = Float64.(CSV.File("data/RAINhr_FordDryLake.csv").x/1000.0)u"m" * 1u"kg"/u"m^3"
+RAINs = Float64.(CSV.File("data/RAINhr_FordDryLake.csv").x)u"kg"/u"m^2"
+#RAINs = Float64.(CSV.File("data/RAINhr_FordDryLake.csv").x/1000.0)u"m" * 1u"kg"/u"m^3"
 RHs .= clamp.(RHs, 0, 100)
 VELs .= clamp.(VELs, 0.1u"m/s", (Inf)u"m/s")
 CLDs .= clamp.(CLDs, 0, 100)
 RAINs .= clamp.(RAINs, 0u"kg/m^2", (Inf)u"kg/m^2")
+raindf = DataFrame(date = date, rainfall = RAINs)
+raindf.day = Date.(raindf.date)
+raindfdaily = combine(groupby(raindf, :day), :rainfall => sum => :daily_rainfall)
+RAINdailys = raindfdaily.daily_rainfall
 
 days = collect(1.0:365.0)
 SoilMoist = fill(0.2, length(days))
 LAIs = fill(0.1, length(days))
 
 daily = true
-runmoist = false
+runmoist = true
 spinup = false
 
 # creating the arrays of environmental variables that are assumed not to change with month for this simulation
@@ -132,15 +138,15 @@ ZENRs = solrad_out.Zenith[Not(25:25:end)] # remove every 25th output
 ZSLs = solrad_out.ZenithSlope[Not(25:25:end)] # remove every 25th output
 
 # create forcing weather variable splines
-tspan = 0.0:60:(60*24*(365)-60)
+tspan = 0.0:60:(60*24*(365))
 tmin = tspan .* u"minute"
-interpSOLR = interpolate(SOLRs, BSpline(Cubic(Line(OnGrid()))))
-interpZENR = interpolate(ZENRs, BSpline(Cubic(Line(OnGrid()))))
-interpZSL = interpolate(ZSLs, BSpline(Cubic(Line(OnGrid()))))
-interpTAIR = interpolate(u"K".(TAIRs), BSpline(Cubic(Line(OnGrid()))))
-interpVEL = interpolate(VELs, BSpline(Cubic(Line(OnGrid()))))
-interpRH = interpolate(RHs, BSpline(Cubic(Line(OnGrid()))))
-interpCLD = interpolate(CLDs, BSpline(Cubic(Line(OnGrid()))))
+interpSOLR = interpolate(push!(SOLRs, SOLRs[end]), BSpline(Cubic(Line(OnGrid()))))
+interpZENR = interpolate(push!(ZENRs, ZENRs[end]), BSpline(Cubic(Line(OnGrid()))))
+interpZSL = interpolate(push!(ZSLs, ZSLs[end]), BSpline(Cubic(Line(OnGrid()))))
+interpTAIR = interpolate(u"K".(push!(TAIRs, TAIRs[end])), BSpline(Cubic(Line(OnGrid()))))
+interpVEL = interpolate(push!(VELs, VELs[end]), BSpline(Cubic(Line(OnGrid()))))
+interpRH = interpolate(push!(RHs, RHs[end]), BSpline(Cubic(Line(OnGrid()))))
+interpCLD = interpolate(push!(CLDs, CLDs[end]), BSpline(Cubic(Line(OnGrid()))))
 SOLRt = scale(interpSOLR, tspan)
 ZENRt = scale(interpZENR, tspan)
 ZSLt = scale(interpZSL, tspan)
@@ -175,19 +181,26 @@ for ii in 1:numnodes_b
 end
 pctwet = 0.0
 
-days = collect(1:14)
+days = collect(1:365)
 # output arrays
 nsteps = length(days) * (length(hours))
-T_soils = Array{Float64}(undef, nsteps, numnodes_a)u"K"
-θ_soils = Array{Float64}(undef, nsteps, numnodes_a)
-ψ_soils = Array{Float64}(undef, nsteps, numnodes_a)u"J/kg"
-rh_soils = Array{Float64}(undef, nsteps, numnodes_a)
-pools = Array{Float64}(undef, nsteps)u"kg/m^2"
-T_skys = Array{Float64}(undef, nsteps)u"K"
+T_soils = Array{Float64}(undef, nsteps+1, numnodes_a)u"K"
+θ_soils = Array{Float64}(undef, nsteps+1, numnodes_a)
+ψ_soils = Array{Float64}(undef, nsteps+1, numnodes_a)u"J/kg"
+rh_soils = Array{Float64}(undef, nsteps+1, numnodes_a)
+λ_bulk = Array{Float64}(undef, nsteps+1, numnodes_a)u"W/m/K"
+cp_bulk = Array{Float64}(undef, nsteps+1, numnodes_a)u"J/kg/K"
+ρ_bulk = Array{Float64}(undef, nsteps+1, numnodes_a)u"kg/m^3"
+pools = Array{Float64}(undef, nsteps+1)u"kg/m^2"
+T_skys = Array{Float64}(undef, nsteps+1)u"K"
 
 # initialise outputs
 T_soils[1, :] = T0
 θ_soils[1, :] = θ_soil0_a
+λ_b, cp_b, ρ_b = soil_properties(T0, θ_soil0_a, nodes, soilprops, elev, runmoist, false)
+λ_bulk[1, :] = λ_b
+cp_bulk[1, :] = cp_b
+ρ_bulk[1, :] = ρ_b
 sub = vcat(findall(isodd, 1:numnodes_b), numnodes_b)
 θ_sat = 1.0 .- BD ./ DD
 ψ_soils[1, :] =  PE[sub] .* (θ_sat[sub] ./ θ_soil0_a).^BB[sub]
@@ -222,10 +235,13 @@ for j in 1:length(days)
     pctwet = PCTWETS[iday] # set up vector of soil wetness for each day
     tdeep = u"K"(tannulrun[iday]) # annual mean temperature for getting daily deep soil temperature (°C)
     nodes = nodes_day[:, iday]
-
+    rainfall = RAINdailys[iday]
     # loop through hours of day
     for i in 1:length(hours)-1
-        pool = clamp(pool + RAINs[step], 0u"kg/m^2", maxpool)
+        if i == 1
+        pool += rainfall#RAINs[step-1]
+        end
+        pool = clamp(pool, 0.0u"kg/m^2", maxpool)
         # Parameters
         params = MicroParams(
             soilprops=soilprops,
@@ -252,7 +268,6 @@ for j in 1:length(days)
         )
 
         tspan = ((0.0 + (step - 2) * 60)u"minute", (60.0 + (step - 2) * 60)u"minute")  # 1 hour
-
         T0 = solve(ODEProblem(soil_energy_balance!, T0, tspan, input), Tsit5(); saveat=60.0u"minute").u[end]
 
         if spinup && j == 1 && i == 1
@@ -325,7 +340,7 @@ for j in 1:length(days)
             θ_soil0_b = infil_out.θ_soil
             surf_evap = max(0.0u"kg/m^2", infil_out.evap)
             Δ_H2O = max(0.0u"kg/m^2", infil_out.Δ_H2O)
-            pool = clamp(pool - Δ_H2O - surf_evap, 0u"kg/m^2", maxpool) # pooling surface water
+            pool = clamp(pool - Δ_H2O - surf_evap, 0.0u"kg/m^2", maxpool) # pooling surface water
             if pool > 0.0u"kg/m^2" # surface is wet - saturate it for infiltration
                 θ_soil0_b[1] = 1 - BD[1] / DD[1]
             end
@@ -356,7 +371,7 @@ for j in 1:length(days)
                 θ_soil0_b = infil_out.θ_soil
                 surf_evap = max(0.0u"kg/m^2", infil_out.evap)
                 Δ_H2O = max(0.0u"kg/m^2", infil_out.Δ_H2O)
-                pool = clamp(pool - Δ_H2O - surf_evap, 0u"kg/m^2", maxpool)
+                pool = clamp(pool - Δ_H2O - surf_evap, 0.0u"kg/m^2", maxpool)
                 if pool > 0.0u"kg/m^2"
                     θ_soil0_b[1] = 1 - BD[1] / DD[1]
                 end
@@ -380,25 +395,33 @@ for j in 1:length(days)
             viewf=viewf
         )
         Tsky = longwave_out.Tsky
-
+        T_skys[step] = Tsky
         sub = vcat(findall(isodd, 1:numnodes_b), numnodes_b)
         θ_soil0_a = θ_soil0_b[sub]
+        λ_b, cp_b, ρ_b = soil_properties(T0, θ_soil0_a, nodes, soilprops, elev, runmoist, false)
+        λ_bulk[step, :] = λ_b
+        cp_bulk[step, :] = cp_b
+        ρ_bulk[step, :] = ρ_b
         if runmoist
             θ_soils[step, :] = infil_out.θ_soil[sub]
             ψ_soils[step, :] = infil_out.ψ_soil[sub]
             rh_soils[step, :] = infil_out.rh_soil[sub]
         end
-        T_skys[step] = Tsky
         step += 1
     end
 end
+
 nsteps = 24*length(days)
 pstart = 1
-pfinish = 14*24
+pfinish = 28*24
+# pstart = 6900
+# pfinish = 7000
 plot(pstart:pfinish, u"°C".(T_soils[pstart:pfinish, :]), xlabel="time", ylabel="soil temperature", lw=2, label=string.(DEP'), legend = :none, ylim = (-10u"°C", 85u"°C"))
-plot(pstart:pfinish, Matrix(soiltemps_NMR[pstart:pfinish, :]), xlabel="time", ylabel="soil temperature", lw=2, label = string.(DEP'), legend = :none, ylim = (-10u"°C", 85u"°C"))
+plot(pstart:pfinish, Matrix(soiltemps_NMR[pstart+1:pfinish+1, :]), xlabel="time", ylabel="soil temperature", lw=2, label = string.(DEP'), legend = :none, ylim = (-10u"°C", 85u"°C"))
 plot(pstart:pfinish, θ_soils[pstart:pfinish, :], xlabel="time", ylabel="soil moisture (m^3/m^3)", lw=2, label = string.(DEP'), legend = :none, ylim = (0, 0.5))
 plot(pstart:pfinish, Matrix(soilmoists_NMR[pstart:pfinish, :]), xlabel="time", ylabel="soil moisture", legend = :none, lw=2, label = string.(DEP'), ylim = (0, 0.5))
+plot(pstart:pfinish, λ_bulk[pstart:pfinish, :], xlabel="time", ylabel="bulk conductivity", lw=2, label=string.(DEP'), legend = :none, ylim = (0.0u"W/m/K", 1.5u"W/m/K"))
+plot(pstart:pfinish, (Matrix(soilconds_NMR[pstart:pfinish, :]))u"W/m/K", xlabel="time", ylabel="bulk conductivity", legend = :none, lw=2, label = string.(DEP'), ylim = (0.0u"W/m/K", 1.5u"W/m/K"))
 
 
 plot(1:nsteps, u"°C".(T_soils[1:nsteps, :]), xlabel="time", ylabel="soil temperature", lw=2, label=string.(DEP'), legend = :none, ylim = (-10u"°C", 85u"°C"))

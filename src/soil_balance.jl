@@ -30,7 +30,7 @@ function soil_energy_balance!(dT, T, i::MicroInput, t)
     N = length(dep)
 
     # get soil properties and convert to cal/cm/g/C
-    λ_b, cp_b, ρ_b = soil_properties(T, θ_soil, nodes, soilprops, elev)
+    λ_b, cp_b, ρ_b = soil_properties(T, θ_soil, nodes, soilprops, elev, true, false)
 
     # Get environmental data at time t
     tair = f.TAIRt(ustrip(t))

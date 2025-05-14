@@ -81,7 +81,7 @@ function check_skylight(
     nmax::Int,
     SRINT::Vector,
     GRINT::Vector)
-    Z = uconvert(°, z).val # convert to degrees
+    Z = uconvert(u"°", z).val # convert to degrees
     if Z < 107.0
         if Z > 88.0
             Elog = 41.34615384 - 0.423076923 * Z
@@ -1219,7 +1219,7 @@ function solrad(;
             t = hours[j]
             h, tsn = hour_angle(t, lonc) # hour angle (radians)
             ζ, δ, z, AR2 = solar_geometry(d=d, lat=lat, h=h, d0=d0, ω=ω, ϵ=ϵ, se=se) # compute ecliptic, declination, zenith angle and (a/r)^2
-            Z = uconvert(°, z)
+            Z = uconvert(u"°", z)
             Zsl = Z
             check_skylight(z, nmax, SRINT, GRINT) # checking zenith angle for possible skylight before sunrise or after sunset
             # testing cos(h) to see if it exceeds +1 or -1
@@ -1249,29 +1249,29 @@ function solrad(;
                 end
                 if h <= 0
                     # Morning
-                    dazsun = uconvert(°, azsun).val
+                    dazsun = uconvert(u"°", azsun).val
                 else
                     # Afternoon
                     if sign(lat) < 0
-                        dazsun = 360° - uconvert(°, azsun).val
+                        dazsun = 360u"°" - uconvert(u"°", azsun).val
                     else
-                        dazsun = 180° + (180° - uconvert(°, azsun).val)
+                        dazsun = 180u"°" + (180u"°" - uconvert(u"°", azsun).val)
                     end
                 end
 
                 cz = cos(z)
                 intcz = Int(floor(100.0 * cz + 1.0))
-                Z = uconvert(°, z)  # zenith angle in degrees
+                Z = uconvert(u"°", z)  # zenith angle in degrees
 
                 # horizon angle - check this works when starting at 0 rather than e.g. 15 deg
-                azi = range(0°, stop=360° - 360° / length(hori), length=length(hori))
+                azi = range(0u"°", stop=360u"°" - 360u"°" / length(hori), length=length(hori))
                 ahoriz = hori[argmin(abs.(dazsun .- azi))]
 
                 # slope zenith angle calculation (Eq. 3.15 in Sellers 1965. Physical Climatology. U. Chicago Press)
-                if slope > 0°
+                if slope > 0u"°"
                     czsl = cos(z) * cos(slope) + sin(z) * sin(slope) * cos(dazsun - aspect)
                     zsl = acos(czsl)
-                    Zsl = min(uconvert(°, zsl), 90°) # cap at 90 degrees if sun is below slope horizon
+                    Zsl = min(uconvert(u"°", zsl), 90u"°") # cap at 90 degrees if sun is below slope horizon
                     intczsl = Int(floor(100.0 * czsl + 1.0))
                 else
                     czsl = cz
@@ -1294,7 +1294,7 @@ function solrad(;
 
                 # atmospheric ozone lookup
                 # convert latitude in degrees to nearest 10-degree index
-                tlat = (lat + 100.0°) / 10.0°
+                tlat = (lat + 100.0u"°") / 10.0u"°"
                 llat = Int(floor(tlat))
                 allat = llat
                 ala = allat + 0.5
@@ -1408,7 +1408,7 @@ function solrad(;
             ZSLs[step] = Zsl
             DOYs[step] = d
             times[step] = t
-            Zs[Zs.>90°] .= 90°
+            Zs[Zs.>90u"°"] .= 90u"°"
             step += 1
         end
         HHs[i] = HH     # save today's sunrise hour angle

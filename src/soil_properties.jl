@@ -1,10 +1,10 @@
 # Julia translation of FORTRAN code that calculates variable thermal conductivity and specific heat
 # for soil and snow layers, based on Campbell et al. (1994) and Campbell & Norman (1998)
 
-function soil_properties(T_soil, θ_soil, nodes, soilprops, elev)
+function soil_properties(T_soil, θ_soil, nodes, soilprops, elev, runmoist, runsnow)
     NON = length(nodes)
-    runmoist = false # to do
-    runsnow = false # to do
+    #runmoist = false # to do
+    #runsnow = false # to do
     numtyps = findfirst(nodes .== 0.0)-1
     θ_sat = soilprops[:, 2] # volumetric water content at saturation (0.1 bar matric potential) (m3/m3)
     λ_m = soilprops[:, 3] # mineral thermal conductivity, W/m/K

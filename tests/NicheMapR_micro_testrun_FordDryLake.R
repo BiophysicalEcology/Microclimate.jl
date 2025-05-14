@@ -8,16 +8,16 @@ Latitude <- site$lat # the latitude in decimal degrees
 Longitude <- site$lon # the longitude in decimal degrees
 Elevation <- site$elev / 3.28084 # elevation, converted from feet to metres
 TZoffset <- site$`GMT offset` # the offset from Greenwich Mean Time, in hours
-ystart <- 2015 # start yeaar
+ystart <- 2015 # start year
 yfinish <- 2015 # end year
 nyears <- yfinish - ystart + 1 # number of years to run
 weather <- SCAN_FordDryLake_2015 # make SCAN_FordDrylake_2015 supplied package data the weather input variable
 
 write_input <- 0
 writecsv <- 0 # make Fortran code write output as csv files
-runshade <- 1 # run the model twice, once for each shade level (1) or just for the first shade level (0)?
+runshade <- 0 # run the model twice, once for each shade level (1) or just for the first shade level (0)?
 runmoist <- 1 # run soil moisture model (0 = no, 1 = yes)?
-snowmodel <- 1 # run the snow model (0 = no, 1 = yes)? - note that this runs slower
+snowmodel <- 0 # run the snow model (0 = no, 1 = yes)? - note that this runs slower
 hourly <- 1 # run the model with hourly input data
 rainhourly <- 1 # run the model with hourly rainfall input data (irrelevant if hourly = 1)
 microdaily <- 1 # run microclimate model where one iteration of each day occurs and last day gives initial conditions for present day
@@ -48,7 +48,7 @@ Z02 <- 0 # 2nd segment roughness height(m)
 ZH1 <- 0 # Top of (1st) segment, height above surface(m)
 ZH2 <- 0 # 2nd segment, height above surface(m)
 SLE <- 0.96 # Substrate longwave IR emissivity (decimal %), typically close to 1
-ERR <- 1.5 # Integrator error for soil temperature calculations
+ERR <- 1 # Integrator error for soil temperature calculations
 Refhyt <- 2 # Reference height (m), reference height at which air temperature, wind speed and relative humidity input data are measured
 DEP <- c(0, 2.5, 5, 10, 15, 20, 30, 50, 100, 200) # Soil nodes (cm) - keep spacing close near the surface, last value is where it is assumed that the soil temperature is at the annual mean air temperature
 Thcond <- 2.5 # soil minerals thermal conductivity (W/mC)
@@ -86,7 +86,6 @@ TAI <- predict(a, data.frame(LAMBDA))
 if(is.na(weather$TAVG.H[1])==TRUE){ # mean hourly air temperature
   weather$TAVG.H[1]<-weather$TAVG.H[which(!is.na(weather$TAVG.H))[1]]
 }
-
 if(is.na(weather$WSPDV.H[1])==TRUE){ # mean hourly wind speed
   weather$WSPDV.H[1]<-weather$WSPDV.H[which(!is.na(weather$WSPDV.H))[1]]
 }
@@ -99,6 +98,7 @@ if(is.na(weather$SRADV.H[1])==TRUE){ # mean hourly solar radiation
 if(is.na(weather$PRCP.H[1])==TRUE){ # hourly precipitation
   weather$PRCP.H[1]<-weather$PRCP.H[which(!is.na(weather$PRCP.H))[1]]
 }
+weather$TAVG.H <- weather$TAVG.H
 # use na.approx function from zoo package to fill in missing data
 TAIRhr <- weather$TAVG.H <- na.approx(weather$TAVG.H)
 RHhr <- weather$RHUM.I <- na.approx(weather$RHUM.I)
@@ -148,7 +148,8 @@ RHMINN <- aggregate(RHhr, by = list(weather$Date), FUN = min)[,2]#c(11.05, 27.9)
 WNMAXX <- aggregate(WNhr, by = list(weather$Date), FUN = max)[,2]#c(1.35, 2.0) # max wind speed (m/s)
 WNMINN <- aggregate(WNhr, by = list(weather$Date), FUN = min)[,2]#c(0.485, 0.610) # min wind speed (m/s)
 
-tannul <- mean(c(TMAXX, TMINN)) # annual mean temperature for getting monthly deep soil temperature (°C)
+#tannul <- mean(c(TMAXX, TMINN)) # annual mean temperature for getting monthly deep soil temperature (°C)
+tannul <- mean(TAIRhr) # annual mean temperature for getting monthly deep soil temperature (°C)
 tannulrun <- rep(tannul, doynum) # monthly deep soil temperature (2m) (°C)
 # creating the arrays of environmental variables that are assumed not to change with month for this simulation
 MAXSHADES <- rep(maxshade, doynum) # daily max shade (%)
@@ -207,7 +208,7 @@ moists[1:10,] <- SoilMoist_Init # insert initial soil moisture
 spinup <- 0 # repeat first day 3 times for steady state
 dewrain <- 0 # don't feed dew back into soil as rain
 moiststep <- 360 # how many steps within the hour is soil moisture solved over
-maxsurf <- 95 # what is the maximum allowable soil surface temp (for stability purposes), deg C
+maxsurf <- 85 # what is the maximum allowable soil surface temp (for stability purposes), deg C
 
 snowtemp <- 1.5 # temperature at which precipitation falls as snow (used for snow model)
 snowdens <- 0.375 # snow density (Mg/m3)
@@ -229,51 +230,48 @@ microin <- list(microinput = microinput, tides = tides, doy = doy, SLES = SLES, 
 
 
 if(write_input){
-  if(dir.exists("micro csv input") == FALSE){
-    dir.create("micro csv input")
-  }
-  write.table(as.matrix(microinput), file = "micro csv input/microinput.csv", sep = ",", col.names = NA, qmethod = "double")
-  write.table(doy, file = "micro csv input/doy.csv", sep = ",", col.names = NA, qmethod = "double")
-  write.table(SLES, file = "micro csv input/SLES.csv", sep = ",", col.names = NA, qmethod = "double")
-  write.table(DEP, file = "micro csv input/DEP.csv", sep = ",", col.names = NA, qmethod = "double")
-  write.table(Nodes, file = "micro csv input/Nodes.csv", sep = ",", col.names = NA, qmethod = "double")
-  write.table(MAXSHADES, file = "micro csv input/Maxshades.csv", sep = ",", col.names = NA, qmethod = "double")
-  write.table(MINSHADES, file = "micro csv input/Minshades.csv", sep = ",", col.names = NA, qmethod = "double")
-  write.table(TIMAXS, file = "micro csv input/TIMAXS.csv", sep = ",", col.names = NA, qmethod = "double")
-  write.table(TIMINS, file = "micro csv input/TIMINS.csv", sep = ",", col.names = NA, qmethod = "double")
-  write.table(TMAXX, file = "micro csv input/TMAXX.csv", sep = ",", col.names = NA, qmethod = "double")
-  write.table(TMINN, file = "micro csv input/TMINN.csv", sep = ",", col.names = NA, qmethod = "double")
-  write.table(RHMAXX, file = "micro csv input/RHMAXX.csv", sep = ",", col.names = NA, qmethod = "double")
-  write.table(RHMINN, file = "micro csv input/RHMINN.csv", sep = ",", col.names = NA, qmethod = "double")
-  write.table(CCMAXX, file = "micro csv input/CCMAXX.csv", sep = ",", col.names = NA, qmethod = "double")
-  write.table(CCMINN, file = "micro csv input/CCMINN.csv", sep = ",", col.names = NA, qmethod = "double")
-  write.table(WNMAXX, file = "micro csv input/WNMAXX.csv", sep = ",", col.names = NA, qmethod = "double")
-  write.table(WNMINN, file = "micro csv input/WNMINN.csv", sep = ",", col.names = NA, qmethod = "double")
-  write.table(REFLS, file = "micro csv input/REFLS.csv", sep = ",", col.names = NA, qmethod = "double")
-  write.table(PCTWET, file = "micro csv input/PCTWET.csv", sep = ",", col.names = NA, qmethod = "double")
-  write.table(soilinit, file = "micro csv input/soilinit.csv", sep = ",", col.names = NA, qmethod = "double")
-  write.table(hori, file = "micro csv input/hori.csv", sep = ",", col.names = NA, qmethod = "double")
-  write.table(TAI, file = "micro csv input/TAI.csv", sep = ",", col.names = NA, qmethod = "double")
-  write.table(soilprops, file="micro csv input/soilprop.csv", sep = ",", col.names = NA, qmethod = "double")
-  write.table(moists,file="micro csv input/moists.csv", sep = ",", col.names = NA, qmethod = "double")
-  write.table(RAINFALL,file="micro csv input/rain.csv", sep = ",", col.names = NA, qmethod = "double")
-  write.table(tannulrun,file="micro csv input/tannulrun.csv", sep = ",", col.names = NA, qmethod = "double")
-  write.table(PE,file="micro csv input/PE.csv", sep = ",", col.names = NA, qmethod = "double")
-  write.table(BD,file="micro csv input/BD.csv", sep = ",", col.names = NA, qmethod = "double")
-  write.table(DD,file="micro csv input/DD.csv", sep = ",", col.names = NA, qmethod = "double")
-  write.table(BB,file="micro csv input/BB.csv", sep = ",", col.names = NA, qmethod = "double")
-  write.table(KS,file="micro csv input/KS.csv", sep = ",", col.names = NA, qmethod = "double")
-  write.table(L,file="micro csv input/L.csv", sep = ",", col.names = NA, qmethod = "double")
-  write.table(LAI,file="micro csv input/LAI.csv", sep = ",", col.names = NA, qmethod = "double")
-  write.table(tides,file="micro csv input/tides.csv", sep = ",", col.names = NA, qmethod = "double")
-  write.table(TAIRhr,file="micro csv input/TAIRhr.csv", sep = ",", col.names = NA, qmethod = "double")
-  write.table(RHhr,file="micro csv input/RHhr.csv", sep = ",", col.names = NA, qmethod = "double")
-  write.table(WNhr,file="micro csv input/WNhr.csv", sep = ",", col.names = NA, qmethod = "double")
-  write.table(CLDhr,file="micro csv input/CLDhr.csv", sep = ",", col.names = NA, qmethod = "double")
-  write.table(SOLRhr,file="micro csv input/SOLRhr.csv", sep = ",", col.names = NA, qmethod = "double")
-  write.table(RAINhr,file="micro csv input/RAINhr.csv", sep = ",", col.names = NA, qmethod = "double")
-  write.table(ZENhr,file="micro csv input/ZENhr.csv", sep = ",", col.names = NA, qmethod = "double")
-  write.table(IRDhr,file="micro csv input/IRDhr.csv", sep = ",", col.names = NA, qmethod = "double")
+  write.table(as.matrix(microinput), file = "C:/Users/mrke/Dropbox/NicheMapR_Debug/micro_source/microinput.csv", sep = ",", col.names = NA, qmethod = "double")
+  write.table(doy, file = "C:/Users/mrke/Dropbox/NicheMapR_Debug/micro_source/doy.csv", sep = ",", col.names = NA, qmethod = "double")
+  write.table(SLES, file = "C:/Users/mrke/Dropbox/NicheMapR_Debug/micro_source/SLES.csv", sep = ",", col.names = NA, qmethod = "double")
+  write.table(DEP, file = "C:/Users/mrke/Dropbox/NicheMapR_Debug/micro_source/DEP.csv", sep = ",", col.names = NA, qmethod = "double")
+  write.table(Nodes, file = "C:/Users/mrke/Dropbox/NicheMapR_Debug/micro_source/Nodes.csv", sep = ",", col.names = NA, qmethod = "double")
+  write.table(MAXSHADES, file = "C:/Users/mrke/Dropbox/NicheMapR_Debug/micro_source/Maxshades.csv", sep = ",", col.names = NA, qmethod = "double")
+  write.table(MINSHADES, file = "C:/Users/mrke/Dropbox/NicheMapR_Debug/micro_source/Minshades.csv", sep = ",", col.names = NA, qmethod = "double")
+  write.table(TIMAXS, file = "C:/Users/mrke/Dropbox/NicheMapR_Debug/micro_source/TIMAXS.csv", sep = ",", col.names = NA, qmethod = "double")
+  write.table(TIMINS, file = "C:/Users/mrke/Dropbox/NicheMapR_Debug/micro_source/TIMINS.csv", sep = ",", col.names = NA, qmethod = "double")
+  write.table(TMAXX, file = "C:/Users/mrke/Dropbox/NicheMapR_Debug/micro_source/TMAXX.csv", sep = ",", col.names = NA, qmethod = "double")
+  write.table(TMINN, file = "C:/Users/mrke/Dropbox/NicheMapR_Debug/micro_source/TMINN.csv", sep = ",", col.names = NA, qmethod = "double")
+  write.table(RHMAXX, file = "C:/Users/mrke/Dropbox/NicheMapR_Debug/micro_source/RHMAXX.csv", sep = ",", col.names = NA, qmethod = "double")
+  write.table(RHMINN, file = "C:/Users/mrke/Dropbox/NicheMapR_Debug/micro_source/RHMINN.csv", sep = ",", col.names = NA, qmethod = "double")
+  write.table(CCMAXX, file = "C:/Users/mrke/Dropbox/NicheMapR_Debug/micro_source/CCMAXX.csv", sep = ",", col.names = NA, qmethod = "double")
+  write.table(CCMINN, file = "C:/Users/mrke/Dropbox/NicheMapR_Debug/micro_source/CCMINN.csv", sep = ",", col.names = NA, qmethod = "double")
+  write.table(WNMAXX, file = "C:/Users/mrke/Dropbox/NicheMapR_Debug/micro_source/WNMAXX.csv", sep = ",", col.names = NA, qmethod = "double")
+  write.table(WNMINN, file = "C:/Users/mrke/Dropbox/NicheMapR_Debug/micro_source/WNMINN.csv", sep = ",", col.names = NA, qmethod = "double")
+  write.table(REFLS, file = "C:/Users/mrke/Dropbox/NicheMapR_Debug/micro_source/REFLS.csv", sep = ",", col.names = NA, qmethod = "double")
+  write.table(PCTWET, file = "C:/Users/mrke/Dropbox/NicheMapR_Debug/micro_source/PCTWET.csv", sep = ",", col.names = NA, qmethod = "double")
+  write.table(soilinit, file = "C:/Users/mrke/Dropbox/NicheMapR_Debug/micro_source/soilinit.csv", sep = ",", col.names = NA, qmethod = "double")
+  write.table(hori, file = "C:/Users/mrke/Dropbox/NicheMapR_Debug/micro_source/hori.csv", sep = ",", col.names = NA, qmethod = "double")
+  write.table(TAI, file = "C:/Users/mrke/Dropbox/NicheMapR_Debug/micro_source/TAI.csv", sep = ",", col.names = NA, qmethod = "double")
+  write.table(soilprops, file="C:/Users/mrke/Dropbox/NicheMapR_Debug/micro_source/soilprop.csv", sep = ",", col.names = NA, qmethod = "double")
+  write.table(moists,file="C:/Users/mrke/Dropbox/NicheMapR_Debug/micro_source/moists.csv", sep = ",", col.names = NA, qmethod = "double")
+  write.table(RAINFALL,file="C:/Users/mrke/Dropbox/NicheMapR_Debug/micro_source/rain.csv", sep = ",", col.names = NA, qmethod = "double")
+  write.table(tannulrun,file="C:/Users/mrke/Dropbox/NicheMapR_Debug/micro_source/tannulrun.csv", sep = ",", col.names = NA, qmethod = "double")
+  write.table(PE,file="C:/Users/mrke/Dropbox/NicheMapR_Debug/micro_source/PE.csv", sep = ",", col.names = NA, qmethod = "double")
+  write.table(BD,file="C:/Users/mrke/Dropbox/NicheMapR_Debug/micro_source/BD.csv", sep = ",", col.names = NA, qmethod = "double")
+  write.table(DD,file="C:/Users/mrke/Dropbox/NicheMapR_Debug/micro_source/DD.csv", sep = ",", col.names = NA, qmethod = "double")
+  write.table(BB,file="C:/Users/mrke/Dropbox/NicheMapR_Debug/micro_source/BB.csv", sep = ",", col.names = NA, qmethod = "double")
+  write.table(KS,file="C:/Users/mrke/Dropbox/NicheMapR_Debug/micro_source/KS.csv", sep = ",", col.names = NA, qmethod = "double")
+  write.table(L,file="C:/Users/mrke/Dropbox/NicheMapR_Debug/micro_source/L.csv", sep = ",", col.names = NA, qmethod = "double")
+  write.table(LAI,file="C:/Users/mrke/Dropbox/NicheMapR_Debug/micro_source/LAI.csv", sep = ",", col.names = NA, qmethod = "double")
+  write.table(tides,file="C:/Users/mrke/Dropbox/NicheMapR_Debug/micro_source/tides.csv", sep = ",", col.names = NA, qmethod = "double")
+  write.table(TAIRhr,file="C:/Users/mrke/Dropbox/NicheMapR_Debug/micro_source/TAIRhr.csv", sep = ",", col.names = NA, qmethod = "double")
+  write.table(RHhr,file="C:/Users/mrke/Dropbox/NicheMapR_Debug/micro_source/RHhr.csv", sep = ",", col.names = NA, qmethod = "double")
+  write.table(WNhr,file="C:/Users/mrke/Dropbox/NicheMapR_Debug/micro_source/WNhr.csv", sep = ",", col.names = NA, qmethod = "double")
+  write.table(CLDhr,file="C:/Users/mrke/Dropbox/NicheMapR_Debug/micro_source/CLDhr.csv", sep = ",", col.names = NA, qmethod = "double")
+  write.table(SOLRhr,file="C:/Users/mrke/Dropbox/NicheMapR_Debug/micro_source/SOLRhr.csv", sep = ",", col.names = NA, qmethod = "double")
+  write.table(RAINhr,file="C:/Users/mrke/Dropbox/NicheMapR_Debug/micro_source/RAINhr.csv", sep = ",", col.names = NA, qmethod = "double")
+  write.table(ZENhr,file="C:/Users/mrke/Dropbox/NicheMapR_Debug/micro_source/ZENhr.csv", sep = ",", col.names = NA, qmethod = "double")
+  write.table(IRDhr,file="C:/Users/mrke/Dropbox/NicheMapR_Debug/micro_source/IRDhr.csv", sep = ",", col.names = NA, qmethod = "double")
 }
 
 micro <- microclimate(microin) # run the model in Fortran
@@ -289,6 +287,9 @@ humid <- as.data.frame(micro$humid) # retrieve soil humidity, minimum shade
 shadhumid <- as.data.frame(micro$shadhumid) # retrieve soil humidity, maximum shade
 soilpot <- as.data.frame(micro$soilpot) # retrieve soil water potential, minimum shade
 shadpot <- as.data.frame(micro$shadpot) # retrieve soil water potential, maximum shade
+tcond <- as.data.frame(micro$tcond)
+specheat <- as.data.frame(micro$specheat)
+densit <- as.data.frame(micro$densit)
 
 # append dates
 metout <- cbind(dates, metout)
@@ -301,72 +302,98 @@ humid <- cbind(dates, humid)
 shadhumid <- cbind(dates, shadhumid)
 soilpot <- cbind(dates, soilpot)
 shadpot <- cbind(dates, shadpot)
+tcond <- cbind(dates, tcond)
+specheat <- cbind(dates, specheat)
+densit <- cbind(dates, densit)
 
-tstart <- as.POSIXct("2015-05-01",format="%Y-%m-%d")
-tfinish <- as.POSIXct("2015-07-31",format="%Y-%m-%d")
+tstart <- as.POSIXct("2015-01-01",format="%Y-%m-%d")
+tfinish <- as.POSIXct("2015-01-31",format="%Y-%m-%d")
 
 # set up plot parameters
-par(mfrow = c(5, 1)) # set up for 6 plots in 1 columns
+par(mfrow = c(1, 1)) # set up for 6 plots in 1 columns
 par(oma = c(2, 1, 2, 2) + 0.1) # margin spacing stuff
 par(mar = c(3, 3, 1, 1) + 0.1) # margin spacing stuff
 par(mgp = c(2, 1, 0) ) # margin spacing stuff
 
 # plot the soil temperatures
-plot(dates, soil$D5cm, type='l',ylim = c(-10, 70),xlim = c(tstart, tfinish),xaxt = "n",ylab = expression("soil temperature (" * degree * C *")"),xlab="")
-points(weather$datetime, weather$STO.I_2, type='l',col="red")
-axis.POSIXct(side = 1, x = micro$dates, at = seq(tstart, tfinish, "weeks"), format = "%d-%m",  las = 2)
-text(tstart, 10,"5cm",col="black",pos = 4, cex = 1.5)
-abline(0, 0, lty = 2, col='light blue')
-#points(dates, metout$SNOWDEP, type='h',col='light blue')
-plot(dates, soil$D10cm, type='l',ylim = c(-10, 70),xlim = c(tstart, tfinish),xaxt = "n",ylab = expression("soil temperature (" * degree * C *")"),xlab="")
-points(weather$datetime, weather$STO.I_4, type='l',col="red")
-axis.POSIXct(side = 1, x = micro$dates, at = seq(tstart, tfinish, "weeks"), format = "%d-%m",  las = 2)
-text(tstart, 10,"10cm",col="black",pos = 4, cex = 1.5)
-abline(0, 0, lty = 2, col='light blue')
-plot(dates, soil$D20cm, type='l',ylim = c(-10, 70),xlim = c(tstart, tfinish),xaxt = "n",ylab = expression("soil temperature (" * degree * C *")"),xlab="")
-points(weather$datetime, weather$STO.I_8, type='l',col="red")
-axis.POSIXct(side = 1, x = micro$dates, at = seq(tstart, tfinish, "weeks"), format = "%d-%m",  las = 2)
-text(tstart, 10,"20cm",col="black",pos = 4, cex = 1.5)
-abline(0, 0, lty = 2, col='light blue')
-plot(dates, soil$D50cm, type='l',ylim = c(-10, 70),xlim = c(tstart, tfinish),xaxt = "n",ylab = expression("soil temperature (" * degree * C *")"),xlab="")
-points(weather$datetime, weather$STO.I_20, type='l',col="red")
-axis.POSIXct(side = 1, x = micro$dates, at = seq(tstart, tfinish, "weeks"), format = "%d-%m",  las = 2)
-text(tstart, 10,"50cm",col="black",pos = 4, cex = 1.5)
-abline(0, 0, lty = 2, col='light blue')
-plot(dates, soil$D100cm, type='l',ylim = c(-10, 70),xlim = c(tstart, tfinish),xaxt = "n",ylab = expression("soil temperature (" * degree * C *")"),xlab="")
-points(weather$datetime, weather$STO.I_40, type='l',col="red")
+plot(dates, soil$D0cm, type='l',ylim = c(-10, 70),xlim = c(tstart, tfinish),xaxt = "n",ylab = expression("soil temperature (" * degree * C *")"),xlab="")
+points(dates, soil$D2.5cm, type='l',col = 2)
+#points(weather$datetime, weather$STO.I_2, type='l',col="red")
 axis.POSIXct(side = 1, x = micro$dates, at = seq(tstart, tfinish, "weeks"), format = "%d-%m",  las = 2)
 abline(0, 0, lty = 2, col='light blue')
-text(tstart, 10,"100cm",col="black",pos = 4, cex = 1.5)
-mtext(site$name, outer = TRUE)
 
-# plot the soil moisture
-plot(dates, soilmoist$WC5cm * 100, type='l',ylim = c(0, 60),xaxt = "n",xlim = c(tstart, tfinish),col="blue",ylab="soil moisture (%)",xlab="")
-axis.POSIXct(side = 1, x = micro$dates, at = seq(tstart, tfinish, "weeks"), format = "%d-%m",  las = 2)
-points(weather$datetime, weather$SMS.I_2, type='l',col="red")
-text(tstart, 40,"5cm",col="black",pos = 4, cex = 1.5)
-plot(dates, soilmoist$WC10cm * 100, type='l',ylim = c(0, 60),xaxt = "n",xlim = c(tstart, tfinish),col="blue",ylab="soil moisture (%)",xlab="")
-axis.POSIXct(side = 1, x = micro$dates, at = seq(tstart, tfinish, "weeks"), format = "%d-%m",  las = 2)
-points(weather$datetime, weather$SMS.I_4, type='l',col="red")
-text(tstart, 40,"10cm",col="black",pos = 4, cex = 1.5)
-plot(dates, soilmoist$WC20cm * 100, type='l',ylim = c(0, 60),xaxt = "n",xlim = c(tstart, tfinish),col="blue",ylab="soil moisture (%)",xlab="")
-axis.POSIXct(side = 1, x = micro$dates, at = seq(tstart, tfinish, "weeks"), format = "%d-%m",  las = 2)
-points(weather$datetime, weather$SMS.I_8, type='l',col="red")
-text(tstart, 40,"20cm",col="black",pos = 4, cex = 1.5)
-plot(dates, soilmoist$WC50cm * 100, type='l',ylim = c(0, 60),xaxt = "n",xlim = c(tstart, tfinish),col="blue",ylab="soil moisture (%)",xlab="")
-axis.POSIXct(side = 1, x = micro$dates, at = seq(tstart, tfinish, "weeks"), format = "%d-%m",  las = 2)
-points(weather$datetime, weather$SMS.I_20, type='l',col="red")
-text(tstart, 40,"50cm",col="black",pos = 4, cex = 1.5)
-plot(dates, soilmoist$WC100cm * 100, type='l',ylim = c(0, 100),xaxt = "n",xlim = c(tstart, tfinish),col="blue",ylab="soil moisture (%)",xlab="")
-axis.POSIXct(side = 1, x = micro$dates, at = seq(tstart, tfinish, "weeks"), format = "%d-%m",  las = 2)
-points(weather$datetime, weather$SMS.I_40, type='l',col="red")
-text(tstart, 40,"100cm",col="black",pos = 4, cex = 1.5)
-mtext(site$name, outer = TRUE)
+plot(dates, tcond$TC0cm, type='l',xlim = c(tstart, tfinish),xaxt = "n",ylab = expression("soil temperature (" * degree * C *")"),xlab="")
+points(dates, tcond$TC2.5cm, type='l',xlim = c(tstart, tfinish), col = 2, xaxt = "n",ylab = expression("soil temperature (" * degree * C *")"),xlab="")
+points(dates, tcond$TC5cm, type='l',xlim = c(tstart, tfinish), col = 3, xaxt = "n",ylab = expression("soil temperature (" * degree * C *")"),xlab="")
+
+# tstart <- as.POSIXct("2015-01-01",format="%Y-%m-%d")
+# tfinish <- as.POSIXct("2015-01-31",format="%Y-%m-%d")
+# 
+# # set up plot parameters
+# par(mfrow = c(5, 1)) # set up for 6 plots in 1 columns
+# par(oma = c(2, 1, 2, 2) + 0.1) # margin spacing stuff
+# par(mar = c(3, 3, 1, 1) + 0.1) # margin spacing stuff
+# par(mgp = c(2, 1, 0) ) # margin spacing stuff
+# 
+# # plot the soil temperatures
+# plot(dates, soil$D5cm, type='l',ylim = c(-10, 70),xlim = c(tstart, tfinish),xaxt = "n",ylab = expression("soil temperature (" * degree * C *")"),xlab="")
+# points(weather$datetime, weather$STO.I_2, type='l',col="red")
+# axis.POSIXct(side = 1, x = micro$dates, at = seq(tstart, tfinish, "weeks"), format = "%d-%m",  las = 2)
+# text(tstart, 10,"5cm",col="black",pos = 4, cex = 1.5)
+# abline(0, 0, lty = 2, col='light blue')
+# #points(dates, metout$SNOWDEP, type='h',col='light blue')
+# plot(dates, soil$D10cm, type='l',ylim = c(-10, 70),xlim = c(tstart, tfinish),xaxt = "n",ylab = expression("soil temperature (" * degree * C *")"),xlab="")
+# points(weather$datetime, weather$STO.I_4, type='l',col="red")
+# axis.POSIXct(side = 1, x = micro$dates, at = seq(tstart, tfinish, "weeks"), format = "%d-%m",  las = 2)
+# text(tstart, 10,"10cm",col="black",pos = 4, cex = 1.5)
+# abline(0, 0, lty = 2, col='light blue')
+# plot(dates, soil$D20cm, type='l',ylim = c(-10, 70),xlim = c(tstart, tfinish),xaxt = "n",ylab = expression("soil temperature (" * degree * C *")"),xlab="")
+# points(weather$datetime, weather$STO.I_8, type='l',col="red")
+# axis.POSIXct(side = 1, x = micro$dates, at = seq(tstart, tfinish, "weeks"), format = "%d-%m",  las = 2)
+# text(tstart, 10,"20cm",col="black",pos = 4, cex = 1.5)
+# abline(0, 0, lty = 2, col='light blue')
+# plot(dates, soil$D50cm, type='l',ylim = c(-10, 70),xlim = c(tstart, tfinish),xaxt = "n",ylab = expression("soil temperature (" * degree * C *")"),xlab="")
+# points(weather$datetime, weather$STO.I_20, type='l',col="red")
+# axis.POSIXct(side = 1, x = micro$dates, at = seq(tstart, tfinish, "weeks"), format = "%d-%m",  las = 2)
+# text(tstart, 10,"50cm",col="black",pos = 4, cex = 1.5)
+# abline(0, 0, lty = 2, col='light blue')
+# plot(dates, soil$D100cm, type='l',ylim = c(-10, 70),xlim = c(tstart, tfinish),xaxt = "n",ylab = expression("soil temperature (" * degree * C *")"),xlab="")
+# points(weather$datetime, weather$STO.I_40, type='l',col="red")
+# axis.POSIXct(side = 1, x = micro$dates, at = seq(tstart, tfinish, "weeks"), format = "%d-%m",  las = 2)
+# abline(0, 0, lty = 2, col='light blue')
+# text(tstart, 10,"100cm",col="black",pos = 4, cex = 1.5)
+# mtext(site$name, outer = TRUE)
+# 
+# # plot the soil moisture
+# plot(dates, soilmoist$WC5cm * 100, type='l',ylim = c(0, 60),xaxt = "n",xlim = c(tstart, tfinish),col="blue",ylab="soil moisture (%)",xlab="")
+# axis.POSIXct(side = 1, x = micro$dates, at = seq(tstart, tfinish, "weeks"), format = "%d-%m",  las = 2)
+# points(weather$datetime, weather$SMS.I_2, type='l',col="red")
+# text(tstart, 40,"5cm",col="black",pos = 4, cex = 1.5)
+# plot(dates, soilmoist$WC10cm * 100, type='l',ylim = c(0, 60),xaxt = "n",xlim = c(tstart, tfinish),col="blue",ylab="soil moisture (%)",xlab="")
+# axis.POSIXct(side = 1, x = micro$dates, at = seq(tstart, tfinish, "weeks"), format = "%d-%m",  las = 2)
+# points(weather$datetime, weather$SMS.I_4, type='l',col="red")
+# text(tstart, 40,"10cm",col="black",pos = 4, cex = 1.5)
+# plot(dates, soilmoist$WC20cm * 100, type='l',ylim = c(0, 60),xaxt = "n",xlim = c(tstart, tfinish),col="blue",ylab="soil moisture (%)",xlab="")
+# axis.POSIXct(side = 1, x = micro$dates, at = seq(tstart, tfinish, "weeks"), format = "%d-%m",  las = 2)
+# points(weather$datetime, weather$SMS.I_8, type='l',col="red")
+# text(tstart, 40,"20cm",col="black",pos = 4, cex = 1.5)
+# plot(dates, soilmoist$WC50cm * 100, type='l',ylim = c(0, 60),xaxt = "n",xlim = c(tstart, tfinish),col="blue",ylab="soil moisture (%)",xlab="")
+# axis.POSIXct(side = 1, x = micro$dates, at = seq(tstart, tfinish, "weeks"), format = "%d-%m",  las = 2)
+# points(weather$datetime, weather$SMS.I_20, type='l',col="red")
+# text(tstart, 40,"50cm",col="black",pos = 4, cex = 1.5)
+# plot(dates, soilmoist$WC100cm * 100, type='l',ylim = c(0, 100),xaxt = "n",xlim = c(tstart, tfinish),col="blue",ylab="soil moisture (%)",xlab="")
+# axis.POSIXct(side = 1, x = micro$dates, at = seq(tstart, tfinish, "weeks"), format = "%d-%m",  las = 2)
+# points(weather$datetime, weather$SMS.I_40, type='l',col="red")
+# text(tstart, 40,"100cm",col="black",pos = 4, cex = 1.5)
+# mtext(site$name, outer = TRUE)
 
 write.csv(metout, file = 'c:/git/Microclimate.jl/data/metout_FordDryLake.csv')
 write.csv(soil, file = 'c:/git/Microclimate.jl/data/soil_FordDryLake.csv')
 write.csv(soilmoist, file = 'c:/git/Microclimate.jl/data/soilmoist_FordDryLake.csv')
 write.csv(soilpot, file = 'c:/git/Microclimate.jl/data/soilpot_FordDryLake.csv')
+write.csv(tcond, file = 'c:/git/Microclimate.jl/data/tcond_FordDryLake.csv')
+write.csv(specheat, file = 'c:/git/Microclimate.jl/data/specheat_FordDryLake.csv')
+write.csv(densit, file = 'c:/git/Microclimate.jl/data/densit_FordDryLake.csv')
 # write.csv(drlam, file = 'c:/git/Microclimate.jl/data/drlam_FordDryLake.csv')
 # write.csv(drrlam, file = 'c:/git/Microclimate.jl/data/drrlam_FordDryLake.csv')
 # write.csv(srlam, file = 'c:/git/Microclimate.jl/data/srlam_FordDryLake.csv')
