@@ -31,5 +31,6 @@ include("soil_properties.jl")
 include("radiation.jl")
 include("boundary_layer.jl")
 include("soil_balance.jl")
+include("simulation.jl")
 
 end

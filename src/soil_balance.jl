@@ -1,31 +1,21 @@
-function soil_energy_balance!(dT, T, i::MicroInput, t)
+function soil_energy_balance!(
+    dT::AbstractVector{<:Quantity},
+    T::AbstractVector{<:Quantity},
+    i::MicroInputs,
+    t::Quantity
+)
     
-    # extract input
+    # extract prameters
     p = i.params
-    f = i.forcing
-
-    # extract parameters
-    ruf = p.ruf
-    pctwet = p.pctwet
-    sle = p.sle
-    slep = p.slep
-    refl = p.refl
-    viewf = p.viewf
-    elev = p.elev
+    (; ruf, pctwet, sle, slep, refl, viewf, elev, slope, shade, dep, refhyt, d0, zh, tdeep, nodes, soilprops, θ_soil) = p
+    # extract layer property vectors
+    sl = i.soillayers
+    (; depp, wc, c) = sl
+    
     sabnew = 1.0 - refl
-    slope = p.slope
-    shade = p.shade
-    dep = p.dep
-    refhyt = p.refhyt
-    d0 = p.d0
-    zh = p.zh
-    tdeep = p.tdeep
-    nodes = p.nodes
-    soilprops = p.soilprops
-    θ_soil = p.θ_soil
 
     # check for unstable conditions of ground surface temperature
-    T .= clamp.(T, (-81.0+273.15)u"K", (95.0+273.15)u"K")
+    T .= clamp.(T, (-81.0+273.15)u"K", (85.0+273.15)u"K")
 
     N = length(dep)
 
@@ -33,6 +23,7 @@ function soil_energy_balance!(dT, T, i::MicroInput, t)
     λ_b, cp_b, ρ_b = soil_properties(T, θ_soil, nodes, soilprops, elev, true, false)
 
     # Get environmental data at time t
+    f = i.forcing
     tair = f.TAIRt(ustrip(t))
     vel = max(0.1u"m/s", f.VELt(ustrip(t)))
     zenr = min(90u"°", u"°"(round(f.ZENRt(ustrip(t)), digits=3)))
@@ -43,12 +34,9 @@ function soil_energy_balance!(dT, T, i::MicroInput, t)
 
     T[N] = tdeep # set boundary condition of deep soil temperature
 
-    depp = fill(0.0u"cm", N + 1)
     depp[1:N] = dep
     # Compute soil layer properties
-    wc = fill(1.0u"J/K/m^2", N)
-    c = fill(1.0u"W/K/m^2", N)
-    for i in 1:N
+    @inbounds for i in 1:N
         rcsp = ρ_b[i] * cp_b[i]
         if i == 1
             wc[i] = rcsp * depp[2] / 2.0
@@ -82,7 +70,8 @@ function soil_energy_balance!(dT, T, i::MicroInput, t)
         slep = slep, 
         sle = sle, 
         cloud = cloud, 
-        viewf = viewf
+        viewf = viewf,
+        shade = shade
         )
     qrad = longwave_out.Qrad
 
@@ -118,7 +107,7 @@ function soil_energy_balance!(dT, T, i::MicroInput, t)
     dT[1] = (qsolar + qrad + qcond + qconv - qevap) / wc[1]
   
     # Soil conduction for internal nodes
-    for i in 2:N-1
+    @inbounds for i in 2:N-1
         dT[i] = (c[i-1] * (T[i-1] - T[i]) + c[i] * (T[i+1] - T[i])) / wc[i]
     end
     # Lower boundary condition
@@ -177,7 +166,7 @@ function soil_water_balance(;
     rh_loc = 0.2,
     θ_soil = fill(0.2, M),
     ET = 1.3e-5u"kg/m^2/s",
-    depth = [0.0, 2.5, 5.0, 10.0, 15.0, 20.0, 30.0, 50.0, 100.0, 200.0]u"cm",
+    depth = [0.0, 0.025, 0.05, 0.1, 0.15, 0.2, 0.3, 0.5, 1.0, 2.0]u"m",
     T10 = fill(293.15u"K", div(M+2,2)),
     dt = 360u"s",
     elev = 0.0u"m",
@@ -189,26 +178,28 @@ function soil_water_balance(;
     r1 = 0.001u"m", # root radius, m
     lai = 0.1,
     im = 1e-6u"kg/m^2/s", # maximum overall mass balance error allowed, kg m-2 s-1
-    maxcount=500
+    maxcount=500,
+    ml::MoistLayers
 )
-
-    P = zeros(Float64, M+1)*u"J/kg"       # matric potential J/kg
-    Z = zeros(Float64, M+1)u"m"                # depth nodes
-    V = zeros(Float64, M+1)u"kg/m^2"
-    W = zeros(Float64, M+1)*u"m^3/m^3"    # water content m3/m3
-    WN = zeros(Float64, M+1)*u"m^3/m^3"   # water content m3/m3
-    K = zeros(Float64, M+1)*u"kg*s/m^3"   # hydraulic conductivity, kg s/m3
-    H = zeros(Float64, M+1)
-    T = zeros(Float64, M+1)u"K"
-    rh_soil = zeros(Float64, M)
-    ψ_soil = zeros(Float64, M)u"J/kg"
-    ψ_root = zeros(Float64, M)u"J/kg"
-    PR = zeros(Float64, M+1)u"J/kg"
-    PP = zeros(Float64, M+1)u"J/kg"
-    B1 = zeros(Float64, M+1)
-    N = zeros(Float64, M+1)
-    N1 = zeros(Float64, M+1)
-    WS = zeros(Float64, M+1)
+(; P, Z, V, W, WN, K, H, T, rh_soil, ψ_soil, ψ_root, PR, PP, B1, N, N1, WS,
+   RR, BZ, JV, DJ, CP, A, B, C, C2, F, F2, DP) = ml
+    # P = zeros(Float64, M+1)*u"J/kg"       # matric potential J/kg
+    # Z = zeros(Float64, M+1)u"m"                # depth nodes
+    # V = zeros(Float64, M+1)u"kg/m^2"
+    # W = zeros(Float64, M+1)*u"m^3/m^3"    # water content m3/m3
+    # WN = zeros(Float64, M+1)*u"m^3/m^3"   # water content m3/m3
+    # K = zeros(Float64, M+1)*u"kg*s/m^3"   # hydraulic conductivity, kg s/m3
+    # H = zeros(Float64, M+1)
+    # T = zeros(Float64, M+1)u"K"
+    # rh_soil = zeros(Float64, M)
+    # ψ_soil = zeros(Float64, M)u"J/kg"
+    # ψ_root = zeros(Float64, M)u"J/kg"
+    # PR = zeros(Float64, M+1)u"J/kg"
+    # PP = zeros(Float64, M+1)u"J/kg"
+    # B1 = zeros(Float64, M+1)
+    # N = zeros(Float64, M+1)
+    # N1 = zeros(Float64, M+1)
+    # WS = zeros(Float64, M+1)
 
     P_atmos = get_pressure(elev)
 
@@ -228,7 +219,7 @@ function soil_water_balance(;
     WS = 1.0 .- BD ./ DD
 
     # Depth to lower boundary (m)
-    Z[M+1] = u"m"(depth[div(M+2,2)])
+    Z[M+1] = depth[div(M+2,2)]
 
 
     # Soil hydraulic properties
@@ -238,7 +229,7 @@ function soil_water_balance(;
 
     # Fill Z using provided depth vector
     j = 2
-    for i in 3:M
+    @inbounds for i in 3:M
         if isodd(i)
             Z[i] = depth[j]
             j += 1
@@ -249,7 +240,7 @@ function soil_water_balance(;
 
     # Interpolate T from temp
     j = 1
-    for i in 1:M+1
+    @inbounds for i in 1:M+1
         if isodd(i)
             T[i] = T10[j]
             j += 1
@@ -263,7 +254,7 @@ function soil_water_balance(;
     Z[2] = 0.0u"m"
 
     # Set initial water content and related variables
-    for i in 2:M
+    @inbounds for i in 2:M
         WN[i] = θ_soil[i-1]
         P[i] = PE[i] * (WS[i] / WN[i])^BB[i] # matric water potential, EQ5.9 (note thetas=W are inverted so not raised to -BB)
         H[i] = exp(MW * P[i] / (Unitful.R * T[i-1])) # fractional humidity, EQ5.14
@@ -272,7 +263,7 @@ function soil_water_balance(;
     end
 
     # Bulk water mass per soil layer
-    for i in 2:M
+    @inbounds for i in 2:M
         V[i] = WD * (Z[i+1] - Z[i-1]) / 2 # bulk density x volume per unit area, kg/m²
     end
     # Lower boundary condition set to saturated (stays constant)
@@ -285,9 +276,9 @@ function soil_water_balance(;
     K[M+1] = KS[M] * (PE[M] / P[M+1])^N[M+1] # lower boundary conductivity
 
     # Initialize root water uptake variables
-    RR = zeros(M + 1)u"m^4/kg/s"
-    BZ = zeros(M + 1)u"m"
-    for i in 2:M
+    #RR = zeros(M + 1)u"m^4/kg/s"
+    #BZ = zeros(M + 1)u"m"
+    @inbounds for i in 2:M
         if L[i] > 0.0u"m/m^3"
             RR[i] = rw / (L[i] * (Z[i+1] - Z[i-1]) / 2.0) # root resistance
             BZ[i] = N1[i] * log(π * r1^2 * L[i]) / (4.0 * π * L[i] * (Z[i+1] - Z[i-1]) / 2.0)
@@ -309,7 +300,7 @@ function soil_water_balance(;
     RB1 = 0.0u"kg*s/m^4" # weighted mean root-soil resistance, R_bar, m4 /(s kg)
     PL = 0.0u"J/kg"      # leaf water potential, J/kg
     RS = zeros(M + 1)u"m^4/kg/s" # soil resistance, m4 /(s kg)
-    for i in 2:M
+    @inbounds for i in 2:M
         RS[i] = BZ[i] / K[i] # soil resistance, simplification of EQ11.14, assuming conductivity constant in the rhizosphere
         PB1 += P[i] / (RS[i] + RR[i]) # summing over layers
         RB1 += 1.0 / (RS[i] + RR[i]) # summing over layers
@@ -336,33 +327,33 @@ function soil_water_balance(;
     XP = (PL / pc)^sp
     TR = TP / (1.0 + XP)
     E = zeros(M + 1)u"kg/m^2/s"
-    for i in 2:M
+    @inbounds for i in 2:M
         E[i] = (P[i] - PL - rl * TR) / (RR[i] + RS[i]) # root water uptake, EQ11.15
     end
 
     # Convergence loop
-    JV = zeros(M + 1)u"kg/m^2/s"
-    DJ = zeros(M + 1)u"kg*s/m^4"
-    CP = zeros(M + 1)u"kg*s/m^4"
-    A = zeros(M + 1)u"kg*s/m^4"
-    B = zeros(M + 1)u"kg*s/m^4"
-    C = zeros(M + 1)u"kg*s/m^4"
-    C2 = zeros(M + 1) # adding this to deal with ratio check
-    F = zeros(M + 1)u"kg/m^2/s"
-    F2 = zeros(M + 1)u"J/kg"
-    DP = zeros(M + 1)u"J/kg"
+    # JV = zeros(M + 1)u"kg/m^2/s"
+    # DJ = zeros(M + 1)u"kg*s/m^4"
+    # CP = zeros(M + 1)u"kg*s/m^4"
+    # A = zeros(M + 1)u"kg*s/m^4"
+    # B = zeros(M + 1)u"kg*s/m^4"
+    # C = zeros(M + 1)u"kg*s/m^4"
+    # C2 = zeros(M + 1) # adding this to deal with ratio check
+    # F = zeros(M + 1)u"kg/m^2/s"
+    # F2 = zeros(M + 1)u"J/kg"
+    # DP = zeros(M + 1)u"J/kg"
     counter = 0
     while counter < maxcount
         SE = 0.0u"kg/m^2/s"
         counter += 1
-        for i in 2:M
+        @inbounds for i in 2:M
             K[i] = KS[i] * (PE[i] / P[i])^N[i]
         end
 
         JV[1] = EP * (H[2] - rh_loc) / (1.0 - rh_loc) # vapour flux at soil surface, EQ9.14
         DJ[1] = EP * MW * H[2] / (Unitful.R * T[1] * (1.0 - rh_loc)) # derivative of vapour flux at soil surface, combination of EQ9.14 and EQ5.14
 
-        for i in 2:M
+        @inbounds for i in 2:M
             VP = wet_air(u"K"(T[i]); rh=100.0, P_atmos=P_atmos).ρ_vap # VP is vapour density = c'_v in EQ9.7
             KV = 0.66 * DV * VP * (WS[i] - (WN[i] + WN[i+1]) / 2.0) / (Z[i+1] - Z[i]) # vapour conductivity, EQ9.7, assuming epsilon(psi_g) = b*psi_g^m (eq. 3.10) where b = 0.66 and m = 1 (p.99)
             JV[i] = KV * (H[i+1] - H[i]) # fluxes of vapour within soil, EQ9.14
@@ -379,7 +370,7 @@ function soil_water_balance(;
         end
         
         # Thomas algorithm (Gauss elimination)
-        for i in 2:M-1
+        @inbounds for i in 2:M-1
             C2[i] = C[i] / B[i]
             #C[i] = C2[i] < 1e-8 ? 1e-8u"kg*s/m^4" : C[i]
             #C2[i] = C2[i] < 1e-8 ? 1e-8 : C2[i]
@@ -392,7 +383,7 @@ function soil_water_balance(;
         P[M] -= DP[M]
         P[M] = min(P[M], PE[M])
 
-        for i in (M-1):-1:2
+        @inbounds for i in (M-1):-1:2
             DP[i] = F2[i] - C2[i] * DP[i+1] # change in matric potential in an interation step, J/kg
             P[i] -= DP[i]                   # matric potential, J/kg
             if P[i] > PE[i]
@@ -400,7 +391,7 @@ function soil_water_balance(;
             end
         end
 
-        for i in 2:M
+        @inbounds for i in 2:M
             WN[i] = max(WS[i] * (PE[i] / P[i])^B1[i], 1e-7)
             P[i] = PE[i] * (WS[i] / WN[i])^BB[i]
             H[i] = exp(MW * P[i] / (Unitful.R * T[i-1]))
@@ -413,11 +404,11 @@ function soil_water_balance(;
 
     SW = ((P[2] * K[2] - P[3] * K[3]) / (N1[2] * (Z[3] - Z[2])) + Unitful.gn * K[2] + TR) * dt
     W .= WN
-    for i in 2:M+1
+    @inbounds for i in 2:M+1
         θ_soil[i-1] = WN[i]
     end
 
-    for i in 2:M
+    @inbounds for i in 2:M
         PR[i] = -1.0 * (TR * RS[i] - P[i])
     end
     

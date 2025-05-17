@@ -1441,7 +1441,8 @@ function get_longwave(;
     slep::Real,
     sle::Real,
     cloud::Real,
-    viewf::Real
+    viewf::Real,
+    shade::Real
 )
     # Longwave radiation (handle both IR modes)
     # Constants

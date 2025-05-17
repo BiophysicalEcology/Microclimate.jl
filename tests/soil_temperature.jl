@@ -10,7 +10,7 @@ using CSV, DataFrames, Dates
 soiltemps_NMR = (DataFrame(CSV.File("data/soil_monthly.csv"))[:, 4:13]).*u"°C"
 metout_NMR = DataFrame(CSV.File("data/metout_monthly.csv"))
 
-DEP = [0.0, 2.5, 5.0, 10.0, 15.0, 20.0, 30.0, 50.0, 100.0, 200.0]u"cm" # Soil nodes (cm) - keep spacing close near the surface, last value is where it is assumed that the soil temperature is at the annual mean air temperature
+depths = [0.0, 0.025, 0.05, 0.1, 0.15, 0.2, 0.3, 0.5, 1.0, 2.0]u"m" # Soil nodes (cm) - keep spacing close near the surface, last value is where it is assumed that the soil temperature is at the annual mean air temperature
 refhyt = 2u"m"
 days = [15, 46, 74, 105, 135, 166, 196, 227, 258, 288, 319, 349]
 hours = collect(0.:1:24.) # hour of day for solrad
@@ -66,7 +66,7 @@ viewf = 1 - sum(sin.(hori)) / length(hori) # convert horizon angles to radians a
 # Soil properties
 # set up a profile of soil properites with depth for each day to be run
 numtyps = 1 # number of soil types
-numnodes = length(DEP) # number of soil nodes
+numnodes = length(depths) # number of soil nodes
 nodes_day = zeros(numnodes, ndays) # array of all possible soil nodes
 nodes_day[1, 1:ndays] .= 10 # deepest node for first substrate type
 # Create an empty 10×5 matrix that can store any type (including different units)
@@ -156,7 +156,7 @@ CLDt = scale(interpCLD, tspan)
 # Parameters
 params = MicroParams(
     soilprops = soilprops,
-    dep = DEP,
+    dep = depths,
     refhyt = refhyt,
     ruf = ruf,
     d0 = d0,
@@ -220,9 +220,9 @@ ta2m_NMR = collect(metout_NMR[(iday*24-23):(iday*24), 5] .+ 273.15).*1u"K"
 rh1cm_NMR = collect(metout_NMR[(iday*24-23):(iday*24), 6])
 rh2m_NMR = collect(metout_NMR[(iday*24-23):(iday*24), 7])
 
-labels = ["$(d)" for d in DEP]
-plot(u"hr".(sol.t), u"°C".(soiltemps'), xlabel="time", ylabel="soil temperature", lw=2, label = string.(DEP'), linecolor="black")
-plot!(u"hr".(sol.t[1:24]), Matrix(soiltemps_NMR[(iday*24-23):(iday*24), :]), xlabel="time", ylabel="soil temperature", lw=2, label = string.(DEP'), linestyle = :dash, linecolor="grey")
+labels = ["$(d)" for d in depths]
+plot(u"hr".(sol.t), u"°C".(soiltemps'), xlabel="time", ylabel="soil temperature", lw=2, label = string.(depths'), linecolor="black")
+plot!(u"hr".(sol.t[1:24]), Matrix(soiltemps_NMR[(iday*24-23):(iday*24), :]), xlabel="time", ylabel="soil temperature", lw=2, label = string.(depths'), linestyle = :dash, linecolor="grey")
 
 
 # now get wind air temperature and humidity profiles
