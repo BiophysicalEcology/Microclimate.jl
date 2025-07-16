@@ -7,21 +7,21 @@ using DifferentialEquations
 using CSV, DataFrames, Dates
 
 # read in output from NicheMapR
-soiltemps_NMR = (DataFrame(CSV.File("data/soil_FordDryLake.csv"))[:, 5:14]).*u"°C"
-soilmoists_NMR = (DataFrame(CSV.File("data/soilmoist_FordDryLake.csv"))[:, 5:14])
-soilconds_NMR = (DataFrame(CSV.File("data/tcond_FordDryLake.csv"))[:, 5:14])
-#soilpots_NMR = (DataFrame(CSV.File("data/soilpot_FordDryLake.csv"))[:, 5:14])
-#metout_NMR = DataFrame(CSV.File("data/metout_FordDryLake.csv"))
+soiltemps_NMR = (DataFrame(CSV.File("test/data/soil_FordDryLake.csv"))[:, 5:14]).*u"°C"
+soilmoists_NMR = (DataFrame(CSV.File("test/data/soilmoist_FordDryLake.csv"))[:, 5:14])
+soilconds_NMR = (DataFrame(CSV.File("test/data/tcond_FordDryLake.csv"))[:, 5:14])
+#soilpots_NMR = (DataFrame(CSV.File("test/data/soilpot_FordDryLake.csv"))[:, 5:14])
+#metout_NMR = DataFrame(CSV.File("test/data/metout_FordDryLake.csv"))
 date = DateTime(2015, 1, 1):Hour(1):DateTime(2015, 12, 31, 23)
 
 # Time varying environmental data
-TAIRs = Float64.(CSV.File("data/TAIRhr_FordDryLake.csv").x)u"°C"
-RHs = Float64.(CSV.File("data/RHhr_FordDryLake.csv").x)
-VELs = Float64.(CSV.File("data/WNhr_FordDryLake.csv").x)u"m/s"
-SOLRs = Float64.(CSV.File("data/SOLRhr_FordDryLake.csv").x)u"W/m^2"
-CLDs = Float64.(CSV.File("data/CLDhr_FordDryLake.csv").x)
-RAINs = Float64.(CSV.File("data/RAINhr_FordDryLake.csv").x)u"kg"/u"m^2"
-#RAINs = Float64.(CSV.File("data/RAINhr_FordDryLake.csv").x/1000.0)u"m" * 1u"kg"/u"m^3"
+TAIRs = Float64.(CSV.File("test/data/TAIRhr_FordDryLake.csv").x)u"°C"
+RHs = Float64.(CSV.File("test/data/RHhr_FordDryLake.csv").x)
+VELs = Float64.(CSV.File("test/data/WNhr_FordDryLake.csv").x)u"m/s"
+SOLRs = Float64.(CSV.File("test/data/SOLRhr_FordDryLake.csv").x)u"W/m^2"
+CLDs = Float64.(CSV.File("test/data/CLDhr_FordDryLake.csv").x)
+RAINs = Float64.(CSV.File("test/data/RAINhr_FordDryLake.csv").x)u"kg"/u"m^2"
+#RAINs = Float64.(CSV.File("test/data/RAINhr_FordDryLake.csv").x/1000.0)u"m" * 1u"kg"/u"m^3"
 RHs .= clamp.(RHs, 0, 100)
 VELs .= clamp.(VELs, 0.1u"m/s", (Inf)u"m/s")
 CLDs .= clamp.(CLDs, 0, 100)
@@ -75,7 +75,7 @@ cp_m = 870.0u"J/kg/K" # soil minerals specific heat (J/kg-K)
 θ_sat = 0.26u"m^3/m^3" # volumetric water content at saturation (0.1 bar matric potential) (m3/m3)
 
 # soil moisture model parameters
-CampNormTbl9_1 = DataFrame(CSV.File("data/CampNormTbl9_1.csv"))
+CampNormTbl9_1 = DataFrame(CSV.File("test/data/CampNormTbl9_1.csv"))
 soiltype = 3 # 3 = sandy loam
 PE = fill(CampNormTbl9_1[soiltype, 4], 19)u"J/kg" #air entry potential J/kg
 KS = fill(CampNormTbl9_1[soiltype, 6], 19)u"kg*s/m^3" #saturated conductivity, kg s/m3
@@ -97,7 +97,7 @@ im = 1e-6u"kg/m^2/s" # maximum overall mass balance error allowed, kg
 maxcount = 500
 timestep = 360.0u"s"
 
-τA = CSV.File("data/TAI_FordDryLake.csv").x
+τA = CSV.File("test/data/TAI_FordDryLake.csv").x
 
 
 raindf = DataFrame(date = date, rainfall = RAINs)

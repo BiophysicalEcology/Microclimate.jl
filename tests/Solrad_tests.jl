@@ -12,7 +12,7 @@ using Test
 metout_NMR = DataFrame(CSV.File("tests/data/metout_monthly.csv"))
 
 # NicheMapR simulation parameters
-microinput_vec = DataFrame(CSV.File("tests/data/init/microinput.csv"))[:, 2]
+microinput_vec = DataFrame(CSV.File("tests/data/init_monthly/microinput.csv"))[:, 2]
 names = [
     :doynum, :RUF, :ERR, :Usrhyt, :Refhyt, :Numtyps, :Z01, :Z02, :ZH1, :ZH2,
     :idayst, :ida, :HEMIS, :ALAT, :AMINUT, :ALONG, :ALMINT, :ALREF, :slope,
@@ -31,15 +31,15 @@ lat = (microinput[:ALAT]+microinput[:AMINUT]/60)*1.0u"°" # latitude
 slope = (microinput[:slope])*1.0u"°" # slope
 aspect = (microinput[:azmuth])*1.0u"°" # aspect
 elev = (microinput[:ALTT])*1.0u"m" # elevation
-hori = (DataFrame(CSV.File("tests/data/init/hori.csv"))[:, 2])*1.0u"°"#fill(0.0u"°", 24) # enter the horizon angles (degrees) so that they go from 0 degrees azimuth (north) clockwise in 15 degree intervals
-REFLS = (DataFrame(CSV.File("tests/data/init/REFLS.csv"))[:, 2]*1.0) # set up vector of soil reflectances for each day (decimal %)
+hori = (DataFrame(CSV.File("tests/data/init_monthly/hori.csv"))[:, 2])*1.0u"°"#fill(0.0u"°", 24) # enter the horizon angles (degrees) so that they go from 0 degrees azimuth (north) clockwise in 15 degree intervals
+REFLS = (DataFrame(CSV.File("tests/data/init_monthly/REFLS.csv"))[:, 2]*1.0) # set up vector of soil reflectances for each day (decimal %)
 refl = REFLS[1]
-CCMINN = (DataFrame(CSV.File("tests/data/init/CCMINN.csv"))[:, 2]/100.) # min cloud cover (dec%)
-CCMAXX = (DataFrame(CSV.File("tests/data/init/CCMAXX.csv"))[:, 2]/100.) # max cloud cover (dec%)
+CCMINN = (DataFrame(CSV.File("tests/data/init_monthly/CCMINN.csv"))[:, 2]/100.) # min cloud cover (dec%)
+CCMAXX = (DataFrame(CSV.File("tests/data/init_monthly/CCMAXX.csv"))[:, 2]/100.) # max cloud cover (dec%)
 cloud = CCMINN .+ CCMINN ./ 2
 
 hours = collect(0.:1:24.)
-days = [15, 46, 74, 105, 135, 166, 196, 227, 258, 288, 319, 349]
+days = [15, 46, 74, 105, 135, 166, 196, 227, 258, 288, 319, 349]*1.0
 
 solrad_out = @inferred solrad(
     days = days,     # days of year
@@ -50,7 +50,7 @@ solrad_out = @inferred solrad(
     slope = slope,   # slope (degrees, range 0-90)
     aspect = aspect, # aspect (degrees, 0 = North, range 0-360)
     refl = refl,     # substrate solar reflectivity (decimal %)
-    iuv = iuv        # use Dave_Furkawa theory for UV radiation (290-360 nm)?
+    iuv = true        # use Dave_Furkawa theory for UV radiation (290-360 nm)?
     )
 
 # extract output
@@ -97,22 +97,19 @@ plot!(λ, [λDirect_NMR_hr λScattered_NMR_hr λRayleigh_NMR_hr], xlabel="Wavele
 
 
 @testset "solar radiation comparisons" begin
-    @test ustrip.(u"°", Zenith) ≈ metout_NMR.ZEN atol=1e-1
+    @test ustrip.(u"°", Zenith) ≈ metout_NMR.ZEN atol=1e-4
     @test all(isapprox.(ustrip.(u"W/m^2", Global), metout_NMR.SOLR; atol=1e-1))
+    @test ustrip.(u"W/m^2", Global) ≈ metout_NMR.SOLR atol=1e-1 rtol=0.0
     @test λDirect[hour, :] ≈ λDirect_NMR_hr atol=1e-3u"W/nm/m^2"
     @test ustrip.(λScattered[hour, :]) ≈ ustrip.(λScattered_NMR_hr) atol=1e-7#u"W/nm/m^2"
     @test λRayleigh[hour, :] ≈ λRayleigh_NMR_hr atol=1e-3u"W/nm/m^2"
 end  
     
-diffglob = ustrip.(u"W/m^2", Global) .- metout_NMR.SOLR
+diffglob = abs.(ustrip.(u"W/m^2", Global) .- metout_NMR.SOLR)
 maxloc = findmax(diffglob)[2]
 Global[maxloc]
 metout_NMR.SOLR[maxloc]
 
-diffzen = ustrip.(u"°", Zenith) .- metout_NMR.ZEN
-maxloc = findmax(diffzen)[2]
-Zenith[maxloc]
-metout_NMR.ZEN[maxloc]
 # plot(hours, Zenith, xlabel="hour of day", ylabel="Zenith angle", legend=false)
 # plot!([tsn - HHsr, tsn + HHsr], seriestype="vline", color="red", linestyle = [:dash, :dash])
 
