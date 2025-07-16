@@ -120,7 +120,7 @@ function wet_air(T_drybulb;
 )
     return wet_air(T_drybulb, T_wetbulb, rh, T_dew, P_atmos, fO2, fCO2, fN2)
 end
-function wet_air(T_drybulb, T_wetbulb=T_drybulb, rh=0, T_dew=nothing, P_atmos=101325u"Pa", fO2 = 0.2095, fCO2 = 0.0004, fN2 = 0.79)
+function wet_air(T_drybulb, T_wetbulb, rh, T_dew, P_atmos, fO2, fCO2, fN2)
     f_w = 1.0053 # (-) correction factor for the departure of the mixture of air and water vapour from ideal gas laws
     M_w = (1molH₂O |> u"kg")/1u"mol" # molar mass of water
     M_a = ((fO2*molO₂ + fCO2*molCO₂ + fN2*molN₂) |> u"kg")/1u"mol" # molar mass of air

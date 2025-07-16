@@ -1,13 +1,18 @@
 function soil_energy_balance!(
     dT::AbstractVector{<:Quantity},
+    #dT::Vector{Float64},
     T::AbstractVector{<:Quantity},
+    #T::Vector{Float64},
     i::MicroInputs,
     t::Quantity
+    #t::Float64
 )
-    
+    #t_min = t / 60 * u"minute"  # convert Float64 time back to unitful
+    #T_K = T .* u"K"  # convert Float64 time back to unitful
+    #dT_K = dT .* 60 .* u"K/minute"  # convert Float64 time back to unitful
     # extract prameters
     p = i.params
-    (; ruf, pctwet, sle, slep, refl, viewf, elev, slope, shade, dep, refhyt, d0, zh, tdeep, nodes, soilprops, θ_soil) = p
+    (; ruf, pctwet, sle, slep, refl, viewf, elev, slope, shade, dep, refhyt, d0, zh, tdeep, nodes, soilprops, θ_soil, runmoist) = p
     # extract layer property vectors
     sl = i.soillayers
     (; depp, wc, c) = sl
@@ -19,8 +24,8 @@ function soil_energy_balance!(
 
     N = length(dep)
 
-    # get soil properties and convert to cal/cm/g/C
-    λ_b, cp_b, ρ_b = soil_properties(T, θ_soil, nodes, soilprops, elev, true, false)
+    # get soil properties
+    λ_b, cp_b, ρ_b = soil_properties(T, θ_soil, nodes, soilprops, elev, runmoist, false)
 
     # Get environmental data at time t
     f = i.forcing
@@ -112,6 +117,7 @@ function soil_energy_balance!(
     end
     # Lower boundary condition
     dT[N] = 0.0u"K/minute"  # or set T[N] = T_surface from data
+    #@. dT = ustrip.(u"K/minute", dT_K) ./ 60.0
 end
 
 function evap(;tsurf, tair, rh, rhsurf, hd, elev, pctwet, sat)

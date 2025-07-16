@@ -20,19 +20,19 @@ names = [
     :densfun3, :densfun4, :hourly, :rainhourly, :lamb, :IUV, :RW, :PC, :RL, :SP, :R1, 
     :IM, :MAXCOUNT, :IR, :message, :fail, :snowcond, :intercept, :grasshade, :solonly, 
     :ZH, :D0, :TIMAXS1, :TIMAXS2, :TIMAXS3, :TIMAXS4, :TIMINS1, :TIMINS2, :TIMINS3, :TIMINS4,
-    :spinup, :dewrain, :moiststep, :maxsurf, :ndmax
+    :spinup, :dewrain, :moiststep, :maxsurf
 ]
 
 # Zip into a NamedTuple
 microinput = (; zip(names, microinput_vec)...)
 
+#microinput<-c(doynum, RUF, ERR, Usrhyt, Refhyt, Numtyps, Z01, Z02, ZH1, ZH2, idayst, ida, HEMIS, ALAT, AMINUT, ALONG, ALMINT, ALREF, slope, azmuth, ALTT, CMH2O, microdaily, tannul, EC, VIEWF, snowtemp, snowdens, snowmelt, undercatch, rainmult, runshade, runmoist, maxpool, evenrain, snowmodel, rainmelt, writecsv, densfun, hourly, rainhourly, lamb, IUV, RW, PC, RL, SP, R1, IM, MAXCOUNT, IR, message, fail, snowcond, intercept, grasshade, solonly, ZH, D0, TIMAXS, TIMINS, spinup, dewrain, moiststep, maxsurf)
 refhyt = microinput[:Refhyt]*1.0u"m"
 depths = ((DataFrame(CSV.File("tests/data/init/DEP.csv"))[:, 2])/100.0)u"m"#[0.0, 0.025, 0.05, 0.1, 0.15, 0.2, 0.3, 0.5, 1.0, 2.0]u"m" # Soil nodes (cm) - keep spacing close near the surface, last value is where it is assumed that the soil temperature is at the annual mean air temperature
 days = [15, 46, 74, 105, 135, 166, 196, 227, 258, 288, 319, 349]
 hours = collect(0.:1:24.) # hour of day for solrad
 lat = (microinput[:ALAT]+microinput[:AMINUT]/60)*1.0u"°" # latitude
 iuv = Bool(Int(microinput[:IUV])) # this makes it take ages if true!
-ndmax = (microinput[:ndmax])
 elev = microinput[:ALTT]*1.0u"m" # elevation (m)
 hori = (DataFrame(CSV.File("tests/data/init/hori.csv"))[:, 2])*1.0u"°"#fill(0.0u"°", 24) # enter the horizon angles (degrees) so that they go from 0 degrees azimuth (north) clockwise in 15 degree intervals
 slope = microinput[:slope]*1.0u"°" # slope (degrees, range 0-90)
@@ -62,7 +62,7 @@ WNMAXX = (DataFrame(CSV.File("tests/data/init/WNMAXX.csv"))[:, 2]*1.0)u"m/s" # m
 CCMINN = (DataFrame(CSV.File("tests/data/init/CCMINN.csv"))[:, 2]*1.0) # min cloud cover (%)
 CCMAXX = (DataFrame(CSV.File("tests/data/init/CCMAXX.csv"))[:, 2]*1.0) # max cloud cover (%)
 RAINFALL = ((DataFrame(CSV.File("tests/data/init/rain.csv"))[:, 2]*1.0) / 1000)u"m" # monthly mean rainfall (mm)
-SoilMoist = (DataFrame(CSV.File("tests/data/init/moists.csv"))[:, 2:13].*1.0)#fill(0.0, ndays)
+SoilMoist = (DataFrame(CSV.File("tests/data/init/moists.csv"))[:, 2]*1.0)#fill(0.0, ndays)
 daily = Bool(Int(microinput[:microdaily]))
 runmoist = Bool(Int(microinput[:runmoist]))
 
@@ -127,7 +127,7 @@ TAIRs, WNs, RHs, CLDs = hourly_vars(
     TIMAXS=TIMAXS, 
     daily=daily
     )
-TAIRs25 = TAIRs # keeping a copy to get mean monthly over 25 hrs as in fortran
+
 skip25 = setdiff(1:length(solrad_out.Zenith), 25:25:length(solrad_out.Zenith))
 ZENRs = solrad_out.Zenith[skip25] # remove every 25th output
 ZSLs = solrad_out.ZenithSlope[skip25] # remove every 25th output
@@ -136,22 +136,10 @@ TAIRs = TAIRs[skip25]
 WNs = WNs[skip25]
 RHs = RHs[skip25]
 CLDs = CLDs[skip25]
-
-plot(ZENRs, ylabel="Zenith angle", legend=false)
-plot!(metout_NMR.ZEN, linestyle = :dash)
-plot(SOLRs, ylabel="Radiation", label="solrad.jl")
-plot!(metout_NMR.SOLR, linestyle = :dash, label="NMR")
-
-@testset "solar radiation comparisons" begin
-    @test ustrip.(u"°", ZENRs) ≈ metout_NMR.ZEN atol=1e-0
-    @test all(isapprox.(ustrip.(u"W/m^2", SOLRs), metout_NMR.SOLR; atol=10e-0))
-end
-
 # simulate a day
 iday = 1
 
 sub = (iday*24-24+1):(iday*24)#(iday*24-23):(iday*24)
-sub2 = (iday*25-25+1):(iday*25) # for getting mean monthly over the 25 hrs as in fortran version
 REFL = REFLS[iday]
 SHADE = SHADES[iday] # daily shade (%)
 SLE = SLES[iday] # set up vector of ground emissivities for each day
@@ -168,9 +156,18 @@ VEL = WNs[sub]
 RH = RHs[sub]
 CLD = CLDs[sub]
 
+plot(ZENR, ylabel="Zenith angle", legend=false)
+plot!(metout_NMR.ZEN[sub], linestyle = :dash)
+plot(SOLR, ylabel="Radiation", label="solrad.jl")
+plot!(metout_NMR.SOLR[sub], linestyle = :dash, label="NMR")
+
+@testset "solar radiation comparisons" begin
+    @test ustrip.(u"°", ZENR) ≈ metout_NMR.ZEN[sub] atol=1e-1
+    @test all(isapprox.(ustrip.(u"W/m^2", SOLR), metout_NMR.SOLR[sub]; atol=1e-1))
+ end  
 # Initial conditions
-soilinit = u"K"(mean(ustrip(TAIRs25[sub2]))u"°C") # make initial soil temps equal to mean monthly temperature
-θ_soil = SoilMoist[:, iday]#collect(fill(SoilMoist, numnodes)) # initial soil moisture, constant for now
+soilinit = u"K"(mean(ustrip(TAIR))u"°C") # make initial soil temps equal to mean daily temperature
+θ_soil = collect(fill(SoilMoist[iday], numnodes)) # initial soil moisture, constant for now
 
 # create forcing weather variable splines
 #tspan = 0.:60:1440
@@ -228,65 +225,55 @@ input = MicroInputs(
     forcing,
     soillayers
 )
+nsteps = length(days) * (length(hours))
+T_soils = Array{Float64}(undef, nsteps+1, numnodes)u"K"
 
 # initial soil temperatures
 T0 = fill(soilinit, numnodes)
-T0[numnodes] = tdeep
-#T0 = fill(tdeep, numnodes) # use this if microdaily set to 1 and spinup 0
-
-
+T0 = u"K".(collect(soiltemps_NMR[1, :]))
+T_soils[1, :] = T0
 tspan = (0.0u"minute", 1440.0u"minute")  # 1 day
+step = 2
+∑phase = zeros(Float64, numnodes)u"J"
+# loop through hours of day
+for i in 1:length(hours)-1
+    tspan = ((0.0 + (step - 2) * 60)u"minute", (60.0 + (step - 2) * 60)u"minute")  # 1 hour
+    T0 = solve(ODEProblem(soil_energy_balance!, T0, tspan, input), Tsit5(); saveat=60.0u"minute").u[end]
+
+    # account for any phase transition of water in soil
+    phase_transition!(T0, T_soils[step-1, :], ∑phase, θ_soil, depths)
+
+    T_soils[step, :] = T0
+    step += 1
+end
+
+plot(u"°C".(soiltemps'))
+plot(u"hr".(sol.t), u"°C".(soiltemps'), xlabel="Time", ylabel="Soil Temperature", lw=2)
+
+
+
+
 prob = ODEProblem(soil_energy_balance!, T0, tspan, input)
-sol = solve(prob, Tsit5(); saveat=60.0u"minute", reltol=1e-6u"K", abstol=1e-8u"K")
+sol = solve(prob, Tsit5(); saveat=60.0u"minute")
 soiltemps = hcat(sol.u...)
-t = sol.t
+plot(u"hr".(sol.t), u"°C".(soiltemps'), xlabel="Time", ylabel="Soil Temperature", lw=2)
+plot!(u"hr".(sol.t[1:24]), Matrix(soiltemps_NMR[sub.+1, :]); 
+ xlabel="time", ylabel="soil temperature", lw=2, 
+ label = string.(depths'), linestyle = :dash, linecolor="grey", legend = false
+)
 T0 = soiltemps[:, 25] # new initial soil temps
 
-# version with VCABM, requiring units of t, T and dT to be stripped (see commented out code in soil_energy_balance!)
-#tspan = (0.0, 1380.0).*60  # 1 day
-#prob = ODEProblem(soil_energy_balance!, ustrip.(u"K", T0), tspan, input)
-#sol = solve(prob, Tsit5(); saveat=60.0*60, reltol=1e-6, abstol=1e-8)
-#sol = solve(prob, VCABM(); saveat=60.0*60, reltol=1e-6, abstol=1e-8)
-#soiltemps = hcat(sol.u...).*1.0u"K"
-#T0 = hcat(sol.u...)[:, 24] # new initial soil temps
-#t = sol.t./60*1.0u"minute"
-#plot(u"hr".(t), u"°C".(soiltemps'), xlabel="Time", ylabel="Soil Temperature", lw=2, legend = false)
-# plot!(u"hr".(t[1:24]), Matrix(soiltemps_NMR[sub, :]); 
-#  xlabel="time", ylabel="soil temperature", lw=2, 
-#  label = string.(depths'), linestyle = :dash, linecolor="grey"
-# )
-
 # iterate through to get final soil temperature profile
-niter = ndmax - 1 # number of interations for steady periodic
+niter = 2 # number of interations for steady periodic
 sol = soiltemps = nothing
 for iter in 1:niter
     prob = ODEProblem(soil_energy_balance!, T0, tspan, input)
-    sol = solve(prob, Tsit5(); saveat=60.0u"minute", reltol=1e-6u"K", abstol=1e-8u"K")
+    sol = solve(prob, Tsit5(); saveat=60.0u"minute")
     soiltemps = hcat(sol.u...)
+    #plot(u"hr".(sol.t), u"°C".(soiltemps'), xlabel="Time", ylabel="Soil Temperature", lw=2)
     T0 = soiltemps[:, 25] # new initial soil temps
-    # VCAMB version
-    #prob = ODEProblem(soil_energy_balance!, ustrip.(u"K", T0), tspan, input)
-    #sol = solve(prob, VCABM(); saveat=60.0*60, reltol=1e-6, abstol=1e-8)
-    #soiltemps = hcat(sol.u...).*1.0u"K"
-    #T0 = hcat(sol.u...)[:, 24] # new initial soil temps
+    labels = ["$(d)" for d in depths]
 end
-
-t = sol.t[1:24]
-plot(u"hr".(t), u"°C".(soiltemps')[1:24, :], xlabel="Time", ylabel="Soil Temperature", lw=2, legend = false)
-plot!(u"hr".(t[1:24]), Matrix(soiltemps_NMR[sub, :]); 
- xlabel="time", ylabel="soil temperature", lw=2, 
- label = string.(depths'), linestyle = :dash, linecolor="grey"
-)
-
-soiltemps_jul = ustrip.(u"K", soiltemps')[1:24, :]
-soiltemps_nmr = ustrip.(u"°C", Matrix(soiltemps_NMR[sub, :])) .+ 273.15
-@testset "soil temperature comparisons" begin
-    @test soiltemps_jul ≈ soiltemps_nmr atol=1.0e-1
-end 
-diffsoil = abs.(soiltemps_jul .- soiltemps_nmr)
-maxloc = findmax(diffsoil)[2]
-soiltemps_jul[maxloc]
-soiltemps_nmr[maxloc]
 
 # subset NicheMapR predictions
 vel1cm_NMR = collect(metout_NMR[sub, 8]).*1u"m/s"
@@ -295,6 +282,20 @@ ta1cm_NMR = collect(metout_NMR[sub, 4] .+ 273.15).*1u"K"
 ta2m_NMR = collect(metout_NMR[sub, 5] .+ 273.15).*1u"K"
 rh1cm_NMR = collect(metout_NMR[sub, 6])
 rh2m_NMR = collect(metout_NMR[sub, 7])
+
+labels = ["$(d)" for d in depths]
+plot(u"hr".(sol.t), u"°C".(soiltemps'); 
+xlabel="time", ylabel="soil temperature", 
+lw=2, label = string.(depths'), linecolor="black", legend = false
+)
+plot!(u"hr".(sol.t[1:24]), Matrix(soiltemps_NMR[sub, :]); 
+ xlabel="time", ylabel="soil temperature", lw=2, 
+ label = string.(depths'), linestyle = :dash, linecolor="grey", legend = false
+)
+scatter(u"hr".(sol.t[1:24]), Matrix(soiltemps_NMR[sub, :]); 
+ xlabel="time", ylabel="soil temperature", lw=2, 
+ label = string.(depths'), linestyle = :dash, linecolor="grey", legend = false
+)
 
 # now get wind air temperature and humidity profiles
 nsteps = 24
@@ -337,67 +338,6 @@ plot!(u"hr".(sol.t[1:24]), rh2m_NMR, xlabel="time", ylabel="humidity (%)", lw=2,
 
 @testset "profiles" begin
     @test VEL_matrix[2, :] ≈ vel1cm_NMR atol=1e-4u"m/s"
-    @test u"K".(TA_matrix[2, :]) ≈ ta1cm_NMR atol=1e-1u"K"
-    @test RH_matrix[2, :] ≈ rh1cm_NMR atol=1e-1
+    @test TA_matrix[2, :] ≈ ta1cm_NMR atol=1e-4u"K"
+    @test RH_matrix[2, :] ≈ rh1cm_NMR atol=1e-4
 end
-
-# now loop through each hour of each day as in NicheMapR and include phase change
-nsteps = length(days) * (length(hours))
-T_soils = Array{Float64}(undef, nsteps+1, numnodes)u"K"
-#T0 = fill(soilinit, numnodes)
-#T0[numnodes] = tdeep
-#T0 = fill(tdeep, numnodes)
-#T_soils[1, :] = T0
-tspan = (0.0u"minute", 1440.0u"minute")  # 1 day
-∑phase = zeros(Float64, numnodes)u"J"
-
-for iday in 1:length(days)
-
-sub = (iday*24-24+1):(iday*24)#(iday*24-23):(iday*24)
-sub2 = (iday*25-25+1):(iday*25) # for getting mean monthly over the 25 hrs as in fortran version
-REFL = REFLS[iday]
-SHADE = SHADES[iday] # daily shade (%)
-SLE = SLES[iday] # set up vector of ground emissivities for each day
-PCTWET = PCTWETS[iday] # set up vector of soil wetness for each day
-tdeep = u"K"(tannulrun[iday]) # annual mean temperature for getting daily deep soil temperature (°C)
-nodes = nodes_day[:, iday]
-
-# get today's weather
-SOLR = SOLRs[sub]
-ZENR = ZENRs[sub]
-ZSL = ZSLs[sub]
-TAIR = TAIRs[sub]
-VEL = WNs[sub]
-RH = RHs[sub]
-CLD = CLDs[sub]
-
-# Initial conditions
-soilinit = u"K"(mean(ustrip(TAIRs25[sub2]))u"°C") # make initial soil temps equal to mean monthly temperature
-θ_soil = SoilMoist[:, iday]#collect(fill(SoilMoist, numnodes)) # initial soil moisture, constant for now
-T0 = fill(soilinit, numnodes)
-T0[numnodes] = tdeep
-
-step = 2
-
-for i in 1:length(hours)-1
-    tspan = ((0.0 + (step - 2) * 60)u"minute", (60.0 + (step - 2) * 60)u"minute")  # 1 hour
-    T0 = solve(ODEProblem(soil_energy_balance!, T0, tspan, input), Tsit5(); saveat=60.0u"minute").u[end]
-
-    # account for any phase transition of water in soil
-    #phase_transition!(T0, T_soils[step-1, :], ∑phase, θ_soil, depths)
-
-    T_soils[step, :] = T0
-    step += 1
-end
-T0 = T_soils[step - 2, :]
-
-t = sol.t[1:24]
-plot(u"hr".(t), u"°C".(soiltemps')[1:24, :], xlabel="Time", ylabel="Soil Temperature", lw=2, legend = false)
-plot!(u"hr".(t[1:24]), Matrix(soiltemps_NMR[sub, :]); 
- xlabel="time", ylabel="soil temperature", lw=2, 
- label = string.(depths'), linestyle = :dash, linecolor="grey"
-)
-
-end
-
-plot(T_soils)

@@ -55,6 +55,7 @@ Base.@kwdef struct MicroParams
     nodes::Vector{Float64}
     tdeep::Quantity
     θ_soil::Vector{Float64}
+    runmoist::Bool
 end
 
 Base.@kwdef struct MicroForcing
@@ -72,6 +73,12 @@ Base.@kwdef struct MicroInputs
     forcing::MicroForcing
     soillayers::SoilLayers
 end
+
+#Base.@kwdef struct MicroInputs{MP::MicroParams,MF<:MicroForcing,SL<:SoilLayers}
+#    params::MP
+#    forcing::MF
+#    soillayers::SL
+#end
 
 function init_soillayers(N)
     depp = fill(0.0u"cm", N + 1)

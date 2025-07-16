@@ -10,7 +10,7 @@ using Unitful, UnitfulMoles, ModelParameters
 
 using Unitful: °, rad, °C#, K, Pa, kPa, MPa, J, kJ, W, L, g, kg, cm, m, s, hr, d, mol, mmol, μmol, σ, R
 
-export air_pressure, vapour_pressure, wet_air, dry_air, λ_evap
+export air_pressure, vapour_pressure, wet_air, dry_air, λ_evap, phase_transition!
 
 export sinec!, vsine, hourly_vars
 
@@ -19,6 +19,8 @@ export hour_angle, solar_geometry, check_skylight, elev_corr, gamma, dchxy, dexp
 export get_profile
 
 export soil_properties
+
+export init_soillayers, MicroInputs
 
 export soil_energy_balance!, evap, soil_water_balance
 

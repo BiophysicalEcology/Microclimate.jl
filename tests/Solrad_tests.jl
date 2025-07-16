@@ -3,24 +3,54 @@ using Unitful
 using Unitful: °, rad, R, kg, m
 using Plots
 using CSV, DataFrames
+using Test
 
-λDirect_NMR = DataFrame(CSV.File("data/drlam.csv"))
-λRayleigh_NMR = DataFrame(CSV.File("data/drrlam.csv"))
-λScattered_NMR = DataFrame(CSV.File("data/srlam.csv"))
-metout_NMR = DataFrame(CSV.File("data/metout.csv"))
+# NicheMapR simulation results
+λDirect_NMR = DataFrame(CSV.File("tests/data/drlam_monthly.csv"))
+λRayleigh_NMR = DataFrame(CSV.File("tests/data/drrlam_monthly.csv"))
+λScattered_NMR = DataFrame(CSV.File("tests/data/srlam_monthly.csv"))
+metout_NMR = DataFrame(CSV.File("tests/data/metout_monthly.csv"))
+
+# NicheMapR simulation parameters
+microinput_vec = DataFrame(CSV.File("tests/data/init/microinput.csv"))[:, 2]
+names = [
+    :doynum, :RUF, :ERR, :Usrhyt, :Refhyt, :Numtyps, :Z01, :Z02, :ZH1, :ZH2,
+    :idayst, :ida, :HEMIS, :ALAT, :AMINUT, :ALONG, :ALMINT, :ALREF, :slope,
+    :azmuth, :ALTT, :CMH2O, :microdaily, :tannul, :EC, :VIEWF, :snowtemp,
+    :snowdens, :snowmelt, :undercatch, :rainmult, :runshade, :runmoist,
+    :maxpool, :evenrain, :snowmodel, :rainmelt, :writecsv, :densfun1, :densfun2,
+    :densfun3, :densfun4, :hourly, :rainhourly, :lamb, :IUV, :RW, :PC, :RL, :SP, :R1, 
+    :IM, :MAXCOUNT, :IR, :message, :fail, :snowcond, :intercept, :grasshade, :solonly, 
+    :ZH, :D0, :TIMAXS1, :TIMAXS2, :TIMAXS3, :TIMAXS4, :TIMINS1, :TIMINS2, :TIMINS3, :TIMINS4,
+    :spinup, :dewrain, :moiststep, :maxsurf, :ndmax
+]
+microinput = (; zip(names, microinput_vec)...)
+
+iuv = Bool(Int(microinput[:IUV])) # this makes it take ages if true!
+lat = (microinput[:ALAT]+microinput[:AMINUT]/60)*1.0u"°" # latitude
+slope = (microinput[:slope])*1.0u"°" # slope
+aspect = (microinput[:azmuth])*1.0u"°" # aspect
+elev = (microinput[:ALTT])*1.0u"m" # elevation
+hori = (DataFrame(CSV.File("tests/data/init/hori.csv"))[:, 2])*1.0u"°"#fill(0.0u"°", 24) # enter the horizon angles (degrees) so that they go from 0 degrees azimuth (north) clockwise in 15 degree intervals
+REFLS = (DataFrame(CSV.File("tests/data/init/REFLS.csv"))[:, 2]*1.0) # set up vector of soil reflectances for each day (decimal %)
+refl = REFLS[1]
+CCMINN = (DataFrame(CSV.File("tests/data/init/CCMINN.csv"))[:, 2]/100.) # min cloud cover (dec%)
+CCMAXX = (DataFrame(CSV.File("tests/data/init/CCMAXX.csv"))[:, 2]/100.) # max cloud cover (dec%)
+cloud = CCMINN .+ CCMINN ./ 2
 
 hours = collect(0.:1:24.)
 days = [15, 46, 74, 105, 135, 166, 196, 227, 258, 288, 319, 349]
-solrad_out = solrad(
-    days = days,               # days of year
-    hours = hours,              # hours of day
-    lat = 43.1379°,             # latitude (degrees)
-    elev = 226m,                  # elevation (m)
-    hori = fill(0.0°, 24),      # horizon angles 0 degrees azimuth (north) clockwise in 15 degree intervals
-    slope = 0.0°,               # slope (degrees, range 0-90)
-    aspect = 0.0°,              # aspect (degrees, 0 = North, range 0-360)
-    refl = 0.10,                # substrate solar reflectivity (decimal %)
-    iuv = false                 # use Dave_Furkawa theory for UV radiation (290-360 nm)?
+
+solrad_out = @inferred solrad(
+    days = days,     # days of year
+    hours = hours,   # hours of day
+    lat = lat,       # latitude (degrees)
+    elev = elev,     # elevation (m)
+    hori = hori,     # horizon angles 0 degrees azimuth (north) clockwise in 15 degree intervals
+    slope = slope,   # slope (degrees, range 0-90)
+    aspect = aspect, # aspect (degrees, 0 = North, range 0-360)
+    refl = refl,     # substrate solar reflectivity (decimal %)
+    iuv = iuv        # use Dave_Furkawa theory for UV radiation (290-360 nm)?
     )
 
 # extract output
@@ -49,7 +79,7 @@ plot!(metout_NMR.ZEN, linestyle = :dash)
 plot(Global, ylabel="Radiation", label="solrad.jl")
 plot!(metout_NMR.SOLR, linestyle = :dash, label="NMR")
 
-λ = solrad_out.λ
+kλ = solrad_out.λ
 λGlobal = solrad_out.λGlobal
 λDirect = solrad_out.λDirect
 λRayleigh = solrad_out.λRayleigh
@@ -65,6 +95,24 @@ hourNMR = findfirst(x -> x == hour2do+0.0, hours24)
 plot(λ, [λDirect[hour, :] λScattered[hour, :] λRayleigh[hour, :]], xlabel="Wavelength", ylabel="Spectral Irradiance", label=["Direct" "Scattered" "Rayleigh"])
 plot!(λ, [λDirect_NMR_hr λScattered_NMR_hr λRayleigh_NMR_hr], xlabel="Wavelength", ylabel="Spectral Irradiance", label=["Direct" "Scattered" "Rayleigh"], linestyle=[:dash :dash :dash])
 
+
+@testset "solar radiation comparisons" begin
+    @test ustrip.(u"°", Zenith) ≈ metout_NMR.ZEN atol=1e-1
+    @test all(isapprox.(ustrip.(u"W/m^2", Global), metout_NMR.SOLR; atol=1e-1))
+    @test λDirect[hour, :] ≈ λDirect_NMR_hr atol=1e-3u"W/nm/m^2"
+    @test ustrip.(λScattered[hour, :]) ≈ ustrip.(λScattered_NMR_hr) atol=1e-7#u"W/nm/m^2"
+    @test λRayleigh[hour, :] ≈ λRayleigh_NMR_hr atol=1e-3u"W/nm/m^2"
+end  
+    
+diffglob = ustrip.(u"W/m^2", Global) .- metout_NMR.SOLR
+maxloc = findmax(diffglob)[2]
+Global[maxloc]
+metout_NMR.SOLR[maxloc]
+
+diffzen = ustrip.(u"°", Zenith) .- metout_NMR.ZEN
+maxloc = findmax(diffzen)[2]
+Zenith[maxloc]
+metout_NMR.ZEN[maxloc]
 # plot(hours, Zenith, xlabel="hour of day", ylabel="Zenith angle", legend=false)
 # plot!([tsn - HHsr, tsn + HHsr], seriestype="vline", color="red", linestyle = [:dash, :dash])
 

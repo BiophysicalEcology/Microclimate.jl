@@ -1,3 +1,8 @@
+#module SolarRadiation
+
+#using Unitful
+#export solrad
+
 """
     hour_angle(t::Quantity, lonc::Quantity) -> Quantity
 
@@ -52,7 +57,7 @@ function solar_geometry(;
     d0::Real=80,
     ω::Real=2π / 365,
     ϵ::Real=0.0167238,
-    se::Real=0.39779
+    se::Real=0.39784993#0.39779
 )
     ζ = (ω * (d - d0)) + 2ϵ * (sin(ω * d) - sin(ω * d0))          # Eq.5
     δ = asin(se * sin(ζ))                                         # Eq.4
@@ -68,13 +73,20 @@ end
     check_skylight(z, nmax, SRINT, GRINT)
 
 Checks for possible skylight before sunrise or after sunset based on zenith angle.
-Modifies SRINT and GRINT at index `nmax` if skylight is present.
+Modifies SRINT and GRINT at index `nmax` if skylight is present. Based on 
+ and Documenta Geigy Scientific 
+Tables. 1966. 6th ed. K. Diem, ed.
 
 # Arguments
 - `z::Quantity`: Zenith angle
 - `nmax::Int`: Index into result arrays
 - `SRINT::Vector{Quantity}`: Scattered radiation array [W/m²]
 - `GRINT::Vector{Quantity}`: Global radiation array [W/m²]
+
+# References
+McCullough & Porter (1971). Ecology, 52(6), 1008–1015. https://doi.org/10.2307/1933806
+G.V. Rozenberg. 1966. Twilight. Plenum Press
+Documenta Geigy Scientific Tables. 1966. 6th ed. K. Diem, ed.
 """
 function check_skylight(
     z::Quantity,
@@ -84,7 +96,13 @@ function check_skylight(
     Z = uconvert(u"°", z).val # convert to degrees
     if Z < 107.0
         if Z > 88.0
+            # Compute skylight based on G.V. Rozenberg. 1966. Twilight. Plenum Press.
+            # p. 18,19.  First computing lumens: y = b - mx. Regression of data is:
             Elog = 41.34615384 - 0.423076923 * Z
+            # Converting lux (lumen/m2) to W/m2 on horizontal surface -
+            # Twilight - scattered skylight before sunrise or after sunset
+            # From p. 239 Documenta Geigy Scientific Tables. 1966. 6th ed. K. Diem, ed.
+            # Mech./elect equiv. of light = 1.46*10^-3 kW/lumen
             Skylum = (10.0^Elog) * 1.46E-03u"mW * cm^-2"
             SRINT[nmax] = Skylum
             GRINT[nmax] = SRINT[nmax]
@@ -98,8 +116,8 @@ end
     elev_corr(elev)
 
 Calculates smooth polynomial approximations of atmospheric constituent correction factors 
-as a function of altitude (based on Kearney's modification of the ALTFCT array originally 
-from SOLAR.DAT). Input `elev` is the altitude in meters and can include units.
+as a function of elevation (based on Kearney's modification of the ALTFCT array originally 
+from SOLAR.DAT). Input `elev` is the elevation in meters and can include units.
 
 # Description
 
@@ -1036,7 +1054,7 @@ function solrad(;
     cmH2O::Real=1, # precipitable cm H2O in air column, 0.1 = VERY DRY; 1 = MOIST AIR CONDITIONS; 2 = HUMID, TROPICAL CONDITIONS (note this is for the whole atmospheric profile, not just near the ground)
     ϵ::Real=0.0167238,
     ω::Real=2π / 365,
-    se::Real=0.39779,
+    se::Real=0.39784993, #0.39779,
     d0::Real=80.0,
     iuv::Bool=false, # Use gamma function for scattered solar radiation? (computationally intensive)
     noscat::Bool=true,
@@ -1052,7 +1070,7 @@ function solrad(;
         2200, 2260, 2300, 2320, 2350, 2380, 2400, 2420, 2450, 2490, 2500, 2600, 2700,
         2800, 2900, 3000, 3100, 3200, 3300, 3400, 3500, 3600, 3700, 3800, 3900, 4000
     ]) * u"nm",
-    OZ::Matrix{<:Real}=reshape([
+    OZ::Matrix{<:Real}=reshape([ # seasonal variation of atmospheric ozone in cm, Robinson 1966 Table 4.2
             0.31, 0.31, 0.32, 0.32, 0.31, 0.3, 0.27, 0.24, 0.23, 0.22, 0.23, 0.24,
             0.27, 0.3, 0.32, 0.33, 0.34, 0.34, 0.33, 0.3, 0.31, 0.31, 0.31, 0.3, 0.29, 0.28,
             0.25, 0.24, 0.22, 0.24, 0.26, 0.28, 0.32, 0.36, 0.39, 0.4, 0.4, 0.39, 0.3, 0.31,
@@ -1236,6 +1254,7 @@ function solrad(;
                 h, tsn = hour_angle(t, lonc) # hour angle (radians)
                 ζ, δ, z, AR2 = solar_geometry(d=d, lat=lat, h=h, d0=d0, ω=ω, ϵ=ϵ, se=se) # compute ecliptic, declination, zenith angle and (a/r)^2 - redundant?
                 alt = (π / 2 - z)u"rad"
+                altdeg = uconvert(u"°", alt).val
                 cazsun = (sin(δ) - sin(lat) * sin(alt)) / (cos(lat) * cos(alt)) # cos(solar azimuth)
                 #      Error checking for instability in trig function
                 if cazsun < -0.9999999
@@ -1266,7 +1285,7 @@ function solrad(;
                 # horizon angle - check this works when starting at 0 rather than e.g. 15 deg
                 azi = range(0u"°", stop=360u"°" - 360u"°" / length(hori), length=length(hori))
                 ahoriz = hori[argmin(abs.(dazsun .- azi))]
-
+                                
                 # slope zenith angle calculation (Eq. 3.15 in Sellers 1965. Physical Climatology. U. Chicago Press)
                 if slope > 0u"°"
                     czsl = cos(z) * cos(slope) + sin(z) * sin(slope) * cos(dazsun - aspect)
@@ -1291,6 +1310,9 @@ function solrad(;
 
                 # optical air mass (Rozenberg 1966 formula p.159 in book 'Twilight') ---
                 airms = 1.0 / (cos(z) + (0.025 * exp(-11.0 * cos(z))))
+                cz = cos(z)
+                intcz = Int(floor(100.0 * cz + 1.0))
+                Z = uconvert(u"°", z)  # zenith angle in degrees
 
                 # atmospheric ozone lookup
                 # convert latitude in degrees to nearest 10-degree index
@@ -1342,7 +1364,7 @@ function solrad(;
 
                     DRRλ[N] = (Sλ[N] * AR2 * cz) * exp(-float(τλ1) * airms) / 1000.0
 
-                    if alt < ahoriz
+                    if altdeg < ahoriz
                         DRλ[N] = 1.0e-24u"mW / cm^2 / nm"
                         DRRλ[N] = 1.0e-24u"mW / cm^2 / nm"
                     end
@@ -1484,3 +1506,5 @@ function get_longwave(;
         Qrad_hill = qradhl
         )
 end
+
+#end
