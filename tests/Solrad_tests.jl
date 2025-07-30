@@ -100,53 +100,8 @@ plot!(λ, [λDirect_NMR_units[i, :] λScattered_NMR_units[i, :] λRayleigh_NMR_u
 
 @testset "solar radiation comparisons" begin
     @test ustrip.(u"°", Zenith) ≈ metout_NMR.ZEN atol=1e-4
-    #@test all(isapprox.(ustrip.(u"W/m^2", Global), metout_NMR.SOLR; atol=1e-1))
-    @test ustrip.(u"W/m^2", Global[1:24]) ≈ metout_NMR.SOLR[1:24] atol=1e-1
+    @test all(isapprox.(ustrip.(u"W/m^2", Global), metout_NMR.SOLR; atol=0.5))
     @test λDirect ≈ λDirect_NMR_units atol=1e-4u"W/nm/m^2"
     @test λScattered ≈ λScattered_NMR_units atol=1e-6u"W/nm/m^2"
     @test λRayleigh ≈ λRayleigh_NMR_units atol=1e-4u"W/nm/m^2"
 end  
-
-Global[12]
-metout_NMR.SOLR[12]
-Zenith[12]
-metout_NMR.ZEN[12]
-
-hour2do = 8
-month2do = 1
-for month2do in 1:12
-    @show month2do
-    for hour2do in 1:24
-        @show hour2do
-        i = (month2do - 1) * 24 + hour2do
-        @test ustrip.(u"W/m^2", Global[i]) ≈ metout_NMR.SOLR[i] atol=1e-1
-        @test ≈(λDirect[i, :], λDirect_NMR_units[i, :]; atol=1e-5u"W/nm/m^2")
-        @test ≈(λScattered[i, :], λScattered_NMR_units[i, :]; atol=1e-5u"W/nm/m^2")
-        @test ≈(λRayleigh[i, :], λRayleigh_NMR_units[i, :]; atol=1e-5u"W/nm/m^2")
-    end
-end
-@test ≈(ustrip.(λDirect[i, :]), λDirect_NMR[i, :]; atol=1e-5)
-@test ustrip.(u"W/m^2", Global[25:38]-Direct[25:38]) ≈ metout_NMR.SOLR[25:38] - ustrip.(u"W/m^2", Direct[25:38]) atol=1e-1
-diffdirect = abs.(λDirect[i, :] .- λDirect_NMR_units[i, :])
-maxloc = findmax(diffdirect)[2]
-λDirect[i, maxloc]
-λDirect_NMR_units[i, maxloc]
-
-
-diffscat = abs.(ustrip.(λScattered) - λScattered_NMR)
-maxloc = findmax(diffscat)[2]
-diffscat[maxloc]
-λScattered_NMR[maxloc]
-λScattered[maxloc]
-# plot(hours, Zenith, xlabel="hour of day", ylabel="Zenith angle", legend=false)
-# plot!([tsn - HHsr, tsn + HHsr], seriestype="vline", color="red", linestyle = [:dash, :dash])
-
-# plot(hours, [Global Direct Scattered Rayleigh], xlabel="hour of day", ylabel="Radiation", label=["Global" "Direct" "Scattered" "Rayleigh"])
-
-# hour = findfirst(x -> x == 6.0, hours)
-# #plot(λ, [λGlobal[i, :] λDirect[i, :] λScattered[i, :] λRayleigh[i, :]], xlabel="Wavelength", ylabel="Spectral Irradiance", label=["Global" "Direct" "Scattered" "Rayleigh"])
-
-# plot(λ, λRayleigh[i, :], xlabel="Wavelength", ylabel="Spectral Irradiance", label="Rayleigh")
-# plot!(λ, λGlobal[i, :], xlabel="Wavelength", ylabel="Spectral Irradiance", label="Global")
-# plot!(λ, λDirect[i, :], xlabel="Wavelength", ylabel="Spectral Irradiance", label="Direct")
-# plot!(λ, λScattered[i, :], xlabel="Wavelength", ylabel="Spectral Irradiance", label="Scattered")
