@@ -59,18 +59,18 @@ function solar_geometry(;
     ϵ::Real=0.0167238,
     se::Real=0.39784993#0.39779
 )
-    ζ = (ω * (d - d0)) + 2ϵ * (sin(ω * d) - sin(ω * d0))          # Eq.5
+    ζ = (ω * (d - d0)) + 2.0ϵ * (sin(ω * d) - sin(ω * d0))          # Eq.5
     δ = asin(se * sin(ζ))                                         # Eq.4
     cosZ = cos(lat) * cos(δ) * cos(h) + sin(lat) * sin(δ)         # Eq.3
     z = acos(cosZ)u"rad"                                          # Zenith angle
-    AR2 = 1 + (2ϵ) * cos(ω * d)                                   # Eq.2
+    AR2 = 1.0 + (2.0ϵ) * cos(ω * d)                                   # Eq.2
     δ = δ * u"rad"
     ζ = ζ * u"rad"
     return ζ, δ, z, AR2
 end
 
 """
-    check_skylight(z, nmax, SRINT, GRINT)
+    check_skylight!(z, nmax, SRINT, GRINT)
 
 Checks for possible skylight before sunrise or after sunset based on zenith angle.
 Modifies SRINT and GRINT at index `nmax` if skylight is present. Based on 
@@ -82,23 +82,27 @@ Tables. 1966. 6th ed. K. Diem, ed.
 - `nmax::Int`: Index into result arrays
 - `SRINT::Vector{Quantity}`: Scattered radiation array [W/m²]
 - `GRINT::Vector{Quantity}`: Global radiation array [W/m²]
+- `SRs::Vector{Quantity}`: Scattered radiation array [W/m²]
+- `GRs::Vector{Quantity}`: Global radiation array [W/m²]
 
 # References
 McCullough & Porter (1971). Ecology, 52(6), 1008–1015. https://doi.org/10.2307/1933806
 G.V. Rozenberg. 1966. Twilight. Plenum Press
 Documenta Geigy Scientific Tables. 1966. 6th ed. K. Diem, ed.
 """
-function check_skylight(
+function check_skylight!(
     z::Quantity,
     nmax::Int,
     SRINT::Vector,
-    GRINT::Vector)
+    GRINT::Vector,
+    SRs::Vector,
+    GRs::Vector)
     Z = uconvert(u"°", z).val # convert to degrees
-    if Z < 107.0
-        if Z > 88.0
+    if Z < 107.0u"°"
+        if Z > 88.0u"°"
             # Compute skylight based on G.V. Rozenberg. 1966. Twilight. Plenum Press.
             # p. 18,19.  First computing lumens: y = b - mx. Regression of data is:
-            Elog = 41.34615384 - 0.423076923 * Z
+            Elog = 41.34615384 - 0.423076923 * ustrip(u"°", Z)
             # Converting lux (lumen/m2) to W/m2 on horizontal surface -
             # Twilight - scattered skylight before sunrise or after sunset
             # From p. 239 Documenta Geigy Scientific Tables. 1966. 6th ed. K. Diem, ed.
@@ -106,6 +110,8 @@ function check_skylight(
             Skylum = (10.0^Elog) * 1.46E-03u"mW * cm^-2"
             SRINT[nmax] = Skylum
             GRINT[nmax] = SRINT[nmax]
+            GRs[step] = GRINT[nmax]
+            SRs[step] = SRINT[nmax]
         end
     end
 
@@ -1210,8 +1216,8 @@ function solrad(;
     SRs = fill(0.0, nsteps)u"mW/cm^2"           # total scattered radiation
 
     # arrays to hold zenith angles each step
-    Zs = fill(0.0, nsteps)u"°"                  # zenith angles
-    ZSLs = fill(0.0, nsteps)u"°"                # slope zenith angles
+    Zs = fill(90.0, nsteps)u"°"                  # zenith angles
+    ZSLs = fill(90.0, nsteps)u"°"                # slope zenith angles
     HHs = fill(0.0, ndays)                      # hour angles
     tsns = fill(0.0, ndays)                     # hour at solar noon
     DOYs = Vector{Int}(undef, nsteps)           # day of year
@@ -1239,7 +1245,23 @@ function solrad(;
             ζ, δ, z, AR2 = solar_geometry(d=d, lat=lat, h=h, d0=d0, ω=ω, ϵ=ϵ, se=se) # compute ecliptic, declination, zenith angle and (a/r)^2
             Z = uconvert(u"°", z)
             Zsl = Z
-            check_skylight(z, nmax, SRINT, GRINT) # checking zenith angle for possible skylight before sunrise or after sunset
+            #check_skylight!(z, nmax, SRINT, GRINT, SRs, GRs) # checking zenith angle for possible skylight before sunrise or after sunset
+            if Z < 107.0u"°"
+                if Z > 88.0u"°"
+                    # Compute skylight based on G.V. Rozenberg. 1966. Twilight. Plenum Press.
+                    # p. 18,19.  First computing lumens: y = b - mx. Regression of data is:
+                    Elog = 41.34615384 - 0.423076923 * ustrip(u"°", Z)
+                    # Converting lux (lumen/m2) to W/m2 on horizontal surface -
+                    # Twilight - scattered skylight before sunrise or after sunset
+                    # From p. 239 Documenta Geigy Scientific Tables. 1966. 6th ed. K. Diem, ed.
+                    # Mech./elect equiv. of light = 1.46*10^-3 kW/lumen
+                    Skylum = (10.0^Elog) * 1.46E-03u"mW * cm^-2"
+                    SRINT[nmax] = Skylum
+                    GRINT[nmax] = SRINT[nmax]
+                    GRs[step] = GRINT[nmax]
+                    SRs[step] = SRINT[nmax]
+                end
+            end
             # testing cos(h) to see if it exceeds +1 or -1
             TDTL = -tan(δ) * tan(lat) # from eq.7 McCullough & Porter 1971
             if abs(TDTL) >= 1 # long day or night
@@ -1248,9 +1270,18 @@ function solrad(;
                 H = abs(acos(TDTL))
             end
             # check if sunrise
-            HH = 12 * H / π
+            HH = 12.0 * H / π
             ts = t - tsn
-            if !((ts <= 0 && abs(ts) - HH > 0) || (ts > 0 && ts - HH >= 0) || (TDTL >= 1)) # sun is up, proceed
+
+            sun_up = true
+
+            if ts <= 0.0 && abs(ts) > HH
+                sun_up = false
+            elseif ts > 0.0 && ts >= HH
+                sun_up = false
+            end
+
+            if sun_up || TDTL == 1 # sun is up, proceed
                 h, tsn = hour_angle(t, lonc) # hour angle (radians)
                 ζ, δ, z, AR2 = solar_geometry(d=d, lat=lat, h=h, d0=d0, ω=ω, ϵ=ϵ, se=se) # compute ecliptic, declination, zenith angle and (a/r)^2 - redundant?
                 alt = (π / 2 - z)u"rad"
@@ -1340,7 +1371,7 @@ function solrad(;
 
                 for N in 1:nmax
                     τλ1 = (P / 101300u"Pa") * τR[N] * ELEVFCT1
-                    τλ2 = (25u"km" / amr) * τA[N] * ELEVFCT2
+                    τλ2 = (25.0u"km" / amr) * τA[N] * ELEVFCT2
                     τλ3 = (ozone / 0.34) * τO[N] * ELEVFCT3
                     τλ4 = τW[N] * sqrt(airms * cmH2O * ELEVFCT4)
                     τλ = ((float(τλ1) + τλ2 + τλ3) * airms) + τλ4
@@ -1352,9 +1383,9 @@ function solrad(;
                     part1 = Sλ[N] * AR2 * cz
                     part2 = τλ > 0.0 ? exp(-τλ) : 0.0
                     if part2 < 1.0e-24
-                        DRλ[N] = 0u"mW / cm^2 / nm"
+                        DRλ[N] = 0.0u"mW / cm^2 / nm"
                     else
-                        DRλ[N] = ((ustrip(part1) * part2) / 1000) * u"mW / cm^2 / nm"
+                        DRλ[N] = ((ustrip(part1) * part2) / 1000.0) * u"mW / cm^2 / nm"
                     end
 
                     # so the integrator doesn't get confused at very low sun angles
@@ -1365,8 +1396,8 @@ function solrad(;
                     DRRλ[N] = (Sλ[N] * AR2 * cz) * exp(-float(τλ1) * airms) / 1000.0
 
                     if altdeg < ahoriz
-                        DRλ[N] = 1.0e-24u"mW / cm^2 / nm"
-                        DRRλ[N] = 1.0e-24u"mW / cm^2 / nm"
+                        DRλ[N] = 1.0e-25u"mW / cm^2 / nm"
+                        DRRλ[N] = 1.0e-25u"mW / cm^2 / nm"
                     end
 
                     # Sky (SRλ) and Global Radiation (GRλ)
@@ -1387,7 +1418,15 @@ function solrad(;
                         if N > 11
                             SRλ[N] = 0.0u"mW / cm^2 / nm"
                         else
-                            I = round(Int, (ustrip(Z) + 5) / 5)
+                            #I = round(Int, (ustrip(Z) + 5) / 5)
+                            B = ustrip(Z) / 5
+                            IA = trunc(Int, B)
+                            C = B - IA
+                            if C > 0.5
+                                I = IA + 2
+                            else
+                                I = IA + 1
+                            end
                             FDAV = FD[N, I]
                             FDQDAV = FDQ[N, I]
                             SRλ[N] = (Sλ[N] / π) * (FDAV + FDQDAV * (refl / (1.0 - (refl * S[N])))) / 1000.0
@@ -1414,23 +1453,23 @@ function solrad(;
                         GRINT[N] = GRINT[N-1] + (Δλ * GRλ[N-1]) + (0.5 * Δλ * (GRλ[N] - GRλ[N-1]))
                     end
                 end
+                GRλs[step, :] .= GRλ
+                DRRλs[step, :] .= DRRλ
+                DRλs[step, :] .= DRλ
+                SRλs[step, :] .= SRλ
+                GRs[step] = GRINT[nmax]
+                DRRs[step] = DRRINT[nmax]
+                DRs[step] = DRINT[nmax]
+                SRs[step] = SRINT[nmax]
             else # sunrise, sunset or long day
 
             end
             # Store into row `step`
-            GRλs[step, :] .= GRλ
-            DRRλs[step, :] .= DRRλ
-            DRλs[step, :] .= DRλ
-            SRλs[step, :] .= SRλ
-            GRs[step] = GRINT[nmax]
-            DRRs[step] = DRRINT[nmax]
-            DRs[step] = DRINT[nmax]
-            SRs[step] = SRINT[nmax]
             Zs[step] = Z
             ZSLs[step] = Zsl
             DOYs[step] = d
             times[step] = t
-            Zs[Zs.>90u"°"] .= 90u"°"
+            #Zs[Zs.>90u"°"] .= 90u"°"
             step += 1
         end
         HHs[i] = HH     # save today's sunrise hour angle

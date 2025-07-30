@@ -4,7 +4,7 @@ function __init__()\
     Unitful.register(Microclimate)
 end
 
-using DifferentialEquations, Interpolations, Statistics, Dates
+using OrdinaryDiffEq, Interpolations, Statistics, Dates
 
 using Unitful, UnitfulMoles, ModelParameters
 

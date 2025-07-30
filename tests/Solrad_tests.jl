@@ -5,11 +5,17 @@ using Plots
 using CSV, DataFrames
 using Test
 
+# to do - compare with McCullough and Porter plots and Insolation.jl and CloudScat.jl? 
+# check how CliMA do atmospheric response - looks like it's in RRTMGP.jl
+
 # NicheMapR simulation results
-λDirect_NMR = DataFrame(CSV.File("tests/data/drlam_monthly.csv"))
-λRayleigh_NMR = DataFrame(CSV.File("tests/data/drrlam_monthly.csv"))
-λScattered_NMR = DataFrame(CSV.File("tests/data/srlam_monthly.csv"))
+λDirect_NMR = Matrix(DataFrame(CSV.File("tests/data/drlam_monthly.csv"))[:, 4:114])
+λRayleigh_NMR = Matrix(DataFrame(CSV.File("tests/data/drrlam_monthly.csv"))[:, 4:114])
+λScattered_NMR = Matrix(DataFrame(CSV.File("tests/data/srlam_monthly.csv"))[:, 4:114])
 metout_NMR = DataFrame(CSV.File("tests/data/metout_monthly.csv"))
+λDirect_NMR_units = λDirect_NMR*u"W/m^2/nm"
+λRayleigh_NMR_units = λRayleigh_NMR*u"W/m^2/nm"
+λScattered_NMR_units = λScattered_NMR*u"W/m^2/nm"
 
 # NicheMapR simulation parameters
 microinput_vec = DataFrame(CSV.File("tests/data/init_monthly/microinput.csv"))[:, 2]
@@ -50,11 +56,12 @@ solrad_out = @inferred solrad(
     slope = slope,   # slope (degrees, range 0-90)
     aspect = aspect, # aspect (degrees, 0 = North, range 0-360)
     refl = refl,     # substrate solar reflectivity (decimal %)
-    iuv = true        # use Dave_Furkawa theory for UV radiation (290-360 nm)?
+    iuv = iuv        # use Dave_Furkawa theory for UV radiation (290-360 nm)?
     )
 
 # extract output
 Zenith = solrad_out.Zenith
+Zenith[Zenith.>90u"°"] .= 90u"°"
 HHsr = solrad_out.HHsr
 tsn = solrad_out.tsn
 Global = solrad_out.Global
@@ -70,55 +77,76 @@ Rayleigh = solrad_out.Rayleigh
 hours25 = repeat(hours, outer = length(days))
 hours24 = repeat(0:1:23, outer = length(days))
 hours_remove = findall(x->x==24.0, hours25)
-Zenith = solrad_out.Zenith
-Global = solrad_out.Global
 deleteat!(Zenith, hours_remove)
 deleteat!(Global, hours_remove)
+deleteat!(Direct, hours_remove)
+deleteat!(Scattered, hours_remove)
+rows_to_remove = 25:25:300
+λGlobal = λGlobal[setdiff(1:end, rows_to_remove), :]
+λScattered = λScattered[setdiff(1:end, rows_to_remove), :]
+λDirect = λDirect[setdiff(1:end, rows_to_remove), :]
+λRayleigh = λRayleigh[setdiff(1:end, rows_to_remove), :]
 plot(Zenith, ylabel="Zenith angle", legend=false)
 plot!(metout_NMR.ZEN, linestyle = :dash)
 plot(Global, ylabel="Radiation", label="solrad.jl")
 plot!(metout_NMR.SOLR, linestyle = :dash, label="NMR")
 
-kλ = solrad_out.λ
-λGlobal = solrad_out.λGlobal
-λDirect = solrad_out.λDirect
-λRayleigh = solrad_out.λRayleigh
-λScattered = solrad_out.λScattered
+month2do = 6
+hour2do = 12
+i = (month2do - 1) * 24 + hour2do
 
-hour2do = 9.0
-hour = findfirst(x -> x == hour2do, hours25)
-hourNMR = findfirst(x -> x == hour2do+0.0, hours24)
-λDirect_NMR_hr = collect(λDirect_NMR[hourNMR, 4:114])u"W/m^2/nm"
-λRayleigh_NMR_hr = collect(λRayleigh_NMR[hourNMR, 4:114])u"W/m^2/nm"
-λScattered_NMR_hr = collect(λScattered_NMR[hourNMR, 4:114])u"W/m^2/nm"
-
-plot(λ, [λDirect[hour, :] λScattered[hour, :] λRayleigh[hour, :]], xlabel="Wavelength", ylabel="Spectral Irradiance", label=["Direct" "Scattered" "Rayleigh"])
-plot!(λ, [λDirect_NMR_hr λScattered_NMR_hr λRayleigh_NMR_hr], xlabel="Wavelength", ylabel="Spectral Irradiance", label=["Direct" "Scattered" "Rayleigh"], linestyle=[:dash :dash :dash])
-
+plot(λ, [λDirect[i, :] λScattered[i, :] λRayleigh[i, :]], xlabel="Wavelength", ylabel="Spectral Irradiance", label=["Direct" "Scattered" "Rayleigh"])
+plot!(λ, [λDirect_NMR_units[i, :] λScattered_NMR_units[i, :] λRayleigh_NMR_units[i, :]], xlabel="Wavelength", ylabel="Spectral Irradiance", label=["Direct" "Scattered" "Rayleigh"], linestyle=[:dash :dash :dash])
 
 @testset "solar radiation comparisons" begin
     @test ustrip.(u"°", Zenith) ≈ metout_NMR.ZEN atol=1e-4
-    @test all(isapprox.(ustrip.(u"W/m^2", Global), metout_NMR.SOLR; atol=1e-1))
-    @test ustrip.(u"W/m^2", Global) ≈ metout_NMR.SOLR atol=1e-1 rtol=0.0
-    @test λDirect[hour, :] ≈ λDirect_NMR_hr atol=1e-3u"W/nm/m^2"
-    @test ustrip.(λScattered[hour, :]) ≈ ustrip.(λScattered_NMR_hr) atol=1e-7#u"W/nm/m^2"
-    @test λRayleigh[hour, :] ≈ λRayleigh_NMR_hr atol=1e-3u"W/nm/m^2"
+    #@test all(isapprox.(ustrip.(u"W/m^2", Global), metout_NMR.SOLR; atol=1e-1))
+    @test ustrip.(u"W/m^2", Global[1:24]) ≈ metout_NMR.SOLR[1:24] atol=1e-1
+    @test λDirect ≈ λDirect_NMR_units atol=1e-4u"W/nm/m^2"
+    @test λScattered ≈ λScattered_NMR_units atol=1e-6u"W/nm/m^2"
+    @test λRayleigh ≈ λRayleigh_NMR_units atol=1e-4u"W/nm/m^2"
 end  
-    
-diffglob = abs.(ustrip.(u"W/m^2", Global) .- metout_NMR.SOLR)
-maxloc = findmax(diffglob)[2]
-Global[maxloc]
-metout_NMR.SOLR[maxloc]
 
+Global[12]
+metout_NMR.SOLR[12]
+Zenith[12]
+metout_NMR.ZEN[12]
+
+hour2do = 8
+month2do = 1
+for month2do in 1:12
+    @show month2do
+    for hour2do in 1:24
+        @show hour2do
+        i = (month2do - 1) * 24 + hour2do
+        @test ustrip.(u"W/m^2", Global[i]) ≈ metout_NMR.SOLR[i] atol=1e-1
+        @test ≈(λDirect[i, :], λDirect_NMR_units[i, :]; atol=1e-5u"W/nm/m^2")
+        @test ≈(λScattered[i, :], λScattered_NMR_units[i, :]; atol=1e-5u"W/nm/m^2")
+        @test ≈(λRayleigh[i, :], λRayleigh_NMR_units[i, :]; atol=1e-5u"W/nm/m^2")
+    end
+end
+@test ≈(ustrip.(λDirect[i, :]), λDirect_NMR[i, :]; atol=1e-5)
+@test ustrip.(u"W/m^2", Global[25:38]-Direct[25:38]) ≈ metout_NMR.SOLR[25:38] - ustrip.(u"W/m^2", Direct[25:38]) atol=1e-1
+diffdirect = abs.(λDirect[i, :] .- λDirect_NMR_units[i, :])
+maxloc = findmax(diffdirect)[2]
+λDirect[i, maxloc]
+λDirect_NMR_units[i, maxloc]
+
+
+diffscat = abs.(ustrip.(λScattered) - λScattered_NMR)
+maxloc = findmax(diffscat)[2]
+diffscat[maxloc]
+λScattered_NMR[maxloc]
+λScattered[maxloc]
 # plot(hours, Zenith, xlabel="hour of day", ylabel="Zenith angle", legend=false)
 # plot!([tsn - HHsr, tsn + HHsr], seriestype="vline", color="red", linestyle = [:dash, :dash])
 
 # plot(hours, [Global Direct Scattered Rayleigh], xlabel="hour of day", ylabel="Radiation", label=["Global" "Direct" "Scattered" "Rayleigh"])
 
 # hour = findfirst(x -> x == 6.0, hours)
-# #plot(λ, [λGlobal[hour, :] λDirect[hour, :] λScattered[hour, :] λRayleigh[hour, :]], xlabel="Wavelength", ylabel="Spectral Irradiance", label=["Global" "Direct" "Scattered" "Rayleigh"])
+# #plot(λ, [λGlobal[i, :] λDirect[i, :] λScattered[i, :] λRayleigh[i, :]], xlabel="Wavelength", ylabel="Spectral Irradiance", label=["Global" "Direct" "Scattered" "Rayleigh"])
 
-# plot(λ, λRayleigh[hour, :], xlabel="Wavelength", ylabel="Spectral Irradiance", label="Rayleigh")
-# plot!(λ, λGlobal[hour, :], xlabel="Wavelength", ylabel="Spectral Irradiance", label="Global")
-# plot!(λ, λDirect[hour, :], xlabel="Wavelength", ylabel="Spectral Irradiance", label="Direct")
-# plot!(λ, λScattered[hour, :], xlabel="Wavelength", ylabel="Spectral Irradiance", label="Scattered")
+# plot(λ, λRayleigh[i, :], xlabel="Wavelength", ylabel="Spectral Irradiance", label="Rayleigh")
+# plot!(λ, λGlobal[i, :], xlabel="Wavelength", ylabel="Spectral Irradiance", label="Global")
+# plot!(λ, λDirect[i, :], xlabel="Wavelength", ylabel="Spectral Irradiance", label="Direct")
+# plot!(λ, λScattered[i, :], xlabel="Wavelength", ylabel="Spectral Irradiance", label="Scattered")
