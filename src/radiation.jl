@@ -1282,8 +1282,8 @@ function solrad(;
             end
 
             if sun_up || TDTL == 1 # sun is up, proceed
-                h, tsn = hour_angle(t, lonc) # hour angle (radians)
-                ζ, δ, z, AR2 = solar_geometry(d=d, lat=lat, h=h, d0=d0, ω=ω, ϵ=ϵ, se=se) # compute ecliptic, declination, zenith angle and (a/r)^2 - redundant?
+                #h, tsn = hour_angle(t, lonc) # hour angle (radians)
+                #ζ, δ, z, AR2 = solar_geometry(d=d, lat=lat, h=h, d0=d0, ω=ω, ϵ=ϵ, se=se) # compute ecliptic, declination, zenith angle and (a/r)^2 - redundant?
                 alt = (π / 2 - z)u"rad"
                 altdeg = uconvert(u"°", alt).val
                 cazsun = (sin(δ) - sin(lat) * sin(alt)) / (cos(lat) * cos(alt)) # cos(solar azimuth)
@@ -1514,22 +1514,22 @@ function get_longwave(;
 
     # Atmospheric radiation
     P_vap = wet_air_out.P_vap
-    arad = u"W/m^2"(ustrip(1.72 * (ustrip(u"kPa"(P_vap))/ustrip(u"K"(tair))) ^ (1.0/7.0)) * σ * (u"K"(tair)) ^ 4) # Campbell and Norman 1998 eq. 10.10 to get emissivity of sky
+    arad = u"W/m^2"(ustrip(1.72 * (ustrip(u"kPa"(P_vap)) / ustrip(u"K"(tair))) ^ (1.0/7.0)) * σ * (u"K"(tair)) ^ 4.0) # Campbell and Norman 1998 eq. 10.10 to get emissivity of sky
     #arad = ((0.0000092 * (u"K"(tair))^2) * σ * (u"K"(tair))^4) / 1u"K^2" # Swinbank, Eq. 10.11 in Campbell and Norman 1998
 
     # Cloud radiation temperature (shade approximation, TAIR - 2°C)
-    crad = σ * slep * (u"K"(tair) - 2u"K")^4
+    crad = σ * slep * (u"K"(tair) - 2.0u"K")^4.0
 
     # Hillshade radiation temperature (approximated as air temperature)
-    hrad = σ * slep * (u"K"(tair))^4
+    hrad = σ * slep * (u"K"(tair))^4.0
 
     # Ground surface radiation temperature
-    srad = σ * sle * (u"K"(tsurf))^4
+    srad = σ * sle * (u"K"(tsurf))^4.0
 
     # Clear sky fraction
     clr = 1.0 - cloud / 100.0
     clear = arad * clr
-    clod = crad * (cloud / 100)
+    clod = crad * (cloud / 100.0)
     qradsk = (clear + clod) * ((100 - shade) / 100.0)
     qradvg = (shade / 100.0) * hrad
     qradgr = ((100.0 - shade) / 100.0) * srad + (shade / 100.0) * hrad

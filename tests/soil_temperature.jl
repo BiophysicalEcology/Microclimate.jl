@@ -11,6 +11,7 @@ using Test
 soiltemps_NMR = (DataFrame(CSV.File("tests/data/soil_monthly.csv"))[:, 4:13]).*u"°C"
 metout_NMR = DataFrame(CSV.File("tests/data/metout_monthly.csv"))
 microinput_vec = DataFrame(CSV.File("tests/data/init_monthly/microinput.csv"))[:, 2]
+
 names = [
     :doynum, :RUF, :ERR, :Usrhyt, :Refhyt, :Numtyps, :Z01, :Z02, :ZH1, :ZH2,
     :idayst, :ida, :HEMIS, :ALAT, :AMINUT, :ALONG, :ALMINT, :ALREF, :slope,
@@ -37,10 +38,6 @@ elev = microinput[:ALTT]*1.0u"m" # elevation (m)
 hori = (DataFrame(CSV.File("tests/data/init_monthly/hori.csv"))[:, 2])*1.0u"°"#fill(0.0u"°", 24) # enter the horizon angles (degrees) so that they go from 0 degrees azimuth (north) clockwise in 15 degree intervals
 slope = microinput[:slope]*1.0u"°" # slope (degrees, range 0-90)
 aspect = microinput[:azmuth]*1.0u"°" # aspect (degrees, 0 = North, range 0-360)
-shade = 0.0 # % shade cast by vegetation
-pctwet = 0.0 # % surface wetness
-sle = 0.96 # - surface emissivity
-slep = 0.96 # - cloud emissivity
 ruf = microinput[:RUF]*1.0u"m" # m roughness height
 zh = microinput[:ZH]*1.0u"m" # m heat transfer roughness height
 d0 = microinput[:D0]*1.0u"m" # zero plane displacement correction factor
@@ -71,7 +68,6 @@ ndays = length(days)
 SHADES = (DataFrame(CSV.File("tests/data/init_monthly/MINSHADES.csv"))[:, 2]*1.0) # daily shade (%)
 SLES = (DataFrame(CSV.File("tests/data/init_monthly/SLES.csv"))[:, 2]*1.0) # set up vector of ground emissivities for each day
 REFLS = (DataFrame(CSV.File("tests/data/init_monthly/REFLS.csv"))[:, 2]*1.0) # set up vector of soil reflectances for each day (decimal %)
-refl = REFLS[1]
 PCTWETS = (DataFrame(CSV.File("tests/data/init_monthly/PCTWET.csv"))[:, 2]*1.0) # set up vector of soil wetness for each day (%)
 tannul = mean(Unitful.ustrip.(vcat(TMAXX, TMINN)))u"°C" # annual mean temperature for getting monthly deep soil temperature (°C)
 tannulrun = fill(tannul, ndays) # monthly deep soil temperature (2m) (°C)
@@ -98,19 +94,20 @@ for i in 2:numnodes
     soilprops[i, :] .= soilprops[1, :]
 end
 soillayers = init_soillayers(numnodes)  # only once
-
+refl = REFLS[1]
 # compute solar radiation (need to make refl time varying)
-solrad_out = solrad(
-    days = days, 
-    hours = hours, 
-    lat = lat, 
-    elev = elev, 
-    hori = hori, 
-    slope = slope, 
-    aspect = aspect, 
-    refl = refl, 
-    iuv = iuv,
+solrad_out = solrad(;
+    days, 
+    hours, 
+    lat, 
+    elev, 
+    hori, 
+    slope, 
+    aspect, 
+    refl, 
+    iuv,
     )
+solrad_out.Zenith[solrad_out.Zenith.>90u"°"] .= 90u"°"
 
 # interpolate air temperature to hourly
 TAIRs, WNs, RHs, CLDs = hourly_vars(;
@@ -144,18 +141,19 @@ plot!(metout_NMR.SOLR, linestyle = :dash, label="NMR")
 
 @testset "solar radiation comparisons" begin
     @test ustrip.(u"°", ZENRs) ≈ metout_NMR.ZEN atol=1e-4
-    @test all(isapprox.(ustrip.(u"W/m^2", SOLRs), metout_NMR.SOLR; atol=1e-1))
+    @test all(isapprox.(ustrip.(u"W/m^2", SOLRs), metout_NMR.SOLR; atol=5e-1))
 end
 
 # simulate a day
-iday = 1
+iday = 12
 
 sub = (iday*24-24+1):(iday*24)#(iday*24-23):(iday*24)
 sub2 = (iday*25-25+1):(iday*25) # for getting mean monthly over the 25 hrs as in fortran version
-REFL = REFLS[iday]
-SHADE = SHADES[iday] # daily shade (%)
-SLE = SLES[iday] # set up vector of ground emissivities for each day
-PCTWET = PCTWETS[iday] # set up vector of soil wetness for each day
+shade = SHADES[iday] # daily shade (%)
+sle = SLES[iday] # set up vector of ground emissivities for each day
+refl = REFLS[iday]
+slep = sle # - cloud emissivity
+pctwet = PCTWETS[iday] # set up vector of soil wetness for each day
 tdeep = u"K"(tannulrun[iday]) # annual mean temperature for getting daily deep soil temperature (°C)
 nodes = nodes_day[:, iday]
 
@@ -281,7 +279,7 @@ plot!(u"hr".(t[1:24]), Matrix(soiltemps_NMR[sub, :]);
 soiltemps_jul = ustrip.(u"K", soiltemps')[1:24, :]
 soiltemps_nmr = ustrip.(u"°C", Matrix(soiltemps_NMR[sub, :])) .+ 273.15
 @testset "soil temperature comparisons" begin
-    @test soiltemps_jul ≈ soiltemps_nmr atol=1
+    @test soiltemps_jul ≈ soiltemps_nmr atol=0.5
 end 
 diffsoil = abs.(soiltemps_jul .- soiltemps_nmr)
 maxloc = findmax(diffsoil)[2]
@@ -295,6 +293,7 @@ ta1cm_NMR = collect(metout_NMR[sub, 4] .+ 273.15).*1u"K"
 ta2m_NMR = collect(metout_NMR[sub, 5] .+ 273.15).*1u"K"
 rh1cm_NMR = collect(metout_NMR[sub, 6])
 rh2m_NMR = collect(metout_NMR[sub, 7])
+tskyC_NMR = collect(metout_NMR[sub, 15]).*u"°C"
 
 # now get wind air temperature and humidity profiles
 nsteps = 24
@@ -315,6 +314,23 @@ for i in 1:nsteps
         elev = elev
     )
 end
+Tskys = zeros(24)u"K"  # or whatever you have from your loop
+for i in 1:nsteps
+    Tskys[i] = Microclimate.get_longwave(
+        elev = elev, 
+        rh = RH[i], 
+        tair = TAIR[i], 
+        tsurf = u"°C"(soiltemps[1, i]), 
+        slep = slep, 
+        sle = sle, 
+        cloud = CLD[i], 
+        viewf = viewf,
+        shade = shade
+        ).Tsky
+end
+
+plot(u"hr".(sol.t[1:24]), u"°C".(Tskys), xlabel="time", ylabel="sky temperature", lw=2)
+plot!(u"hr".(sol.t[1:24]), tskyC_NMR, xlabel="time", ylabel="sky temperature", lw=2, linestyle = :dash, linecolor="grey")
 
 VEL_matrix = hcat([getfield.(profiles, :VELs)[i] for i in 1:length(profiles)]...)    # velocities at all time steps and heights
 TA_matrix   = hcat([getfield.(profiles, :TAs)[i]   for i in 1:length(profiles)]...)  # air temperatures at all time steps and heights

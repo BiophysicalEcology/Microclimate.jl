@@ -20,7 +20,7 @@ names = [
     :densfun3, :densfun4, :hourly, :rainhourly, :lamb, :IUV, :RW, :PC, :RL, :SP, :R1, 
     :IM, :MAXCOUNT, :IR, :message, :fail, :snowcond, :intercept, :grasshade, :solonly, 
     :ZH, :D0, :TIMAXS1, :TIMAXS2, :TIMAXS3, :TIMAXS4, :TIMINS1, :TIMINS2, :TIMINS3, :TIMINS4,
-    :spinup, :dewrain, :moiststep, :maxsurf
+    :spinup, :dewrain, :moiststep, :maxsurf, :ndmax
 ]
 
 # Zip into a NamedTuple
@@ -100,17 +100,18 @@ end
 soillayers = init_soillayers(numnodes)  # only once
 
 # compute solar radiation (need to make refl time varying)
-solrad_out = solrad(
-    days = days, 
-    hours = hours, 
-    lat = lat, 
-    elev = elev, 
-    hori = hori, 
-    slope = slope, 
-    aspect = aspect, 
-    refl = refl, 
-    iuv = iuv,
+solrad_out = solrad(;
+    days, 
+    hours, 
+    lat, 
+    elev, 
+    hori, 
+    slope, 
+    aspect, 
+    refl, 
+    iuv,
     )
+solrad_out.Zenith[solrad_out.Zenith.>90u"°"] .= 90u"°"
 
 # interpolate air temperature to hourly
 TAIRs, WNs, RHs, CLDs = hourly_vars(
