@@ -1514,7 +1514,7 @@ function get_longwave(;
 
     # Atmospheric radiation
     P_vap = wet_air_out.P_vap
-    arad = u"W/m^2"(ustrip(1.72 * (ustrip(u"kPa"(P_vap)) / ustrip(u"K"(tair))) ^ (1.0/7.0)) * σ * (u"K"(tair)) ^ 4.0) # Campbell and Norman 1998 eq. 10.10 to get emissivity of sky
+    arad = u"W/m^2"(ustrip(1.72 * (ustrip(u"kPa"(P_vap)) / ustrip(u"K"(tair)+0.01u"K")) ^ (1.0/7.0)) * σ * (u"K"(tair)+0.01u"K") ^ 4.0) # Campbell and Norman 1998 eq. 10.10 to get emissivity of sky
     #arad = ((0.0000092 * (u"K"(tair))^2) * σ * (u"K"(tair))^4) / 1u"K^2" # Swinbank, Eq. 10.11 in Campbell and Norman 1998
 
     # Cloud radiation temperature (shade approximation, TAIR - 2°C)

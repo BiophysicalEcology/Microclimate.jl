@@ -145,7 +145,7 @@ plot!(metout_NMR.SOLR, linestyle = :dash, label="NMR")
 end
 
 # simulate a day
-iday = 12
+iday = 7
 
 sub = (iday*24-24+1):(iday*24)#(iday*24-23):(iday*24)
 sub2 = (iday*25-25+1):(iday*25) # for getting mean monthly over the 25 hrs as in fortran version

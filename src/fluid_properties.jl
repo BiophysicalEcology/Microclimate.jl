@@ -39,11 +39,11 @@ P = get_pressure(1500u"m")
 function get_pressure(h::Quantity;
     P_ref::Quantity = 101325u"Pa",
     L_ref::Quantity = -0.0065u"K/m",
-    T_ref::Quantity = 288u"K",
+    T_ref::Quantity = 288.0u"K",
     g_0::Quantity = 9.80665u"m/s^2",
     M::Quantity = 0.0289644u"kg/mol")
     R=Unitful.R
-P_a = P_ref * (1 + (L_ref / T_ref) * h) ^ ((-g_0 * M) / (R * L_ref))
+P_a = P_ref * (1 + (L_ref / T_ref) * h) ^ ((-g_0 * M) / (R * L_ref))#5.2553026003237262u"kg*m^2*J^-1*s^-2"#
 
 return P_a
 end
@@ -57,9 +57,9 @@ Calculates saturation vapour pressure (Pa) for a given air temperature.
 - `T`: air temperature in K.
 """
 function vapour_pressure(T)
-    T = Unitful.ustrip(T)# + 273.15
+    T = Unitful.ustrip(T) + 0.01 # triple point of water is 273.16
     logP_vap = T
-    if T <= 273.15
+    if T <= 273.16
         logP_vap = -9.09718 * (273.16 / T - 1) - 3.56654 * log10(273.16 / T) + 0.876793 * (1 - T / 273.16) + log10(6.1071)
     else
         logP_vap = -7.90298 * (373.16 / T - 1) + 5.02808 * log10(373.16 / T) - 1.3816E-07 * (10^(11.344 * (1 - T / 373.16)) - 1) + 8.1328E-03 * (10^(-3.49149 * (373.16 / T - 1)) - 1) + log10(1013.246)
@@ -121,9 +121,11 @@ function wet_air(T_drybulb;
     return wet_air(T_drybulb, T_wetbulb, rh, T_dew, P_atmos, fO2, fCO2, fN2)
 end
 function wet_air(T_drybulb, T_wetbulb, rh, T_dew, P_atmos, fO2, fCO2, fN2)
+    cp_H2O_vap = 1864.40u"J/K/kg"
+    cp_dry_air = 1004.84u"J/K/kg" # should be 1006?
     f_w = 1.0053 # (-) correction factor for the departure of the mixture of air and water vapour from ideal gas laws
     M_w = (1molH₂O |> u"kg")/1u"mol" # molar mass of water
-    M_a = ((fO2*molO₂ + fCO2*molCO₂ + fN2*molN₂) |> u"kg")/1u"mol" # molar mass of air
+    M_a = (fO2*molO₂ + fCO2*molCO₂ + fN2*molN₂)/1u"mol" # molar mass of air
     P_vap_sat = vapour_pressure(T_drybulb)
     if T_dew !== nothing
         P_vap = vapour_pressure(T_dew)
@@ -135,17 +137,17 @@ function wet_air(T_drybulb, T_wetbulb, rh, T_dew, P_atmos, fO2, fCO2, fN2)
             δ_bulb = T_drybulb - T_wetbulb
             δ_P_vap = (0.000660 * (1 + 0.00115 * (Unitful.ustrip(T_wetbulb)-273.15)) * Unitful.ustrip(P) * Unitful.ustrip(δ_bulb))u"Pa"
             P_vap = vapour_pressure(T_wetbulb) - δ_P_vap
-            relhumid = (P_vap / P_vap_sat) * 100
+            rh = (P_vap / P_vap_sat) * 100
         end
     end
-    r_w = ((0.62197 * f_w * P_vap) / (P_atmos - f_w * P_vap))u"kg/kg"
-    ρ_vap = P_vap * M_w / (0.998 * Unitful.R * T_drybulb)
+    r_w = ((M_w / M_a) * f_w * P_vap) / (P_atmos - f_w * P_vap)
+    ρ_vap = P_vap * M_w / (0.998 * Unitful.R * T_drybulb) # 0.998 a correction factor?
     ρ_vap = Unitful.uconvert(u"kg/m^3",ρ_vap) # simplify units
-    T_vir = T_drybulb * ((1.0 + r_w / (18.016 / 28.966)) / (1 + r_w))
+    T_vir = T_drybulb * ((1.0 + r_w / (M_w / M_a)) / (1 + r_w))
     T_vinc = T_vir - T_drybulb
-    ρ_air = (M_a / Unitful.R) * P_atmos / (0.999 * T_vir)
+    ρ_air = (M_a / Unitful.R) * P_atmos / (0.999 * T_vir) # 0.999 a correction factor?
     ρ_air = Unitful.uconvert(u"kg/m^3",ρ_air) # simplify units
-    cp = ((1004.84 + (r_w * 1846.40)) / (1 + r_w))u"J/K/kg"
+    cp = (cp_dry_air + (r_w * cp_H2O_vap)) / (1 + r_w)
     ψ = if min(rh) <= 0
         -999u"Pa"
     else
@@ -243,8 +245,8 @@ function phase_transition!(
     meanTpast = similar(T)
     for j in 1:nodes
         if j < nodes
-            meanT[j] = (T[j] + T[j+1]) / 2
-            meanTpast[j] = (T_past[j] + T_past[j+1]) / 2
+            meanT[j] = (T[j] + T[j+1]) / 2.0
+            meanTpast[j] = (T_past[j] + T_past[j+1]) / 2.0
         else
             meanT[j] = T[j]
             meanTpast[j] = T_past[j]
@@ -252,9 +254,9 @@ function phase_transition!(
 
         if meanTpast[j] > 273.15u"K" && meanT[j] <= 273.15u"K"
             if j < nodes
-                layermass[j] = u"m"(dep[j+1] - dep[j]) * 1000u"kg/m" * θ[j]
+                layermass[j] = u"m"(dep[j+1] - dep[j]) * 1000.0u"kg/m" * θ[j]
             else
-                layermass[j] = u"m"(dep[j] + 100u"cm" - dep[j]) * 1000u"kg/m" * θ[j]
+                layermass[j] = u"m"(dep[j] + 100.0u"cm" - dep[j]) * 1000.0u"kg/m" * θ[j]
             end
 
             qphase[j] = (meanTpast[j] - meanT[j]) * layermass[j] * cp
