@@ -231,13 +231,13 @@ end
 
 function phase_transition(
     T::Vector,       # current temps at nodes
-    T_past::Vector,      # temps at previous step
-    ∑phase::Vector,    # accumulated latent heat
+    T_past::Vector,  # temps at previous step
+    ∑phase::Vector,  # accumulated latent heat
     θ::Vector,       # soil moisture by layer
-    dep::Vector         # soil depth boundaries (cm)
+    dep::Vector      # soil depth boundaries (cm)
 )
-    HTOFN = 333500u"J/kg" # latent heat of fusion of waterper unit mass
-    cp = 4186u"J/kg/K" # specific heat of water
+    HTOFN = 333500.0u"J/kg" # latent heat of fusion of waterper unit mass
+    cp = 4186.0u"J/kg/K" # specific heat of water
     nodes = length(dep)
     layermass = zeros(Float64, nodes)u"kg"
     qphase = zeros(Float64, nodes)u"J"

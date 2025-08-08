@@ -8,7 +8,7 @@ using CSV, DataFrames, Dates
 using Test
 
 # read in output from NicheMapR and input variables
-soiltemps_NMR = (DataFrame(CSV.File("tests/data/soil_monthly.csv"))[:, 4:13]).*u"°C"
+soiltemps_NMR = (DataFrame(CSV.File("tests/data/soil_monthly.csv"))[:, 4:13]) .* u"°C"
 metout_NMR = DataFrame(CSV.File("tests/data/metout_monthly.csv"))
 microinput_vec = DataFrame(CSV.File("tests/data/init_monthly/microinput.csv"))[:, 2]
 
@@ -137,190 +137,196 @@ RHs = RHs[skip25]
 CLDs = CLDs[skip25]
 
 # simulate a day
-iday = 12
+iday = 1
 nsteps = length(hours)
 T_soils = Array{Float64}(undef, nsteps, numnodes)u"K"
+# initial soil temperatures
+if daily
+    soilinit = u"K"(mean(ustrip(vcat(TMINN, TMAXX)))u"°C") # make initial soil temps equal to mean annual temperature
+else
+    sub2 = (iday*25-25+1):(iday*25) # for getting mean monthly over the 25 hrs as in fortran version
+    soilinit = u"K"(mean(ustrip(TAIRs25[sub2]))u"°C") # make initial soil temps equal to mean annual temperature
+end
+T0 = fill(soilinit, numnodes)
+tdeep = u"K"(tannulrun[1]) # annual mean temperature for getting daily deep soil temperature (°C)
+T0[numnodes] = tdeep
 
 for iday in 1:12
-sub = (iday*24-24+1):(iday*24)#(iday*24-23):(iday*24)
-sub2 = (iday*25-25+1):(iday*25) # for getting mean monthly over the 25 hrs as in fortran version
-shade = SHADES[iday] # daily shade (%)
-sle = SLES[iday] # set up vector of ground emissivities for each day
-refl = REFLS[iday]
-slep = sle # - cloud emissivity
-pctwet = PCTWETS[iday] # set up vector of soil wetness for each day
-tdeep = u"K"(tannulrun[iday]) # annual mean temperature for getting daily deep soil temperature (°C)
-nodes = nodes_day[:, iday]
+    sub = (iday*24-24+1):(iday*24)#(iday*24-23):(iday*24)
+    sub2 = (iday*25-25+1):(iday*25) # for getting mean monthly over the 25 hrs as in fortran version
+    shade = SHADES[iday] # daily shade (%)
+    sle = SLES[iday] # set up vector of ground emissivities for each day
+    refl = REFLS[iday]
+    slep = sle # - cloud emissivity
+    pctwet = PCTWETS[iday] # set up vector of soil wetness for each day
+    tdeep = u"K"(tannulrun[iday]) # annual mean temperature for getting daily deep soil temperature (°C)
+    nodes = nodes_day[:, iday]
 
-# get today's weather
-SOLR = SOLRs[sub]
-ZENR = ZENRs[sub]
-ZSL = ZSLs[sub]
-TAIR = TAIRs[sub]
-VEL = WNs[sub]
-RH = RHs[sub]
-CLD = CLDs[sub]
+    # get today's weather
+    SOLR = SOLRs[sub]
+    ZENR = ZENRs[sub]
+    ZSL = ZSLs[sub]
+    TAIR = TAIRs[sub]
+    VEL = WNs[sub]
+    RH = RHs[sub]
+    CLD = CLDs[sub]
 
-# Initial conditions
-# note that soilinit is mean annual, only at start, if daily is true
-# and mean monthly if daily is false and resest each day
-soilinit = u"K"(mean(ustrip(TAIRs25[sub2]))u"°C") # make initial soil temps equal to mean annual temperature
-#soilinit = u"K"(mean(ustrip(vcat(TMINN, TMAXX)))u"°C") # make initial soil temps equal to mean annual temperature
-θ_soil = SoilMoist[:, iday]#collect(fill(SoilMoist, numnodes)) # initial soil moisture, constant for now
-
-# create forcing weather variable splines
-#tspan = 0.:60:1440
-tspan = 0.0:60:(60*24)
-tmin = tspan .* u"minute"
-interpSOLR = interpolate([SOLR; SOLRs[end]], BSpline(Linear()))
-interpZENR = interpolate([ZENR; ZENRs[end]], BSpline(Linear()))
-interpZSL = interpolate([ZSL; ZSL[end]], BSpline(Linear()))
-interpTAIR = interpolate(u"K".([TAIR; TAIR[end]]), BSpline(Linear()))
-interpVEL = interpolate([VEL; VEL[end]], BSpline(Linear()))
-interpRH = interpolate([RH; RH[end]], BSpline(Linear()))
-interpCLD = interpolate([CLD; CLD[end]], BSpline(Linear()))
-SOLRt = scale(interpSOLR, tspan)
-ZENRt = scale(interpZENR, tspan)
-ZSLt = scale(interpZSL, tspan)
-TAIRt = scale(interpTAIR, tspan)
-VELt = scale(interpVEL, tspan)
-RHt = scale(interpRH, tspan)
-CLDt = scale(interpCLD, tspan)
-
-# Parameters
-params = MicroParams(
-    soilprops=soilprops,
-    dep=depths,
-    refhyt=refhyt,
-    ruf=ruf,
-    d0=d0,
-    zh=zh,
-    slope=slope,
-    shade=shade,
-    viewf=viewf,
-    elev=elev,
-    refl=refl,
-    sle=sle,
-    slep=slep, # check if this is what it should be - sle vs. slep (set as 1 in PAR in Fortran but then changed to user SLE later)
-    pctwet=pctwet,
-    nodes=nodes,
-    tdeep=tdeep,
-    θ_soil=θ_soil,
-    runmoist=runmoist
-)
-
-forcing = MicroForcing(;
-    SOLRt,
-    ZENRt,
-    ZSLt,
-    TAIRt,
-    VELt,
-    RHt,
-    CLDt,
-)
-
-input = MicroInputs(
-    params,
-    forcing,
-    soillayers
-)
-
-# initial soil temperatures
-#if iday == 1
-T0 = fill(soilinit, numnodes)
-#T0 = u"K".(collect(soiltemps_NMR[1, :]))
-T0[numnodes] = tdeep
-#end
-#T_soils[1, :] = T0
-∑phase = zeros(Float64, numnodes)u"J"
-# loop through hours of day
-niter = ndmax # number of interations for steady periodic
-for iter in 1:niter
-    step = 2
-    T_soils[1, :] = T0
-    ∑phase = zeros(Float64, numnodes)u"J"
-    for i in 1:length(hours)-1
-        tspan = ((0.0 + (step - 2) * 60)u"minute", (60.0 + (step - 2) * 60)u"minute")  # 1 hour
-        prob = ODEProblem(soil_energy_balance!, T0, tspan, input)
-        sol = solve(prob, Tsit5(); saveat=60.0u"minute", reltol=1e-6u"K", abstol=1e-8u"K")
-        soiltemps = hcat(sol.u...)
-        ∑phase, qphase, T0 = phase_transition(soiltemps[:, 2] , soiltemps[:, 1], ∑phase, θ_soil, depths)
-        T_soils[step, :] = T0
-        step += 1
+    # Initial conditions
+    # note that soilinit is mean annual, only at start, if daily is true
+    # and mean monthly if daily is false and resest each day
+    if !daily
+        soilinit = u"K"(mean(ustrip(TAIRs25[sub2]))u"°C") # make initial soil temps equal to mean annual temperature
     end
-end
+    θ_soil = SoilMoist[:, iday]#collect(fill(SoilMoist, numnodes)) # initial soil moisture, constant for now
 
-t = hours[1:24]u"hr"
-plt = plot(t, u"°C".(T_soils)[1:24, :], xlabel="Time", ylabel="Soil Temperature", lw=2, legend=false, ylims = [-20, 50])
-plot!(plt, t, Matrix(soiltemps_NMR[sub, :]);
-    xlabel="time", ylabel="soil temperature", lw=2,
-    label=string.(depths'), linestyle=:dash, linecolor="grey"
-)
+    # create forcing weather variable splines
+    #tspan = 0.:60:1440
+    tspan = 0.0:60:(60*24)
+    tmin = tspan .* u"minute"
+    interpSOLR = interpolate([SOLR; SOLRs[end]], BSpline(Linear()))
+    interpZENR = interpolate([ZENR; ZENRs[end]], BSpline(Linear()))
+    interpZSL = interpolate([ZSL; ZSL[end]], BSpline(Linear()))
+    interpTAIR = interpolate(u"K".([TAIR; TAIR[end]]), BSpline(Linear()))
+    interpVEL = interpolate([VEL; VEL[end]], BSpline(Linear()))
+    interpRH = interpolate([RH; RH[end]], BSpline(Linear()))
+    interpCLD = interpolate([CLD; CLD[end]], BSpline(Linear()))
+    SOLRt = scale(interpSOLR, tspan)
+    ZENRt = scale(interpZENR, tspan)
+    ZSLt = scale(interpZSL, tspan)
+    TAIRt = scale(interpTAIR, tspan)
+    VELt = scale(interpVEL, tspan)
+    RHt = scale(interpRH, tspan)
+    CLDt = scale(interpCLD, tspan)
+
+    # Parameters
+    params = MicroParams(
+        soilprops=soilprops,
+        dep=depths,
+        refhyt=refhyt,
+        ruf=ruf,
+        d0=d0,
+        zh=zh,
+        slope=slope,
+        shade=shade,
+        viewf=viewf,
+        elev=elev,
+        refl=refl,
+        sle=sle,
+        slep=slep, # check if this is what it should be - sle vs. slep (set as 1 in PAR in Fortran but then changed to user SLE later)
+        pctwet=pctwet,
+        nodes=nodes,
+        tdeep=tdeep,
+        θ_soil=θ_soil,
+        runmoist=runmoist
+    )
+
+    forcing = MicroForcing(;
+        SOLRt,
+        ZENRt,
+        ZSLt,
+        TAIRt,
+        VELt,
+        RHt,
+        CLDt,
+    )
+
+    input = MicroInputs(
+        params,
+        forcing,
+        soillayers
+    )
+
+
+    #T_soils[1, :] = T0
+    ∑phase = zeros(Float64, numnodes)u"J"
+    # loop through hours of day
+    niter = ndmax # number of interations for steady periodic
+    for iter in 1:niter
+        step = 2
+        T_soils[1, :] = T0
+        ∑phase = zeros(Float64, numnodes)u"J"
+        for i in 1:length(hours)-1
+            tspan = ((0.0 + (step - 2) * 60)u"minute", (60.0 + (step - 2) * 60)u"minute")  # 1 hour
+            prob = ODEProblem(soil_energy_balance!, T0, tspan, input)
+            sol = solve(prob, Tsit5(); saveat=60.0u"minute", reltol=1e-6u"K", abstol=1e-8u"K")
+            soiltemps = hcat(sol.u...)
+            ∑phase, qphase, T0 = phase_transition(soiltemps[:, 2], soiltemps[:, 1], ∑phase, θ_soil, depths)
+            T_soils[step, :] = T0
+            step += 1
+        end
+    end
+
+    t = hours[1:24]u"hr"
+    plt = plot(t, u"°C".(T_soils)[1:24, :], xlabel="Time", ylabel="Soil Temperature", lw=2, legend=false, ylims=[-20, 50])
+    plot!(plt, t, Matrix(soiltemps_NMR[sub, :]);
+        xlabel="time", ylabel="soil temperature", lw=2,
+        label=string.(depths'), linestyle=:dash, linecolor="grey"
+    )
 
     # Display the plot
     display(plt)
 
 
-#     # now get wind air temperature and humidity profiles
-# heights = [0.01] .* u"m"
-# profiles = Vector{NamedTuple}(undef, nsteps)  # or whatever you have from your loop
-# for i in 1:nsteps
-#     profiles[i] = get_profile(
-#         refhyt = refhyt,
-#         ruf = ruf,
-#         zh = zh,
-#         d0 = d0,
-#         TAREF = TAIR[i],
-#         VREF = VEL[i],
-#         rh = RH[i],
-#         D0cm = u"°C"(T_soils'[1, i]),  # top layer temp at time i
-#         ZEN = ZENR[i],
-#         heights = heights,
-#         elev = elev
-#     )
-# end
-# Tskys = zeros(24)u"K"  # or whatever you have from your loop
-# for i in 1:nsteps
-#     Tskys[i] = Microclimate.get_longwave(
-#         elev = elev, 
-#         rh = RH[i], 
-#         tair = TAIR[i], 
-#         tsurf = u"°C"(T_soils'[1, i]), 
-#         slep = slep, 
-#         sle = sle, 
-#         cloud = CLD[i], 
-#         viewf = viewf,
-#         shade = shade
-#         ).Tsky
-# end
-# # subset NicheMapR predictions
-# vel1cm_NMR = collect(metout_NMR[sub, 8]).*1u"m/s"
-# vel2m_NMR = collect(metout_NMR[sub, 9]).*1u"m/s"
-# ta1cm_NMR = collect(metout_NMR[sub, 4] .+ 273.15).*1u"K"
-# ta2m_NMR = collect(metout_NMR[sub, 5] .+ 273.15).*1u"K"
-# rh1cm_NMR = collect(metout_NMR[sub, 6])
-# rh2m_NMR = collect(metout_NMR[sub, 7])
-# tskyC_NMR = collect(metout_NMR[sub, 15]).*u"°C"
+    #     # now get wind air temperature and humidity profiles
+    # heights = [0.01] .* u"m"
+    # profiles = Vector{NamedTuple}(undef, nsteps)  # or whatever you have from your loop
+    # for i in 1:nsteps
+    #     profiles[i] = get_profile(
+    #         refhyt = refhyt,
+    #         ruf = ruf,
+    #         zh = zh,
+    #         d0 = d0,
+    #         TAREF = TAIR[i],
+    #         VREF = VEL[i],
+    #         rh = RH[i],
+    #         D0cm = u"°C"(T_soils'[1, i]),  # top layer temp at time i
+    #         ZEN = ZENR[i],
+    #         heights = heights,
+    #         elev = elev
+    #     )
+    # end
+    # Tskys = zeros(24)u"K"  # or whatever you have from your loop
+    # for i in 1:nsteps
+    #     Tskys[i] = Microclimate.get_longwave(
+    #         elev = elev, 
+    #         rh = RH[i], 
+    #         tair = TAIR[i], 
+    #         tsurf = u"°C"(T_soils'[1, i]), 
+    #         slep = slep, 
+    #         sle = sle, 
+    #         cloud = CLD[i], 
+    #         viewf = viewf,
+    #         shade = shade
+    #         ).Tsky
+    # end
+    # # subset NicheMapR predictions
+    # vel1cm_NMR = collect(metout_NMR[sub, 8]).*1u"m/s"
+    # vel2m_NMR = collect(metout_NMR[sub, 9]).*1u"m/s"
+    # ta1cm_NMR = collect(metout_NMR[sub, 4] .+ 273.15).*1u"K"
+    # ta2m_NMR = collect(metout_NMR[sub, 5] .+ 273.15).*1u"K"
+    # rh1cm_NMR = collect(metout_NMR[sub, 6])
+    # rh2m_NMR = collect(metout_NMR[sub, 7])
+    # tskyC_NMR = collect(metout_NMR[sub, 15]).*u"°C"
 
-# plot(t, u"°C".(Tskys), xlabel="time", ylabel="sky temperature", lw=2)
-# plot!(t, tskyC_NMR, xlabel="time", ylabel="sky temperature", lw=2, linestyle = :dash, linecolor="grey")
+    # plot(t, u"°C".(Tskys), xlabel="time", ylabel="sky temperature", lw=2)
+    # plot!(t, tskyC_NMR, xlabel="time", ylabel="sky temperature", lw=2, linestyle = :dash, linecolor="grey")
 
-# VEL_matrix = hcat([getfield.(profiles, :VELs)[i] for i in 1:length(profiles)]...)    # velocities at all time steps and heights
-# TA_matrix   = hcat([getfield.(profiles, :TAs)[i]   for i in 1:length(profiles)]...)  # air temperatures at all time steps and heights
-# RH_matrix   = hcat([getfield.(profiles, :RHs)[i]   for i in 1:length(profiles)]...)       # relative humidity at all time steps and heights
-# Qconv_vec   = [getfield(p, :QCONV) for p in profiles]    # convective fluxes at all time steps
-# ustar_vec   = [getfield(p, :USTAR) for p in profiles]    # friction velocities
-# heights_vec = getfield(profiles[1], :heights)                     # constant across time
-# plot(t, VEL_matrix', xlabel="time", ylabel="wind speed", lw=2, label = string.(first(heights_vec, 11)'))
-# plot!(t, vel1cm_NMR, xlabel="time", ylabel="wind speed", lw=2, label = "1cm NMR", linestyle = :dash, linecolor="grey")
-# plot!(t, vel2m_NMR, xlabel="time", ylabel="wind speed", lw=2, label = "200cm NMR", linestyle = :dash, linecolor="grey")
+    # VEL_matrix = hcat([getfield.(profiles, :VELs)[i] for i in 1:length(profiles)]...)    # velocities at all time steps and heights
+    # TA_matrix   = hcat([getfield.(profiles, :TAs)[i]   for i in 1:length(profiles)]...)  # air temperatures at all time steps and heights
+    # RH_matrix   = hcat([getfield.(profiles, :RHs)[i]   for i in 1:length(profiles)]...)       # relative humidity at all time steps and heights
+    # Qconv_vec   = [getfield(p, :QCONV) for p in profiles]    # convective fluxes at all time steps
+    # ustar_vec   = [getfield(p, :USTAR) for p in profiles]    # friction velocities
+    # heights_vec = getfield(profiles[1], :heights)                     # constant across time
+    # plot(t, VEL_matrix', xlabel="time", ylabel="wind speed", lw=2, label = string.(first(heights_vec, 11)'))
+    # plot!(t, vel1cm_NMR, xlabel="time", ylabel="wind speed", lw=2, label = "1cm NMR", linestyle = :dash, linecolor="grey")
+    # plot!(t, vel2m_NMR, xlabel="time", ylabel="wind speed", lw=2, label = "200cm NMR", linestyle = :dash, linecolor="grey")
 
-# plot(t, TA_matrix', xlabel="time", ylabel="air temperature", lw=2, label = string.(first(heights_vec, 11)'))
-# plot!(t, ta1cm_NMR, xlabel="time", ylabel="air temperature", lw=2, label = "1cm NMR", linestyle = :dash, linecolor="grey")
-# plot!(t, ta2m_NMR, xlabel="time", ylabel="air temperature", lw=2, label = "200cm NMR", linestyle = :dash, linecolor="grey")
+    # plot(t, TA_matrix', xlabel="time", ylabel="air temperature", lw=2, label = string.(first(heights_vec, 11)'))
+    # plot!(t, ta1cm_NMR, xlabel="time", ylabel="air temperature", lw=2, label = "1cm NMR", linestyle = :dash, linecolor="grey")
+    # plot!(t, ta2m_NMR, xlabel="time", ylabel="air temperature", lw=2, label = "200cm NMR", linestyle = :dash, linecolor="grey")
 
-# plot(t, RH_matrix', xlabel="time", ylabel="humidity (%)", lw=2, label = string.(first(heights_vec, 11)'))
-# plot!(t, rh1cm_NMR, xlabel="time", ylabel="humidity (%)", lw=2, label = "1cm NMR", linestyle = :dash, linecolor="grey")
-# plot!(t, rh2m_NMR, xlabel="time", ylabel="humidity (%)", lw=2, label = "200cm NMR", linestyle = :dash, linecolor="grey")
+    # plot(t, RH_matrix', xlabel="time", ylabel="humidity (%)", lw=2, label = string.(first(heights_vec, 11)'))
+    # plot!(t, rh1cm_NMR, xlabel="time", ylabel="humidity (%)", lw=2, label = "1cm NMR", linestyle = :dash, linecolor="grey")
+    # plot!(t, rh2m_NMR, xlabel="time", ylabel="humidity (%)", lw=2, label = "200cm NMR", linestyle = :dash, linecolor="grey")
 
 end

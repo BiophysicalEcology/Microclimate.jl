@@ -51,12 +51,12 @@ function soil_properties(
             ρ_b[i] = θ_sat[j] * θj * ρ_water + ρ_dry[j]
         end
 
-        λ_a = (0.024 + 7.73e-5 * ustrip(T_C) - 2.6e-8 * ustrip(T_C)^2)u"W/m/K"
-        λ_w = (0.554 + 2.24e-3 * ustrip(T_C) - 9.87e-6 * ustrip(T_C)^2)u"W/m/K"
+        λ_a = (0.024 + 7.73e-5 * T_C - 2.6e-8 * T_C^2)u"W/m/K"
+        λ_w = (0.554 + 2.24e-3 * T_C - 9.87e-6 * T_C^2)u"W/m/K"
 
         D_v = D_v0 * (p_a0 / p_a) * (T_K / 273.15u"K")^1.75
         ρ_hat = ρ_hat0 * (p_a / p_a0) * (273.15 / T_K)
-        λ_vap = (45144.0 - 48.0 * ustrip(T_C))u"J/mol"
+        λ_vap = (45144.0 - 48.0 * T_C)u"J/mol"
 
         e_a = wet_air(T_K; rh = 99.0, P_atmos = p_a).P_vap
         e_a1 = wet_air(T_K - 1u"K"; rh = 99.0, P_atmos = p_a).P_vap

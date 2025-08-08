@@ -33,8 +33,8 @@ function soil_energy_balance!(
     vel = max(0.1u"m/s", f.VELt(ustrip(t)))
     zenr = min(90u"°", u"°"(round(f.ZENRt(ustrip(t)), digits=3)))
     solr = max(0.0u"W/m^2", f.SOLRt(ustrip(t)))
-    cloud = max(0.0, f.CLDt(ustrip(t)))
-    rh = max(0.0, f.RHt(ustrip(t)))
+    cloud = clamp(f.CLDt(ustrip(t)), 0.0, 100.0)
+    rh = clamp(f.RHt(ustrip(t)), 0.0, 100.0)
     zslr = min(90u"°", f.ZSLt(ustrip(t)))
 
     T[N] = tdeep # set boundary condition of deep soil temperature
