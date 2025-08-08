@@ -229,7 +229,7 @@ function waterprop(T::Quantity)
     )
 end
 
-function phase_transition!(
+function phase_transition(
     T::Vector,       # current temps at nodes
     T_past::Vector,      # temps at previous step
     ∑phase::Vector,    # accumulated latent heat
@@ -244,38 +244,45 @@ function phase_transition!(
     meanT = similar(T)
     meanTpast = similar(T)
     for j in 1:nodes
-        if j < nodes
-            meanT[j] = (T[j] + T[j+1]) / 2.0
-            meanTpast[j] = (T_past[j] + T_past[j+1]) / 2.0
-        else
-            meanT[j] = T[j]
-            meanTpast[j] = T_past[j]
-        end
-
-        if meanTpast[j] > 273.15u"K" && meanT[j] <= 273.15u"K"
+        if θ[j] > 0.0
             if j < nodes
-                layermass[j] = u"m"(dep[j+1] - dep[j]) * 1000.0u"kg/m" * θ[j]
+                meanT[j] = (T[j] + T[j+1]) / 2.0
+                meanTpast[j] = (T_past[j] + T_past[j+1]) / 2.0
             else
-                layermass[j] = u"m"(dep[j] + 100.0u"cm" - dep[j]) * 1000.0u"kg/m" * θ[j]
+                meanT[j] = T[j]
+                meanTpast[j] = T_past[j]
             end
 
-            qphase[j] = (meanTpast[j] - meanT[j]) * layermass[j] * cp
-            ∑phase[j] += qphase[j]
-
-            if ∑phase[j] > HTOFN * layermass[j]
-                # Fully frozen
-                T[j] = 273.14u"K"
+            if meanTpast[j] > 273.15u"K" && meanT[j] <= 273.15u"K"
                 if j < nodes
-                    T[j+1] = 273.14u"K"
+                    layermass[j] = u"m"(dep[j+1] - dep[j]) * 1000.0u"kg/m" * θ[j]
+                else
+                    layermass[j] = u"m"(dep[j] + 100.0u"cm" - dep[j]) * 1000.0u"kg/m" * θ[j]
                 end
-                ∑phase[j] = 0.0u"J"
-            else
-                # In the process of freezing
-                T[j] = 273.16u"K"
-                if j < nodes
-                    T[j+1] = 273.16u"K"
+
+                qphase[j] = (meanTpast[j] - meanT[j]) * layermass[j] * cp
+                ∑phase[j] += qphase[j]
+
+                if ∑phase[j] > HTOFN * layermass[j]
+                    # Fully frozen
+                    T[j] = 273.14u"K"
+                    if j < nodes
+                        T[j+1] = 273.14u"K"
+                    end
+                    ∑phase[j] = 0.0u"J"
+                else
+                    # In the process of freezing
+                    T[j] = 273.16u"K"
+                    if j < nodes
+                        T[j+1] = 273.16u"K"
+                    end
                 end
             end
         end
     end
+    return (;
+        ∑phase,
+        qphase,
+        T
+    )
 end

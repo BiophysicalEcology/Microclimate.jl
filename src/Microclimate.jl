@@ -10,7 +10,7 @@ using Unitful, UnitfulMoles, ModelParameters
 
 using Unitful: °, rad, °C#, K, Pa, kPa, MPa, J, kJ, W, L, g, kg, cm, m, s, hr, d, mol, mmol, μmol, σ, R
 
-export air_pressure, vapour_pressure, wet_air, dry_air, λ_evap, phase_transition!
+export air_pressure, vapour_pressure, wet_air, dry_air, λ_evap, phase_transition
 
 export sinec!, vsine, hourly_vars
 

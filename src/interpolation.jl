@@ -186,12 +186,13 @@ function hourly_vars(;
     RHs = fill(RHMINN[1], 25 * ndays)
     WNs = fill(WNMINN[1], 25 * ndays)
 
-    ITAIR = TMINN[1] # initial air temperature for daily
-    IWN = WNMINN[1]
-    IRH = RHMAXX[1]
-    ICLD = CCMINN[1]
+
 
     for iday in 1:ndays
+        ITAIR = TMINN[iday] # initial air temperature for daily
+        IWN = WNMINN[iday]
+        IRH = RHMAXX[iday]
+        ICLD = CCMINN[iday]
         TIMARY = fill(0.0, 25)
         TAIRRY = fill(0.0u"°C", 25)
         WNARRY = fill(IWN, 25)
