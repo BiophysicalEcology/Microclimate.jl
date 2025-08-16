@@ -114,6 +114,7 @@ soilprops[1, 3]<-Thcond # insert thermal conductivity to profile 1
 soilprops[1, 4]<-SpecHeat # insert specific heat to profile 1
 soilprops[1, 5]<-Density # insert mineral density to profile 1
 soilinit<-rep(tannul, 20) # make initial soil temps equal to mean annual
+soilinit<-rep((TMINN[1] + TMAXX[1])/2, 20) # make initial soil temps equal to mean annual
 
 # note that these are set for sand (Table 9.1 in Campbell and Norman, 1995)
 PE <- rep(0.7, 19) #air entry potential J/kg
@@ -133,7 +134,7 @@ LAI <- rep(0.1, doynum) # leaf area index, used to partition transpiration/evapo
 rainmult <- 1 # rainfall multiplier to impose catchment
 maxpool <- 10 # max depth for water pooling on the surface, mm (to account for runoff)
 evenrain <- 1 # spread daily rainfall evenly across 24hrs (1) or one event at midnight (2)
-SoilMoist <- 0*c(0.42, 0.42, 0.42, 0.43, 0.44, 0.44, 0.43, 0.42, 0.41, 0.42, 0.42, 0.43) # soil moisture (decimal %, 1 means saturated)
+SoilMoist <- 1*c(0.42, 0.42, 0.42, 0.43, 0.44, 0.44, 0.43, 0.42, 0.41, 0.42, 0.42, 0.43) # soil moisture (decimal %, 1 means saturated)
 SoilMoist_Init <- rep(SoilMoist[1], 10) # initial soil water content for each node, m3/m3
 #moists <- matrix(nrow = 10, ncol = doynum, data = 0) # set up an empty vector for soil moisture values through time
 #moists[1:10, ] <- SoilMoist_Init # insert initial soil moisture
@@ -162,51 +163,51 @@ microinput<-c(doynum, RUF, ERR, Usrhyt, Refhyt, Numtyps, Z01, Z02, ZH1, ZH2, ida
 micro<-list(microinput = microinput, tides = tides, doy = doy, SLES = SLES, DEP = DEP, Nodes = Nodes, MAXSHADES = MAXSHADES, MINSHADES = MINSHADES, TMAXX = TMAXX, TMINN = TMINN, RHMAXX = RHMAXX, RHMINN = RHMINN, CCMAXX = CCMAXX, CCMINN = CCMINN, WNMAXX = WNMAXX, WNMINN = WNMINN, TAIRhr = TAIRhr, RHhr = RHhr, WNhr = WNhr, CLDhr = CLDhr, SOLRhr = SOLRhr, RAINhr = RAINhr, ZENhr = ZENhr, IRDhr = IRDhr, REFLS = REFLS, PCTWET = PCTWET, soilinit = soilinit, hori = hori, TAI = TAI, soilprops = soilprops, moists = moists, RAINFALL = RAINFALL, tannulrun = tannulrun, PE = PE, KS = KS, BB = BB, BD = BD, DD = DD, L = L, LAI = LAI)
 
 if(write_input){
-  if(dir.exists("data/init") == FALSE){
-    dir.create("data/init")
+  if(dir.exists("../data/init") == FALSE){
+    dir.create("../data/init")
   }
-  write.table(as.matrix(microinput), file = "data/init/microinput.csv", sep = ",", col.names = NA, qmethod = "double")
-  write.table(doy, file = "data/init/doy.csv", sep = ",", col.names = NA, qmethod = "double")
-  write.table(SLES, file = "data/init/SLES.csv", sep = ",", col.names = NA, qmethod = "double")
-  write.table(DEP, file = "data/init/DEP.csv", sep = ",", col.names = NA, qmethod = "double")
-  write.table(Nodes, file = "data/init/Nodes.csv", sep = ",", col.names = NA, qmethod = "double")
-  write.table(MAXSHADES, file = "data/init/Maxshades.csv", sep = ",", col.names = NA, qmethod = "double")
-  write.table(MINSHADES, file = "data/init/Minshades.csv", sep = ",", col.names = NA, qmethod = "double")
-  write.table(TIMAXS, file = "data/init/TIMAXS.csv", sep = ",", col.names = NA, qmethod = "double")
-  write.table(TIMINS, file = "data/init/TIMINS.csv", sep = ",", col.names = NA, qmethod = "double")
-  write.table(TMAXX, file = "data/init/TMAXX.csv", sep = ",", col.names = NA, qmethod = "double")
-  write.table(TMINN, file = "data/init/TMINN.csv", sep = ",", col.names = NA, qmethod = "double")
-  write.table(RHMAXX, file = "data/init/RHMAXX.csv", sep = ",", col.names = NA, qmethod = "double")
-  write.table(RHMINN, file = "data/init/RHMINN.csv", sep = ",", col.names = NA, qmethod = "double")
-  write.table(CCMAXX, file = "data/init/CCMAXX.csv", sep = ",", col.names = NA, qmethod = "double")
-  write.table(CCMINN, file = "data/init/CCMINN.csv", sep = ",", col.names = NA, qmethod = "double")
-  write.table(WNMAXX, file = "data/init/WNMAXX.csv", sep = ",", col.names = NA, qmethod = "double")
-  write.table(WNMINN, file = "data/init/WNMINN.csv", sep = ",", col.names = NA, qmethod = "double")
-  write.table(REFLS, file = "data/init/REFLS.csv", sep = ",", col.names = NA, qmethod = "double")
-  write.table(PCTWET, file = "data/init/PCTWET.csv", sep = ",", col.names = NA, qmethod = "double")
-  write.table(soilinit, file = "data/init/soilinit.csv", sep = ",", col.names = NA, qmethod = "double")
-  write.table(hori, file = "data/init/hori.csv", sep = ",", col.names = NA, qmethod = "double")
-  write.table(TAI, file = "data/init/TAI.csv", sep = ",", col.names = NA, qmethod = "double")
-  write.table(soilprops, file="data/init/soilprop.csv", sep = ",", col.names = NA, qmethod = "double")
-  write.table(moists,file="data/init/moists.csv", sep = ",", col.names = NA, qmethod = "double")
-  write.table(RAINFALL,file="data/init/rain.csv", sep = ",", col.names = NA, qmethod = "double")
-  write.table(tannulrun,file="data/init/tannulrun.csv", sep = ",", col.names = NA, qmethod = "double")
-  write.table(PE,file="data/init/PE.csv", sep = ",", col.names = NA, qmethod = "double")
-  write.table(BD,file="data/init/BD.csv", sep = ",", col.names = NA, qmethod = "double")
-  write.table(DD,file="data/init/DD.csv", sep = ",", col.names = NA, qmethod = "double")
-  write.table(BB,file="data/init/BB.csv", sep = ",", col.names = NA, qmethod = "double")
-  write.table(KS,file="data/init/KS.csv", sep = ",", col.names = NA, qmethod = "double")
-  write.table(L,file="data/init/L.csv", sep = ",", col.names = NA, qmethod = "double")
-  write.table(LAI,file="data/init/LAI.csv", sep = ",", col.names = NA, qmethod = "double")
-  write.table(tides,file="data/init/tides.csv", sep = ",", col.names = NA, qmethod = "double")
-  write.table(TAIRhr,file="data/init/TAIRhr.csv", sep = ",", col.names = NA, qmethod = "double")
-  write.table(RHhr,file="data/init/RHhr.csv", sep = ",", col.names = NA, qmethod = "double")
-  write.table(WNhr,file="data/init/WNhr.csv", sep = ",", col.names = NA, qmethod = "double")
-  write.table(CLDhr,file="data/init/CLDhr.csv", sep = ",", col.names = NA, qmethod = "double")
-  write.table(SOLRhr,file="data/init/SOLRhr.csv", sep = ",", col.names = NA, qmethod = "double")
-  write.table(RAINhr,file="data/init/RAINhr.csv", sep = ",", col.names = NA, qmethod = "double")
-  write.table(ZENhr,file="data/init/ZENhr.csv", sep = ",", col.names = NA, qmethod = "double")
-  write.table(IRDhr,file="data/init/IRDhr.csv", sep = ",", col.names = NA, qmethod = "double")
+  write.table(as.matrix(microinput), file = "../data/init_monthly/microinput.csv", sep = ",", col.names = NA, qmethod = "double")
+  write.table(doy, file = "../data/init_monthly/doy.csv", sep = ",", col.names = NA, qmethod = "double")
+  write.table(SLES, file = "../data/init_monthly/SLES.csv", sep = ",", col.names = NA, qmethod = "double")
+  write.table(DEP, file = "../data/init_monthly/DEP.csv", sep = ",", col.names = NA, qmethod = "double")
+  write.table(Nodes, file = "../data/init_monthly/Nodes.csv", sep = ",", col.names = NA, qmethod = "double")
+  write.table(MAXSHADES, file = "../data/init_monthly/Maxshades.csv", sep = ",", col.names = NA, qmethod = "double")
+  write.table(MINSHADES, file = "../data/init_monthly/Minshades.csv", sep = ",", col.names = NA, qmethod = "double")
+  write.table(TIMAXS, file = "../data/init_monthly/TIMAXS.csv", sep = ",", col.names = NA, qmethod = "double")
+  write.table(TIMINS, file = "../data/init_monthly/TIMINS.csv", sep = ",", col.names = NA, qmethod = "double")
+  write.table(TMAXX, file = "../data/init_monthly/TMAXX.csv", sep = ",", col.names = NA, qmethod = "double")
+  write.table(TMINN, file = "../data/init_monthly/TMINN.csv", sep = ",", col.names = NA, qmethod = "double")
+  write.table(RHMAXX, file = "../data/init_monthly/RHMAXX.csv", sep = ",", col.names = NA, qmethod = "double")
+  write.table(RHMINN, file = "../data/init_monthly/RHMINN.csv", sep = ",", col.names = NA, qmethod = "double")
+  write.table(CCMAXX, file = "../data/init_monthly/CCMAXX.csv", sep = ",", col.names = NA, qmethod = "double")
+  write.table(CCMINN, file = "../data/init_monthly/CCMINN.csv", sep = ",", col.names = NA, qmethod = "double")
+  write.table(WNMAXX, file = "../data/init_monthly/WNMAXX.csv", sep = ",", col.names = NA, qmethod = "double")
+  write.table(WNMINN, file = "../data/init_monthly/WNMINN.csv", sep = ",", col.names = NA, qmethod = "double")
+  write.table(REFLS, file = "../data/init_monthly/REFLS.csv", sep = ",", col.names = NA, qmethod = "double")
+  write.table(PCTWET, file = "../data/init_monthly/PCTWET.csv", sep = ",", col.names = NA, qmethod = "double")
+  write.table(soilinit, file = "../data/init_monthly/soilinit.csv", sep = ",", col.names = NA, qmethod = "double")
+  write.table(hori, file = "../data/init_monthly/hori.csv", sep = ",", col.names = NA, qmethod = "double")
+  write.table(TAI, file = "../data/init_monthly/TAI.csv", sep = ",", col.names = NA, qmethod = "double")
+  write.table(soilprops, file="../data/init_monthly/soilprop.csv", sep = ",", col.names = NA, qmethod = "double")
+  write.table(moists,file="../data/init_monthly/moists.csv", sep = ",", col.names = NA, qmethod = "double")
+  write.table(RAINFALL,file="../data/init_monthly/rain.csv", sep = ",", col.names = NA, qmethod = "double")
+  write.table(tannulrun,file="../data/init_monthly/tannulrun.csv", sep = ",", col.names = NA, qmethod = "double")
+  write.table(PE,file="../data/init_monthly/PE.csv", sep = ",", col.names = NA, qmethod = "double")
+  write.table(BD,file="../data/init_monthly/BD.csv", sep = ",", col.names = NA, qmethod = "double")
+  write.table(DD,file="../data/init_monthly/DD.csv", sep = ",", col.names = NA, qmethod = "double")
+  write.table(BB,file="../data/init_monthly/BB.csv", sep = ",", col.names = NA, qmethod = "double")
+  write.table(KS,file="../data/init_monthly/KS.csv", sep = ",", col.names = NA, qmethod = "double")
+  write.table(L,file="../data/init_monthly/L.csv", sep = ",", col.names = NA, qmethod = "double")
+  write.table(LAI,file="../data/init_monthly/LAI.csv", sep = ",", col.names = NA, qmethod = "double")
+  write.table(tides,file="../data/init_monthly/tides.csv", sep = ",", col.names = NA, qmethod = "double")
+  write.table(TAIRhr,file="../data/init_monthly/TAIRhr.csv", sep = ",", col.names = NA, qmethod = "double")
+  write.table(RHhr,file="../data/init_monthly/RHhr.csv", sep = ",", col.names = NA, qmethod = "double")
+  write.table(WNhr,file="../data/init_monthly/WNhr.csv", sep = ",", col.names = NA, qmethod = "double")
+  write.table(CLDhr,file="../data/init_monthly/CLDhr.csv", sep = ",", col.names = NA, qmethod = "double")
+  write.table(SOLRhr,file="../data/init_monthly/SOLRhr.csv", sep = ",", col.names = NA, qmethod = "double")
+  write.table(RAINhr,file="../data/init_monthly/RAINhr.csv", sep = ",", col.names = NA, qmethod = "double")
+  write.table(ZENhr,file="../data/init_monthly/ZENhr.csv", sep = ",", col.names = NA, qmethod = "double")
+  write.table(IRDhr,file="../data/init_monthly/IRDhr.csv", sep = ",", col.names = NA, qmethod = "double")
 }
 microut <- microclimate(micro) # run the model in Fortran
 
@@ -219,6 +220,7 @@ drlam <- as.data.frame(microut$drlam)
 drrlam <- as.data.frame(microut$drrlam)
 srlam <- as.data.frame(microut$srlam)
 
+plot(metout$TSKYC[1:24], type = 'l')
 # for(i in 1:10){
 #   if(i == 1){
 #     plot(soil[121:144, i + 2] , xlab = "Date and Time", ylab = "Soil Temperature (°C)", col = i, type = "l", main = paste("soil temperature ", minshade, "% shade", sep=""))

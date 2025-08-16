@@ -95,6 +95,9 @@ for i in 2:numnodes
 end
 soillayers = init_soillayers(numnodes)  # only once
 refl = REFLS[1]
+soilinit = (DataFrame(CSV.File("tests/data/init_monthly/soilinit.csv"))[1:numnodes, 2] * 1.0)u"°C" # set up vector of soil wetness for each day (%)
+∑phase = zeros(Float64, numnodes)u"J"
+
 # compute solar radiation (need to make refl time varying)
 solrad_out = solrad(;
     days,
@@ -140,18 +143,12 @@ CLDs = CLDs[skip25]
 iday = 1
 nsteps = length(hours)
 T_soils = Array{Float64}(undef, nsteps, numnodes)u"K"
-# initial soil temperatures
-if daily
-    soilinit = u"K"(mean(ustrip(vcat(TMINN, TMAXX)))u"°C") # make initial soil temps equal to mean annual temperature
-else
-    sub2 = (iday*25-25+1):(iday*25) # for getting mean monthly over the 25 hrs as in fortran version
-    soilinit = u"K"(mean(ustrip(TAIRs25[sub2]))u"°C") # make initial soil temps equal to mean annual temperature
-end
-T0 = fill(soilinit, numnodes)
-tdeep = u"K"(tannulrun[1]) # annual mean temperature for getting daily deep soil temperature (°C)
-T0[numnodes] = tdeep
+soiltemps = nothing
+T0 = u"K".(soilinit)
+T_past = T0
+∑phase = zeros(Float64, numnodes)u"J"
 
-for iday in 1:12
+for iday in 1:12#ndays
     sub = (iday*24-24+1):(iday*24)#(iday*24-23):(iday*24)
     sub2 = (iday*25-25+1):(iday*25) # for getting mean monthly over the 25 hrs as in fortran version
     shade = SHADES[iday] # daily shade (%)
@@ -172,13 +169,13 @@ for iday in 1:12
     CLD = CLDs[sub]
 
     # Initial conditions
-    # note that soilinit is mean annual, only at start, if daily is true
-    # and mean monthly if daily is false and resest each day
     if !daily
         soilinit = u"K"(mean(ustrip(TAIRs25[sub2]))u"°C") # make initial soil temps equal to mean annual temperature
+        T0 = fill(soilinit, numnodes)
+        ∑phase = zeros(Float64, numnodes)u"J"
     end
     θ_soil = SoilMoist[:, iday]#collect(fill(SoilMoist, numnodes)) # initial soil moisture, constant for now
-
+    T0[numnodes] = tdeep
     # create forcing weather variable splines
     #tspan = 0.:60:1440
     tspan = 0.0:60:(60*24)
@@ -236,22 +233,24 @@ for iday in 1:12
         soillayers
     )
 
-
-    #T_soils[1, :] = T0
-    ∑phase = zeros(Float64, numnodes)u"J"
     # loop through hours of day
     niter = ndmax # number of interations for steady periodic
+    iter = 0
     for iter in 1:niter
         step = 2
         T_soils[1, :] = T0
-        ∑phase = zeros(Float64, numnodes)u"J"
         for i in 1:length(hours)-1
             tspan = ((0.0 + (step - 2) * 60)u"minute", (60.0 + (step - 2) * 60)u"minute")  # 1 hour
             prob = ODEProblem(soil_energy_balance!, T0, tspan, input)
             sol = solve(prob, Tsit5(); saveat=60.0u"minute", reltol=1e-6u"K", abstol=1e-8u"K")
             soiltemps = hcat(sol.u...)
-            ∑phase, qphase, T0 = phase_transition(soiltemps[:, 2], soiltemps[:, 1], ∑phase, θ_soil, depths)
+            if iter == niter #|| iday == ndays
+                ∑phase, qphase, T0 = phase_transition(soiltemps[:, 2], soiltemps[:, 1], ∑phase, θ_soil, depths)
+            else
+               T0 = soiltemps[:, 2]
+            end
             T_soils[step, :] = T0
+            T_past = T0
             step += 1
         end
     end
