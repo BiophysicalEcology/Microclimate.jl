@@ -104,7 +104,7 @@ If T_dew is known then set T_wetublb = 0 and rh = 0.
 # - `T_vir`: Virtual temperature (K)
 # - `T_vinc`: Virtual temperature increment (K)
 # - `ρ_air`: Density of the air (kg m-3)
-# - `cp`: Specific heat of air at constant pressure (J kg-1 K-1)
+# - `c_p`: Specific heat of air at constant pressure (J kg-1 K-1)
 # - `ψ`: Water potential (Pa)
 # - `rh`: Relative humidity (%)
 
@@ -121,8 +121,8 @@ function wet_air(T_drybulb;
     return wet_air(T_drybulb, T_wetbulb, rh, T_dew, P_atmos, fO2, fCO2, fN2)
 end
 function wet_air(T_drybulb, T_wetbulb, rh, T_dew, P_atmos, fO2, fCO2, fN2)
-    cp_H2O_vap = 1864.40u"J/K/kg"
-    cp_dry_air = 1004.84u"J/K/kg" # should be 1006?
+    c_p_H2O_vap = 1864.40u"J/K/kg"
+    c_p_dry_air = 1004.84u"J/K/kg" # should be 1006?
     f_w = 1.0053 # (-) correction factor for the departure of the mixture of air and water vapour from ideal gas laws
     M_w = (1molH₂O |> u"kg")/1u"mol" # molar mass of water
     M_a = (fO2*molO₂ + fCO2*molCO₂ + fN2*molN₂)/1u"mol" # molar mass of air
@@ -147,14 +147,14 @@ function wet_air(T_drybulb, T_wetbulb, rh, T_dew, P_atmos, fO2, fCO2, fN2)
     T_vinc = T_vir - T_drybulb
     ρ_air = (M_a / Unitful.R) * P_atmos / (0.999 * T_vir) # 0.999 a correction factor?
     ρ_air = Unitful.uconvert(u"kg/m^3",ρ_air) # simplify units
-    cp = (cp_dry_air + (r_w * cp_H2O_vap)) / (1 + r_w)
+    c_p = (c_p_dry_air + (r_w * c_p_H2O_vap)) / (1 + r_w)
     ψ = if min(rh) <= 0
         -999u"Pa"
     else
         (4.615e+5 * Unitful.ustrip(T_drybulb) * log(rh / 100))u"Pa"
     end
 
-    return (;P_vap, P_vap_sat, ρ_vap, r_w, T_vinc, ρ_air, cp, ψ, rh)
+    return (;P_vap, P_vap_sat, ρ_vap, r_w, T_vinc, ρ_air, c_p, ψ, rh)
 end
 
 """
@@ -202,7 +202,7 @@ function waterprop(T::Quantity)
     T = ustrip(u"°C", T)  # Convert to Float64 in °C
 
     # Specific heat capacity (J/kg·K)
-    cp = (4220.02 - 4.5531 * T + 0.182958 * T^2 -
+    c_p = (4220.02 - 4.5531 * T + 0.182958 * T^2 -
          0.00310614 * T^3 + 1.89399e-5 * T^4) * u"J/kg/K"
 
     # Density (kg/m^3)
@@ -222,7 +222,7 @@ function waterprop(T::Quantity)
     μ = (0.0017515 - 4.31502e-5 * T + 3.71431e-7 * T^2) * u"kg/m/s"
 
     return (
-        cp_H2O = cp,
+        c_p_H2O = c_p,
         ρ_H2O = ρ,
         k_H2O = K,
         μ_H2O = μ,
@@ -237,7 +237,7 @@ function phase_transition(
     dep::Vector      # soil depth boundaries (cm)
 )
     HTOFN = 333500.0u"J/kg" # latent heat of fusion of waterper unit mass
-    cp = 4186.0u"J/kg/K" # specific heat of water
+    c_p = 4186.0u"J/kg/K" # specific heat of water
     nodes = length(dep)
     layermass = zeros(Float64, nodes)u"kg"
     qphase = zeros(Float64, nodes)u"J"
@@ -260,7 +260,7 @@ function phase_transition(
                     layermass[j] = u"m"(dep[j] + 100.0u"cm" - dep[j]) * 1000.0u"kg/m" * θ[j]
                 end
 
-                qphase[j] = (meanTpast[j] - meanT[j]) * layermass[j] * cp
+                qphase[j] = (meanTpast[j] - meanT[j]) * layermass[j] * c_p
                 ∑phase[j] += qphase[j]
 
                 if ∑phase[j] > HTOFN * layermass[j]

@@ -21,6 +21,7 @@ snowmodel <- 0 # run the snow model (0 = no, 1 = yes)? - note that this runs slo
 hourly <- 1 # run the model with hourly input data
 rainhourly <- 0 # run the model with hourly rainfall input data (irrelevant if hourly = 1)
 microdaily <- 1 # run microclimate model where one iteration of each day occurs and last day gives initial conditions for present day
+ndmax <- 1 # iterations of each day to get a steady periodic
 IR <- 0 # compute clear-sky longwave radiation using Campbell and Norman (1998) eq. 10.10 (includes humidity)
 solonly <- 0 # Only run SOLRAD to get solar radiation? 1=yes, 0=no
 message <- 0 # do not allow the Fortran integrator to output warnings
@@ -190,7 +191,7 @@ PE[10:19]<-CampNormTbl9_1[soiltype, 4] #air entry potential J/kg
 KS[10:19]<-CampNormTbl9_1[soiltype, 6] #saturated conductivity, kg s/m3
 BB[10:19]<-CampNormTbl9_1[soiltype, 5] #soil 'b' parameter
 
-L <- c(0, 0, 8.2, 8.0, 7.8, 7.4, 7.1, 6.4, 5.8, 4.8, 4.0, 1.8, 0.9, 0.6, 0.8, 0.4 ,0.4, 0, 0) * 10000 # root density at each node, mm/m3 (from Campell 1985 Soil Physics with Basic, p. 131)
+L <- c(0, 0, 8.2, 8.0, 7.8, 7.4, 7.1, 6.4, 5.8, 4.8, 4.0, 1.8, 0.9, 0.6, 0.8, 0.4 ,0.4, 0, 0) * 10000 # root density at each node, mm/m3 (from Campbell 1985 Soil Physics with Basic, p. 131)
 R1 <- 0.001 #root radius, m}\cr\cr
 RW <- 2.5e+10 #resistance per unit length of root, m3 kg-1 s-1
 RL <- 2e+6 #resistance per unit length of leaf, m3 kg-1 s-1
@@ -223,58 +224,58 @@ grasshade <- 0 # if 1, means shade is removed when snow is present, because shad
 # intertidal simulation input vector (col 1 = tide in(1)/out(0), col 2 = sea water temperature in °C, col 3 = % wet from wave splash)
 tides <- matrix(data = 0, nrow = 24 * doynum, ncol = 3) # matrix for tides
 
-microinput <- c(doynum, RUF, ERR, Usrhyt, Refhyt, Numtyps, Z01, Z02, ZH1, ZH2, idayst, ida, HEMIS, ALAT, AMINUT, ALONG, ALMINT, ALREF, slope, azmuth, ALTT, CMH2O, microdaily, tannul, EC, VIEWF, snowtemp, snowdens, snowmelt, undercatch, rainmult, runshade, runmoist, maxpool, evenrain, snowmodel, rainmelt, writecsv, densfun, hourly, rainhourly, lamb, IUV, RW, PC, RL, SP, R1, IM, MAXCOUNT, IR, message, fail, snowcond, intercept, grasshade, solonly, ZH, D0, TIMAXS, TIMINS, spinup, dewrain, moiststep, maxsurf)
+microinput <- c(doynum, RUF, ERR, Usrhyt, Refhyt, Numtyps, Z01, Z02, ZH1, ZH2, idayst, ida, HEMIS, ALAT, AMINUT, ALONG, ALMINT, ALREF, slope, azmuth, ALTT, CMH2O, microdaily, tannul, EC, VIEWF, snowtemp, snowdens, snowmelt, undercatch, rainmult, runshade, runmoist, maxpool, evenrain, snowmodel, rainmelt, writecsv, densfun, hourly, rainhourly, lamb, IUV, RW, PC, RL, SP, R1, IM, MAXCOUNT, IR, message, fail, snowcond, intercept, grasshade, solonly, ZH, D0, TIMAXS, TIMINS, spinup, dewrain, moiststep, maxsurf, ndmax)
 
 # all microclimate data input list - all these variables are expected by the input argument of the fortran micro2014 subroutine
 microin <- list(microinput = microinput, tides = tides, doy = doy, SLES = SLES, DEP = DEP, Nodes = Nodes, MAXSHADES = MAXSHADES, MINSHADES = MINSHADES, TMAXX = TMAXX, TMINN = TMINN, RHMAXX = RHMAXX, RHMINN = RHMINN, CCMAXX = CCMAXX, CCMINN = CCMINN, WNMAXX = WNMAXX, WNMINN = WNMINN, TAIRhr = TAIRhr, RHhr = RHhr, WNhr = WNhr, CLDhr = CLDhr, SOLRhr = SOLRhr, RAINhr = RAINhr, ZENhr = ZENhr, IRDhr = IRDhr, REFLS = REFLS, PCTWET = PCTWET, soilinit = soilinit, hori = hori, TAI = TAI, soilprops = soilprops, moists = moists, RAINFALL = RAINFALL, tannulrun = tannulrun, PE = PE, KS = KS, BB = BB, BD = BD, DD = DD, L = L, LAI = LAI)
 
 
 if(write_input){
-  if(dir.exists("data/init_FDL") == FALSE){
-    dir.create("data/init_FDL")
+  if(dir.exists("../data/init_daily") == FALSE){
+    dir.create("../data/init_daily")
   }
-  write.table(as.matrix(microinput), file = "data/init_FDL/microinput.csv", sep = ",", col.names = NA, qmethod = "double")
-  write.table(doy, file = "data/init_FDL/doy.csv", sep = ",", col.names = NA, qmethod = "double")
-  write.table(SLES, file = "data/init_FDL/SLES.csv", sep = ",", col.names = NA, qmethod = "double")
-  write.table(DEP, file = "data/init_FDL/DEP.csv", sep = ",", col.names = NA, qmethod = "double")
-  write.table(Nodes, file = "data/init_FDL/Nodes.csv", sep = ",", col.names = NA, qmethod = "double")
-  write.table(MAXSHADES, file = "data/init_FDL/Maxshades.csv", sep = ",", col.names = NA, qmethod = "double")
-  write.table(MINSHADES, file = "data/init_FDL/Minshades.csv", sep = ",", col.names = NA, qmethod = "double")
-  write.table(TIMAXS, file = "data/init_FDL/TIMAXS.csv", sep = ",", col.names = NA, qmethod = "double")
-  write.table(TIMINS, file = "data/init_FDL/TIMINS.csv", sep = ",", col.names = NA, qmethod = "double")
-  write.table(TMAXX, file = "data/init_FDL/TMAXX.csv", sep = ",", col.names = NA, qmethod = "double")
-  write.table(TMINN, file = "data/init_FDL/TMINN.csv", sep = ",", col.names = NA, qmethod = "double")
-  write.table(RHMAXX, file = "data/init_FDL/RHMAXX.csv", sep = ",", col.names = NA, qmethod = "double")
-  write.table(RHMINN, file = "data/init_FDL/RHMINN.csv", sep = ",", col.names = NA, qmethod = "double")
-  write.table(CCMAXX, file = "data/init_FDL/CCMAXX.csv", sep = ",", col.names = NA, qmethod = "double")
-  write.table(CCMINN, file = "data/init_FDL/CCMINN.csv", sep = ",", col.names = NA, qmethod = "double")
-  write.table(WNMAXX, file = "data/init_FDL/WNMAXX.csv", sep = ",", col.names = NA, qmethod = "double")
-  write.table(WNMINN, file = "data/init_FDL/WNMINN.csv", sep = ",", col.names = NA, qmethod = "double")
-  write.table(REFLS, file = "data/init_FDL/REFLS.csv", sep = ",", col.names = NA, qmethod = "double")
-  write.table(PCTWET, file = "data/init_FDL/PCTWET.csv", sep = ",", col.names = NA, qmethod = "double")
-  write.table(soilinit, file = "data/init_FDL/soilinit.csv", sep = ",", col.names = NA, qmethod = "double")
-  write.table(hori, file = "data/init_FDL/hori.csv", sep = ",", col.names = NA, qmethod = "double")
-  write.table(TAI, file = "data/init_FDL/TAI.csv", sep = ",", col.names = NA, qmethod = "double")
-  write.table(soilprops, file="data/init_FDL/soilprop.csv", sep = ",", col.names = NA, qmethod = "double")
-  write.table(moists,file="data/init_FDL/moists.csv", sep = ",", col.names = NA, qmethod = "double")
-  write.table(RAINFALL,file="data/init_FDL/rain.csv", sep = ",", col.names = NA, qmethod = "double")
-  write.table(tannulrun,file="data/init_FDL/tannulrun.csv", sep = ",", col.names = NA, qmethod = "double")
-  write.table(PE,file="data/init_FDL/PE.csv", sep = ",", col.names = NA, qmethod = "double")
-  write.table(BD,file="data/init_FDL/BD.csv", sep = ",", col.names = NA, qmethod = "double")
-  write.table(DD,file="data/init_FDL/DD.csv", sep = ",", col.names = NA, qmethod = "double")
-  write.table(BB,file="data/init_FDL/BB.csv", sep = ",", col.names = NA, qmethod = "double")
-  write.table(KS,file="data/init_FDL/KS.csv", sep = ",", col.names = NA, qmethod = "double")
-  write.table(L,file="data/init_FDL/L.csv", sep = ",", col.names = NA, qmethod = "double")
-  write.table(LAI,file="data/init_FDL/LAI.csv", sep = ",", col.names = NA, qmethod = "double")
-  write.table(tides,file="data/init_FDL/tides.csv", sep = ",", col.names = NA, qmethod = "double")
-  write.table(TAIRhr,file="data/init_FDL/TAIRhr.csv", sep = ",", col.names = NA, qmethod = "double")
-  write.table(RHhr,file="data/init_FDL/RHhr.csv", sep = ",", col.names = NA, qmethod = "double")
-  write.table(WNhr,file="data/init_FDL/WNhr.csv", sep = ",", col.names = NA, qmethod = "double")
-  write.table(CLDhr,file="data/init_FDL/CLDhr.csv", sep = ",", col.names = NA, qmethod = "double")
-  write.table(SOLRhr,file="data/init_FDL/SOLRhr.csv", sep = ",", col.names = NA, qmethod = "double")
-  write.table(RAINhr,file="data/init_FDL/RAINhr.csv", sep = ",", col.names = NA, qmethod = "double")
-  write.table(ZENhr,file="data/init_FDL/ZENhr.csv", sep = ",", col.names = NA, qmethod = "double")
-  write.table(IRDhr,file="data/init_FDL/IRDhr.csv", sep = ",", col.names = NA, qmethod = "double")
+  write.table(as.matrix(microinput), file = "../data/init_daily/microinput.csv", sep = ",", col.names = NA, qmethod = "double")
+  write.table(doy, file = "../data/init_daily/doy.csv", sep = ",", col.names = NA, qmethod = "double")
+  write.table(SLES, file = "../data/init_daily/SLES.csv", sep = ",", col.names = NA, qmethod = "double")
+  write.table(DEP, file = "../data/init_daily/DEP.csv", sep = ",", col.names = NA, qmethod = "double")
+  write.table(Nodes, file = "../data/init_daily/Nodes.csv", sep = ",", col.names = NA, qmethod = "double")
+  write.table(MAXSHADES, file = "../data/init_daily/Maxshades.csv", sep = ",", col.names = NA, qmethod = "double")
+  write.table(MINSHADES, file = "../data/init_daily/Minshades.csv", sep = ",", col.names = NA, qmethod = "double")
+  write.table(TIMAXS, file = "../data/init_daily/TIMAXS.csv", sep = ",", col.names = NA, qmethod = "double")
+  write.table(TIMINS, file = "../data/init_daily/TIMINS.csv", sep = ",", col.names = NA, qmethod = "double")
+  write.table(TMAXX, file = "../data/init_daily/TMAXX.csv", sep = ",", col.names = NA, qmethod = "double")
+  write.table(TMINN, file = "../data/init_daily/TMINN.csv", sep = ",", col.names = NA, qmethod = "double")
+  write.table(RHMAXX, file = "../data/init_daily/RHMAXX.csv", sep = ",", col.names = NA, qmethod = "double")
+  write.table(RHMINN, file = "../data/init_daily/RHMINN.csv", sep = ",", col.names = NA, qmethod = "double")
+  write.table(CCMAXX, file = "../data/init_daily/CCMAXX.csv", sep = ",", col.names = NA, qmethod = "double")
+  write.table(CCMINN, file = "../data/init_daily/CCMINN.csv", sep = ",", col.names = NA, qmethod = "double")
+  write.table(WNMAXX, file = "../data/init_daily/WNMAXX.csv", sep = ",", col.names = NA, qmethod = "double")
+  write.table(WNMINN, file = "../data/init_daily/WNMINN.csv", sep = ",", col.names = NA, qmethod = "double")
+  write.table(REFLS, file = "../data/init_daily/REFLS.csv", sep = ",", col.names = NA, qmethod = "double")
+  write.table(PCTWET, file = "../data/init_daily/PCTWET.csv", sep = ",", col.names = NA, qmethod = "double")
+  write.table(soilinit, file = "../data/init_daily/soilinit.csv", sep = ",", col.names = NA, qmethod = "double")
+  write.table(hori, file = "../data/init_daily/hori.csv", sep = ",", col.names = NA, qmethod = "double")
+  write.table(TAI, file = "../data/init_daily/TAI.csv", sep = ",", col.names = NA, qmethod = "double")
+  write.table(soilprops, file="../data/init_daily/soilprop.csv", sep = ",", col.names = NA, qmethod = "double")
+  write.table(moists,file="../data/init_daily/moists.csv", sep = ",", col.names = NA, qmethod = "double")
+  write.table(RAINFALL,file="../data/init_daily/rain.csv", sep = ",", col.names = NA, qmethod = "double")
+  write.table(tannulrun,file="../data/init_daily/tannulrun.csv", sep = ",", col.names = NA, qmethod = "double")
+  write.table(PE,file="../data/init_daily/PE.csv", sep = ",", col.names = NA, qmethod = "double")
+  write.table(BD,file="../data/init_daily/BD.csv", sep = ",", col.names = NA, qmethod = "double")
+  write.table(DD,file="../data/init_daily/DD.csv", sep = ",", col.names = NA, qmethod = "double")
+  write.table(BB,file="../data/init_daily/BB.csv", sep = ",", col.names = NA, qmethod = "double")
+  write.table(KS,file="../data/init_daily/KS.csv", sep = ",", col.names = NA, qmethod = "double")
+  write.table(L,file="../data/init_daily/L.csv", sep = ",", col.names = NA, qmethod = "double")
+  write.table(LAI,file="../data/init_daily/LAI.csv", sep = ",", col.names = NA, qmethod = "double")
+  write.table(tides,file="../data/init_daily/tides.csv", sep = ",", col.names = NA, qmethod = "double")
+  write.table(TAIRhr,file="../data/init_daily/TAIRhr.csv", sep = ",", col.names = NA, qmethod = "double")
+  write.table(RHhr,file="../data/init_daily/RHhr.csv", sep = ",", col.names = NA, qmethod = "double")
+  write.table(WNhr,file="../data/init_daily/WNhr.csv", sep = ",", col.names = NA, qmethod = "double")
+  write.table(CLDhr,file="../data/init_daily/CLDhr.csv", sep = ",", col.names = NA, qmethod = "double")
+  write.table(SOLRhr,file="../data/init_daily/SOLRhr.csv", sep = ",", col.names = NA, qmethod = "double")
+  write.table(RAINhr,file="../data/init_daily/RAINhr.csv", sep = ",", col.names = NA, qmethod = "double")
+  write.table(ZENhr,file="../data/init_daily/ZENhr.csv", sep = ",", col.names = NA, qmethod = "double")
+  write.table(IRDhr,file="../data/init_daily/IRDhr.csv", sep = ",", col.names = NA, qmethod = "double")
 }
 
 micro <- microclimate(microin) # run the model in Fortran
@@ -331,13 +332,13 @@ points(dates, tcond$TC5cm, type='l',xlim = c(tstart, tfinish), col = 3, xaxt = "
 
 # tstart <- as.POSIXct("2015-01-01",format="%Y-%m-%d")
 # tfinish <- as.POSIXct("2015-01-31",format="%Y-%m-%d")
-# 
+#
 # # set up plot parameters
 # par(mfrow = c(5, 1)) # set up for 6 plots in 1 columns
 # par(oma = c(2, 1, 2, 2) + 0.1) # margin spacing stuff
 # par(mar = c(3, 3, 1, 1) + 0.1) # margin spacing stuff
 # par(mgp = c(2, 1, 0) ) # margin spacing stuff
-# 
+#
 # # plot the soil temperatures
 # plot(dates, soil$D5cm, type='l',ylim = c(-10, 70),xlim = c(tstart, tfinish),xaxt = "n",ylab = expression("soil temperature (" * degree * C *")"),xlab="")
 # points(weather$datetime, weather$STO.I_2, type='l',col="red")
@@ -366,7 +367,7 @@ points(dates, tcond$TC5cm, type='l',xlim = c(tstart, tfinish), col = 3, xaxt = "
 # abline(0, 0, lty = 2, col='light blue')
 # text(tstart, 10,"100cm",col="black",pos = 4, cex = 1.5)
 # mtext(site$name, outer = TRUE)
-# 
+#
 # # plot the soil moisture
 # plot(dates, soilmoist$WC5cm * 100, type='l',ylim = c(0, 60),xaxt = "n",xlim = c(tstart, tfinish),col="blue",ylab="soil moisture (%)",xlab="")
 # axis.POSIXct(side = 1, x = micro$dates, at = seq(tstart, tfinish, "weeks"), format = "%d-%m",  las = 2)
@@ -390,23 +391,23 @@ points(dates, tcond$TC5cm, type='l',xlim = c(tstart, tfinish), col = 3, xaxt = "
 # text(tstart, 40,"100cm",col="black",pos = 4, cex = 1.5)
 # mtext(site$name, outer = TRUE)
 
-write.csv(metout, file = 'c:/git/Microclimate.jl/test/data/metout_FordDryLake.csv')
-write.csv(soil, file = 'c:/git/Microclimate.jl/test/data/soil_FordDryLake.csv')
-write.csv(soilmoist, file = 'c:/git/Microclimate.jl/test/data/soilmoist_FordDryLake.csv')
-write.csv(soilpot, file = 'c:/git/Microclimate.jl/test/data/soilpot_FordDryLake.csv')
-write.csv(tcond, file = 'c:/git/Microclimate.jl/test/data/tcond_FordDryLake.csv')
-write.csv(specheat, file = 'c:/git/Microclimate.jl/test/data/specheat_FordDryLake.csv')
-write.csv(densit, file = 'c:/git/Microclimate.jl/test/data/densit_FordDryLake.csv')
-# write.csv(drlam, file = 'c:/git/Microclimate.jl/test/data/drlam_FordDryLake.csv')
-# write.csv(drrlam, file = 'c:/git/Microclimate.jl/test/data/drrlam_FordDryLake.csv')
-# write.csv(srlam, file = 'c:/git/Microclimate.jl/test/data/srlam_FordDryLake.csv')
+write.csv(metout, file = 'c:/git/Microclimate.jl/tests/data/metout_FordDryLake.csv')
+write.csv(soil, file = 'c:/git/Microclimate.jl/tests/data/soil_FordDryLake.csv')
+write.csv(soilmoist, file = 'c:/git/Microclimate.jl/tests/data/soilmoist_FordDryLake.csv')
+write.csv(soilpot, file = 'c:/git/Microclimate.jl/tests/data/soilpot_FordDryLake.csv')
+write.csv(tcond, file = 'c:/git/Microclimate.jl/tests/data/tcond_FordDryLake.csv')
+write.csv(specheat, file = 'c:/git/Microclimate.jl/tests/data/specheat_FordDryLake.csv')
+write.csv(densit, file = 'c:/git/Microclimate.jl/tests/data/densit_FordDryLake.csv')
+# write.csv(drlam, file = 'c:/git/Microclimate.jl/tests/data/drlam_FordDryLake.csv')
+# write.csv(drrlam, file = 'c:/git/Microclimate.jl/tests/data/drrlam_FordDryLake.csv')
+# write.csv(srlam, file = 'c:/git/Microclimate.jl/tests/data/srlam_FordDryLake.csv')
 
-write.csv(TAI, file = 'c:/git/Microclimate.jl/test/data/TAI_FordDryLake.csv', row.names = FALSE)
-write.csv(TAIRhr, file = 'c:/git/Microclimate.jl/test/data/TAIRhr_FordDryLake.csv', row.names = FALSE)
-write.csv(RHhr, file = 'c:/git/Microclimate.jl/test/data/RHhr_FordDryLake.csv', row.names = FALSE)
-write.csv(SOLRhr, file = 'c:/git/Microclimate.jl/test/data/SOLRhr_FordDryLake.csv', row.names = FALSE)
-write.csv(RAINhr, file = 'c:/git/Microclimate.jl/test/data/RAINhr_FordDryLake.csv', row.names = FALSE)
-write.csv(WNhr, file = 'c:/git/Microclimate.jl/test/data/WNhr_FordDryLake.csv', row.names = FALSE)
-write.csv(CLDhr, file = 'c:/git/Microclimate.jl/test/data/CLDhr_FordDryLake.csv', row.names = FALSE)
+write.csv(TAI, file = 'c:/git/Microclimate.jl/tests/data/TAI_FordDryLake.csv', row.names = FALSE)
+write.csv(TAIRhr, file = 'c:/git/Microclimate.jl/tests/data/TAIRhr_FordDryLake.csv', row.names = FALSE)
+write.csv(RHhr, file = 'c:/git/Microclimate.jl/tests/data/RHhr_FordDryLake.csv', row.names = FALSE)
+write.csv(SOLRhr, file = 'c:/git/Microclimate.jl/tests/data/SOLRhr_FordDryLake.csv', row.names = FALSE)
+write.csv(RAINhr, file = 'c:/git/Microclimate.jl/tests/data/RAINhr_FordDryLake.csv', row.names = FALSE)
+write.csv(WNhr, file = 'c:/git/Microclimate.jl/tests/data/WNhr_FordDryLake.csv', row.names = FALSE)
+write.csv(CLDhr, file = 'c:/git/Microclimate.jl/tests/data/CLDhr_FordDryLake.csv', row.names = FALSE)
 
-write.csv(CampNormTbl9_1, file = 'c:/git/Microclimate.jl/test/data/CampNormTbl9_1.csv', row.names = FALSE)
+write.csv(CampNormTbl9_1, file = 'c:/git/Microclimate.jl/tests/data/CampNormTbl9_1.csv', row.names = FALSE)

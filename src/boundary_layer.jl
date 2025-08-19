@@ -40,8 +40,8 @@ function get_profile(;
         dry_air_out = dry_air(u"K"(TAVE), elev=elev)
         wet_air_out = wet_air(u"K"(TAVE), rh=rh)
         ρ = dry_air_out.ρ_air
-        cp = wet_air_out.cp
-        return u"(cal*g)/(g*cm^3*K)"(ρ * cp)
+        c_p = wet_air_out.c_p
+        return u"(cal*g)/(g*cm^3*K)"(ρ * c_p)
     end
     function PHI(z, GAM, AMOL)
         return (1 - min(1, GAM * ustrip(z / AMOL)))^0.25
@@ -125,10 +125,10 @@ function get_profile(;
     dry_air_out = dry_air(u"K"(TAREF), elev=elev)
     wet_air_out = wet_air(u"K"(TAREF), rh=rh)
     ρ = dry_air_out.ρ_air
-    cp = wet_air_out.cp
+    c_p = wet_air_out.c_p
     g = 9.80665u"m/s^2"
     TREF = u"K"(TAREF)
-    rcptkg = u"cal*minute^2/cm^4"(ρ * cp * TREF / (κ * g))
+    rcptkg = u"cal*minute^2/cm^4"(ρ * c_p * TREF / (κ * g))
     #rcptkg = 6.003e-8u"cal*minute^2/cm^4"
     GAM = 16
     ZRATIO = z / z0 + 1.0
@@ -136,7 +136,7 @@ function get_profile(;
     USTAR = κ * V / DUM
     DIFFT = T1 - T3
     TAVE = (T3 + T1) / 2
-    RCP = RHOCP(TAVE, elev, rh)
+    RCP = RHOCP(TAVE)#, elev, rh)
     AMOL = -30.0u"cm"
     if zh > 0.0u"m"
         STS = 0.62 / (ustrip(z0) * ustrip(USTAR) / 12)^0.45

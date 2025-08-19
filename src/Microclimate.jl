@@ -16,11 +16,11 @@ export sinec!, vsine, hourly_vars
 
 export hour_angle, solar_geometry, check_skylight, elev_corr, gamma, dchxy, dexpi, solrad
 
-export get_profile
+export get_profile, get_longwave, get_pressure, get_λ_evap
 
 export soil_properties
 
-export init_soillayers, MicroInputs
+export init_soillayers, init_moistlayers, MicroInputs
 
 export soil_energy_balance!, evap, soil_water_balance
 

@@ -25,7 +25,7 @@ function soil_energy_balance!(
     N = length(dep)
 
     # get soil properties
-    λ_b, cp_b, ρ_b = soil_properties(T, θ_soil, nodes, soilprops, elev, runmoist, false)
+    λ_b, c_p_b, ρ_b = soil_properties(T, θ_soil, nodes, soilprops, elev, runmoist, false)
 
     # Get environmental data at time t
     f = i.forcing
@@ -42,7 +42,7 @@ function soil_energy_balance!(
     depp[1:N] = dep
     # Compute soil layer properties
     @inbounds for i in 1:N
-        rcsp = ρ_b[i] * cp_b[i]
+        rcsp = ρ_b[i] * c_p_b[i]
         if i == 1
             wc[i] = rcsp * depp[2] / 2.0
             sok = λ_b[1]
@@ -103,9 +103,9 @@ function soil_energy_balance!(
     
     # Evaporation
     wet_air_out = wet_air(u"K"(tair); rh=rh, P_atmos=P_atmos)
-    cp_air = wet_air_out.cp
+    c_p_air = wet_air_out.c_p
     ρ_air = wet_air_out.ρ_air
-    hd = (hc / (cp_air * ρ_air)) * (0.71 / 0.60)^0.666
+    hd = (hc / (c_p_air * ρ_air)) * (0.71 / 0.60)^0.666
     qevap, gwsurf = evap(tsurf=u"K"(T[1]), tair=u"K"(tair), rh=rh, rhsurf=100.0, hd=hd, elev=elev, pctwet=pctwet, sat=false)
 
     # Energy balance at surface
@@ -298,7 +298,7 @@ function soil_water_balance(;
     K[1] = 0.0u"kg*s/m^3"
 
     # Evapotranspiration
-    EP = exp(-0.82 * lai) * ET # partition potential evaporation from potential evapotranspiration, EQ12.30
+    EP = exp(-0.82 * ustrip(lai)) * ET # partition potential evaporation from potential evapotranspiration, EQ12.30
     TP = ET - EP # now get potential transpiration
 
     # Plant water uptake
