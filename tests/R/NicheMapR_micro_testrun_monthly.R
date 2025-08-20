@@ -163,8 +163,8 @@ microinput<-c(doynum, RUF, ERR, Usrhyt, Refhyt, Numtyps, Z01, Z02, ZH1, ZH2, ida
 micro<-list(microinput = microinput, tides = tides, doy = doy, SLES = SLES, DEP = DEP, Nodes = Nodes, MAXSHADES = MAXSHADES, MINSHADES = MINSHADES, TMAXX = TMAXX, TMINN = TMINN, RHMAXX = RHMAXX, RHMINN = RHMINN, CCMAXX = CCMAXX, CCMINN = CCMINN, WNMAXX = WNMAXX, WNMINN = WNMINN, TAIRhr = TAIRhr, RHhr = RHhr, WNhr = WNhr, CLDhr = CLDhr, SOLRhr = SOLRhr, RAINhr = RAINhr, ZENhr = ZENhr, IRDhr = IRDhr, REFLS = REFLS, PCTWET = PCTWET, soilinit = soilinit, hori = hori, TAI = TAI, soilprops = soilprops, moists = moists, RAINFALL = RAINFALL, tannulrun = tannulrun, PE = PE, KS = KS, BB = BB, BD = BD, DD = DD, L = L, LAI = LAI)
 
 if(write_input){
-  if(dir.exists("../data/init") == FALSE){
-    dir.create("../data/init")
+  if(dir.exists("../data/init_monthly") == FALSE){
+    dir.create("../data/init_monthly")
   }
   write.table(as.matrix(microinput), file = "../data/init_monthly/microinput.csv", sep = ",", col.names = NA, qmethod = "double")
   write.table(doy, file = "../data/init_monthly/doy.csv", sep = ",", col.names = NA, qmethod = "double")
