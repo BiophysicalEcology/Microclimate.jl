@@ -67,7 +67,7 @@ runmoist = Bool(Int(microinput[:runmoist]))
 ndays = length(days)
 SHADES = (DataFrame(CSV.File("tests/data/init_monthly/MINSHADES.csv"))[:, 2] * 1.0) # daily shade (%)
 SLES = (DataFrame(CSV.File("tests/data/init_monthly/SLES.csv"))[:, 2] * 1.0) # set up vector of ground emissivities for each day
-REFLS = (DataFrame(CSV.File("tests/data/init_monthly/REFLS.csv"))[:, 2] * 1.0) # set up vector of soil reflectances for each day (decimal %)
+refls = (DataFrame(CSV.File("tests/data/init_monthly/REFLS.csv"))[:, 2] * 1.0) # set up vector of soil reflectances for each day (decimal %)
 PCTWETS = (DataFrame(CSV.File("tests/data/init_monthly/PCTWET.csv"))[:, 2] * 1.0) # set up vector of soil wetness for each day (%)
 tannul = mean(Unitful.ustrip.(vcat(TMAXX, TMINN)))u"°C" # annual mean temperature for getting monthly deep soil temperature (°C)
 tannulrun = fill(tannul, ndays) # monthly deep soil temperature (2m) (°C)
@@ -94,11 +94,10 @@ for i in 2:numnodes
     soilprops[i, :] .= soilprops[1, :]
 end
 soillayers = init_soillayers(numnodes)  # only once
-refl = REFLS[1]
 soilinit = (DataFrame(CSV.File("tests/data/init_monthly/soilinit.csv"))[1:numnodes, 2] * 1.0)u"°C" # set up vector of soil wetness for each day (%)
 ∑phase = zeros(Float64, numnodes)u"J"
 
-# compute solar radiation (need to make refl time varying)
+# compute solar radiation
 solrad_out = solrad(;
     days,
     hours,
@@ -107,7 +106,7 @@ solrad_out = solrad(;
     hori,
     slope,
     aspect,
-    refl,
+    refls,
     iuv,
 )
 solrad_out.Zenith[solrad_out.Zenith.>90u"°"] .= 90u"°"
@@ -155,7 +154,7 @@ for iday in 1:12#ndays
     sub2 = (iday*25-25+1):(iday*25) # for getting mean monthly over the 25 hrs as in fortran version
     shade = SHADES[iday] # daily shade (%)
     sle = SLES[iday] # set up vector of ground emissivities for each day
-    refl = REFLS[iday]
+    refl = refls[iday]
     slep = sle # - cloud emissivity
     pctwet = PCTWETS[iday] # set up vector of soil wetness for each day
     tdeep = u"K"(tannulrun[iday]) # annual mean temperature for getting daily deep soil temperature (°C)

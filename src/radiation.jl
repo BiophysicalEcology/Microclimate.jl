@@ -70,55 +70,6 @@ function solar_geometry(;
 end
 
 """
-    check_skylight!(z, nmax, SRINT, GRINT)
-
-Checks for possible skylight before sunrise or after sunset based on zenith angle.
-Modifies SRINT and GRINT at index `nmax` if skylight is present. Based on 
- and Documenta Geigy Scientific 
-Tables. 1966. 6th ed. K. Diem, ed.
-
-# Arguments
-- `z::Quantity`: Zenith angle
-- `nmax::Int`: Index into result arrays
-- `SRINT::Vector{Quantity}`: Scattered radiation array [W/m²]
-- `GRINT::Vector{Quantity}`: Global radiation array [W/m²]
-- `SRs::Vector{Quantity}`: Scattered radiation array [W/m²]
-- `GRs::Vector{Quantity}`: Global radiation array [W/m²]
-
-# References
-McCullough & Porter (1971). Ecology, 52(6), 1008–1015. https://doi.org/10.2307/1933806
-G.V. Rozenberg. 1966. Twilight. Plenum Press
-Documenta Geigy Scientific Tables. 1966. 6th ed. K. Diem, ed.
-"""
-function check_skylight!(
-    z::Quantity,
-    nmax::Int,
-    SRINT::Vector,
-    GRINT::Vector,
-    SRs::Vector,
-    GRs::Vector)
-    Z = uconvert(u"°", z).val # convert to degrees
-    if Z < 107.0u"°"
-        if Z > 88.0u"°"
-            # Compute skylight based on G.V. Rozenberg. 1966. Twilight. Plenum Press.
-            # p. 18,19.  First computing lumens: y = b - mx. Regression of data is:
-            Elog = 41.34615384 - 0.423076923 * ustrip(u"°", Z)
-            # Converting lux (lumen/m2) to W/m2 on horizontal surface -
-            # Twilight - scattered skylight before sunrise or after sunset
-            # From p. 239 Documenta Geigy Scientific Tables. 1966. 6th ed. K. Diem, ed.
-            # Mech./elect equiv. of light = 1.46*10^-3 kW/lumen
-            Skylum = (10.0^Elog) * 1.46E-03u"mW * cm^-2"
-            SRINT[nmax] = Skylum
-            GRINT[nmax] = SRINT[nmax]
-            GRs[step] = GRINT[nmax]
-            SRs[step] = SRINT[nmax]
-        end
-    end
-
-    return nothing
-end
-
-"""
     elev_corr(elev)
 
 Calculates smooth polynomial approximations of atmospheric constituent correction factors 
@@ -777,104 +728,104 @@ function dchxy(TAU1::Float64, CFA::Vector{Float64}, NCASE::Int)
     CHYA[1] = XB[1]
     nomitr = 1 # Fortran line 362
     converged = false
-while converged == false
-    for I in 2:101
-        for IC in 1:101
-            XD[IC] = PSI[IC] * (FNX[I] * FNX[IC] - FNY[I] * FNY[IC]) / (AMU[I] + AMU[IC])
-            if I != IC
-                XE[IC] = PSI[IC] * (FNY[I] * FNX[IC] - FNX[I] * FNY[IC]) / (AMU[I] - AMU[IC])
-            end
-            if I <= 3
-                XE[I] = 0.5 * (XE[I+1] + XE[I-1])
-            else
-                if I > 3 && I <= 5
-                    # Everett's formula two points on either side
-                    XE[I] = 0.0625 * (9.0 * (XE[I+1] + XE[I-1]) - XE[I+3] - XE[I-3])
+    while converged == false
+        for I in 2:101
+            for IC in 1:101
+                XD[IC] = PSI[IC] * (FNX[I] * FNX[IC] - FNY[I] * FNY[IC]) / (AMU[I] + AMU[IC])
+                if I != IC
+                    XE[IC] = PSI[IC] * (FNY[I] * FNX[IC] - FNX[I] * FNY[IC]) / (AMU[I] - AMU[IC])
+                end
+                if I <= 3
+                    XE[I] = 0.5 * (XE[I+1] + XE[I-1])
                 else
-                    if I > 5 && I <= 96
-                        # Everett's formula three points on either side
-                        XE[I] = 3.0 * (XE[I+5] + XE[I-5]) + 150.0 * (XE[I+1] + XE[I-1]) - 25.0 * (XE[I+3] + XE[I-3])
-                        XE[I] /= 256.0
+                    if I > 3 && I <= 5
+                        # Everett's formula two points on either side
+                        XE[I] = 0.0625 * (9.0 * (XE[I+1] + XE[I-1]) - XE[I+3] - XE[I-3])
                     else
-                        # Interpolation for I > 96
-                        XE[I] = 5.0 * XE[I-1] + 10.0 * XE[I-3] + XE[I-5] - 10.0 * XE[I-2] - 5.0 * XE[I-4]
+                        if I > 5 && I <= 96
+                            # Everett's formula three points on either side
+                            XE[I] = 3.0 * (XE[I+5] + XE[I-5]) + 150.0 * (XE[I+1] + XE[I-1]) - 25.0 * (XE[I+3] + XE[I-3])
+                            XE[I] /= 256.0
+                        else
+                            # Interpolation for I > 96
+                            XE[I] = 5.0 * XE[I-1] + 10.0 * XE[I-3] + XE[I-5] - 10.0 * XE[I-2] - 5.0 * XE[I-4]
+                        end
                     end
                 end
+                CHXA[I] = 0.0
+                CHYA[I] = 0.0
+                for IC in 1:101
+                    CHXA[I] += XA[IC] * XD[IC]
+                    CHYA[I] += XA[IC] * XE[IC]
+                end
+                CHXA[I] = 1.0 + AMU[I] * CHXA[I]
+                CHYA[I] = XB[I] + AMU[I] * CHYA[I]
             end
-            CHXA[I] = 0.0
-            CHYA[I] = 0.0
-            for IC in 1:101
-                CHXA[I] += XA[IC] * XD[IC]
-                CHYA[I] += XA[IC] * XE[IC]
-            end
-            CHXA[I] = 1.0 + AMU[I] * CHXA[I]
-            CHYA[I] = XB[I] + AMU[I] * CHYA[I]
         end
-    end
-    # correction to the approximation
+        # correction to the approximation
 
-    if nomitr == 1 && TAU1 != 0 # Fortran line 398
-        TEMX[1] = -dexpi(-TAU1)
-        for n in 2:7
-            TEMX[n] = (XB[101] - TAU1 * TEMX[n-1]) / (n - 1)
+        if nomitr == 1 && TAU1 != 0 # Fortran line 398
+            TEMX[1] = -dexpi(-TAU1)
+            for n in 2:7
+                TEMX[n] = (XB[101] - TAU1 * TEMX[n-1]) / (n - 1)
+            end
+            PERB = 2.0 * (
+                CFA[1] * (0.5 - TEMX[3]) +
+                CFA[2] * (0.25 - TEMX[5]) +
+                CFA[3] * ((1 / 6) - TEMX[7])
+            )
         end
-        PERB = 2.0 * (
-            CFA[1] * (0.5 - TEMX[3]) +
-            CFA[2] * (0.25 - TEMX[5]) +
-            CFA[3] * ((1 / 6) - TEMX[7])
-        )
-    end
-    # accumulate TEMA, TEMB
-    if TAU1 != 0.0
-        TEMA = 0.0
-        TEMB = 0.0
+        # accumulate TEMA, TEMB
+        if TAU1 != 0.0
+            TEMA = 0.0
+            TEMB = 0.0
+            for i in 1:101
+                TEMA += CHXA[i] * PSI[i] * XA[i]
+                TEMB += CHYA[i] * PSI[i] * XA[i]
+            end
+            # new TEMC
+            c1 = (1 - 2 * PERA) / (1 - TEMA + TEMB)
+            TEMC = TAU1 == 0 ? 0.0 : (1 - TEMA - TEMB - c1) / PERB
+        end
+        if TAU1 == 0.0
+            TEMC = 0.0
+        end
         for i in 1:101
-            TEMA += CHXA[i] * PSI[i] * XA[i]  
-            TEMB += CHYA[i] * PSI[i] * XA[i]  
+            TEMD = TEMC * AMU[i] * (1.0 - XB[i])
+            CHX[i] = CHXA[i] + TEMD
+            CHY[i] = CHYA[i] + TEMD
         end
-        # new TEMC
-        c1 = (1 - 2 * PERA) / (1 - TEMA + TEMB)
-        TEMC = TAU1 == 0 ? 0.0 : (1 - TEMA - TEMB - c1) / PERB
-    end
-    if TAU1 == 0.0
-        TEMC = 0.0
-    end
-    for i in 1:101
-        TEMD = TEMC * AMU[i] * (1.0 - XB[i])
-        CHX[i] = CHXA[i] + TEMD
-        CHY[i] = CHYA[i] + TEMD
-    end
-    if NPRT != 0 # Fortran line 422
-        TEMC_out = TEMA^2 - 2.0*TEMA - TEMB^2 + 2.0*PERA
-        #@printf(" NOMITR = %d, TEMA = %g, TEMB = %g, TEMC = %g\n", NOMITR, TEMA, TEMB, TEMC_out)
-    end
+        if NPRT != 0 # Fortran line 422
+            TEMC_out = TEMA^2 - 2.0 * TEMA - TEMB^2 + 2.0 * PERA
+            #@printf(" NOMITR = %d, TEMA = %g, TEMB = %g, TEMC = %g\n", NOMITR, TEMA, TEMB, TEMC_out)
+        end
 
-    # Check for convergence
-    if nomitr > 1
-        #converged = true
-        for I in 2:101
-            rel_error = abs((CHY[I] - FNY[I]) / CHY[I])
-            if rel_error <= 2.0e-4
-                converged = true
-                break
+        # Check for convergence
+        if nomitr > 1
+            #converged = true
+            for I in 2:101
+                rel_error = abs((CHY[I] - FNY[I]) / CHY[I])
+                if rel_error <= 2.0e-4
+                    converged = true
+                    break
+                end
             end
         end
-    end
 
-    if converged
-        break
-    end
+        if converged
+            break
+        end
 
-    # Prepare for next iteration
-    for I in 1:101
-        FNX[I] = CHX[I]
-        FNY[I] = CHY[I]
+        # Prepare for next iteration
+        for I in 1:101
+            FNX[I] = CHX[I]
+            FNY[I] = CHY[I]
+        end
+        nomitr += 1
+        if nomitr > 15
+            break
+        end
     end
-    nomitr += 1
-    if nomitr > 15
-        break
-    end
-end
 
     # if NCASE ≠ 0, generate standard solution (Fortran 975…990)
     if NCASE != 0
@@ -1056,7 +1007,7 @@ function solrad(;
     slope::Quantity=0u"°",
     aspect::Quantity=0u"°",
     hori::Vector{typeof(0.0u"°")}=fill(0.0, 24) .* u"°",
-    refl::Real=0.15, # substrate solar reflectivity (decimal %)
+    refls::Vector{<:Real}=fill(0.15, length(days)), # substrate solar reflectivity (decimal %)
     cmH2O::Real=1, # precipitable cm H2O in air column, 0.1 = VERY DRY; 1 = MOIST AIR CONDITIONS; 2 = HUMID, TROPICAL CONDITIONS (note this is for the whole atmospheric profile, not just near the ground)
     ϵ::Real=0.0167238,
     ω::Real=2π / 365,
@@ -1141,9 +1092,7 @@ function solrad(;
         42, 41, 40, 39, 38, 34, 33, 32, 31, 30, 29, 28, 26, 25, 24, 24, 23, 22, 21, 19, 16, 15,
         12, 11, 10.7, 10.3, 10, 9.7, 9, 8.8, 8.5, 7.9, 7.4, 6.8, 6.7, 6.6, 6.5, 6.4, 6.2,
         5.9, 5.5, 5.4, 4.8, 4.3, 3.9, 3.5, 3.1, 2.6, 2.3, 1.9, 1.7, 1.5, 1.4, 1.2, 1.1, 1, 1
-    ] * u"mW * cm^-2 * nm^-1",
-
-    FD::Matrix{<:Real}=reshape([
+    ] * u"mW * cm^-2 * nm^-1", FD::Matrix{<:Real}=reshape([
             8.00e-5, 6.50e-5, 4.00e-5, 2.30e-5, 1.00e-5, 4.50e-6, 1.00e-6, 1.00e-7, 5.50e-9,
             1.00e-9, 3.50e-10, 1.60e-10, 1.00e-10, 1.00e-10, 1.00e-10, 1.00e-10, 1.00e-10,
             1.00e-10, 1.00e-10, 1.00e-3, 9.50e-4, 9.00e-4, 8.00e-4, 7.00e-4, 6.00e-4,
@@ -1219,7 +1168,7 @@ function solrad(;
     Zs = fill(90.0, nsteps)u"°"                 # zenith angles
     ZSLs = fill(90.0, nsteps)u"°"               # slope zenith angles
     #AZIs = fill(0.0, nsteps)u"°"               # azimuth angles
-    AZIs = Vector{Union{Missing, typeof(0.0u"°")}}(undef, nsteps)
+    AZIs = Vector{Union{Missing,typeof(0.0u"°")}}(undef, nsteps)
     fill!(AZIs, 90.0u"°")   # initialize with 0° if you want
     HHs = fill(0.0, ndays)                      # hour angles
     tsns = fill(0.0, ndays)                     # hour at solar noon
@@ -1240,7 +1189,7 @@ function solrad(;
         DRRλ = GRINT * u"1/nm"              # wavelength-specific direct Rayleigh radiation component
         DRλ = GRINT * u"1/nm"               # wavelength-specific direct radiation component
         SRλ = GRINT * u"1/nm"               # wavelength-specific scattered radiation component
-
+        refl = refls[i]
         for j in 1:ntimes
             d = days[i]
             t = hours[j]
@@ -1250,9 +1199,8 @@ function solrad(;
             Zsl = Z
             amult = 1.0
             if sign(lat) < 0
-                amult=-1.0
+                amult = -1.0
             end
-            #check_skylight!(z, nmax, SRINT, GRINT, SRs, GRs) # checking zenith angle for possible skylight before sunrise or after sunset
             if Z < 107.0u"°"
                 if Z > 88.0u"°"
                     # Compute skylight based on G.V. Rozenberg. 1966. Twilight. Plenum Press.
@@ -1293,7 +1241,7 @@ function solrad(;
                 #ζ, δ, z, AR2 = solar_geometry(d=d, lat=lat, h=h, d0=d0, ω=ω, ϵ=ϵ, se=se) # compute ecliptic, declination, zenith angle and (a/r)^2 - redundant?
                 alt = (π / 2 - z)u"rad"
                 altdeg = uconvert(u"°", alt).val
-                
+
                 # tazsun corresponds to tangent of azimuth
                 tazsun = sin(h) / (cos(lat) * tan(δ) - sin(lat) * cos(h))
 
@@ -1336,7 +1284,7 @@ function solrad(;
                 # horizon angle - check this works when starting at 0 rather than e.g. 15 deg
                 azi = range(0u"°", stop=360u"°" - 360u"°" / length(hori), length=length(hori))
                 ahoriz = hori[argmin(abs.(dazsun .- azi))]
-                                
+
                 # slope zenith angle calculation (Eq. 3.15 in Sellers 1965. Physical Climatology. U. Chicago Press)
                 if slope > 0u"°"
                     czsl = cos(z) * cos(slope) + sin(z) * sin(slope) * cos(dazsun - aspect)
@@ -1529,7 +1477,7 @@ function get_longwave(;
 
     # Atmospheric radiation
     P_vap = wet_air_out.P_vap
-    arad = u"W/m^2"(ustrip(1.72 * (ustrip(u"kPa"(P_vap)) / ustrip(u"K"(tair)+0.01u"K")) ^ (1.0/7.0)) * σ * (u"K"(tair)+0.01u"K") ^ 4.0) # Campbell and Norman 1998 eq. 10.10 to get emissivity of sky
+    arad = u"W/m^2"(ustrip(1.72 * (ustrip(u"kPa"(P_vap)) / ustrip(u"K"(tair) + 0.01u"K"))^(1.0 / 7.0)) * σ * (u"K"(tair) + 0.01u"K")^4.0) # Campbell and Norman 1998 eq. 10.10 to get emissivity of sky
     #arad = ((0.0000092 * (u"K"(tair))^2) * σ * (u"K"(tair))^4) / 1u"K^2" # Swinbank, Eq. 10.11 in Campbell and Norman 1998
 
     # Cloud radiation temperature (shade approximation, TAIR - 2°C)
@@ -1551,14 +1499,14 @@ function get_longwave(;
     qradhl = hrad
     qrad = (qradsk + qradvg) * viewf + qradhl * (1.0 - viewf) - qradgr
     tsky = (((qradsk + qradvg) * viewf + qradhl * (1.0 - viewf)) / σ)^0.25
-    return(
-        Tsky = tsky,
-        Qrad = qrad,
-        Qrad_sky = qradsk,
-        Qrad_veg = qradvg,
-        Qrad_ground = qradgr,
-        Qrad_hill = qradhl
-        )
+    return (
+        Tsky=tsky,
+        Qrad=qrad,
+        Qrad_sky=qradsk,
+        Qrad_veg=qradvg,
+        Qrad_ground=qradgr,
+        Qrad_hill=qradhl
+    )
 end
 
 #end

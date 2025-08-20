@@ -75,7 +75,7 @@ spinup = Bool(Int(microinput[:spinup]))
 ndays = length(days)
 SHADES = (DataFrame(CSV.File("tests/data/init_daily/MINSHADES.csv"))[:, 2] * 1.0) # daily shade (%)
 SLES = (DataFrame(CSV.File("tests/data/init_daily/SLES.csv"))[:, 2] * 1.0) # set up vector of ground emissivities for each day
-REFLS = (DataFrame(CSV.File("tests/data/init_daily/REFLS.csv"))[:, 2] * 1.0) # set up vector of soil reflectances for each day (decimal %)
+refls = (DataFrame(CSV.File("tests/data/init_daily/REFLS.csv"))[:, 2] * 1.0) # set up vector of soil reflectances for each day (decimal %)
 PCTWETS = (DataFrame(CSV.File("tests/data/init_daily/PCTWET.csv"))[:, 2] * 1.0) # set up vector of soil wetness for each day (%)
 tannul = mean(Unitful.ustrip.(TAIRs))u"°C" # annual mean temperature for getting monthly deep soil temperature (°C)
 tannulrun = fill(tannul, ndays) # monthly deep soil temperature (2m) (°C)
@@ -165,9 +165,9 @@ solrad_out = solrad(;
     hori,
     slope,
     aspect,
-    refl=REFLS[1],
+    refls,
     iuv,
-    τA=τA)
+    τA)
 # only need zenith angles in this case
 solrad_out.Zenith[solrad_out.Zenith.>90u"°"] .= 90u"°"
 solrad_out.ZenithSlope[solrad_out.ZenithSlope.>90u"°"] .= 90u"°"
@@ -270,7 +270,7 @@ niter = ustrip(3600 / timestep)
 for j in 1:35#ndays
     iday = j
     lai = LAIs[iday]
-    refl = REFLS[iday]
+    refl = refls[iday]
     shade = SHADES[iday] # daily shade (%)
     sle = SLES[iday] # set up vector of ground emissivities for each day
     slep = sle # - cloud emissivity
