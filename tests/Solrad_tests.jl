@@ -40,8 +40,10 @@ elev = (microinput[:ALTT])*1.0u"m" # elevation
 hori = (DataFrame(CSV.File("tests/data/init_monthly/hori.csv"))[:, 2])*1.0u"°"#fill(0.0u"°", 24) # enter the horizon angles (degrees) so that they go from 0 degrees azimuth (north) clockwise in 15 degree intervals
 REFLS = (DataFrame(CSV.File("tests/data/init_monthly/REFLS.csv"))[:, 2]*1.0) # set up vector of soil reflectances for each day (decimal %)
 refl = REFLS[1]
-CCMINN = (DataFrame(CSV.File("tests/data/init_monthly/CCMINN.csv"))[:, 2]/100.) # min cloud cover (dec%)
-CCMAXX = (DataFrame(CSV.File("tests/data/init_monthly/CCMAXX.csv"))[:, 2]/100.) # max cloud cover (dec%)
+TIMINS = [microinput[:TIMINS1], microinput[:TIMINS2], microinput[:TIMINS3], microinput[:TIMINS4]] # time of minima for air temp, wind, humidity and cloud cover (h), air & wind mins relative to sunrise, humidity and cloud cover mins relative to solar noon
+TIMAXS = [microinput[:TIMAXS1], microinput[:TIMAXS2], microinput[:TIMAXS3], microinput[:TIMAXS4]] # time of maxima for air temp, wind, humidity and cloud cover (h), air temp & wind maxs relative to solar noon, humidity and cloud cover maxs relative to sunrise
+CCMINN = (DataFrame(CSV.File("tests/data/init_monthly/CCMINN.csv"))[:, 2] * 1.0) # min cloud cover (%)
+CCMAXX = (DataFrame(CSV.File("tests/data/init_monthly/CCMAXX.csv"))[:, 2] * 1.0) # max cloud cover (c%)
 cloud = CCMINN .+ CCMINN ./ 2
 
 hours = collect(0.:1:24.)
@@ -58,13 +60,23 @@ solrad_out = @inferred solrad(
     refl = refl,     # substrate solar reflectivity (decimal %)
     iuv = iuv        # use Dave_Furkawa theory for UV radiation (290-360 nm)?
     )
-
+CLDs = hourly_vars(
+    CCMINN,
+    CCMAXX,
+    solrad_out,
+    TIMINS,
+    TIMAXS,
+    daily
+)
+    
 # extract output
 Zenith = solrad_out.Zenith
 Zenith[Zenith.>90u"°"] .= 90u"°"
 HHsr = solrad_out.HHsr
 tsn = solrad_out.tsn
 Global = solrad_out.Global
+# Angstrom formula (formula 5.33 on P. 177 of "Climate Data and Resources" by Edward Linacre 1992
+Global = Global .* (0.36 .+ 0.64 * (1.0 .- (CLDs / 100.0))) # Angstrom formula (formula 5.33 on P. 177 of "Climate Data and Resources" by Edward Linacre 1992
 Scattered = solrad_out.Scattered
 Direct = solrad_out.Direct
 Rayleigh = solrad_out.Rayleigh

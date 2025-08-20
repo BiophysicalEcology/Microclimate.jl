@@ -166,7 +166,8 @@ function vsine(VMIN, VMAX, TIMSR, TIMSS, TIMIN, TIMAX, daily, iday, IVAR)
     return YA
 end
 
-function hourly_vars(;
+# this version does all variables
+function hourly_vars(
     TMINN::Vector,
     TMAXX::Vector,
     WNMINN::Vector,
@@ -185,8 +186,6 @@ function hourly_vars(;
     Clds = fill(CCMINN[1], 25 * ndays)
     RHs = fill(RHMINN[1], 25 * ndays)
     WNs = fill(WNMINN[1], 25 * ndays)
-
-
 
     for iday in 1:ndays
         ITAIR = TMINN[iday] # initial air temperature for daily
@@ -294,4 +293,56 @@ function hourly_vars(;
         Clds[(iday*25-24):(iday*25)] = CLDARRY[1:25]
     end
     return Tairs, WNs, RHs, Clds
+end
+
+# this does just cloud but should generalise first version better down the track
+function hourly_vars(
+    CCMINN::Vector,
+    CCMAXX::Vector,
+    solrad_out::Any,
+    TIMINS::Vector=[0, 0, 1, 1],
+    TIMAXS::Vector=[1, 1, 0, 0],
+    daily::Bool=false)
+
+    ndays = length(CCMINN)
+    Clds = fill(CCMINN[1], 25 * ndays)
+
+    for iday in 1:ndays
+        ICLD = CCMINN[iday]
+        TIMARY = fill(0.0, 25)
+        CLDARRY = fill(ICLD, 25)
+
+        HH = solrad_out.HHsr[iday]
+        tsn = solrad_out.tsn[iday]
+
+        #     Air temperature calculations
+        #     SUNSET IN MILITARY TIME
+        HHINT = trunc(HH)
+        FRACT = (HH - HHINT) * 60.0
+        HSINT = trunc(tsn)
+        FRACTS = (tsn - HSINT) * 60.0
+        TIMSS = (HSINT * 100.0 + FRACTS) + (HHINT * 100.0 + FRACT)
+        #     SUNRISE IN MILITARY TIME
+        DELT = tsn - HH
+        HRINT = trunc(DELT)
+        FRACTR = (DELT - HRINT) * 60.0
+
+        # cloud cover
+        VMIN = CCMINN[iday]
+        VMAX = CCMAXX[iday]
+        #      SETTING MAX & MIN TIMES RELATIVE TO SUNRISE & SOLAR NOON
+        #     TIME OF MINIMUM
+        TSRHR = TIMINS[4]
+        TIMSR = (HRINT * 100.0 + FRACTR) + (TSRHR * 100.0)
+        #      TIME OF MAXIMUM at sunrise for relative humidity
+        TSNHR = TIMAXS[4] #+ TIMCOR
+        TIMTMX = (HSINT * 100.0 + FRACTS) + (TSNHR * 100.0)
+        TIMIN = TIMSR
+        TIMAX = TIMTMX
+        IVAR = ICLD
+        CLDARRY = vsine(VMIN, VMAX, TIMSR, TIMSS, TIMIN, TIMAX, daily, iday, IVAR)
+
+        Clds[(iday*25-24):(iday*25)] = CLDARRY[1:25]
+    end
+    return Clds
 end

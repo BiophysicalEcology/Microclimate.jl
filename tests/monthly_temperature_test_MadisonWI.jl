@@ -113,7 +113,7 @@ solrad_out = solrad(;
 solrad_out.Zenith[solrad_out.Zenith.>90u"°"] .= 90u"°"
 
 # interpolate air temperature to hourly
-TAIRs, WNs, RHs, CLDs = hourly_vars(;
+TAIRs, WNs, RHs, CLDs = hourly_vars(
     TMINN,
     TMAXX,
     WNMINN,
