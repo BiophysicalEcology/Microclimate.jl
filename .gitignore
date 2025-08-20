@@ -109,3 +109,13 @@ tests/data/init_monthly/CCMINN.csv
 tests/data/init_monthly/moists.csv
 tests/data/init_monthly/soilinit.csv
 tests/data/init_monthly/CCMAXX.csv
+tests/data/init_monthly/CCMAXX.csv
+tests/data/drlam_monthly.csv
+tests/data/drlam_monthly.csv
+tests/data/init_monthly/moists.csv
+tests/data/init_monthly/CCMINN.csv
+tests/data/init_monthly/CCMAXX.csv
+tests/data/srlam_monthly.csv
+tests/data/soil_monthly.csv
+tests/data/metout_monthly.csv
+tests/data/drrlam_monthly.csv
