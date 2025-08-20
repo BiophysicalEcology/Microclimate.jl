@@ -129,6 +129,7 @@ TAIRs, WNs, RHs, CLDs = hourly_vars(;
 )
 RHs[RHs.>100] .= 100
 CLDs[CLDs.>100] .= 100
+
 TAIRs25 = TAIRs # keeping a copy to get mean monthly over 25 hrs as in fortran
 skip25 = setdiff(1:length(solrad_out.Zenith), 25:25:length(solrad_out.Zenith))
 ZENRs = solrad_out.Zenith[skip25] # remove every 25th output
@@ -138,6 +139,8 @@ TAIRs = TAIRs[skip25]
 WNs = WNs[skip25]
 RHs = RHs[skip25]
 CLDs = CLDs[skip25]
+# Angstrom formula (formula 5.33 on P. 177 of "Climate Data and Resources" by Edward Linacre 1992
+SOLRs = SOLRs .* (0.36 .+ 0.64 * (1.0 .- (CLDs / 100.0))) # Angstrom formula (formula 5.33 on P. 177 of "Climate Data and Resources" by Edward Linacre 1992
 
 # simulate a day
 iday = 1
@@ -145,7 +148,6 @@ nsteps = length(hours)
 T_soils = Array{Float64}(undef, nsteps, numnodes)u"K"
 soiltemps = nothing
 T0 = u"K".(soilinit)
-T_past = T0
 ∑phase = zeros(Float64, numnodes)u"J"
 
 for iday in 1:12#ndays
@@ -250,7 +252,6 @@ for iday in 1:12#ndays
                T0 = soiltemps[:, 2]
             end
             T_soils[step, :] = T0
-            T_past = T0
             step += 1
         end
     end

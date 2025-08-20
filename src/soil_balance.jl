@@ -55,10 +55,6 @@ function soil_energy_balance!(
     end
 
     # Solar radiation
-    if cloud > 0.0
-        # Angstrom formula (formula 5.33 on P. 177 of "Climate Data and Resources" by Edward Linacre 1992
-        solr = solr * (0.36 + 0.64 * (1.0 - (cloud / 100.0))) # Angstrom formula (formula 5.33 on P. 177 of "Climate Data and Resources" by Edward Linacre 1992
-    end
     qsolar = sabnew * solr * ((100.0 - shade) / 100.0)
     if slope > 0 && zenr < 90u"°"
         cz = cosd(zenr)
