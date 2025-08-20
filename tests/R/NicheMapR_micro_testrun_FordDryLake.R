@@ -398,16 +398,3 @@ write.csv(soilpot, file = 'c:/git/Microclimate.jl/tests/data/soilpot_FordDryLake
 write.csv(tcond, file = 'c:/git/Microclimate.jl/tests/data/tcond_FordDryLake.csv')
 write.csv(specheat, file = 'c:/git/Microclimate.jl/tests/data/specheat_FordDryLake.csv')
 write.csv(densit, file = 'c:/git/Microclimate.jl/tests/data/densit_FordDryLake.csv')
-# write.csv(drlam, file = 'c:/git/Microclimate.jl/tests/data/drlam_FordDryLake.csv')
-# write.csv(drrlam, file = 'c:/git/Microclimate.jl/tests/data/drrlam_FordDryLake.csv')
-# write.csv(srlam, file = 'c:/git/Microclimate.jl/tests/data/srlam_FordDryLake.csv')
-
-write.csv(TAI, file = 'c:/git/Microclimate.jl/tests/data/TAI_FordDryLake.csv', row.names = FALSE)
-write.csv(TAIRhr, file = 'c:/git/Microclimate.jl/tests/data/TAIRhr_FordDryLake.csv', row.names = FALSE)
-write.csv(RHhr, file = 'c:/git/Microclimate.jl/tests/data/RHhr_FordDryLake.csv', row.names = FALSE)
-write.csv(SOLRhr, file = 'c:/git/Microclimate.jl/tests/data/SOLRhr_FordDryLake.csv', row.names = FALSE)
-write.csv(RAINhr, file = 'c:/git/Microclimate.jl/tests/data/RAINhr_FordDryLake.csv', row.names = FALSE)
-write.csv(WNhr, file = 'c:/git/Microclimate.jl/tests/data/WNhr_FordDryLake.csv', row.names = FALSE)
-write.csv(CLDhr, file = 'c:/git/Microclimate.jl/tests/data/CLDhr_FordDryLake.csv', row.names = FALSE)
-
-write.csv(CampNormTbl9_1, file = 'c:/git/Microclimate.jl/tests/data/CampNormTbl9_1.csv', row.names = FALSE)

@@ -67,8 +67,8 @@ RHMINN <- c(50.2, 48.4, 48.7, 40.8, 40, 42.1, 45.5, 47.3, 47.6, 45, 51.3, 52.8) 
 RHMAXX <- c(100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100) # max relative humidity (%)
 WNMINN <- 0.1 * c(4.9, 4.8, 5.2, 5.3, 4.6, 4.3, 3.8, 3.7, 4, 4.6, 4.9, 4.8) # min wind speed (m/s)
 WNMAXX <- c(4.9, 4.8, 5.2, 5.3, 4.6, 4.3, 3.8, 3.7, 4, 4.6, 4.9, 4.8) # max wind speed (m/s)
-CCMINN <- 0 * c(50.3, 47, 48.2, 47.5, 40.9, 35.7, 34.1, 36.6, 42.6, 48.4, 61.1, 60.1) # min cloud cover (%)
-CCMAXX <- 0 * c(50.3, 47, 48.2, 47.5, 40.9, 35.7, 34.1, 36.6, 42.6, 48.4, 61.1, 60.1) # max cloud cover (%)
+CCMINN <- c(50.3, 47, 48.2, 47.5, 40.9, 35.7, 34.1, 36.6, 42.6, 48.4, 61.1, 60.1) # min cloud cover (%)
+CCMAXX <- c(50.3, 47, 48.2, 47.5, 40.9, 35.7, 34.1, 36.6, 42.6, 48.4, 61.1, 60.1) # max cloud cover (%)
 RAINFALL <- c(28, 28.2, 54.6, 79.7, 81.3, 100.1, 101.3, 102.5, 89.7, 62.4, 54.9, 41.2) # monthly mean rainfall (mm)
 TAIRhr <- rep(0, 24*doynum) # hourly air temperatures (°C), not used unless 'hourly=1'
 RHhr <- rep(0, 24*doynum) # hourly relative humidity (%), not used unless 'hourly=1'
