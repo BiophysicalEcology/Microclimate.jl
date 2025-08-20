@@ -1216,16 +1216,19 @@ function solrad(;
     SRs = fill(0.0, nsteps)u"mW/cm^2"           # total scattered radiation
 
     # arrays to hold zenith angles each step
-    Zs = fill(90.0, nsteps)u"°"                  # zenith angles
-    ZSLs = fill(90.0, nsteps)u"°"                # slope zenith angles
+    Zs = fill(90.0, nsteps)u"°"                 # zenith angles
+    ZSLs = fill(90.0, nsteps)u"°"               # slope zenith angles
+    #AZIs = fill(0.0, nsteps)u"°"               # azimuth angles
+    AZIs = Vector{Union{Missing, typeof(0.0u"°")}}(undef, nsteps)
+    fill!(AZIs, 90.0u"°")   # initialize with 0° if you want
     HHs = fill(0.0, ndays)                      # hour angles
     tsns = fill(0.0, ndays)                     # hour at solar noon
     DOYs = Vector{Int}(undef, nsteps)           # day of year
     times = Vector{Real}(undef, nsteps)         # time
-
     step = 1
     HH = 0.0 # initialise sunrise hour angle
     tsn = 12.0 # initialise time of solar noon
+    #dazsun = missing
     for i in 1:ndays
         # arrays to hold radiation for a given hour between 300 and 320 nm in 2 nm steps
         GRINT = fill(0.0, nmax)u"mW/cm^2"   # integrated global radiation component (direct + scattered)
@@ -1245,6 +1248,10 @@ function solrad(;
             ζ, δ, z, AR2 = solar_geometry(d=d, lat=lat, h=h, d0=d0, ω=ω, ϵ=ϵ, se=se) # compute ecliptic, declination, zenith angle and (a/r)^2
             Z = uconvert(u"°", z)
             Zsl = Z
+            amult = 1.0
+            if sign(lat) < 0
+                amult=-1.0
+            end
             #check_skylight!(z, nmax, SRINT, GRINT, SRs, GRs) # checking zenith angle for possible skylight before sunrise or after sunset
             if Z < 107.0u"°"
                 if Z > 88.0u"°"
@@ -1286,27 +1293,40 @@ function solrad(;
                 #ζ, δ, z, AR2 = solar_geometry(d=d, lat=lat, h=h, d0=d0, ω=ω, ϵ=ϵ, se=se) # compute ecliptic, declination, zenith angle and (a/r)^2 - redundant?
                 alt = (π / 2 - z)u"rad"
                 altdeg = uconvert(u"°", alt).val
-                cazsun = (sin(δ) - sin(lat) * sin(alt)) / (cos(lat) * cos(alt)) # cos(solar azimuth)
-                #      Error checking for instability in trig function
-                if cazsun < -0.9999999
-                    azsun = π
-                else
-                    if cazsun > 0.9999999
-                        azsun = 0
+                
+                # tazsun corresponds to tangent of azimuth
+                tazsun = sin(h) / (cos(lat) * tan(δ) - sin(lat) * cos(h))
+
+                # sun azimuth in radians
+                azsun = atan(tazsun) * amult
+
+                # azimuth in degrees
+                dazsun = uconvert(u"°", azsun)
+
+                # correcting for hemisphere/quadrant
+                if h <= 0.0
+                    # Morning - east of reference
+                    if dazsun <= 0.0u"°"
+                        # 1st Quadrant (0–90°)
+                        dazsun = -1.0 * dazsun
                     else
-                        azsun = acos(cazsun)
+                        # 2nd Quadrant (90–180°)
+                        dazsun = 180.0u"°" - dazsun
+                    end
+                else
+                    # Afternoon - west of reference
+                    if dazsun < 0.0u"°"
+                        # 3rd Quadrant (180–270°)
+                        dazsun = 180.0u"°" - dazsun
+                    else
+                        # 4th Quadrant (270–360°)
+                        dazsun = 360.0u"°" - dazsun
                     end
                 end
-                if h <= 0
-                    # Morning
-                    dazsun = uconvert(u"°", azsun).val
-                else
-                    # Afternoon
-                    if sign(lat) < 0
-                        dazsun = 360u"°" - uconvert(u"°", azsun).val
-                    else
-                        dazsun = 180u"°" + (180u"°" - uconvert(u"°", azsun).val)
-                    end
+
+                # Special case: hour angle = 0
+                if h == 0.0
+                    dazsun = 180.0u"°"
                 end
 
                 cz = cos(z)
@@ -1360,13 +1380,6 @@ function solrad(;
                 ozone = OZ[llat, mon]  # ozone thickness (cm) from lookup table
                 ELEVFCT1, ELEVFCT2, ELEVFCT3, ELEVFCT4 = elev_corr(elev)
 
-                # deal with this:
-                # c     mutliplier to correct hourly solar data for horizon angle
-                #     if(altdeg.lt.ahoriz)then
-                # c	   diffuse only - cut down to diffuse fraction      
-                #     TDD(111+IT)=TDD(111+IT)* (0.12 + 0.83 * ((CCMINN(IDAY) + 
-                #    &  CCMAXX(IDAY))/ 2. / 100.)) ! from Butt et al. 2010 Agricultural and Forest Meteorology 150 (2010) 361–368
-                #     endif
                 P = get_pressure(elev) # pressure from elevation
 
                 for N in 1:nmax
@@ -1462,11 +1475,12 @@ function solrad(;
                 DRs[step] = DRINT[nmax]
                 SRs[step] = SRINT[nmax]
             else # sunrise, sunset or long day
-
+                dazsun = missing
             end
             # Store into row `step`
             Zs[step] = Z
             ZSLs[step] = Zsl
+            AZIs[step] = dazsun
             DOYs[step] = d
             times[step] = t
             #Zs[Zs.>90u"°"] .= 90u"°"
@@ -1478,6 +1492,7 @@ function solrad(;
     return (
         Zenith=Zs,
         ZenithSlope=ZSLs,
+        Azimuth=AZIs,
         HHsr=HHs,
         tsn=tsns,
         doy=DOYs,

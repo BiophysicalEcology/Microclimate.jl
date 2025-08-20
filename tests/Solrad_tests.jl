@@ -66,12 +66,15 @@ CLDs = hourly_vars(
     solrad_out,
     TIMINS,
     TIMAXS,
-    daily
+    false
 )
     
 # extract output
 Zenith = solrad_out.Zenith
 Zenith[Zenith.>90u"°"] .= 90u"°"
+Azimuth = solrad_out.Azimuth
+plot(Azimuth)
+plot(Zenith)
 HHsr = solrad_out.HHsr
 tsn = solrad_out.tsn
 Global = solrad_out.Global
