@@ -6,7 +6,7 @@ end
 
 using OrdinaryDiffEq, Interpolations, Statistics, Dates
 
-using Unitful, UnitfulMoles, ModelParameters
+using Unitful, UnitfulMoles, ModelParameters, DelimitedFiles
 
 using Unitful: °, rad, °C#, K, Pa, kPa, MPa, J, kJ, W, L, g, kg, cm, m, s, hr, d, mol, mmol, μmol, σ, R
 
@@ -14,7 +14,7 @@ export air_pressure, vapour_pressure, wet_air, dry_air, λ_evap, phase_transitio
 
 export sinec!, vsine, hourly_vars
 
-export hour_angle, solar_geometry, check_skylight, elev_corr, gamma, dchxy, dexpi, solrad
+export hour_angle, solar_geometry, check_skylight, elev_corr, gamma, dchxy, dexpi, solrad, gads
 
 export get_profile, get_longwave, get_pressure, get_λ_evap
 

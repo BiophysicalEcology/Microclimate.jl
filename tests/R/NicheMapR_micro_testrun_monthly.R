@@ -18,12 +18,13 @@ doynum <- 12 # number of time intervals to generate predictions for over a year 
 doy<-c(15, 46, 74, 105, 135, 166, 196, 227, 258, 288, 319, 349) # middle day of each month
 idayst <- 1 # start month
 ida <- 12 # end month
-HEMIS <- 1 # chose hemisphere
-ALAT <- 43 # degrees latitude
-AMINUT <- 4.383 # minutes latitude
-ALONG <- 89 # degrees longitude
-ALMINT <- 24.074 # minutes latitude
-ALREF <- 89 # reference longitude for time zone
+longlat <- c(-89.40123, 43.07305)
+HEMIS <- ifelse(longlat[2] < 0, 2, 1) # chose hemisphere based on latitude
+ALAT <- abs(trunc(longlat[2])) # degrees latitude
+AMINUT <- (abs(longlat[2]) - ALAT) * 60 # minutes latitude
+ALONG <- abs(trunc(longlat[1])) # degrees longitude
+ALMINT <- (abs(longlat[1]) - ALONG) * 60 # minutes latitude
+ALREF <- ALONG # reference longitude for time zone
 EC <- 0.0167238 # Eccentricity of the earth's orbit (current value 0.0167238, ranges between 0.0034 to 0.058)
 RUF <- 0.004 # Roughness height (m), , e.g. sand is 0.05, grass may be 2.0, current allowed range: 0.001 (snow) - 2.0 cm.
 Refhyt <- 2 # Reference height (m), reference height at which air temperature, wind speed and relative humidity input data are measured
@@ -43,7 +44,17 @@ CMH2O <- 1 # precipitable cm H2O in air column, 0.1 = VERY DRY; 1.0 = MOIST AIR 
 # Aerosol extinction coefficient profile
 # the values extracted from GADS for Madison
 TAI<-c(0.269904738,0.266147825, 0.262442906, 0.258789404, 0.255186744, 0.251634356, 0.248131676, 0.2412732, 0.234606887, 0.228128378, 0.221833385, 0.215717692, 0.20977715, 0.204007681, 0.198405272, 0.187685927, 0.177588357, 0.168082846, 0.159140695, 0.150734206, 0.142836655, 0.135422274, 0.128466227, 0.12194459, 0.115834329, 0.110113284, 0.104760141, 0.099754417, 0.09507644, 0.090707328, 0.086628967, 0.082823998, 0.07927579, 0.075968428, 0.072886691, 0.070016034, 0.067342571, 0.064853053, 0.062534858, 0.060375964, 0.058364941, 0.056490925, 0.054743609, 0.053113222, 0.051590514, 0.050166738, 0.046408775, 0.045302803, 0.044259051, 0.043271471, 0.042334415, 0.041442618, 0.040591184, 0.039775572, 0.038991583, 0.038235345, 0.037503301, 0.036792197, 0.036099067, 0.034101935, 0.033456388, 0.032817888, 0.032184949, 0.031556287, 0.030930816, 0.030307633, 0.029065372, 0.027825562, 0.027205981, 0.026586556, 0.025967391, 0.025348692, 0.024114005, 0.023498886, 0.021669152, 0.021066668, 0.019292088, 0.018144698, 0.016762709, 0.015451481, 0.014949794, 0.014224263, 0.013093462, 0.012670686, 0.012070223, 0.011164062, 0.010241734, 0.009731103, 0.009507687, 0.009212683, 0.008965785, 0.008827751, 0.008710756, 0.008574128, 0.008462605, 0.008446967, 0.008539475, 0.009015237, 0.009748444, 0.010586023, 0.011359647, 0.011901268, 0.012062153, 0.011735443, 0.010882215, 0.009561062, 0.007961182, 0.006438984, 0.005558204, 0.006133532, 0.009277754)
-
+# relhum <- 1
+# optdep.summer <- as.data.frame(gads.r(longlat[2], longlat[1], relhum, 0))
+# optdep.winter <- as.data.frame(gads.r(longlat[2], longlat[1], relhum, 1))
+# optdep <- cbind(optdep.winter[,1],rowMeans(cbind(optdep.summer[,2],optdep.winter[,2])))
+# optdep <- as.data.frame(optdep)
+# colnames(optdep) <- c("LAMBDA", "OPTDEPTH")
+# a <- lm(OPTDEPTH ~ poly(LAMBDA, 6, raw = TRUE), data = optdep)
+# LAMBDA <- c(290, 295, 300, 305, 310, 315, 320, 330, 340, 350, 360, 370, 380, 390, 400, 420, 440, 460, 480, 500, 520, 540, 560, 580, 600, 620, 640, 660, 680, 700, 720, 740, 760, 780, 800, 820, 840, 860, 880, 900, 920, 940, 960, 980, 1000, 1020, 1080, 1100, 1120, 1140, 1160, 1180, 1200, 1220, 1240, 1260, 1280, 1300, 1320, 1380, 1400, 1420, 1440, 1460, 1480, 1500, 1540, 1580, 1600, 1620, 1640, 1660, 1700, 1720, 1780, 1800, 1860, 1900, 1950, 2000, 2020, 2050, 2100, 2120, 2150, 2200, 2260, 2300, 2320, 2350, 2380, 2400, 2420, 2450, 2490, 2500, 2600, 2700, 2800, 2900, 3000, 3100, 3200, 3300, 3400, 3500, 3600, 3700, 3800, 3900, 4000)
+# TAI2 <- predict(a, data.frame(LAMBDA))
+# plot(TAI)
+# points(TAI2, col = 2)
 ALTT <- 226 # altitude (m)
 slope <- 0 # slope (degrees, range 0-90)
 azmuth <- 180 # aspect (degrees, 0 = North, range 0-360)
@@ -167,6 +178,7 @@ if(write_input){
     dir.create("../data/init_monthly")
   }
   write.table(as.matrix(microinput), file = "../data/init_monthly/microinput.csv", sep = ",", col.names = NA, qmethod = "double")
+  write.table(longlat, file = "../data/init_monthly/longlat.csv", sep = ",", col.names = NA, qmethod = "double")
   write.table(doy, file = "../data/init_monthly/doy.csv", sep = ",", col.names = NA, qmethod = "double")
   write.table(SLES, file = "../data/init_monthly/SLES.csv", sep = ",", col.names = NA, qmethod = "double")
   write.table(DEP, file = "../data/init_monthly/DEP.csv", sep = ",", col.names = NA, qmethod = "double")

@@ -2,7 +2,7 @@ using Microclimate
 using Unitful
 using Unitful: °, rad, R, kg, m
 using Plots
-using CSV, DataFrames
+using CSV, DataFrames, Polynomials
 using Test
 
 # to do - compare with McCullough and Porter plots and Insolation.jl and CloudScat.jl? 
@@ -33,12 +33,15 @@ names = [
 microinput = (; zip(names, microinput_vec)...)
 
 iuv = Bool(Int(microinput[:IUV])) # this makes it take ages if true!
-lat = (microinput[:ALAT]+microinput[:AMINUT]/60)*1.0u"°" # latitude
+longlat = (DataFrame(CSV.File("tests/data/init_monthly/longlat.csv"))[:, 2] * 1.0)
+lat = longlat[2]*1.0u"°" # latitude
+lon =  longlat[1]*1.0u"°" # longitude
 slope = (microinput[:slope])*1.0u"°" # slope
 aspect = (microinput[:azmuth])*1.0u"°" # aspect
 elev = (microinput[:ALTT])*1.0u"m" # elevation
 hori = (DataFrame(CSV.File("tests/data/init_monthly/hori.csv"))[:, 2])*1.0u"°"#fill(0.0u"°", 24) # enter the horizon angles (degrees) so that they go from 0 degrees azimuth (north) clockwise in 15 degree intervals
 refls = (DataFrame(CSV.File("tests/data/init_monthly/REFLS.csv"))[:, 2]*1.0) # set up vector of soil reflectances for each day (decimal %)
+τA_NMR = (DataFrame(CSV.File("tests/data/init_monthly/TAI.csv"))[:, 2]*1.0)
 TIMINS = [microinput[:TIMINS1], microinput[:TIMINS2], microinput[:TIMINS3], microinput[:TIMINS4]] # time of minima for air temp, wind, humidity and cloud cover (h), air & wind mins relative to sunrise, humidity and cloud cover mins relative to solar noon
 TIMAXS = [microinput[:TIMAXS1], microinput[:TIMAXS2], microinput[:TIMAXS3], microinput[:TIMAXS4]] # time of maxima for air temp, wind, humidity and cloud cover (h), air temp & wind maxs relative to solar noon, humidity and cloud cover maxs relative to sunrise
 CCMINN = (DataFrame(CSV.File("tests/data/init_monthly/CCMINN.csv"))[:, 2] * 1.0) # min cloud cover (%)
@@ -48,16 +51,49 @@ cloud = CCMINN .+ CCMINN ./ 2
 hours = collect(0.:1:24.)
 days = [15, 46, 74, 105, 135, 166, 196, 227, 258, 288, 319, 349]*1.0
 
+# test gads function
+# run gads and get mean interpolated output over seasons
+optdep_summer = gads(ustrip(lat), ustrip(lon), 1, 0)
+optdep_winter = gads(ustrip(lat), ustrip(lon), 1, 1)
+optdep_array = hcat(
+    optdep_winter[:, 1], 
+    mean.(eachrow(hcat(optdep_summer[:, 2], optdep_winter[:, 2])))
+)
+optdep = DataFrame(LAMBDA = optdep_array[:, 1], OPTDEPTH = optdep_array[:, 2])
+xs = optdep.LAMBDA
+ys = optdep.OPTDEPTH
+# Scale xs to [-1,1] (can't fit higher order polynomials than 4 otherwise)
+scale_xs(x) = 2 * (x - xmin) / (xmax - xmin) - 1
+xscaled = scale_xs.(xs)
+# fit polynomial in scaled space
+p_scaled = Polynomials.fit(xscaled, ys, 6)
+# function to evaluate the fit at original coordinates
+p_eval(x) = p_scaled(scale(x))
+λ = float.([ # wavelengths across which to integrate
+        290, 295, 300, 305, 310, 315, 320, 330, 340, 350, 360, 370, 380, 390,
+        400, 420, 440, 460, 480, 500, 520, 540, 560, 580, 600, 620, 640, 660, 680, 700,
+        720, 740, 760, 780, 800, 820, 840, 860, 880, 900, 920, 940, 960, 980, 1000, 1020,
+        1080, 1100, 1120, 1140, 1160, 1180, 1200, 1220, 1240, 1260, 1280, 1300, 1320,
+        1380, 1400, 1420, 1440, 1460, 1480, 1500, 1540, 1580, 1600, 1620, 1640, 1660,
+        1700, 1720, 1780, 1800, 1860, 1900, 1950, 2000, 2020, 2050, 2100, 2120, 2150,
+        2200, 2260, 2300, 2320, 2350, 2380, 2400, 2420, 2450, 2490, 2500, 2600, 2700,
+        2800, 2900, 3000, 3100, 3200, 3300, 3400, 3500, 3600, 3700, 3800, 3900, 4000
+    ])
+τA = p_eval.(λ)
+plot(LAMBDA, τA)
+plot!(LAMBDA, τA_NMR, linecolor="grey")
+
 solrad_out = @inferred solrad(;
-    days,     # days of year
-    hours,   # hours of day
-    lat,       # latitude (degrees)
-    elev,     # elevation (m)
-    hori,     # horizon angles 0 degrees azimuth (north) clockwise in 15 degree intervals
-    slope,   # slope (degrees, range 0-90)
-    aspect, # aspect (degrees, 0 = North, range 0-360)
-    refls,     # substrate solar reflectivity (decimal %)
-    iuv        # use Dave_Furkawa theory for UV radiation (290-360 nm)?
+    days,       # days of year
+    hours,      # hours of day
+    lat,        # latitude (degrees)
+    elev,       # elevation (m)
+    hori,       # horizon angles 0 degrees azimuth (north) clockwise in 15 degree intervals
+    slope,      # slope (degrees, range 0-90)
+    aspect,     # aspect (degrees, 0 = North, range 0-360)
+    refls,      # substrate solar reflectivity (decimal %)
+    iuv,        # use Dave_Furkawa theory for UV radiation (290-360 nm)?
+    τA          # aerosol profile from gads (global aerosol database)
     )
 CLDs = hourly_vars(
     CCMINN,
@@ -113,6 +149,7 @@ plot(λ, [λDirect[i, :] λScattered[i, :] λRayleigh[i, :]], xlabel="Wavelength
 plot!(λ, [λDirect_NMR_units[i, :] λScattered_NMR_units[i, :] λRayleigh_NMR_units[i, :]], xlabel="Wavelength", ylabel="Spectral Irradiance", label=["Direct" "Scattered" "Rayleigh"], linestyle=[:dash :dash :dash])
 
 @testset "solar radiation comparisons" begin
+    @test τA ≈ τA_NMR atol=1e-7
     @test ustrip.(u"°", Zenith) ≈ metout_NMR.ZEN atol=1e-4
     @test all(isapprox.(ustrip.(u"W/m^2", Global), metout_NMR.SOLR; atol=0.5))
     @test λDirect ≈ λDirect_NMR_units atol=1e-4u"W/nm/m^2"
