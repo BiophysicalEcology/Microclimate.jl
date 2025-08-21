@@ -157,3 +157,5 @@ tests/data/init_monthly/WNhr.csv
 tests/data/init_monthly/WNMAXX.csv
 tests/data/init_monthly/WNMINN.csv
 tests/data/init_monthly/ZENhr.csv
+tests/data/init_daily/longlat.csv
+tests/data/init_monthly/longlat.csv

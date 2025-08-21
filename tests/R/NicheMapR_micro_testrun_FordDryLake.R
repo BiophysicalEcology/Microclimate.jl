@@ -235,7 +235,7 @@ if(write_input){
     dir.create("../data/init_daily")
   }
   write.table(as.matrix(microinput), file = "../data/init_daily/microinput.csv", sep = ",", col.names = NA, qmethod = "double")
-  write.table(longlat, file = "../data/init_monthly/longlat.csv", sep = ",", col.names = NA, qmethod = "double")
+  write.table(longlat, file = "../data/init_daily/longlat.csv", sep = ",", col.names = NA, qmethod = "double")
   write.table(doy, file = "../data/init_daily/doy.csv", sep = ",", col.names = NA, qmethod = "double")
   write.table(SLES, file = "../data/init_daily/SLES.csv", sep = ",", col.names = NA, qmethod = "double")
   write.table(DEP, file = "../data/init_daily/DEP.csv", sep = ",", col.names = NA, qmethod = "double")
