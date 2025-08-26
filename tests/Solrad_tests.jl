@@ -2,7 +2,7 @@ using Microclimate
 using Unitful
 using Unitful: °, rad, R, kg, m
 using Plots
-using CSV, DataFrames, Polynomials
+using CSV, DataFrames, Polynomials, Statistics
 using Test
 
 # to do - compare with McCullough and Porter plots and Insolation.jl and CloudScat.jl? 
@@ -62,13 +62,14 @@ optdep_array = hcat(
 optdep = DataFrame(LAMBDA = optdep_array[:, 1], OPTDEPTH = optdep_array[:, 2])
 xs = optdep.LAMBDA
 ys = optdep.OPTDEPTH
+xmin, xmax = extrema(xs)  # get min and max
 # Scale xs to [-1,1] (can't fit higher order polynomials than 4 otherwise)
 scale_xs(x) = 2 * (x - xmin) / (xmax - xmin) - 1
 xscaled = scale_xs.(xs)
 # fit polynomial in scaled space
 p_scaled = Polynomials.fit(xscaled, ys, 6)
 # function to evaluate the fit at original coordinates
-p_eval(x) = p_scaled(scale(x))
+p_eval(x) = p_scaled(scale_xs(x))
 λ = float.([ # wavelengths across which to integrate
         290, 295, 300, 305, 310, 315, 320, 330, 340, 350, 360, 370, 380, 390,
         400, 420, 440, 460, 480, 500, 520, 540, 560, 580, 600, 620, 640, 660, 680, 700,
@@ -80,8 +81,8 @@ p_eval(x) = p_scaled(scale(x))
         2800, 2900, 3000, 3100, 3200, 3300, 3400, 3500, 3600, 3700, 3800, 3900, 4000
     ])
 τA = p_eval.(λ)
-plot(LAMBDA, τA)
-plot!(LAMBDA, τA_NMR, linecolor="grey")
+plot(λ, τA)
+plot!(λ, τA_NMR, linecolor="grey")
 
 solrad_out = @inferred solrad(;
     days,       # days of year
