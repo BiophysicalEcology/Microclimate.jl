@@ -8,17 +8,19 @@ using Test
 # to do - compare with McCullough and Porter plots and Insolation.jl and CloudScat.jl? 
 # check how CliMA do atmospheric response - looks like it's in RRTMGP.jl
 
+testdir = realpath(joinpath(dirname(pathof(Microclimate)), "../test"))
+
 # NicheMapR simulation results
-λDirect_NMR = Matrix(DataFrame(CSV.File("tests/data/drlam_monthly.csv"))[:, 4:114])
-λRayleigh_NMR = Matrix(DataFrame(CSV.File("tests/data/drrlam_monthly.csv"))[:, 4:114])
-λScattered_NMR = Matrix(DataFrame(CSV.File("tests/data/srlam_monthly.csv"))[:, 4:114])
-metout_NMR = DataFrame(CSV.File("tests/data/metout_monthly.csv"))
+λDirect_NMR = Matrix(DataFrame(CSV.File("$testdir/data/drlam_monthly.csv"))[:, 4:114])
+λRayleigh_NMR = Matrix(DataFrame(CSV.File("$testdir/data/drrlam_monthly.csv"))[:, 4:114])
+λScattered_NMR = Matrix(DataFrame(CSV.File("$testdir/data/srlam_monthly.csv"))[:, 4:114])
+metout_NMR = DataFrame(CSV.File("$testdir/data/metout_monthly.csv"))
 λDirect_NMR_units = λDirect_NMR*u"W/m^2/nm"
 λRayleigh_NMR_units = λRayleigh_NMR*u"W/m^2/nm"
 λScattered_NMR_units = λScattered_NMR*u"W/m^2/nm"
 
 # NicheMapR simulation parameters
-microinput_vec = DataFrame(CSV.File("tests/data/init_monthly/microinput.csv"))[:, 2]
+microinput_vec = DataFrame(CSV.File("$testdir/data/init_monthly/microinput.csv"))[:, 2]
 names = [
     :doynum, :RUF, :ERR, :Usrhyt, :Refhyt, :Numtyps, :Z01, :Z02, :ZH1, :ZH2,
     :idayst, :ida, :HEMIS, :ALAT, :AMINUT, :ALONG, :ALMINT, :ALREF, :slope,
@@ -33,19 +35,19 @@ names = [
 microinput = (; zip(names, microinput_vec)...)
 
 iuv = Bool(Int(microinput[:IUV])) # this makes it take ages if true!
-longlat = (DataFrame(CSV.File("tests/data/init_monthly/longlat.csv"))[:, 2] * 1.0)
+longlat = (DataFrame(CSV.File("$testdir/data/init_monthly/longlat.csv"))[:, 2] * 1.0)
 lat = longlat[2]*1.0u"°" # latitude
 lon =  longlat[1]*1.0u"°" # longitude
 slope = (microinput[:slope])*1.0u"°" # slope
 aspect = (microinput[:azmuth])*1.0u"°" # aspect
 elev = (microinput[:ALTT])*1.0u"m" # elevation
-hori = (DataFrame(CSV.File("tests/data/init_monthly/hori.csv"))[:, 2])*1.0u"°"#fill(0.0u"°", 24) # enter the horizon angles (degrees) so that they go from 0 degrees azimuth (north) clockwise in 15 degree intervals
-refls = (DataFrame(CSV.File("tests/data/init_monthly/REFLS.csv"))[:, 2]*1.0) # set up vector of soil reflectances for each day (decimal %)
-τA_NMR = (DataFrame(CSV.File("tests/data/init_monthly/TAI.csv"))[:, 2]*1.0)
+hori = (DataFrame(CSV.File("$testdir/data/init_monthly/hori.csv"))[:, 2])*1.0u"°"#fill(0.0u"°", 24) # enter the horizon angles (degrees) so that they go from 0 degrees azimuth (north) clockwise in 15 degree intervals
+refls = (DataFrame(CSV.File("$testdir/data/init_monthly/REFLS.csv"))[:, 2]*1.0) # set up vector of soil reflectances for each day (decimal %)
+τA_NMR = (DataFrame(CSV.File("$testdir/data/init_monthly/TAI.csv"))[:, 2]*1.0)
 TIMINS = [microinput[:TIMINS1], microinput[:TIMINS2], microinput[:TIMINS3], microinput[:TIMINS4]] # time of minima for air temp, wind, humidity and cloud cover (h), air & wind mins relative to sunrise, humidity and cloud cover mins relative to solar noon
 TIMAXS = [microinput[:TIMAXS1], microinput[:TIMAXS2], microinput[:TIMAXS3], microinput[:TIMAXS4]] # time of maxima for air temp, wind, humidity and cloud cover (h), air temp & wind maxs relative to solar noon, humidity and cloud cover maxs relative to sunrise
-CCMINN = (DataFrame(CSV.File("tests/data/init_monthly/CCMINN.csv"))[:, 2] * 1.0) # min cloud cover (%)
-CCMAXX = (DataFrame(CSV.File("tests/data/init_monthly/CCMAXX.csv"))[:, 2] * 1.0) # max cloud cover (c%)
+CCMINN = (DataFrame(CSV.File("$testdir/data/init_monthly/CCMINN.csv"))[:, 2] * 1.0) # min cloud cover (%)
+CCMAXX = (DataFrame(CSV.File("$testdir/data/init_monthly/CCMAXX.csv"))[:, 2] * 1.0) # max cloud cover (c%)
 cloud = CCMINN .+ CCMINN ./ 2
 
 hours = collect(0.:1:24.)

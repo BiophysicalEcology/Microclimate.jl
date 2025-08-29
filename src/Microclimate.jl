@@ -10,11 +10,14 @@ using Unitful, UnitfulMoles, ModelParameters, DelimitedFiles
 
 using Unitful: °, rad, °C#, K, Pa, kPa, MPa, J, kJ, W, L, g, kg, cm, m, s, hr, d, mol, mmol, μmol, σ, R
 
-export air_pressure, vapour_pressure, wet_air, dry_air, λ_evap, phase_transition
+export vapour_pressure, wet_air, dry_air, phase_transition
 
 export sinec!, vsine, hourly_vars
 
-export hour_angle, solar_geometry, check_skylight, elev_corr, gamma, dchxy, dexpi, solrad, gads
+export hour_angle, solar_geometry, elev_corr, dchxy, dexpi, solrad, gads
+
+# TODO Aqua says these dont actually exist to export
+# export check_skylight, gamma, λ_evap, MicroInput, air_pressure 
 
 export get_profile, get_longwave, get_pressure, get_λ_evap
 
@@ -24,7 +27,7 @@ export init_soillayers, init_moistlayers, MicroInputs
 
 export soil_energy_balance!, evap, soil_water_balance
 
-export MicroParams, MicroForcing, MicroInput
+export MicroParams, MicroForcing
 
 include("landscape.jl")   
 include("interpolation.jl")
