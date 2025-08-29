@@ -1460,7 +1460,14 @@ Reference
 Koepke, P., Hess, M., Schult, I., & Shettle, E. P. (1997). Global Aerosol Data Set. Max-Planck-Institut für Meteorologie.
 http://www.mpimet.mpg.de/fileadmin/publikationen/Reports/MPI-Report_243.pdf
 """
-function gads(lat::Float64=43.07305, lon::Float64=89.40123, relhum::Int64=1, season::Int64=0, data_root::String="data")
+function gads(
+    # TODO these could be keywords
+    lat::Float64=43.07305, 
+    lon::Float64=89.40123, 
+    relhum::Int64=1, 
+    season::Int64=0, 
+    data_root::String=realpath(joinpath(dirname(pathof(Microclimate)), "../data")),
+)
     _substr(s::AbstractString, i::Int, j::Int) = begin
         i < 1 && return ""
         j < i && return ""
