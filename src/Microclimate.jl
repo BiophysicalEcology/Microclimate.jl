@@ -29,6 +29,8 @@ export soil_energy_balance!, evap, soil_water_balance
 
 export MicroParams, MicroForcing
 
+export runmicro
+
 include("landscape.jl")   
 include("interpolation.jl")
 include("fluid_properties.jl")

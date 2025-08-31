@@ -8,12 +8,12 @@ using CSV, DataFrames, Dates
 using Test
 
 # read in output from NicheMapR
-soiltemps_NMR = (DataFrame(CSV.File("tests/data/soil_FordDryLake.csv"))[:, 5:14]) .* u"°C"
-soilmoists_NMR = (DataFrame(CSV.File("tests/data/soilmoist_FordDryLake.csv"))[:, 5:14])
-soilconds_NMR = (DataFrame(CSV.File("tests/data/tcond_FordDryLake.csv"))[:, 5:14])
+soiltemps_NMR = (DataFrame(CSV.File("test/data/soil_FordDryLake.csv"))[:, 5:14]) .* u"°C"
+soilmoists_NMR = (DataFrame(CSV.File("test/data/soilmoist_FordDryLake.csv"))[:, 5:14])
+soilconds_NMR = (DataFrame(CSV.File("test/data/tcond_FordDryLake.csv"))[:, 5:14])
 date = DateTime(2015, 1, 1):Hour(1):DateTime(2015, 12, 31, 23)
 
-microinput_vec = DataFrame(CSV.File("tests/data/init_daily/microinput.csv"))[:, 2]
+microinput_vec = DataFrame(CSV.File("test/data/init_daily/microinput.csv"))[:, 2]
 
 names = [
     :doynum, :RUF, :ERR, :Usrhyt, :Refhyt, :Numtyps, :Z01, :Z02, :ZH1, :ZH2,
@@ -31,52 +31,52 @@ names = [
 microinput = (; zip(names, microinput_vec)...)
 
 # Time varying environmental data
-TAIRs = Float64.(CSV.File("tests/data/init_daily/TAIRhr.csv").x)u"°C"
-RHs = Float64.(CSV.File("tests/data/init_daily/RHhr.csv").x)
-VELs = Float64.(CSV.File("tests/data/init_daily/WNhr.csv").x)u"m/s"
-SOLRs = Float64.(CSV.File("tests/data/init_daily/SOLRhr.csv").x)u"W/m^2"
-CLDs = Float64.(CSV.File("tests/data/init_daily/CLDhr.csv").x)
-RAINs = Float64.(CSV.File("tests/data/init_daily/RAINhr.csv").x)u"kg" / u"m^2"
+TAIRs = Float64.(CSV.File("test/data/init_daily/TAIRhr.csv").x)u"°C"
+RHs = Float64.(CSV.File("test/data/init_daily/RHhr.csv").x)
+VELs = Float64.(CSV.File("test/data/init_daily/WNhr.csv").x)u"m/s"
+SOLRs = Float64.(CSV.File("test/data/init_daily/SOLRhr.csv").x)u"W/m^2"
+CLDs = Float64.(CSV.File("test/data/init_daily/CLDhr.csv").x)
+RAINs = Float64.(CSV.File("test/data/init_daily/RAINhr.csv").x)u"kg" / u"m^2"
 RHs .= clamp.(RHs, 0, 100)
 VELs .= clamp.(VELs, 0.1u"m/s", (Inf)u"m/s")
 CLDs .= clamp.(CLDs, 0, 100)
 RAINs .= clamp.(RAINs, 0u"kg/m^2", (Inf)u"kg/m^2")
 
 refhyt = microinput[:Refhyt] * 1.0u"m"
-depths = ((DataFrame(CSV.File("tests/data/init_daily/DEP.csv"))[:, 2]) / 100.0)u"m" # Soil nodes (cm) - keep spacing close near the surface, last value is where it is assumed that the soil temperature is at the annual mean air temperature
+depths = ((DataFrame(CSV.File("test/data/init_daily/DEP.csv"))[:, 2]) / 100.0)u"m" # Soil nodes (cm) - keep spacing close near the surface, last value is where it is assumed that the soil temperature is at the annual mean air temperature
 days = collect(1:Int(length(TAIRs) / 24)) # days of year to run (for solrad)
 hours = collect(0.:1:24.) # hour of day for solrad
 lat = (microinput[:ALAT] + microinput[:AMINUT] / 60) * 1.0u"°" # latitude
 iuv = Bool(Int(microinput[:IUV])) # this makes it take ages if true!
 ndmax = (microinput[:ndmax]) # number of iterations per day
 elev = microinput[:ALTT] * 1.0u"m" # elevation (m)
-hori = (DataFrame(CSV.File("tests/data/init_daily/hori.csv"))[:, 2]) * 1.0u"°" # enter the horizon angles (degrees) so that they go from 0 degrees azimuth (north) clockwise in 15 degree intervals
+hori = (DataFrame(CSV.File("test/data/init_daily/hori.csv"))[:, 2]) * 1.0u"°" # enter the horizon angles (degrees) so that they go from 0 degrees azimuth (north) clockwise in 15 degree intervals
 slope = microinput[:slope] * 1.0u"°" # slope (degrees, range 0-90)
 aspect = microinput[:azmuth] * 1.0u"°" # aspect (degrees, 0 = North, range 0-360)
 ruf = microinput[:RUF] * 1.0u"m" # m roughness height
 zh = microinput[:ZH] * 1.0u"m" # m heat transfer roughness height
 d0 = microinput[:D0] * 1.0u"m" # zero plane displacement correction factor
 # soil properties# soil thermal parameters 
-ρ_b_dry = (CSV.File("tests/data/init_daily/soilprop.csv")[1, 1][2]) * 1.0u"Mg/m^3" # dry soil bulk density (Mg/m3)
-θ_sat = (CSV.File("tests/data/init_daily/soilprop.csv")[1, 1][3]) * 1.0u"m^3/m^3" # volumetric water content at saturation (0.1 bar matric potential) (m3/m3)
-λ_m = (CSV.File("tests/data/init_daily/soilprop.csv")[1, 1][4]) * 1.0u"W/m/K" # soil minerals thermal conductivity (W/mC)
-c_p_m = (CSV.File("tests/data/init_daily/soilprop.csv")[1, 1][5]) * 1.0u"J/kg/K" # soil minerals specific heat (J/kg-K)
-ρ_m = (CSV.File("tests/data/init_daily/soilprop.csv")[1, 1][6]) * 1.0u"Mg/m^3" # soil minerals density (Mg/m3)
+ρ_b_dry = (CSV.File("test/data/init_daily/soilprop.csv")[1, 1][2]) * 1.0u"Mg/m^3" # dry soil bulk density (Mg/m3)
+θ_sat = (CSV.File("test/data/init_daily/soilprop.csv")[1, 1][3]) * 1.0u"m^3/m^3" # volumetric water content at saturation (0.1 bar matric potential) (m3/m3)
+λ_m = (CSV.File("test/data/init_daily/soilprop.csv")[1, 1][4]) * 1.0u"W/m/K" # soil minerals thermal conductivity (W/mC)
+c_p_m = (CSV.File("test/data/init_daily/soilprop.csv")[1, 1][5]) * 1.0u"J/kg/K" # soil minerals specific heat (J/kg-K)
+ρ_m = (CSV.File("test/data/init_daily/soilprop.csv")[1, 1][6]) * 1.0u"Mg/m^3" # soil minerals density (Mg/m3)
 # Time varying environmental data
-TMINN = (DataFrame(CSV.File("tests/data/init_daily/TMINN.csv"))[:, 2] * 1.0)u"°C" # minimum air temperatures (°C)
-TMAXX = (DataFrame(CSV.File("tests/data/init_daily/TMAXX.csv"))[:, 2] * 1.0)u"°C" # maximum air temperatures (°C)
-RAINFALL = ((DataFrame(CSV.File("tests/data/init_daily/rain.csv"))[:, 2] * 1.0) / 1000)u"m" # monthly mean rainfall (mm)
-SoilMoist = (DataFrame(CSV.File("tests/data/init_daily/moists.csv"))[:, 2:13] .* 1.0)#fill(0.0, ndays)
+TMINN = (DataFrame(CSV.File("test/data/init_daily/TMINN.csv"))[:, 2] * 1.0)u"°C" # minimum air temperatures (°C)
+TMAXX = (DataFrame(CSV.File("test/data/init_daily/TMAXX.csv"))[:, 2] * 1.0)u"°C" # maximum air temperatures (°C)
+RAINFALL = ((DataFrame(CSV.File("test/data/init_daily/rain.csv"))[:, 2] * 1.0) / 1000)u"m" # monthly mean rainfall (mm)
+SoilMoist = (DataFrame(CSV.File("test/data/init_daily/moists.csv"))[:, 2:13] .* 1.0)#fill(0.0, ndays)
 daily = Bool(Int(microinput[:microdaily]))
 runmoist = Bool(Int(microinput[:runmoist]))
 spinup = Bool(Int(microinput[:spinup]))
 
 # creating the arrays of environmental variables that are assumed not to change with month for this simulation
 ndays = length(days)
-SHADES = (DataFrame(CSV.File("tests/data/init_daily/MINSHADES.csv"))[:, 2] * 1.0) # daily shade (%)
-SLES = (DataFrame(CSV.File("tests/data/init_daily/SLES.csv"))[:, 2] * 1.0) # set up vector of ground emissivities for each day
-refls = (DataFrame(CSV.File("tests/data/init_daily/REFLS.csv"))[:, 2] * 1.0) # set up vector of soil reflectances for each day (decimal %)
-PCTWETS = (DataFrame(CSV.File("tests/data/init_daily/PCTWET.csv"))[:, 2] * 1.0) # set up vector of soil wetness for each day (%)
+SHADES = (DataFrame(CSV.File("test/data/init_daily/MINSHADES.csv"))[:, 2] * 1.0) # daily shade (%)
+SLES = (DataFrame(CSV.File("test/data/init_daily/SLES.csv"))[:, 2] * 1.0) # set up vector of ground emissivities for each day
+refls = (DataFrame(CSV.File("test/data/init_daily/REFLS.csv"))[:, 2] * 1.0) # set up vector of soil reflectances for each day (decimal %)
+PCTWETS = (DataFrame(CSV.File("test/data/init_daily/PCTWET.csv"))[:, 2] * 1.0) # set up vector of soil wetness for each day (%)
 tannul = mean(Unitful.ustrip.(TAIRs))u"°C" # annual mean temperature for getting monthly deep soil temperature (°C)
 tannulrun = fill(tannul, ndays) # monthly deep soil temperature (2m) (°C)
 
@@ -103,20 +103,20 @@ for i in 2:numnodes
     soilprops[i, :] .= soilprops[1, :]
 end
 soillayers = init_soillayers(numnodes)  # only once
-soilinit = (DataFrame(CSV.File("tests/data/init_daily/soilinit.csv"))[1:numnodes, 2] * 1.0)u"°C" # set up vector of soil wetness for each day (%)
+soilinit = (DataFrame(CSV.File("test/data/init_daily/soilinit.csv"))[1:numnodes, 2] * 1.0)u"°C" # set up vector of soil wetness for each day (%)
 ∑phase = zeros(Float64, numnodes)u"J"
 
 # soil properties
 
 # soil moisture model parameters
-PE = (DataFrame(CSV.File("tests/data/init_daily/PE.csv"))[:, 2] * 1.0u"J/kg") # set up vector of ground emissivities for each day
-KS = (DataFrame(CSV.File("tests/data/init_daily/KS.csv"))[:, 2] * 1.0u"kg*s/m^3") # set up vector of ground emissivities for each day
-BB = (DataFrame(CSV.File("tests/data/init_daily/BB.csv"))[:, 2] * 1.0) # set up vector of ground emissivities for each day
-BD = (DataFrame(CSV.File("tests/data/init_daily/BD.csv"))[:, 2] * 1.0u"Mg/m^3") # set up vector of ground emissivities for each day
-DD = (DataFrame(CSV.File("tests/data/init_daily/DD.csv"))[:, 2] * 1.0u"Mg/m^3") # set up vector of ground emissivities for each day
+PE = (DataFrame(CSV.File("test/data/init_daily/PE.csv"))[:, 2] * 1.0u"J/kg") # set up vector of ground emissivities for each day
+KS = (DataFrame(CSV.File("test/data/init_daily/KS.csv"))[:, 2] * 1.0u"kg*s/m^3") # set up vector of ground emissivities for each day
+BB = (DataFrame(CSV.File("test/data/init_daily/BB.csv"))[:, 2] * 1.0) # set up vector of ground emissivities for each day
+BD = (DataFrame(CSV.File("test/data/init_daily/BD.csv"))[:, 2] * 1.0u"Mg/m^3") # set up vector of ground emissivities for each day
+DD = (DataFrame(CSV.File("test/data/init_daily/DD.csv"))[:, 2] * 1.0u"Mg/m^3") # set up vector of ground emissivities for each day
 
 maxpool = microinput[:maxpool] * 1000.0u"kg/m^2" # max depth for water pooling on the surface, mm (to account for runoff)
-L = DataFrame(CSV.File("tests/data/init_daily/L.csv"))[:, 2]u"m/m^3" # root density at each node, mm/m3 (from Campell 1985 Soil Physics with Basic, p. 131) # max depth for water pooling on the surface, mm (to account for runoff)
+L = DataFrame(CSV.File("test/data/init_daily/L.csv"))[:, 2]u"m/m^3" # root density at each node, mm/m3 (from Campell 1985 Soil Physics with Basic, p. 131) # max depth for water pooling on the surface, mm (to account for runoff)
 rw = microinput[:RW]u"m^3/kg/s" # resistance per unit length of root, m3 kg-1 s-1
 pc = -microinput[:PC]u"J/kg" # critical leaf water potential for stomatal closure, J kg-1
 rl = microinput[:RL]u"m^4/kg/s" # resistance per unit length of leaf, m3 kg-1 s-1
@@ -127,14 +127,14 @@ im = microinput[:IM]u"kg/m^2/s" # maximum overall mass balance error allowed, kg
 maxcount = microinput[:MAXCOUNT]
 timestep = microinput[:moiststep]u"s"
 
-τA = CSV.File("tests/data/init_daily/TAI.csv").x
+τA = CSV.File("test/data/init_daily/TAI.csv").x
 
 raindf = DataFrame(date=date, rainfall=RAINs)
 raindf.day = Date.(raindf.date)
 raindfdaily = combine(groupby(raindf, :day), :rainfall => sum => :daily_rainfall)
 RAINdailys = raindfdaily.daily_rainfall
-SoilMoist = Matrix((DataFrame(CSV.File("tests/data/init_daily/moists.csv"))[:, 2:(ndays-1)] .* 1.0))
-LAIs = (DataFrame(CSV.File("tests/data/init_daily/LAI.csv"))[:, 2] * 1.0u"Mg/m^3")
+SoilMoist = Matrix((DataFrame(CSV.File("test/data/init_daily/moists.csv"))[:, 2:(ndays-1)] .* 1.0))
+LAIs = (DataFrame(CSV.File("test/data/init_daily/LAI.csv"))[:, 2] * 1.0u"Mg/m^3")
 
 # Soil properties
 # set up a profile of soil properites with depth for each day to be run
@@ -223,16 +223,16 @@ for ii in 1:numnodes_b
 end
 
 # output arrays
-nsteps = ndays * (length(hours))
-T_soils = Array{Float64}(undef, nsteps + 1, numnodes_a)u"K"
-θ_soils = Array{Float64}(undef, nsteps + 1, numnodes_a)
-ψ_soils = Array{Float64}(undef, nsteps + 1, numnodes_a)u"J/kg"
-rh_soils = Array{Float64}(undef, nsteps + 1, numnodes_a)
-λ_bulk = Array{Float64}(undef, nsteps + 1, numnodes_a)u"W/m/K"
-c_p_bulk = Array{Float64}(undef, nsteps + 1, numnodes_a)u"J/kg/K"
-ρ_bulk = Array{Float64}(undef, nsteps + 1, numnodes_a)u"kg/m^3"
-pools = Array{Float64}(undef, nsteps + 1)u"kg/m^2"
-T_skys = Array{Float64}(undef, nsteps + 1)u"K"
+nsteps = ndays * (length(hours)-1)
+T_soils = Array{Float64}(undef, nsteps, numnodes_a)u"K"
+θ_soils = Array{Float64}(undef, nsteps, numnodes_a)
+ψ_soils = Array{Float64}(undef, nsteps, numnodes_a)u"J/kg"
+rh_soils = Array{Float64}(undef, nsteps, numnodes_a)
+λ_bulk = Array{Float64}(undef, nsteps, numnodes_a)u"W/m/K"
+c_p_bulk = Array{Float64}(undef, nsteps, numnodes_a)u"J/kg/K"
+ρ_bulk = Array{Float64}(undef, nsteps, numnodes_a)u"kg/m^3"
+pools = Array{Float64}(undef, nsteps)u"kg/m^2"
+T_skys = Array{Float64}(undef, nsteps)u"K"
 
 # initialise outputs
 T_soils[1, :] = T0
@@ -267,7 +267,7 @@ pool = 0.0u"kg/m^2"
 heights = [0.01] .* u"m"
 niter = ustrip(3600 / timestep)
 ∑phase = zeros(Float64, numnodes_a)u"J"
-for j in 1:35#ndays
+for j in 1:ndays
     iday = j
     lai = LAIs[iday]
     refl = refls[iday]
@@ -468,9 +468,73 @@ end
 
 pstart = 1
 pfinish = ndays*24
-#pstart = 24*25
-pfinish = 24*30
+pstart = 24*180
+pfinish = 24*187
 plot(pstart:pfinish, u"°C".(T_soils[pstart:pfinish, :]), xlabel="time", ylabel="soil temperature", lw=2, label=string.(depths'), legend=:none, ylim=(-10u"°C", 85u"°C"))
 plot!(pstart:pfinish, Matrix(soiltemps_NMR[pstart:pfinish, :]), xlabel="time", ylabel="soil temperature", lw=2, label=string.(depths'), legend=:none, ylim=(-10u"°C", 85u"°C"), linestyle=:dash, linecolor="grey")
 plot(pstart:pfinish, θ_soils[pstart:pfinish, :], xlabel="time", ylabel="soil moisture (m^3/m^3)", lw=2, label = string.(depths'), legend = :none, ylim = (0, 0.5))
+plot!(pstart:pfinish, Matrix(soilmoists_NMR[pstart:pfinish, :]), xlabel="time", ylabel="soil moisture", legend = :none, lw=2, label = string.(depths'), ylim = (0, 0.5), linestyle=:dash, linecolor="grey")
+
+# now try the simulation function
+micro_out = runmicro(;
+    refhyt,
+    depths,
+    days,
+    hours,
+    lat,
+    iuv,
+    ndmax,
+    elev,
+    hori,
+    slope,
+    aspect,
+    ruf,
+    zh,
+    d0,
+    ρ_b_dry,
+    θ_sat = 0.26, # overwritten to be a vector above, so manually inputting
+    λ_m,
+    c_p_m,
+    ρ_m,
+    TMINN,
+    TMAXX,
+    RAINdailys = ustrip(RAINFALL)u"kg/m^2",
+    SoilMoist,
+    daily,
+    runmoist,
+    spinup,
+    TAIRs,
+    RHs,
+    VELs,
+    SOLRs,
+    CLDs,
+    RAINs,
+    SHADES,
+    SLES,
+    refls,
+    PCTWETS,
+    PE,
+    KS,
+    BB,
+    BD,
+    DD,
+    maxpool,
+    L,
+    rw,
+    pc,
+    rl,
+    sp,
+    r1,
+    im,
+    maxcount,
+    timestep,
+    τA,
+    soilinit = fill(soilinit, numnodes_a),
+    LAIs,
+)
+
+plot(pstart:pfinish, u"°C".(micro_out.T_soils[pstart:pfinish, :]), xlabel="time", ylabel="soil temperature", lw=2, label=string.(depths'), legend=:none, ylim=(-10u"°C", 85u"°C"))
+plot!(pstart:pfinish, Matrix(soiltemps_NMR[pstart:pfinish, :]), xlabel="time", ylabel="soil temperature", lw=2, label=string.(depths'), legend=:none, ylim=(-10u"°C", 85u"°C"), linestyle=:dash, linecolor="grey")
+
+plot(pstart:pfinish, micro_out.θ_soils[pstart:pfinish, :], xlabel="time", ylabel="soil moisture (m^3/m^3)", lw=2, label = string.(depths'), legend = :none, ylim = (0, 0.5))
 plot!(pstart:pfinish, Matrix(soilmoists_NMR[pstart:pfinish, :]), xlabel="time", ylabel="soil moisture", legend = :none, lw=2, label = string.(depths'), ylim = (0, 0.5), linestyle=:dash, linecolor="grey")
