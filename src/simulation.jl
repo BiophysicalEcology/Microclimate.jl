@@ -222,8 +222,9 @@ function runmicro(;
     # simulate all days
     pool = 0.0u"kg/m^2"
     heights = [0.01] .* u"m"
-    niter = ustrip(3600 / timestep)
+    niter_moist = ustrip(3600 / timestep)
     ∑phase = zeros(Float64, numnodes_a)u"J"
+    infil_out = nothing
     for j in 1:ndays
         #j = 1
         iday = j
@@ -282,7 +283,6 @@ function runmicro(;
             θ_soil=θ_soil0_a,
             runmoist=runmoist
         )
-
         forcing = MicroForcing(;
             SOLRt,
             ZENRt,
@@ -321,6 +321,43 @@ function runmicro(;
                     T_soils[step, :] = T0
                     step = (j - 1) * (length(hours) - 1) + i
                     pool += rainfall
+                    if runmoist
+                        infil_out, pctwet, pool, θ_soil0_b = get_soil_water_balance(;
+                                refhyt,
+                                ruf,
+                                zh,
+                                d0,
+                                TAIRs,
+                                VELs,
+                                RHs,
+                                ZENRs,
+                                T0,
+                                heights,
+                                elev,
+                                pool,
+                                θ_soil0_b,
+                                PE,
+                                KS,
+                                BB,
+                                BD,
+                                DD,
+                                depths,
+                                timestep,
+                                L,
+                                rw,
+                                pc,
+                                rl,
+                                sp,
+                                r1,
+                                lai,
+                                im,
+                                maxcount,
+                                moistlayers,
+                                niter_moist,
+                                pctwet,
+                                step,
+                        )
+                    end
                     pools[step] = pool
                     pool = clamp(pool, 0.0u"kg/m^2", maxpool)
                     T_skys[step] = Tsky
@@ -328,7 +365,7 @@ function runmicro(;
                     λ_bulk[step, :] = λ_b
                     c_p_bulk[step, :] = c_p_b
                     ρ_bulk[step, :] = ρ_b
-                    if runmoist && i > 1
+                    if runmoist && iday > 1
                         θ_soils[step, :] = infil_out.θ_soil[sub]
                         ψ_soils[step, :] = infil_out.ψ_soil[sub]
                         rh_soils[step, :] = infil_out.rh_soil[sub]
@@ -373,86 +410,27 @@ function runmicro(;
                         T_soils[step, :] = T0
                     end
                     if runmoist
-                        # compute scalar profiles
-                        profile_out = get_profile(
-                            refhyt=refhyt,
-                            ruf=ruf,
-                            zh=zh,
-                            d0=d0,
-                            TAREF=TAIRs[step],
-                            VREF=VELs[step],
-                            rh=RHs[step],
-                            D0cm=u"°C"(T0[1]),  # top layer temp
-                            ZEN=ZENRs[step],
-                            heights=heights,
-                            elev=elev,
-                            warn=true
-                        )
-
-                        # convection
-                        qconv = profile_out.QCONV
-
-                        # evaporation
-                        P_atmos = get_pressure(elev)
-                        rh_loc = min(0.99, profile_out.RHs[2] / 100)
-                        hc = max(abs(qconv / (T0[1] - u"K"(TAIRs[step]))), 0.5u"W/m^2/K")
-                        wet_air_out = wet_air(u"K"(TAIRs[step]); rh=RHs[step], P_atmos=P_atmos)
-                        c_p_air = wet_air_out.c_p
-                        ρ_air = wet_air_out.ρ_air
-                        hd = (hc / (c_p_air * ρ_air)) * (0.71 / 0.60)^0.666
-                        qevap, gwsurf = evap(tsurf=u"K"(T0[1]), tair=u"K"(TAIRs[step]), rh=RHs[step], rhsurf=100.0, hd=hd, elev=elev, pctwet=pctwet, sat=true)
-                        λ_evap = get_λ_evap(T0[1])
-                        EP = max(1e-7u"kg/m^2/s", qevap / λ_evap) # evaporation potential, mm/s (kg/m2/s)
-
-                        if pool > 0.0u"kg/m^2" # surface is wet - saturate it for infiltration
-                            θ_soil0_b[1] = 1 - BD[1] / DD[1]
-                        end
-                        # run infiltration algorithm
-                        infil_out = soil_water_balance(;
-                            PE,
-                            KS,
-                            BB,
-                            BD,
-                            DD,
-                            rh_loc,
-                            θ_soil=θ_soil0_b,
-                            ET=EP,
-                            T10=T0,
-                            depth=depths,
-                            dt=timestep,
-                            elev,
-                            L,
-                            rw,
-                            pc,
-                            rl,
-                            sp,
-                            r1,
-                            lai,
-                            im,
-                            maxcount,
-                            ml=moistlayers
-                        )
-                        θ_soil0_b = infil_out.θ_soil
-                        surf_evap = max(0.0u"kg/m^2", infil_out.evap)
-                        Δ_H2O = max(0.0u"kg/m^2", infil_out.Δ_H2O)
-                        pool = clamp(pool - Δ_H2O - surf_evap, 0.0u"kg/m^2", maxpool) # pooling surface water
-                        if pool > 0.0u"kg/m^2" # surface is wet - saturate it for infiltration
-                            θ_soil0_b[1] = 1 - BD[1] / DD[1]
-                        end
-                        for _ in 1:(niter-1)
-                            infil_out = soil_water_balance(;
+                        infil_out, pctwet, pool, θ_soil0_b = get_soil_water_balance(;
+                                refhyt,
+                                ruf,
+                                zh,
+                                d0,
+                                TAIRs,
+                                VELs,
+                                RHs,
+                                ZENRs,
+                                T0,
+                                heights,
+                                elev,
+                                pool,
+                                θ_soil0_b,
                                 PE,
                                 KS,
                                 BB,
                                 BD,
                                 DD,
-                                rh_loc=rh_loc,
-                                θ_soil=θ_soil0_b,
-                                ET=EP,
-                                T10=T0,
-                                depth=depths,
-                                dt=timestep,
-                                elev=elev,
+                                depths,
+                                timestep,
                                 L,
                                 rw,
                                 pc,
@@ -462,19 +440,11 @@ function runmicro(;
                                 lai,
                                 im,
                                 maxcount,
-                                ml=moistlayers
-                            )
-                            θ_soil0_b = infil_out.θ_soil
-                            surf_evap = max(0.0u"kg/m^2", infil_out.evap)
-                            Δ_H2O = max(0.0u"kg/m^2", infil_out.Δ_H2O)
-                            pool = clamp(pool - Δ_H2O - surf_evap, 0.0u"kg/m^2", maxpool)
-                            if pool > 0.0u"kg/m^2"
-                                θ_soil0_b[1] = 1 - BD[1] / DD[1]
-                            end
-                        end
-                    end
-                    if runmoist
-                        pctwet = clamp(abs(surf_evap / (EP * timestep) * 100), 0, 100)
+                                moistlayers,
+                                niter_moist,
+                                pctwet,
+                                step,
+                        )
                     end
                     if i < length(hours)
                         pools[step] = pool
