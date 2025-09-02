@@ -467,6 +467,7 @@ for j in 1:ndays
 end
 
 pstart = 1
+pfinish = 25
 pfinish = ndays*24
 pstart = 24*180
 pfinish = 24*187
@@ -498,7 +499,7 @@ micro_out = runmicro(;
     ρ_m,
     TMINN,
     TMAXX,
-    RAINdailys = ustrip(RAINFALL)u"kg/m^2",
+    RAINdailys,
     SoilMoist,
     daily,
     runmoist,

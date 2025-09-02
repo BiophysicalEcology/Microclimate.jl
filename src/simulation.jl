@@ -4,8 +4,9 @@ function runmicro(;
     ndmax=3,
     simdays=length(days), # can't be less than days or greater than days in year
     hours=collect(0.:1:24.), # hour of day for solrad
-    depths=[0.0, 2.5, 5.0, 10.0, 15.0, 20.0, 30.0, 50.0, 100.0, 200.0]u"cm", # Soil nodes (cm) - keep spacing close near the surface, last value is where it is assumed that the soil temperature is at the annual mean air temperature
+    depths=[0.0, 2.5, 5.0, 10.0, 15.0, 20.0, 30.0, 40.0, 50.0, 100.0, 200.0]u"cm", # Soil nodes (cm) - keep spacing close near the surface, last value is where it is assumed that the soil temperature is at the annual mean air temperature
     refhyt=2u"m",
+    heights=[1.0, 5.0, 10.0, 15.0, 20.0, 30.0, 40.0, 50.0, 100.0]u"cm", # TODO
     elev=226.0u"m", # elevation (m)
     hori=fill(0.0u"°", 24), # enter the horizon angles (degrees) so that they go from 0 degrees azimuth (north) clockwise in 15 degree intervals
     slope=0.0u"°", # slope (degrees, range 0-90)
@@ -21,11 +22,11 @@ function runmicro(;
     ρ_b_dry=2.56u"Mg/m^3", # dry soil bulk density (Mg/m3)
     θ_sat=0.26u"m^3/m^3", # volumetric water content at saturation (0.1 bar matric potential) (m3/m3)
     # soil moisture model parameters
-    PE=fill(0.7, 19)u"J/kg", #air entry potential J/kg
-    KS=fill(0.0058, 19)u"kg*s/m^3", #saturated conductivity, kg s/m3
-    BB=fill(1.7, 19), #soil 'b' parameter
-    BD=fill(ρ_b_dry, 19)u"Mg/m^3", # soil bulk density, Mg/m3
-    DD=fill(ρ_m, 19)u"Mg/m^3", # soil mineral density, Mg/m3
+    PE=fill(0.7, length(depths) * 2 - 2)u"J/kg", #air entry potential J/kg
+    KS=fill(0.0058, length(depths) * 2 - 2)u"kg*s/m^3", #saturated conductivity, kg s/m3
+    BB=fill(1.7, length(depths) * 2 - 2), #soil 'b' parameter
+    BD=fill(ρ_b_dry, length(depths) * 2 - 2)u"Mg/m^3", # soil bulk density, Mg/m3
+    DD=fill(ρ_m, length(depths) * 2 - 2)u"Mg/m^3", # soil mineral density, Mg/m3
     maxpool=1.0e4u"kg/m^2",
     L=[0, 0, 8.2, 8.0, 7.8, 7.4, 7.1, 6.4, 5.8, 4.8, 4.0, 1.8, 0.9, 0.6, 0.8, 0.4, 0.4, 0, 0] * 1e4u"m/m^3", # root density at each node, mm/m3 (from Campell 1985 Soil Physics with Basic, p. 131)
     rw=2.5e+10u"m^3/kg/s", # resistance per unit length of root, m3 kg-1 s-1
@@ -84,6 +85,92 @@ function runmicro(;
     iuv=false, # this makes it take ages if true!
 )
 
+    # lat=43.07305u"°" # latitude
+    # days=[15, 46, 74, 105, 135, 166, 196, 227, 258, 288, 319, 349]
+    # ndmax=3
+    # simdays=length(days) # can't be less than days or greater than days in year
+    # hours=collect(0.:1:24.) # hour of day for solrad
+    # depths=[0.0, 2.5, 5.0, 10.0, 15.0, 20.0, 30.0, 40.0, 50.0, 100.0, 200.0]u"cm" # Soil nodes (cm) - keep spacing close near the surface, last value is where it is assumed that the soil temperature is at the annual mean air temperature
+    # depths=collect(0.0:2.0:200)u"cm" # Soil nodes (cm) - keep spacing close near the surface, last value is where it is assumed that the soil temperature is at the annual mean air temperature
+    # refhyt=2u"m"
+    # elev=226.0u"m" # elevation (m)
+    # hori=fill(0.0u"°", 24) # enter the horizon angles (degrees) so that they go from 0 degrees azimuth (north) clockwise in 15 degree intervals
+    # slope=0.0u"°" # slope (degrees, range 0-90)
+    # aspect=0.0u"°" # aspect (degrees, 0 = North, range 0-360)
+    # ruf=0.004u"m" # m roughness height
+    # zh=0u"m" # m heat transfer roughness height
+    # d0=0u"m" # zero plane displacement correction factor
+    # # soil properties
+    # # soil thermal parameters 
+    # λ_m=1.25u"W/m/K" # soil minerals thermal conductivity (W/mC)
+    # ρ_m=2.560u"Mg/m^3" # soil minerals density (Mg/m3)
+    # c_p_m=870.0u"J/kg/K" # soil minerals specific heat (J/kg-K)
+    # ρ_b_dry=2.56u"Mg/m^3" # dry soil bulk density (Mg/m3)
+    # θ_sat=0.26u"m^3/m^3" # volumetric water content at saturation (0.1 bar matric potential) (m3/m3)
+    # # soil moisture model parameters
+    # PE=fill(0.7, length(depths) * 2 - 2)u"J/kg" #air entry potential J/kg
+    # KS=fill(0.0058, length(depths) * 2 - 2)u"kg*s/m^3" #saturated conductivity, kg s/m3
+    # BB=fill(1.7, length(depths) * 2 - 2) #soil 'b' parameter
+    # BD=fill(ρ_b_dry, length(depths) * 2 - 2)u"Mg/m^3" # soil bulk density, Mg/m3
+    # DD=fill(ρ_m, length(depths) * 2 - 2)u"Mg/m^3" # soil mineral density, Mg/m3
+    # maxpool=1.0e4u"kg/m^2"
+    # L=[0, 0, 8.2, 8.0, 7.8, 7.4, 7.1, 6.4, 5.8, 4.8, 4.0, 1.8, 0.9, 0.6, 0.8, 0.4, 0.4, 0, 0] * 1e4u"m/m^3" # root density at each node, mm/m3 (from Campell 1985 Soil Physics with Basic, p. 131)
+    # rw=2.5e+10u"m^3/kg/s" # resistance per unit length of root, m3 kg-1 s-1
+    # pc=-1500.0u"J/kg" # critical leaf water potential for stomatal closure, J kg-1
+    # rl=2.0e6u"m^4/kg/s" # resistance per unit length of leaf, m3 kg-1 s-1
+    # sp=10.0 # stability parameter, -
+    # r1=0.001u"m" # root radius, m
+    # im=1e-6u"kg/m^2/s" # maximum overall mass balance error allowed, kg
+    # maxcount=500
+    # timestep=360.0u"s"
+    # τA=[0.269904738, 0.266147825, 0.262442906, 0.258789404, 0.255186744, 0.251634356, 0.248131676, 0.2412732,
+    #     0.234606887, 0.228128378, 0.221833385, 0.215717692, 0.20977715, 0.204007681, 0.198405272, 0.187685927,
+    #     0.177588357, 0.168082846, 0.159140695, 0.150734206, 0.142836655, 0.135422274, 0.128466227, 0.12194459,
+    #     0.115834329, 0.110113284, 0.104760141, 0.099754417, 0.09507644, 0.090707328, 0.086628967, 0.082823998,
+    #     0.07927579, 0.075968428, 0.072886691, 0.070016034, 0.067342571, 0.064853053, 0.062534858, 0.060375964,
+    #     0.058364941, 0.056490925, 0.054743609, 0.053113222, 0.051590514, 0.050166738, 0.046408775, 0.045302803,
+    #     0.044259051, 0.043271471, 0.042334415, 0.041442618, 0.040591184, 0.039775572, 0.038991583, 0.038235345,
+    #     0.037503301, 0.036792197, 0.036099067, 0.034101935, 0.033456388, 0.032817888, 0.032184949, 0.031556287,
+    #     0.030930816, 0.030307633, 0.029065372, 0.027825562, 0.027205981, 0.026586556, 0.025967391, 0.025348692,
+    #     0.024114005, 0.023498886, 0.021669152, 0.021066668, 0.019292088, 0.018144698, 0.016762709, 0.015451481,
+    #     0.014949794, 0.014224263, 0.013093462, 0.012670686, 0.012070223, 0.011164062, 0.010241734, 0.009731103,
+    #     0.009507687, 0.009212683, 0.008965785, 0.008827751, 0.008710756, 0.008574128, 0.008462605, 0.008446967,
+    #     0.008539475, 0.009015237, 0.009748444, 0.010586023, 0.011359647, 0.011901268, 0.012062153, 0.011735443,
+    #     0.010882215, 0.009561062, 0.007961182, 0.006438984, 0.005558204, 0.006133532, 0.009277754
+    # ]
+    # # Time varying environmental data
+    # refls=fill(0.1, length(days)) # substrate solar reflectivity (decimal %)
+    # SHADES=fill(0.0, length(days)) # % shade cast by vegetation
+    # PCTWETS=fill(0.0, length(days)) # % surface wetness
+    # SLES=fill(0.96, length(days)) # - surface emissivity
+    # RAINdailys=([28, 28.2, 54.6, 79.7, 81.3, 100.1, 101.3, 102.5, 89.7, 62.4, 54.9, 41.2])u"kg/m^2"
+    # TMINN=([-14.3, -12.1, -5.1, 1.2, 6.9, 12.3, 15.2, 13.6, 8.9, 3, -3.2, -10.6] * 1.0)u"°C"
+    # TMAXX=([-3.2, 0.1, 6.8, 14.6, 21.3, 26.4, 29, 27.7, 23.3, 16.6, 7.8, -0.4] * 1.0)u"°C"
+    # WNMINN=([4.9, 4.8, 5.2, 5.3, 4.6, 4.3, 3.8, 3.7, 4, 4.6, 4.9, 4.8] * 0.1)u"m/s"
+    # WNMAXX=([4.9, 4.8, 5.2, 5.3, 4.6, 4.3, 3.8, 3.7, 4, 4.6, 4.9, 4.8] * 1.0)u"m/s"
+    # RHMINN=[50.2, 48.4, 48.7, 40.8, 40, 42.1, 45.5, 47.3, 47.6, 45, 51.3, 52.8]
+    # RHMAXX=[100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100]
+    # CCMINN=[50.3, 47, 48.2, 47.5, 40.9, 35.7, 34.1, 36.6, 42.6, 48.4, 61.1, 60.1]
+    # CCMAXX=[50.3, 47, 48.2, 47.5, 40.9, 35.7, 34.1, 36.6, 42.6, 48.4, 61.1, 60.1]
+    # TIMINS=[0, 0, 1, 1]
+    # TIMAXS=[1, 1, 0, 0]
+    # TAIRs=nothing
+    # RHs=nothing
+    # VELs=nothing
+    # SOLRs=nothing
+    # CLDs=nothing
+    # RAINs=nothing
+    # ZENhr=nothing
+    # IRDhr=nothing
+    # soilinit=u"K".((fill(7.741667, length(depths)))u"°C")
+    # SoilMoist=[0.42, 0.42, 0.42, 0.43, 0.44, 0.44, 0.43, 0.42, 0.41, 0.42, 0.42, 0.43]
+    # LAIs=fill(0.1, length(days))
+    # daily=false
+    # runmoist=false
+    # spinup=false
+    # iuv=false # this makes it take ages if true!
+
+
     ndays = length(days)
     tannul = mean(Unitful.ustrip.(vcat(TMAXX, TMINN)))u"°C" # annual mean temperature for getting monthly deep soil temperature (°C)
     tannulrun = fill(tannul, ndays) # monthly deep soil temperature (2m) (°C)
@@ -96,6 +183,23 @@ function runmicro(;
     # set up a profile of soil properites with depth for each day to be run
     numnodes_a = length(depths) # number of soil nodes for temperature calcs and final output
     numnodes_b = numnodes_a * 2 - 2 # number of soil nodes for soil moisture calcs
+    # if runmoist & length(depths) != 10
+    #     depths_orig = [0.0, 2.5, 5.0, 10.0, 15.0, 20.0, 30.0, 40.0, 50.0, 100.0, 200.0]u"cm"
+    #     mids_orig = [(depths_orig[i] + depths_orig[i+1]) / 2 for i in 1:length(depths_orig)-1]
+    #     expanded_depths_orig = sort(unique([depths_orig; mids_orig]))
+    #     mids = [(depths[i] + depths[i+1]) / 2 for i in 1:length(depths)-1]
+    #     expanded_depths = sort(unique([depths; mids]))
+    #     function spline_to_depths(base_depths, base_values, new_depths)
+    #         # strip units for interpolation
+    #         x = ustrip.(u"cm", base_depths)
+    #         y = base_values ./ unit(base_values)  # plain numbers
+    #         itp = LinearInterpolation(x, y, extrapolation_bc=Line())  # or CubicSplineInterpolation
+    #         # evaluate at new depths
+    #         y_new = itp.(ustrip.(u"cm", new_depths)) * unit(base_values)
+    #         return y_new
+    #     end
+    #     L2 = spline_to_depths(expanded_depths, L, expanded_depths)
+    # end
     nodes_day = zeros(numnodes_a, ndays) # array of all possible soil nodes
     nodes_day[1, 1:ndays] .= numnodes_a # deepest node for first substrate type
     # Create an empty 10×5 matrix that can store any type (including different units)
