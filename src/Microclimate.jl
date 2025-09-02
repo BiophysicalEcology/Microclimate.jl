@@ -14,7 +14,7 @@ export vapour_pressure, wet_air, dry_air, phase_transition
 
 export sinec!, vsine, hourly_vars
 
-export hour_angle, solar_geometry, elev_corr, dchxy, dexpi, solrad, gads
+export hour_angle, solar_geometry, elev_corr, dchxy, dexpi, solrad, gads, cloud_adjust_radiation
 
 # TODO Aqua says these dont actually exist to export
 # export check_skylight, gamma, λ_evap, MicroInput, air_pressure 

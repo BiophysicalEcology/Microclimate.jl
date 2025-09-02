@@ -2062,5 +2062,72 @@ function gads(
     optdep[:, 1] .*= 1000.0
     return optdep
 end
-#gads()
-#end
+
+"""
+    cloud_adjust_radiation(cloud, D_cs, B_cs, zenith, doy; a=0.25, b=0.5, gamma=1.0)
+
+Compute global (G), diffuse (D), and direct-beam (B) solar on a horizontal surface
+given cloud cover fraction `cloud` (0–1), clear-sky diffuse `D_cs` and direct `B_cs`,
+solar zenith angle `zenith` (radians), and day-of-year `doy`.
+
+- Ångström scaling: G = (a + b*S) * (D_cs + B_cs), with S ≈ (1 - cloud)^gamma
+- Diffuse fraction via Erbs (uses extraterrestrial horizontal irradiance) via
+    a clearness index (Maxwwell 1987) which is the ratio of global to extraterrestrial
+    irradiance on a horizontal plane
+
+Returns `(G, D, B)`; works with arrays but needs to not use 'similar' if to work with
+    scalars.
+
+Reference
+Maxwell, E. L., "A Quasi-Physical Model for Converting Hourly
+           Global Horizontal to Direct Normal Insolation", Technical
+           Report No. SERI/TR-215-3087, Golden, CO: Solar Energy Research
+           Institute, 1987.
+"""
+function cloud_adjust_radiation(cloud, D_cs, B_cs, zenith, doy; a=0.36, b=0.64, gamma=1.0)
+    # Solar geometry
+    cosz     = cos.(zenith)
+    cosz_pos = max.(cosz, 0.0)
+
+    # 1) Extraterrestrial horizontal irradiance (W/m²)
+    I_sc  = 1367.0u"W/m^2"
+    E0    = 1.00011 .+ 0.034221*cosd.(360.0 .* (doy .- 1) ./ 365.0) .+
+                     0.00128*sind.(360.0 .* (doy .- 1) ./ 365.0) .+
+                     0.000719*cosd.(2 .* 360.0 .* (doy .- 1) ./ 365.0) .+
+                     0.000077*sind.(2 .* 360.0 .* (doy .- 1) ./ 365.0)
+    G0h   = I_sc .* E0 .* cosz_pos  # on horizontal; 0 at night
+
+    # 2) Ångström–Prescott scaling of clear-sky global by cloud cover
+    S     = (1 .- cloud).^gamma                 # approx. sunshine fraction
+    T     = a .+ b .* S                         # transmittance
+    G_cs  = D_cs .+ B_cs                        # clear-sky global
+    G     = max.(T .* G_cs, 0.0u"W/m^2") .* (cosz_pos .> 0)  # zero at night
+
+    # 3) Split G into diffuse/direct using Erbs diffuse fraction vs clearness index K_t
+    ϵ     = 1e-9u"W/m^2"
+    Kt    = G ./ max.(G0h, ϵ)
+    Kt    = clamp.(Kt, 0.0, 1.2)
+
+    Fd = similar(Kt) # diffuse fraction
+    for i in eachindex(Kt)
+        if Kt[i] <= 0.22
+            Fd[i] = 1 - 0.09*Kt[i]
+        elseif Kt[i] <= 0.80
+            Fd[i] = 0.9511 - 0.1604*Kt[i] + 4.388*Kt[i]^2 - 16.638*Kt[i]^3 + 12.336*Kt[i]^4
+        else
+            Fd[i] = 0.165
+        end
+    end
+    Fd = clamp.(Fd, 0.0, 1.0)
+
+    D = Fd .* G
+    B = G .- D
+
+    # Zero everything at night
+    night = (cosz_pos .== 0)
+    D[night] .= 0.0u"W/m^2"
+    B[night] .= 0.0u"W/m^2"
+    G[night] .= 0.0u"W/m^2"
+
+    return G, D, B
+end

@@ -116,8 +116,13 @@ plot(Zenith)
 HHsr = solrad_out.HHsr
 tsn = solrad_out.tsn
 Global = solrad_out.Global
+Direct = solrad_out.Direct
+Diffuse = solrad_out.Scattered
 # Angstrom formula (formula 5.33 on P. 177 of "Climate Data and Resources" by Edward Linacre 1992
-Global = Global .* (0.36 .+ 0.64 * (1.0 .- (CLDs / 100.0))) # Angstrom formula (formula 5.33 on P. 177 of "Climate Data and Resources" by Edward Linacre 1992
+doy  = repeat(days, inner=length(hours))
+globalcloud, diffusecloud, directcloud = cloud_adjust_radiation(CLDs / 100., Diffuse, Direct, Zenith, doy)
+#Global = Global .* (0.36 .+ 0.64 * (1.0 .- (CLDs / 100.0))) # Angstrom formula (formula 5.33 on P. 177 of "Climate Data and Resources" by Edward Linacre 1992
+
 Scattered = solrad_out.Scattered
 Direct = solrad_out.Direct
 Rayleigh = solrad_out.Rayleigh
@@ -132,6 +137,7 @@ hours24 = repeat(0:1:23, outer = length(days))
 hours_remove = findall(x->x==24.0, hours25)
 deleteat!(Zenith, hours_remove)
 deleteat!(Global, hours_remove)
+deleteat!(globalcloud, hours_remove)
 deleteat!(Direct, hours_remove)
 deleteat!(Scattered, hours_remove)
 rows_to_remove = 25:25:300
@@ -141,7 +147,7 @@ rows_to_remove = 25:25:300
 λRayleigh = λRayleigh[setdiff(1:end, rows_to_remove), :]
 plot(Zenith, ylabel="Zenith angle", legend=false)
 plot!(metout_NMR.ZEN, linestyle = :dash)
-plot(Global, ylabel="Radiation", label="solrad.jl")
+plot(globalcloud, ylabel="Radiation", label="solrad.jl")
 plot!(metout_NMR.SOLR, linestyle = :dash, label="NMR")
 
 month2do = 6

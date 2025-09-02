@@ -6,7 +6,7 @@ function runmicro(;
     hours=collect(0.:1:24.), # hour of day for solrad
     depths=[0.0, 2.5, 5.0, 10.0, 15.0, 20.0, 30.0, 40.0, 50.0, 100.0, 200.0]u"cm", # Soil nodes (cm) - keep spacing close near the surface, last value is where it is assumed that the soil temperature is at the annual mean air temperature
     refhyt=2u"m",
-    heights=[1.0, 5.0, 10.0, 15.0, 20.0, 30.0, 40.0, 50.0, 100.0]u"cm", # TODO
+    heights=[1.0, 5.0, 10.0, 15.0, 20.0, 30.0, 40.0, 50.0, 100.0]u"cm",
     elev=226.0u"m", # elevation (m)
     hori=fill(0.0u"°", 24), # enter the horizon angles (degrees) so that they go from 0 degrees azimuth (north) clockwise in 15 degree intervals
     slope=0.0u"°", # slope (degrees, range 0-90)
@@ -259,8 +259,13 @@ function runmicro(;
         RHs = RHs25[skip25] # remove every 25th output
         CLDs = CLDs25[skip25] # remove every 25th output
         SOLRs = solrad_out.Global[skip25] # remove every 25th output
-        # Angstrom formula (formula 5.33 on P. 177 of "Climate Data and Resources" by Edward Linacre 1992
-        SOLRs = SOLRs .* (0.36 .+ 0.64 * (1.0 .- (CLDs / 100.0))) # Angstrom formula (formula 5.33 on P. 177 of "Climate Data and Resources" by Edward Linacre 1992
+        DIRs = solrad_out.Direct[skip25] # remove every 25th output
+        DIFs = solrad_out.Scattered[skip25] # remove every 25th output
+        # adjust for cloud using Angstrom formula (formula 5.33 on P. 177 of "Climate Data and Resources" by Edward Linacre 1992
+        doy  = repeat(days, inner=length(hours))[skip25]
+        globalsolar, diffusesolar, directsolar = cloud_adjust_radiation(CLDs / 100., DIFs, DIRs, solrad_out.Zenith[skip25], doy)
+        SOLRs = globalsolar
+        #SOLRs = SOLRs .* (0.36 .+ 0.64 * (1.0 .- (CLDs / 100.0))) # Angstrom formula (formula 5.33 on P. 177 of "Climate Data and Resources" by Edward Linacre 1992
     end
     ZENRs = solrad_out.Zenith[skip25] # remove every 25th output
     ZSLs = solrad_out.ZenithSlope[skip25] # remove every 25th output
@@ -325,7 +330,7 @@ function runmicro(;
     T_skys[1] = Tsky
     # simulate all days
     pool = 0.0u"kg/m^2"
-    heights = [0.01] .* u"m"
+    heights_water_balance = [0.01] .* u"m"
     niter_moist = ustrip(3600 / timestep)
     ∑phase = zeros(Float64, numnodes_a)u"J"
     infil_out = nothing
@@ -436,7 +441,7 @@ function runmicro(;
                                 RHs,
                                 ZENRs,
                                 T0,
-                                heights,
+                                heights_water_balance,
                                 elev,
                                 pool,
                                 θ_soil0_b,
@@ -524,7 +529,7 @@ function runmicro(;
                                 RHs,
                                 ZENRs,
                                 T0,
-                                heights,
+                                heights_water_balance,
                                 elev,
                                 pool,
                                 θ_soil0_b,
@@ -585,16 +590,45 @@ function runmicro(;
             end
         end
     end
-    return (
-        solrad_out=solrad_out,
-        T_skys=T_skys,
-        T_soils=T_soils,
-        θ_soils=θ_soils,
-        ψ_soils=ψ_soils,
-        rh_soils=rh_soils,
-        λ_bulk=λ_bulk,
-        c_p_bulk=c_p_bulk,
-        ρ_bulk=ρ_bulk,
-        pools=pools
+    # compute air temperature, wind speed and relative humidity profiles
+    profile_out = map(1:length(TAIRs)) do i
+        # compute scalar profiles
+        get_profile(
+            TAREF=TAIRs[i],
+            VREF=VELs[i],
+            rh=RHs[i],
+            D0cm=u"°C"(T_soils[i, 1]),  # top layer temp
+            ZEN=ZENRs[i],
+            heights=heights,
+            elev=elev,
+            warn=true
+        )
+    end
+    flip2vectors(x) = (; (k => getfield.(x, k) for k in keys(x[1]))...)
+    profiles = flip2vectors(profile_out); # pull out each output as a vector
+    airtemperature = reduce(hcat, profiles.TAs)'
+    windspeed = reduce(hcat, profiles.VELs)'
+    relativehumidity = reduce(hcat, profiles.RHs)'
+
+    return (;
+        airtemperature,
+        windspeed,
+        relativehumidity,
+        cloudcover=CLDs,
+        globalsolar,
+        directsolar,
+        diffusesolar,
+        zenithangle=ZENRs,
+        skytemperature=T_skys,
+        soiltemperature=T_soils,
+        soilmoisture=θ_soils,
+        soilwaterpotential=ψ_soils,
+        soilhumidity=rh_soils,
+        soilthermalconductivity=λ_bulk,
+        soilspecificheat=c_p_bulk,
+        soilbulkdensity=ρ_bulk,
+        surfacewater=pools,
+        solradout=solrad_out,
+        profileout=profile_out,
     )
 end
