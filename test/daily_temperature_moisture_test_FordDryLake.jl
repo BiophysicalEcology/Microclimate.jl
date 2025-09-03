@@ -42,15 +42,15 @@ VELs .= clamp.(VELs, 0.1u"m/s", (Inf)u"m/s")
 CLDs .= clamp.(CLDs, 0, 100)
 RAINs .= clamp.(RAINs, 0u"kg/m^2", (Inf)u"kg/m^2")
 
-refhyt = microinput[:Refhyt] * 1.0u"m"
+reference_height = microinput[:Refhyt] * 1.0u"m"
 depths = ((DataFrame(CSV.File("test/data/init_daily/DEP.csv"))[:, 2]) / 100.0)u"m" # Soil nodes (cm) - keep spacing close near the surface, last value is where it is assumed that the soil temperature is at the annual mean air temperature
 days = collect(1:Int(length(TAIRs) / 24)) # days of year to run (for solrad)
 hours = collect(0.:1:24.) # hour of day for solrad
-lat = (microinput[:ALAT] + microinput[:AMINUT] / 60) * 1.0u"°" # latitude
+latitude = (microinput[:ALAT] + microinput[:AMINUT] / 60) * 1.0u"°" # latitude
 iuv = Bool(Int(microinput[:IUV])) # this makes it take ages if true!
 ndmax = (microinput[:ndmax]) # number of iterations per day
-elev = microinput[:ALTT] * 1.0u"m" # elevation (m)
-hori = (DataFrame(CSV.File("test/data/init_daily/hori.csv"))[:, 2]) * 1.0u"°" # enter the horizon angles (degrees) so that they go from 0 degrees azimuth (north) clockwise in 15 degree intervals
+elevation = microinput[:ALTT] * 1.0u"m" # elevation (m)
+horizon_angles = (DataFrame(CSV.File("test/data/init_daily/hori.csv"))[:, 2]) * 1.0u"°" # enter the horizon angles (degrees) so that they go from 0 degrees azimuth (north) clockwise in 15 degree intervals
 slope = microinput[:slope] * 1.0u"°" # slope (degrees, range 0-90)
 aspect = microinput[:azmuth] * 1.0u"°" # aspect (degrees, 0 = North, range 0-360)
 ruf = microinput[:RUF] * 1.0u"m" # m roughness height
@@ -73,15 +73,15 @@ spinup = Bool(Int(microinput[:spinup]))
 
 # creating the arrays of environmental variables that are assumed not to change with month for this simulation
 ndays = length(days)
-SHADES = (DataFrame(CSV.File("test/data/init_daily/MINSHADES.csv"))[:, 2] * 1.0) # daily shade (%)
-SLES = (DataFrame(CSV.File("test/data/init_daily/SLES.csv"))[:, 2] * 1.0) # set up vector of ground emissivities for each day
-refls = (DataFrame(CSV.File("test/data/init_daily/REFLS.csv"))[:, 2] * 1.0) # set up vector of soil reflectances for each day (decimal %)
-PCTWETS = (DataFrame(CSV.File("test/data/init_daily/PCTWET.csv"))[:, 2] * 1.0) # set up vector of soil wetness for each day (%)
+shades = (DataFrame(CSV.File("test/data/init_daily/MINSHADES.csv"))[:, 2] * 1.0) # daily shade (%)
+sles = (DataFrame(CSV.File("test/data/init_daily/SLES.csv"))[:, 2] * 1.0) # set up vector of ground emissivities for each day
+albedos = (DataFrame(CSV.File("test/data/init_daily/REFLS.csv"))[:, 2] * 1.0) # set up vector of soil albedos for each day (decimal %)
+pctwets = (DataFrame(CSV.File("test/data/init_daily/PCTWET.csv"))[:, 2] * 1.0) # set up vector of soil wetness for each day (%)
 tannul = mean(Unitful.ustrip.(TAIRs))u"°C" # annual mean temperature for getting monthly deep soil temperature (°C)
 tannulrun = fill(tannul, ndays) # monthly deep soil temperature (2m) (°C)
 
 # defining view factor based on horizon angles
-viewf = 1 - sum(sin.(hori)) / length(hori) # convert horizon angles to radians and calc view factor(s)
+viewfactor = 1 - sum(sin.(horizon_angles)) / length(horizon_angles) # convert horizon angles to radians and calc view factor(s)
 
 # Soil properties
 # set up a profile of soil properites with depth for each day to be run
@@ -132,7 +132,7 @@ timestep = microinput[:moiststep]u"s"
 raindf = DataFrame(date=date, rainfall=RAINs)
 raindf.day = Date.(raindf.date)
 raindfdaily = combine(groupby(raindf, :day), :rainfall => sum => :daily_rainfall)
-RAINdailys = raindfdaily.daily_rainfall
+daily_rainfall = raindfdaily.daily_rainfall
 SoilMoist = Matrix((DataFrame(CSV.File("test/data/init_daily/moists.csv"))[:, 2:(ndays-1)] .* 1.0))
 LAIs = (DataFrame(CSV.File("test/data/init_daily/LAI.csv"))[:, 2] * 1.0u"Mg/m^3")
 
@@ -156,16 +156,16 @@ for i in 2:numnodes_a
     soilprops[i, :] .= soilprops[1, :]
 end
 
-# compute solar radiation (need to make refl time varying)
+# compute solar radiation
 solrad_out = solrad(;
     days,
     hours,
-    lat,
-    elev,
-    hori,
+    latitude,
+    elevation,
+    horizon_angles,
     slope,
     aspect,
-    refls,
+    albedos,
     iuv,
     τA)
 # only need zenith angles in this case
@@ -237,7 +237,7 @@ T_skys = Array{Float64}(undef, nsteps)u"K"
 # initialise outputs
 T_soils[1, :] = T0
 θ_soils[1, :] = θ_soil0_a
-λ_b, c_p_b, ρ_b = soil_properties(T0, θ_soil0_a, nodes_day[:, 1], soilprops, elev, runmoist, false)
+λ_b, c_p_b, ρ_b = soil_properties(T0, θ_soil0_a, nodes_day[:, 1], soilprops, elevation, runmoist, false)
 λ_bulk[1, :] = λ_b
 c_p_bulk[1, :] = c_p_b
 ρ_bulk[1, :] = ρ_b
@@ -249,15 +249,15 @@ rh_soils[1, :] = clamp.(exp.(MW .* ψ_soils[1, :] ./ (Unitful.R .* T0)), 0, 1)
 pools[1] = 0.0u"kg/m^2"
 # sky temperature
 longwave_out = get_longwave(
-    elev=elev,
+    elevation=elevation,
     rh=RHs[1],
     tair=TAIRs[1],
     tsurf=T0[1],
-    slep=SLES[1],
-    sle=SLES[1],
+    slep=sles[1],
+    sle=sles[1],
     cloud=CLDs[1],
-    viewf=viewf,
-    shade=SHADES[1]
+    viewfactor=viewfactor,
+    shade=shades[1]
 )
 Tsky = longwave_out.Tsky
 T_skys[1] = Tsky
@@ -270,14 +270,14 @@ niter = ustrip(3600 / timestep)
 for j in 1:ndays
     iday = j
     lai = LAIs[iday]
-    refl = refls[iday]
-    shade = SHADES[iday] # daily shade (%)
-    sle = SLES[iday] # set up vector of ground emissivities for each day
+    albedo = albedos[iday]
+    shade = shades[iday] # daily shade (%)
+    sle = sles[iday] # set up vector of ground emissivities for each day
     slep = sle # - cloud emissivity
-    pctwet = PCTWETS[iday] # set up vector of soil wetness for each day
+    pctwet = pctwets[iday] # set up vector of soil wetness for each day
     tdeep = u"K"(tannulrun[iday]) # annual mean temperature for getting daily deep soil temperature (°C)
     nodes = nodes_day[:, iday]
-    rainfall = RAINdailys[iday]
+    rainfall = daily_rainfall[iday]
     # loop through hours of day
     if step == 2
         istart = 2
@@ -290,19 +290,19 @@ for j in 1:ndays
         end
         pool = clamp(pool, 0.0u"kg/m^2", maxpool)
         # Parameters
-        dep = depths
+        depths = depths
         params = MicroParams(;
             soilprops,
-            dep,
-            refhyt,
+            depths,
+            reference_height,
             ruf,
             d0,
             zh,
             slope,
             shade,
-            viewf,
-            elev,
-            refl,
+            viewfactor,
+            elevation,
+            albedo,
             sle,
             slep,
             pctwet,
@@ -336,7 +336,7 @@ for j in 1:ndays
         if runmoist
             # compute scalar profiles
             profile_out = get_profile(
-                refhyt=refhyt,
+                reference_height=reference_height,
                 ruf=ruf,
                 zh=zh,
                 d0=d0,
@@ -346,7 +346,7 @@ for j in 1:ndays
                 D0cm=u"°C"(T0[1]),  # top layer temp at time i
                 ZEN=ZENRs[step-1],
                 heights=heights,
-                elev=elev,
+                elevation=elevation,
                 warn=true
             )
 
@@ -354,14 +354,14 @@ for j in 1:ndays
             qconv = profile_out.QCONV
 
             # evaporation
-            P_atmos = get_pressure(elev)
+            P_atmos = get_pressure(elevation)
             rh_loc = min(0.99, profile_out.RHs[2] / 100)
             hc = max(abs(qconv / (T0[1] - u"K"(TAIRs[step-1]))), 0.5u"W/m^2/K")
             wet_air_out = wet_air(u"K"(TAIRs[step-1]); rh=RHs[step-1], P_atmos=P_atmos)
             c_p_air = wet_air_out.c_p
             ρ_air = wet_air_out.ρ_air
             hd = (hc / (c_p_air * ρ_air)) * (0.71 / 0.60)^0.666
-            qevap, gwsurf = evap(tsurf=u"K"(T0[1]), tair=u"K"(TAIRs[step-1]), rh=RHs[step-1], rhsurf=100.0, hd=hd, elev=elev, pctwet=pctwet, sat=true)
+            qevap, gwsurf = evap(tsurf=u"K"(T0[1]), tair=u"K"(TAIRs[step-1]), rh=RHs[step-1], rhsurf=100.0, hd=hd, elevation=elevation, pctwet=pctwet, sat=true)
             λ_evap = get_λ_evap(T0[1])
             EP = max(1e-7u"kg/m^2/s", qevap / λ_evap) # evaporation potential, mm/s (kg/m2/s)
 
@@ -381,7 +381,7 @@ for j in 1:ndays
                 T10=T0,
                 depth=depths,
                 dt=timestep,
-                elev,
+                elevation,
                 L,
                 rw,
                 pc,
@@ -413,7 +413,7 @@ for j in 1:ndays
                     T10=T0,
                     depth=depths,
                     dt=timestep,
-                    elev=elev,
+                    elevation=elevation,
                     L,
                     rw,
                     pc,
@@ -439,21 +439,21 @@ for j in 1:ndays
         end
         pools[step] = pool
         longwave_out = get_longwave(;
-            elev,
+            elevation,
             rh=RHs[step-1],
             tair=TAIRs[step-1],
             tsurf=T0[1],
             slep,
             sle,
             cloud=CLDs[step-1],
-            viewf,
+            viewfactor,
             shade,
         )
         Tsky = longwave_out.Tsky
         T_skys[step] = Tsky
         sub = vcat(findall(isodd, 1:numnodes_b), numnodes_b)
         θ_soil0_a = θ_soil0_b[sub]
-        λ_b, c_p_b, ρ_b = soil_properties(T0, θ_soil0_a, nodes, soilprops, elev, runmoist, false)
+        λ_b, c_p_b, ρ_b = soil_properties(T0, θ_soil0_a, nodes, soilprops, elevation, runmoist, false)
         λ_bulk[step, :] = λ_b
         c_p_bulk[step, :] = c_p_b
         ρ_bulk[step, :] = ρ_b
@@ -478,15 +478,15 @@ plot!(pstart:pfinish, Matrix(soilmoists_NMR[pstart:pfinish, :]), xlabel="time", 
 
 # now try the simulation function
 micro_out = runmicro(;
-    refhyt,
+    reference_height,
     depths,
     days,
     hours,
-    lat,
+    latitude,
     iuv,
     ndmax,
-    elev,
-    hori,
+    elevation,
+    horizon_angles,
     slope,
     aspect,
     ruf,
@@ -499,7 +499,7 @@ micro_out = runmicro(;
     ρ_m,
     TMINN,
     TMAXX,
-    RAINdailys,
+    daily_rainfall,
     SoilMoist,
     daily,
     runmoist,
@@ -510,10 +510,10 @@ micro_out = runmicro(;
     SOLRs,
     CLDs,
     RAINs,
-    SHADES,
-    SLES,
-    refls,
-    PCTWETS,
+    shades,
+    sles,
+    albedos,
+    pctwets,
     PE,
     KS,
     BB,
@@ -534,8 +534,8 @@ micro_out = runmicro(;
     LAIs,
 )
 
-plot(pstart:pfinish, u"°C".(micro_out.T_soils[pstart:pfinish, :]), xlabel="time", ylabel="soil temperature", lw=2, label=string.(depths'), legend=:none, ylim=(-10u"°C", 85u"°C"))
+plot(pstart:pfinish, u"°C".(micro_out.soil_temperature[pstart:pfinish, :]), xlabel="time", ylabel="soil temperature", lw=2, label=string.(depths'), legend=:none, ylim=(-10u"°C", 85u"°C"))
 plot!(pstart:pfinish, Matrix(soiltemps_NMR[pstart:pfinish, :]), xlabel="time", ylabel="soil temperature", lw=2, label=string.(depths'), legend=:none, ylim=(-10u"°C", 85u"°C"), linestyle=:dash, linecolor="grey")
 
-plot(pstart:pfinish, micro_out.θ_soils[pstart:pfinish, :], xlabel="time", ylabel="soil moisture (m^3/m^3)", lw=2, label = string.(depths'), legend = :none, ylim = (0, 0.5))
+plot(pstart:pfinish, micro_out.soil_moisture[pstart:pfinish, :], xlabel="time", ylabel="soil moisture (m^3/m^3)", lw=2, label = string.(depths'), legend = :none, ylim = (0, 0.5))
 plot!(pstart:pfinish, Matrix(soilmoists_NMR[pstart:pfinish, :]), xlabel="time", ylabel="soil moisture", legend = :none, lw=2, label = string.(depths'), ylim = (0, 0.5), linestyle=:dash, linecolor="grey")

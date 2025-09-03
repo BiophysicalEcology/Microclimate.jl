@@ -40,9 +40,9 @@ lat = longlat[2]*1.0u"°" # latitude
 lon =  longlat[1]*1.0u"°" # longitude
 slope = (microinput[:slope])*1.0u"°" # slope
 aspect = (microinput[:azmuth])*1.0u"°" # aspect
-elev = (microinput[:ALTT])*1.0u"m" # elevation
-hori = (DataFrame(CSV.File("$testdir/data/init_monthly/hori.csv"))[:, 2])*1.0u"°"#fill(0.0u"°", 24) # enter the horizon angles (degrees) so that they go from 0 degrees azimuth (north) clockwise in 15 degree intervals
-refls = (DataFrame(CSV.File("$testdir/data/init_monthly/REFLS.csv"))[:, 2]*1.0) # set up vector of soil reflectances for each day (decimal %)
+elevation = (microinput[:ALTT])*1.0u"m" # elevation
+horizon_angles = (DataFrame(CSV.File("$testdir/data/init_monthly/horizon_angles.csv"))[:, 2])*1.0u"°"#fill(0.0u"°", 24) # enter the horizon angles (degrees) so that they go from 0 degrees azimuth (north) clockwise in 15 degree intervals
+albedos = (DataFrame(CSV.File("$testdir/data/init_monthly/REFLS.csv"))[:, 2]*1.0) # set up vector of soil albedoectances for each day (decimal %)
 τA_NMR = (DataFrame(CSV.File("$testdir/data/init_monthly/TAI.csv"))[:, 2]*1.0)
 TIMINS = [microinput[:TIMINS1], microinput[:TIMINS2], microinput[:TIMINS3], microinput[:TIMINS4]] # time of minima for air temp, wind, humidity and cloud cover (h), air & wind mins relative to sunrise, humidity and cloud cover mins relative to solar noon
 TIMAXS = [microinput[:TIMAXS1], microinput[:TIMAXS2], microinput[:TIMAXS3], microinput[:TIMAXS4]] # time of maxima for air temp, wind, humidity and cloud cover (h), air temp & wind maxs relative to solar noon, humidity and cloud cover maxs relative to sunrise
@@ -90,11 +90,11 @@ solrad_out = @inferred solrad(;
     days,       # days of year
     hours,      # hours of day
     lat,        # latitude (degrees)
-    elev,       # elevation (m)
-    hori,       # horizon angles 0 degrees azimuth (north) clockwise in 15 degree intervals
+    elevation,       # elevation (m)
+    horizon_angles,       # horizon angles 0 degrees azimuth (north) clockwise in 15 degree intervals
     slope,      # slope (degrees, range 0-90)
     aspect,     # aspect (degrees, 0 = North, range 0-360)
-    refls,      # substrate solar reflectivity (decimal %)
+    albedos,      # substrate solar albedoectivity (decimal %)
     iuv,        # use Dave_Furkawa theory for UV radiation (290-360 nm)?
     τA          # aerosol profile from gads (global aerosol database)
     )

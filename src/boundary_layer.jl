@@ -1,5 +1,5 @@
 function get_profile(;
-    refhyt=1.2u"m",
+    reference_height=1.2u"m",
     ruf=0.004u"m",
     zh=0.0u"m",
     d0=0.0u"m",
@@ -12,7 +12,7 @@ function get_profile(;
     ZEN=21.50564u"°",
     a=0.15,
     heights=[0.01, 0.05, 0.1, 0.2, 0.3, 0.4, 0.5, 0.75, 1.0] * u"m",
-    elev=0.0u"m",
+    elevation=0.0u"m",
     warn=false)
 
     if minimum(heights) < ruf
@@ -21,23 +21,23 @@ function get_profile(;
 
     addheight = false
     heights_extra = nothing
-    if minimum(heights) > refhyt
+    if minimum(heights) > reference_height
         addheight = true
         heights = vcat([0.01], heights)
     end
 
-    if maximum(heights) >= refhyt && warn
+    if maximum(heights) >= reference_height && warn
         println("Warning: some heights are ≥ reference height. Using constant air temperature and adjusting wind speed.")
     end
 
     heights_orig = copy(heights)
-    heights = filter(h -> h < refhyt, heights_orig)
+    heights = filter(h -> h < reference_height, heights_orig)
 
     function RHOCP(TAVE)
         return u"(cal*g)/(g*cm^3*K)"*(0.08472 / ustrip(TAVE))
     end
-    function RHOCP(TAVE, elev, rh)
-        dry_air_out = dry_air(u"K"(TAVE), elev=elev)
+    function RHOCP(TAVE, elevation, rh)
+        dry_air_out = dry_air(u"K"(TAVE), elevation=elevation)
         wet_air_out = wet_air(u"K"(TAVE), rh=rh)
         ρ = dry_air_out.ρ_air
         c_p = wet_air_out.c_p
@@ -106,7 +106,7 @@ function get_profile(;
     T3 = u"K"(D0cm)
 
     # Units: m to cm
-    z = u"cm"(refhyt)
+    z = u"cm"(reference_height)
     z0 = u"cm"(ruf)
     zh_cm = u"cm"(zh)
     d0_cm = u"cm"(d0)
@@ -122,7 +122,7 @@ function get_profile(;
     T[1] = T1
 
     # compute rcptkg (was a constant in original Fortran version)
-    dry_air_out = dry_air(u"K"(TAREF), elev=elev)
+    dry_air_out = dry_air(u"K"(TAREF), elevation=elevation)
     wet_air_out = wet_air(u"K"(TAREF), rh=rh)
     ρ = dry_air_out.ρ_air
     c_p = wet_air_out.c_p
@@ -136,7 +136,7 @@ function get_profile(;
     USTAR = κ * V / DUM
     DIFFT = T1 - T3
     TAVE = (T3 + T1) / 2
-    RCP = RHOCP(TAVE)#, elev, rh)
+    RCP = RHOCP(TAVE)#, elevation, rh)
     AMOL = -30.0u"cm"
     if zh > 0.0u"m"
         STS = 0.62 / (ustrip(z0) * ustrip(USTAR) / 12)^0.45
@@ -186,7 +186,7 @@ function get_profile(;
         end
     end
 
-    heights = [0.0u"cm"; reverse(ZZ); u"cm"(refhyt)]
+    heights = [0.0u"cm"; reverse(ZZ); u"cm"(reference_height)]
     VV = [0.0u"cm/minute"; reverse(VV)]
     T = [T3; reverse(T)]
 
@@ -196,7 +196,7 @@ function get_profile(;
     RHs = clamp.(e ./ es .* 100, 0, 100)
 
     if heights_extra !== nothing
-        VV_extra = V .* (heights_extra ./ refhyt) .^ a
+        VV_extra = V .* (heights_extra ./ reference_height) .^ a
         T_extra = fill(TAREF, length(heights_extra))
         RH_extra = fill(rh, length(heights_extra))
 

@@ -15,8 +15,8 @@ lonc = 0.0 # longitude correction, hours
 elev = 276.0u"m" # elevation, m
 slope = 0u"°"
 aspect = 0u"°"
-hori = fill(0.0, 24) .* u"°"
-refl = 0.15 # substrate solar reflectivity (decimal %)
+horizon_angles = fill(0.0, 24) .* u"°"
+albedo = 0.15 # substrate solar reflectivity (decimal %)
 cmH2O = 1 # precipitable cm H2O in air column, 0.1 = VERY DRY; 1 = MOIST AIR CONDITIONS; 2 = HUMID, TROPICAL CONDITIONS (note this is for the whole atmospheric profile, not just near the ground)
 ϵ = 0.0167238
 ω = 2π / 365

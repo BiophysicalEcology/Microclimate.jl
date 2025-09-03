@@ -159,15 +159,15 @@ end
 
 """
     dry_air(T_drybulb; kw...)
-    dry_air(T_drybulb, P_atmos, elev, fO2, fCO2, fN2)
+    dry_air(T_drybulb, P_atmos, elevation, fO2, fCO2, fN2)
 
 """
-dry_air(T_drybulb; P_atmos=nothing, elev=0m, fO2 = 0.2095, fCO2 = 0.0004, fN2 = 0.79) = dry_air(T_drybulb, P_atmos, elev, fO2, fCO2, fN2)
-function dry_air(T_drybulb, P_atmos, elev, fO2, fCO2, fN2)
+dry_air(T_drybulb; P_atmos=nothing, elevation=0m, fO2 = 0.2095, fCO2 = 0.0004, fN2 = 0.79) = dry_air(T_drybulb, P_atmos, elevation, fO2, fCO2, fN2)
+function dry_air(T_drybulb, P_atmos, elevation, fO2, fCO2, fN2)
     σ = Unitful.uconvert(u"W/m^2/K^4",Unitful.σ) # Stefan-Boltzmann constant, W/m^2/K^4, extract σ when calling Unitful when units issue is fixed in Unitful
     M_a = ((fO2*molO₂ + fCO2*molCO₂ + fN2*molN₂) |> u"kg")/1u"mol" # molar mass of air
     if isnothing(P_atmos)
-        P_atmos = get_pressure(elev)#P_std * ((1 - (0.0065 * elev / 288m))^(1 / 0.190284))
+        P_atmos = get_pressure(elevation)#P_std * ((1 - (0.0065 * elevation / 288m))^(1 / 0.190284))
     end
     ρ_air = (M_a / Unitful.R) * P_atmos / (T_drybulb)
     ρ_air = Unitful.uconvert(u"kg/m^3",ρ_air) # simplify units
@@ -234,11 +234,11 @@ function phase_transition(
     T_past::Vector,  # temps at previous step
     ∑phase::Vector,  # accumulated latent heat
     θ::Vector,       # soil moisture by layer
-    dep::Vector      # soil depth boundaries (cm)
+    depths::Vector      # soil depth boundaries (cm)
 )
     HTOFN = 333500.0u"J/kg" # latent heat of fusion of waterper unit mass
     c_p = 4186.0u"J/kg/K" # specific heat of water
-    nodes = length(dep)
+    nodes = length(depths)
     layermass = zeros(Float64, nodes)u"kg"
     qphase = zeros(Float64, nodes)u"J"
     meanT = similar(T)
@@ -255,9 +255,9 @@ function phase_transition(
 
             if meanTpast[j] > 273.15u"K" && meanT[j] <= 273.15u"K"
                 if j < nodes
-                    layermass[j] = u"m"(dep[j+1] - dep[j]) * 1000.0u"kg/m" * θ[j]
+                    layermass[j] = u"m"(depths[j+1] - depths[j]) * 1000.0u"kg/m" * θ[j]
                 else
-                    layermass[j] = u"m"(dep[j] + 100.0u"cm" - dep[j]) * 1000.0u"kg/m" * θ[j]
+                    layermass[j] = u"m"(depths[j] + 100.0u"cm" - depths[j]) * 1000.0u"kg/m" * θ[j]
                 end
 
                 qphase[j] = (meanTpast[j] - meanT[j]) * layermass[j] * c_p

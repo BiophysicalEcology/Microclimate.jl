@@ -27,17 +27,17 @@ names = [
 # Zip into a NamedTuple
 microinput = (; zip(names, microinput_vec)...)
 
-refhyt = microinput[:Refhyt] * 1.0u"m"
+reference_height = microinput[:Refhyt] * 1.0u"m"
 depths = ((DataFrame(CSV.File("test/data/init_monthly/DEP.csv"))[:, 2]) / 100.0)u"m"#[0.0, 0.025, 0.05, 0.1, 0.15, 0.2, 0.3, 0.5, 1.0, 2.0]u"m" # Soil nodes (cm) - keep spacing close near the surface, last value is where it is assumed that the soil temperature is at the annual mean air temperature
 days = [15, 46, 74, 105, 135, 166, 196, 227, 258, 288, 319, 349]
 hours = collect(0.:1:24.) # hour of day for solrad
 longlat = (DataFrame(CSV.File("test/data/init_monthly/longlat.csv"))[:, 2] * 1.0)
-lat = longlat[2]*1.0u"°" # latitude
-lon =  longlat[1]*1.0u"°" # longitude
+latitude = longlat[2]*1.0u"°" # latitude
+longitude = longlat[1]*1.0u"°" # longitude
 iuv = Bool(Int(microinput[:IUV])) # this makes it take ages if true!
 ndmax = (microinput[:ndmax])
-elev = microinput[:ALTT] * 1.0u"m" # elevation (m)
-hori = (DataFrame(CSV.File("test/data/init_monthly/hori.csv"))[:, 2]) * 1.0u"°"#fill(0.0u"°", 24) # enter the horizon angles (degrees) so that they go from 0 degrees azimuth (north) clockwise in 15 degree intervals
+elevation = microinput[:ALTT] * 1.0u"m" # elevation (m)
+horizon_angles = (DataFrame(CSV.File("test/data/init_monthly/hori.csv"))[:, 2]) * 1.0u"°"#fill(0.0u"°", 24) # enter the horizon angles (degrees) so that they go from 0 degrees azimuth (north) clockwise in 15 degree intervals
 slope = microinput[:slope] * 1.0u"°" # slope (degrees, range 0-90)
 aspect = microinput[:azmuth] * 1.0u"°" # aspect (degrees, 0 = North, range 0-360)
 ruf = microinput[:RUF] * 1.0u"m" # m roughness height
@@ -67,15 +67,15 @@ runmoist = Bool(Int(microinput[:runmoist]))
 
 # creating the arrays of environmental variables that are assumed not to change with month for this simulation
 ndays = length(days)
-SHADES = (DataFrame(CSV.File("test/data/init_monthly/MINSHADES.csv"))[:, 2] * 1.0) # daily shade (%)
-SLES = (DataFrame(CSV.File("test/data/init_monthly/SLES.csv"))[:, 2] * 1.0) # set up vector of ground emissivities for each day
-refls = (DataFrame(CSV.File("test/data/init_monthly/REFLS.csv"))[:, 2] * 1.0) # set up vector of soil reflectances for each day (decimal %)
-PCTWETS = (DataFrame(CSV.File("test/data/init_monthly/PCTWET.csv"))[:, 2] * 1.0) # set up vector of soil wetness for each day (%)
+shades = (DataFrame(CSV.File("test/data/init_monthly/MINSHADES.csv"))[:, 2] * 1.0) # daily shade (%)
+sles = (DataFrame(CSV.File("test/data/init_monthly/SLES.csv"))[:, 2] * 1.0) # set up vector of ground emissivities for each day
+albedos = (DataFrame(CSV.File("test/data/init_monthly/REFLS.csv"))[:, 2] * 1.0) # set up vector of soil albedos for each day (decimal %)
+pctwets = (DataFrame(CSV.File("test/data/init_monthly/PCTWET.csv"))[:, 2] * 1.0) # set up vector of soil wetness for each day (%)
 tannul = mean(Unitful.ustrip.(vcat(TMAXX, TMINN)))u"°C" # annual mean temperature for getting monthly deep soil temperature (°C)
 tannulrun = fill(tannul, ndays) # monthly deep soil temperature (2m) (°C)
 
 # defining view factor based on horizon angles
-viewf = 1 - sum(sin.(hori)) / length(hori) # convert horizon angles to radians and calc view factor(s)
+viewfactor = 1 - sum(sin.(horizon_angles)) / length(horizon_angles) # convert horizon angles to radians and calc view factor(s)
 
 # Soil properties
 # set up a profile of soil properites with depth for each day to be run
@@ -103,12 +103,12 @@ soilinit = (DataFrame(CSV.File("test/data/init_monthly/soilinit.csv"))[1:numnode
 solrad_out = solrad(;
     days,
     hours,
-    lat,
-    elev,
-    hori,
+    latitude,
+    elevation,
+    horizon_angles,
     slope,
     aspect,
-    refls,
+    albedos,
     iuv,
 )
 solrad_out.Zenith[solrad_out.Zenith.>90u"°"] .= 90u"°"
@@ -156,11 +156,11 @@ for iday in 1:ndays
     #iday=2
     sub = (iday*24-24+1):(iday*24)#(iday*24-23):(iday*24)
     sub2 = (iday*25-25+1):(iday*25) # for getting mean monthly over the 25 hrs as in fortran version
-    shade = SHADES[iday] # daily shade (%)
-    sle = SLES[iday] # set up vector of ground emissivities for each day
-    refl = refls[iday]
+    shade = shades[iday] # daily shade (%)
+    sle = sles[iday] # set up vector of ground emissivities for each day
+    albedo = albedos[iday]
     slep = sle # - cloud emissivity
-    pctwet = PCTWETS[iday] # set up vector of soil wetness for each day
+    pctwet = pctwets[iday] # set up vector of soil wetness for each day
     tdeep = u"K"(tannulrun[iday]) # annual mean temperature for getting daily deep soil temperature (°C)
     nodes = nodes_day[:, iday]
 
@@ -202,24 +202,24 @@ for iday in 1:ndays
 
     # Parameters
     params = MicroParams(
-        soilprops=soilprops,
-        dep=depths,
-        refhyt=refhyt,
-        ruf=ruf,
-        d0=d0,
-        zh=zh,
-        slope=slope,
-        shade=shade,
-        viewf=viewf,
-        elev=elev,
-        refl=refl,
-        sle=sle,
-        slep=slep, # check if this is what it should be - sle vs. slep (set as 1 in PAR in Fortran but then changed to user SLE later)
-        pctwet=pctwet,
-        nodes=nodes,
-        tdeep=tdeep,
-        θ_soil=θ_soil,
-        runmoist=runmoist
+        soilprops,
+        depths,
+        reference_height,
+        ruf,
+        d0,
+        zh,
+        slope,
+        shade,
+        viewfactor,
+        elevation,
+        albedo,
+        sle,
+        slep, # TODO check if this is what it should be - sle vs. slep (set as 1 in PAR in Fortran but then changed to user SLE later)
+        pctwet,
+        nodes,
+        tdeep,
+        θ_soil,
+        runmoist,
     )
 
     forcing = MicroForcing(;
@@ -280,7 +280,7 @@ for iday in 1:ndays
     # profiles = Vector{NamedTuple}(undef, nsteps)  # or whatever you have from your loop
     # for i in 1:nsteps
     #     profiles[i] = get_profile(
-    #         refhyt = refhyt,
+    #         reference_height = reference_height,
     #         ruf = ruf,
     #         zh = zh,
     #         d0 = d0,
@@ -290,20 +290,20 @@ for iday in 1:ndays
     #         D0cm = u"°C"(T_soils'[1, i]),  # top layer temp at time i
     #         ZEN = ZENR[i],
     #         heights = heights,
-    #         elev = elev
+    #         elevation = elevation
     #     )
     # end
     # Tskys = zeros(24)u"K"  # or whatever you have from your loop
     # for i in 1:nsteps
     #     Tskys[i] = Microclimate.get_longwave(
-    #         elev = elev, 
+    #         elevation = elevation, 
     #         rh = RH[i], 
     #         tair = TAIR[i], 
     #         tsurf = u"°C"(T_soils'[1, i]), 
     #         slep = slep, 
     #         sle = sle, 
     #         cloud = CLD[i], 
-    #         viewf = viewf,
+    #         viewfactor = viewfactor,
     #         shade = shade
     #         ).Tsky
     # end
@@ -341,14 +341,14 @@ end
 
 # now try the simulation function 'runmicro' which has the above inputs as default
 micro_out = runmicro(;)
-plot(micro_out.T_soils, legend=false)
+plot(micro_out.soil_temperature, legend=false)
 plot!(Matrix(soiltemps_NMR);
         xlabel="time", ylabel="soil temperature", lw=2,
         linestyle=:dash, linecolor="grey"
     )
 dayplot=2
 sub=((dayplot-1)*24+1):(dayplot*24)
-plt = plot(u"°C".(micro_out.T_soils[sub,:]), xlabel="Time", ylabel="Soil Temperature", lw=2, legend=false, ylims=[-20, 50])
+plt = plot(u"°C".(micro_out.soil_temperature[sub,:]), xlabel="Time", ylabel="Soil Temperature", lw=2, legend=false, ylims=[-20, 50])
 plot!(plt, Matrix(soiltemps_NMR[sub,:]);
         xlabel="time", ylabel="soil temperature", lw=2,
         linestyle=:dash, linecolor="grey"

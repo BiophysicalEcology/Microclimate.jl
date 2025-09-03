@@ -6,7 +6,7 @@ function soil_properties(
     θ_soil::AbstractVector{<:Real},
     nodes::AbstractVector{<:Real},
     soilprops::Matrix{<:Any},
-    elev::Quantity,
+    elevation::Quantity,
     runmoist::Bool,
     runsnow::Bool,
 )
@@ -30,7 +30,7 @@ function soil_properties(
     g_a = 0.1
     g_c = 1.0 - 2.0 * g_a
     p_a0 = 101325.0u"Pa"
-    p_a = get_pressure(elev)
+    p_a = get_pressure(elevation)
 
     ii, ij = runsnow ? (9, 8) : (1, 0)
     for i in ii:NON

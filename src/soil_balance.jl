@@ -12,20 +12,20 @@ function soil_energy_balance!(
     #dT_K = dT .* 60 .* u"K/minute"  # convert Float64 time back to unitful
     # extract prameters
     p = i.params
-    (; ruf, pctwet, sle, slep, refl, viewf, elev, slope, shade, dep, refhyt, d0, zh, tdeep, nodes, soilprops, θ_soil, runmoist) = p
+    (; ruf, pctwet, sle, slep, albedo, viewfactor, elevation, slope, shade, depths, reference_height, d0, zh, tdeep, nodes, soilprops, θ_soil, runmoist) = p
     # extract layer property vectors
     sl = i.soillayers
     (; depp, wc, c) = sl
     
-    sabnew = 1.0 - refl
+    sabnew = 1.0 - albedo
 
     # check for unstable conditions of ground surface temperature
     T .= clamp.(T, (-81.0+273.15)u"K", (85.0+273.15)u"K")
 
-    N = length(dep)
+    N = length(depths)
 
     # get soil properties
-    λ_b, c_p_b, ρ_b = soil_properties(T, θ_soil, nodes, soilprops, elev, runmoist, false)
+    λ_b, c_p_b, ρ_b = soil_properties(T, θ_soil, nodes, soilprops, elevation, runmoist, false)
 
     # Get environmental data at time t
     f = i.forcing
@@ -39,7 +39,7 @@ function soil_energy_balance!(
 
     T[N] = tdeep # set boundary condition of deep soil temperature
 
-    depp[1:N] = dep
+    depp[1:N] = depths
     # Compute soil layer properties
     @inbounds for i in 1:N
         rcsp = ρ_b[i] * c_p_b[i]
@@ -64,14 +64,14 @@ function soil_energy_balance!(
 
     # Longwave radiation
     longwave_out = get_longwave(
-        elev = elev, 
+        elevation = elevation, 
         rh = rh, 
         tair = tair, 
         tsurf = T[1], 
         slep = slep, 
         sle = sle, 
         cloud = cloud, 
-        viewf = viewf,
+        viewfactor = viewfactor,
         shade = shade
         )
     qrad = longwave_out.Qrad
@@ -81,7 +81,7 @@ function soil_energy_balance!(
 
     # Convection
     profile_out = get_profile(
-        refhyt = refhyt,
+        reference_height = reference_height,
         ruf = ruf, 
         d0 = d0, 
         zh = zh, 
@@ -91,18 +91,18 @@ function soil_energy_balance!(
         ZEN=zenr, 
         heights=[0.01] .* u"m", 
         rh=rh, 
-        elev=elev
+        elevation=elevation
         )
     qconv = profile_out.QCONV
     hc = max(abs(qconv / (T[1] - tair)), 0.5u"W/m^2/K")
-    P_atmos = get_pressure(elev)
+    P_atmos = get_pressure(elevation)
     
     # Evaporation
     wet_air_out = wet_air(u"K"(tair); rh=rh, P_atmos=P_atmos)
     c_p_air = wet_air_out.c_p
     ρ_air = wet_air_out.ρ_air
     hd = (hc / (c_p_air * ρ_air)) * (0.71 / 0.60)^0.666
-    qevap, gwsurf = evap(tsurf=u"K"(T[1]), tair=u"K"(tair), rh=rh, rhsurf=100.0, hd=hd, elev=elev, pctwet=pctwet, sat=false)
+    qevap, gwsurf = evap(tsurf=u"K"(T[1]), tair=u"K"(tair), rh=rh, rhsurf=100.0, hd=hd, elevation=elevation, pctwet=pctwet, sat=false)
 
     # Energy balance at surface
     dT[1] = (qsolar + qrad + qcond + qconv - qevap) / wc[1]
@@ -116,7 +116,7 @@ function soil_energy_balance!(
     #@. dT = ustrip.(u"K/minute", dT_K) ./ 60.0
 end
 
-function evap(;tsurf, tair, rh, rhsurf, hd, elev, pctwet, sat)
+function evap(;tsurf, tair, rh, rhsurf, hd, elevation, pctwet, sat)
     # Assumes all units are SI (Kelvin, Pascal, meters, seconds, kg, etc.)
 
     # Ground-level variables, shared via global or passed in as needed
@@ -129,7 +129,7 @@ function evap(;tsurf, tair, rh, rhsurf, hd, elev, pctwet, sat)
     tsurf = tsurf < u"K"(-81.0u"°C") ? u"K"(-81.0u"°C") : tsurf
 
     # Atmospheric pressure from elevation
-    P_atmos = get_pressure(elev)
+    P_atmos = get_pressure(elevation)
 
     # surface and air vapor densities
     ρ_vap_surf = wet_air(u"K"(tsurf); rh=rhsurf, P_atmos=P_atmos).ρ_vap
@@ -171,7 +171,7 @@ function soil_water_balance(;
     depth = [0.0, 0.025, 0.05, 0.1, 0.15, 0.2, 0.3, 0.5, 1.0, 2.0]u"m",
     T10 = fill(293.15u"K", div(M+2,2)),
     dt = 360u"s",
-    elev = 0.0u"m",
+    elevation = 0.0u"m",
     L = [0, 0, 8.2, 8.0, 7.8, 7.4, 7.1, 6.4, 5.8, 4.8, 4.0, 1.8, 0.9, 0.6, 0.8, 0.4 ,0.4, 0, 0]*1e4u"m/m^3", # root density, m m-3
     rw = 2.5e+10u"m^3/kg/s", # resistance per unit length of root, m3 kg-1 s-1
     pc = -1500.0u"J/kg", # critical leaf water potential for stomatal closure, J kg-1
@@ -203,7 +203,7 @@ function soil_water_balance(;
     # N1 = zeros(Float64, M+1)
     # WS = zeros(Float64, M+1)
 
-    P_atmos = get_pressure(elev)
+    P_atmos = get_pressure(elevation)
 
     # Constants
     MW = 0.01801528u"kg/mol" # molar mass of water, kg/mol
@@ -428,7 +428,7 @@ function soil_water_balance(;
 end
 
 function get_soil_water_balance(;
-    refhyt,
+    reference_height,
     ruf,
     zh,
     d0,
@@ -438,7 +438,7 @@ function get_soil_water_balance(;
     ZENRs,
     T0,
     heights,
-    elev,
+    elevation,
     pool,
     θ_soil0_b,
     PE,
@@ -461,10 +461,11 @@ function get_soil_water_balance(;
     niter_moist,
     pctwet,
     step,
+    maxpool,
     )
     # compute scalar profiles
     profile_out = get_profile(
-        refhyt=refhyt,
+        reference_height=reference_height,
         ruf=ruf,
         zh=zh,
         d0=d0,
@@ -474,7 +475,7 @@ function get_soil_water_balance(;
         D0cm=u"°C"(T0[1]),  # top layer temp
         ZEN=ZENRs[step],
         heights=heights,
-        elev=elev,
+        elevation=elevation,
         warn=true
     )
 
@@ -482,14 +483,14 @@ function get_soil_water_balance(;
     qconv = profile_out.QCONV
 
     # evaporation
-    P_atmos = get_pressure(elev)
+    P_atmos = get_pressure(elevation)
     rh_loc = min(0.99, profile_out.RHs[2] / 100)
     hc = max(abs(qconv / (T0[1] - u"K"(TAIRs[step]))), 0.5u"W/m^2/K")
     wet_air_out = wet_air(u"K"(TAIRs[step]); rh=RHs[step], P_atmos=P_atmos)
     c_p_air = wet_air_out.c_p
     ρ_air = wet_air_out.ρ_air
     hd = (hc / (c_p_air * ρ_air)) * (0.71 / 0.60)^0.666
-    qevap, gwsurf = evap(tsurf=u"K"(T0[1]), tair=u"K"(TAIRs[step]), rh=RHs[step], rhsurf=100.0, hd=hd, elev=elev, pctwet=pctwet, sat=true)
+    qevap, gwsurf = evap(tsurf=u"K"(T0[1]), tair=u"K"(TAIRs[step]), rh=RHs[step], rhsurf=100.0, hd=hd, elevation=elevation, pctwet=pctwet, sat=true)
     λ_evap = get_λ_evap(T0[1])
     EP = max(1e-7u"kg/m^2/s", qevap / λ_evap) # evaporation potential, mm/s (kg/m2/s)
 
@@ -509,7 +510,7 @@ function get_soil_water_balance(;
         T10=T0,
         depth=depths,
         dt=timestep,
-        elev,
+        elevation,
         L,
         rw,
         pc,
@@ -541,7 +542,7 @@ function get_soil_water_balance(;
             T10=T0,
             depth=depths,
             dt=timestep,
-            elev=elev,
+            elevation=elevation,
             L,
             rw,
             pc,
