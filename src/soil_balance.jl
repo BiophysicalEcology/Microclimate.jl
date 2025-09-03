@@ -93,7 +93,7 @@ function soil_energy_balance!(
         rh=rh, 
         elevation=elevation
         )
-    qconv = profile_out.QCONV
+    qconv = profile_out.qconv
     hc = max(abs(qconv / (T[1] - tair)), 0.5u"W/m^2/K")
     P_atmos = get_pressure(elevation)
     
@@ -180,7 +180,7 @@ function soil_water_balance(;
     r1 = 0.001u"m", # root radius, m
     lai = 0.1,
     im = 1e-6u"kg/m^2/s", # maximum overall mass balance error allowed, kg m-2 s-1
-    maxcount=500,
+    moist_count=500,
     ml::MoistLayers
 )
 (; P, Z, V, W, WN, K, H, T, rh_soil, ψ_soil, ψ_root, PR, PP, B1, N, N1, WS,
@@ -312,7 +312,7 @@ function soil_water_balance(;
 
     # Newton-Raphson to estimate PL
     counter = 0
-    while counter < maxcount
+    while counter < moist_count
         if PL > PB
             PL = PB - TP * (RB + rl) # variation on EQ11.18
         end
@@ -345,7 +345,7 @@ function soil_water_balance(;
     # F2 = zeros(M + 1)u"J/kg"
     # DP = zeros(M + 1)u"J/kg"
     counter = 0
-    while counter < maxcount
+    while counter < moist_count
         SE = 0.0u"kg/m^2/s"
         counter += 1
         @inbounds for i in 2:M
@@ -447,7 +447,7 @@ function get_soil_water_balance(;
     BD,
     DD,
     depths,
-    timestep,
+    moist_step,
     L,
     rw,
     pc,
@@ -456,7 +456,7 @@ function get_soil_water_balance(;
     r1,
     lai,
     im,
-    maxcount,
+    moist_count,
     moistlayers,
     niter_moist,
     pctwet,
@@ -480,11 +480,11 @@ function get_soil_water_balance(;
     )
 
     # convection
-    qconv = profile_out.QCONV
+    qconv = profile_out.qconv
 
     # evaporation
     P_atmos = get_pressure(elevation)
-    rh_loc = min(0.99, profile_out.RHs[2] / 100)
+    rh_loc = min(0.99, profile_out.humidities[2] / 100)
     hc = max(abs(qconv / (T0[1] - u"K"(TAIRs[step]))), 0.5u"W/m^2/K")
     wet_air_out = wet_air(u"K"(TAIRs[step]); rh=RHs[step], P_atmos=P_atmos)
     c_p_air = wet_air_out.c_p
@@ -509,7 +509,7 @@ function get_soil_water_balance(;
         ET=EP,
         T10=T0,
         depth=depths,
-        dt=timestep,
+        dt=moist_step,
         elevation,
         L,
         rw,
@@ -519,7 +519,7 @@ function get_soil_water_balance(;
         r1,
         lai,
         im,
-        maxcount,
+        moist_count,
         ml=moistlayers
     )
     θ_soil0_b = infil_out.θ_soil
@@ -541,7 +541,7 @@ function get_soil_water_balance(;
             ET=EP,
             T10=T0,
             depth=depths,
-            dt=timestep,
+            dt=moist_step,
             elevation=elevation,
             L,
             rw,
@@ -551,7 +551,7 @@ function get_soil_water_balance(;
             r1,
             lai,
             im,
-            maxcount,
+            moist_count,
             ml=moistlayers
         )
         θ_soil0_b = infil_out.θ_soil
@@ -562,7 +562,7 @@ function get_soil_water_balance(;
             θ_soil0_b[1] = 1 - BD[1] / DD[1]
         end
     end
-    pctwet = clamp(abs(surf_evap / (EP * timestep) * 100), 0, 100)
+    pctwet = clamp(abs(surf_evap / (EP * moist_step) * 100), 0, 100)
 
     return(
     infil_out,

@@ -168,30 +168,30 @@ end
 
 # this version does all variables
 function hourly_vars(
-    TMINN::Vector,
-    TMAXX::Vector,
-    WNMINN::Vector,
-    WNMAXX::Vector,
-    RHMINN::Vector,
-    RHMAXX::Vector,
-    CCMINN::Vector,
-    CCMAXX::Vector,
+    air_temperature_min::Vector,
+    air_temperature_max::Vector,
+    wind_min::Vector,
+    wind_max::Vector,
+    humidity_min::Vector,
+    humidity_max::Vector,
+    cloud_min::Vector,
+    cloud_max::Vector,
     solrad_out::Any,
-    TIMINS::Vector=[0, 0, 1, 1],
-    TIMAXS::Vector=[1, 1, 0, 0],
-    daily::Bool=false)
+    minima_times::Vector=[0, 0, 1, 1],
+    maxima_times::Vector=[1, 1, 0, 0],
+    daily::Bool = false)
 
-    ndays = length(TMINN)
-    Tairs = fill(TMINN[1], 25 * ndays)
-    Clds = fill(CCMINN[1], 25 * ndays)
-    RHs = fill(RHMINN[1], 25 * ndays)
-    WNs = fill(WNMINN[1], 25 * ndays)
+    ndays = length(air_temperature_min)
+    air_temperatures = fill(air_temperature_min[1], 25 * ndays)
+    cloud_covers = fill(cloud_min[1], 25 * ndays)
+    humidites = fill(humidity_min[1], 25 * ndays)
+    wind_speeds = fill(wind_min[1], 25 * ndays)
 
     for iday in 1:ndays
-        ITAIR = TMINN[iday] # initial air temperature for daily
-        IWN = WNMINN[iday]
-        IRH = RHMAXX[iday]
-        ICLD = CCMINN[iday]
+        ITAIR = air_temperature_min[iday] # initial air temperature for daily
+        IWN = wind_min[iday]
+        IRH = humidity_max[iday]
+        ICLD = cloud_min[iday]
         TIMARY = fill(0.0, 25)
         TAIRRY = fill(0.0u"°C", 25)
         WNARRY = fill(IWN, 25)
@@ -216,21 +216,21 @@ function hourly_vars(
         #     HOURS IS BEING USED TO MAKE SINEC WORK WHEN MORNING MINIMUM
         #     IS NOT AT TRUE SUNRISE, THE ALGORITHM IS 2 HOURS OFF FOR SOME
         #     UNKNOWN (6/7/89) REASON)
-        if TIMINS[1] > 0
-            TSRHR = TIMINS[1] + 2.0
+        if minima_times[1] > 0
+            TSRHR = minima_times[1] + 2.0
         else
-            TSRHR = TIMINS[1]
+            TSRHR = minima_times[1]
         end
         TIMSR = (HRINT * 100.0 + FRACTR) + (TSRHR * 100.0)
         #     TIME OF AIR TEMPERATURE MAXIMUM
-        TSNHR = TIMAXS[1]# + TIMCOR (TIMCOR never used in Fortran version - uninitialised?)
+        TSNHR = maxima_times[1]# + TIMCOR (TIMCOR never used in Fortran version - uninitialised?)
         TIMTMX = (HSINT * 100.0 + FRACTS) + (TSNHR * 100.0)
         #     SETTING TMIN, TMAX FROM ARRAYS OBTAINED FROM SUB. IOSOLR
-        TMIN = TMINN[iday]
-        TMAX = TMAXX[iday]
+        TMIN = air_temperature_min[iday]
+        TMAX = air_temperature_max[iday]
         if iday < ndays & ndays > 1
-            TMIN2 = TMINN[iday+1]
-            TMAX2 = TMAXX[iday+1]
+            TMIN2 = air_temperature_min[iday+1]
+            TMAX2 = air_temperature_max[iday+1]
         else
             TMIN2 = TMIN
             TMAX2 = TMAX
@@ -243,72 +243,72 @@ function hourly_vars(
         sinec!(ITAIR, TIMARY, TAIRRY, TMIN, TMAX, TMIN2, TMAX2, TIMSR, TIMSS, TIMTMX, daily, iday)
 
         # wind speed
-        VMIN = WNMINN[iday]
-        VMAX = WNMAXX[iday]
+        VMIN = wind_min[iday]
+        VMAX = wind_max[iday]
         #      SETTING MAX & MIN TIMES RELATIVE TO SUNRISE & SOLAR NOON
         #     TIME OF MINIMUM
-        TSRHR = TIMINS[2]
+        TSRHR = minima_times[2]
         TIMSR = (HRINT * 100.0 + FRACTR) + (TSRHR * 100.0)
-        #      TIME OF MAXIMUM at sunrise for relative humidity
-        TSNHR = TIMAXS[2] #+ TIMCOR
+        #      TIME OF MAXIMUM at sunrise for relative humidites
+        TSNHR = maxima_times[2] #+ TIMCOR
         TIMTMX = (HSINT * 100.0 + FRACTS) + (TSNHR * 100.0)
         TIMIN = TIMSR
         TIMAX = TIMTMX
         IVAR = IWN
         WNARRY = vsine(VMIN, VMAX, TIMSR, TIMSS, TIMIN, TIMAX, daily, iday, IVAR)
 
-        # relative humidity
-        VMIN = RHMINN[iday]
-        VMAX = RHMAXX[iday]
+        # relative humidites
+        VMIN = humidity_min[iday]
+        VMAX = humidity_max[iday]
         #      SETTING MAX & MIN TIMES RELATIVE TO SUNRISE & SOLAR NOON
         #     TIME OF MINIMUM
-        TSRHR = TIMINS[3]
+        TSRHR = minima_times[3]
         TIMSR = (HRINT * 100.0 + FRACTR) + (TSRHR * 100.0)
-        #      TIME OF MAXIMUM at sunrise for relative humidity
-        TSNHR = TIMAXS[3] #+ TIMCOR
+        #      TIME OF MAXIMUM at sunrise for relative humidites
+        TSNHR = maxima_times[3] #+ TIMCOR
         TIMTMX = (HSINT * 100.0 + FRACTS) + (TSNHR * 100.0)
         TIMIN = TIMTMX
         TIMAX = TIMSR
         IVAR = IRH
         RHARRY = vsine(VMIN, VMAX, TIMSR, TIMSS, TIMIN, TIMAX, daily, iday, IVAR)
 
-        # cloud cover
-        VMIN = CCMINN[iday]
-        VMAX = CCMAXX[iday]
+        # cloud_covers cover
+        VMIN = cloud_min[iday]
+        VMAX = cloud_max[iday]
         #      SETTING MAX & MIN TIMES RELATIVE TO SUNRISE & SOLAR NOON
         #     TIME OF MINIMUM
-        TSRHR = TIMINS[4]
+        TSRHR = minima_times[4]
         TIMSR = (HRINT * 100.0 + FRACTR) + (TSRHR * 100.0)
-        #      TIME OF MAXIMUM at sunrise for relative humidity
-        TSNHR = TIMAXS[4] #+ TIMCOR
+        #      TIME OF MAXIMUM at sunrise for relative humidites
+        TSNHR = maxima_times[4] #+ TIMCOR
         TIMTMX = (HSINT * 100.0 + FRACTS) + (TSNHR * 100.0)
         TIMIN = TIMSR
         TIMAX = TIMTMX
         IVAR = ICLD
         CLDARRY = vsine(VMIN, VMAX, TIMSR, TIMSS, TIMIN, TIMAX, daily, iday, IVAR)
 
-        Tairs[(iday*25-24):(iday*25)] = TAIRRY[1:25]
-        WNs[(iday*25-24):(iday*25)] = WNARRY[1:25]
-        RHs[(iday*25-24):(iday*25)] = RHARRY[1:25]
-        Clds[(iday*25-24):(iday*25)] = CLDARRY[1:25]
+        air_temperatures[(iday*25-24):(iday*25)] = TAIRRY[1:25]
+        wind_speeds[(iday*25-24):(iday*25)] = WNARRY[1:25]
+        humidites[(iday*25-24):(iday*25)] = RHARRY[1:25]
+        cloud_covers[(iday*25-24):(iday*25)] = CLDARRY[1:25]
     end
-    return Tairs, WNs, RHs, Clds
+    return air_temperatures, wind_speeds, humidites, cloud_covers
 end
 
-# TODO this does just cloud but should generalise first version better down the track
+# TODO this does just cloud_covers but should generalise first version better down the track
 function hourly_vars(
-    CCMINN::Vector,
-    CCMAXX::Vector,
+    cloud_min::Vector,
+    cloud_max::Vector,
     solrad_out::Any,
-    TIMINS::Vector=[0, 0, 1, 1],
-    TIMAXS::Vector=[1, 1, 0, 0],
+    minima_times::Vector=[0, 0, 1, 1],
+    maxima_times::Vector=[1, 1, 0, 0],
     daily::Bool=false)
 
-    ndays = length(CCMINN)
-    Clds = fill(CCMINN[1], 25 * ndays)
+    ndays = length(cloud_min)
+    cloud_covers = fill(cloud_min[1], 25 * ndays)
 
     for iday in 1:ndays
-        ICLD = CCMINN[iday]
+        ICLD = cloud_min[iday]
         TIMARY = fill(0.0, 25)
         CLDARRY = fill(ICLD, 25)
 
@@ -327,22 +327,22 @@ function hourly_vars(
         HRINT = trunc(DELT)
         FRACTR = (DELT - HRINT) * 60.0
 
-        # cloud cover
-        VMIN = CCMINN[iday]
-        VMAX = CCMAXX[iday]
+        # cloud_covers cover
+        VMIN = cloud_min[iday]
+        VMAX = cloud_max[iday]
         #      SETTING MAX & MIN TIMES RELATIVE TO SUNRISE & SOLAR NOON
         #     TIME OF MINIMUM
-        TSRHR = TIMINS[4]
+        TSRHR = minima_times[4]
         TIMSR = (HRINT * 100.0 + FRACTR) + (TSRHR * 100.0)
-        #      TIME OF MAXIMUM at sunrise for relative humidity
-        TSNHR = TIMAXS[4] #+ TIMCOR
+        #      TIME OF MAXIMUM at sunrise for relative humidites
+        TSNHR = maxima_times[4] #+ TIMCOR
         TIMTMX = (HSINT * 100.0 + FRACTS) + (TSNHR * 100.0)
         TIMIN = TIMSR
         TIMAX = TIMTMX
         IVAR = ICLD
         CLDARRY = vsine(VMIN, VMAX, TIMSR, TIMSS, TIMIN, TIMAX, daily, iday, IVAR)
 
-        Clds[(iday*25-24):(iday*25)] = CLDARRY[1:25]
+        cloud_covers[(iday*25-24):(iday*25)] = CLDARRY[1:25]
     end
-    return Clds
+    return cloud_covers
 end

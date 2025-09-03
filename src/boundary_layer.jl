@@ -215,10 +215,10 @@ function get_profile(;
 
     return (
         heights=unique(heights),
-        VELs=u"m/s".(VV),      # m/s
-        TAs=u"°C".(T),         # deg C
-        RHs=RHs,               # %
-        QCONV=u"W/m^2"(QC),    # W
-        USTAR=u"m/s"(USTAR)    # m/s
+        wind_speeds=u"m/s".(VV),      # m/s
+        air_temperatures=u"°C".(T),         # deg C
+        humidities=RHs,               # %
+        qconv=u"W/m^2"(QC),    # W
+        ustar=u"m/s"(USTAR)    # m/s
     )
 end

@@ -874,7 +874,7 @@ end
 
 """
     solrad(; days, hours, latitude...[, year, lonc, elevation, slope, aspect, horizon_angles, albedos, cmH2O, ϵ,
-           ω, se, d0, lamb, iuv, noscat, amr, nmax, Iλ, OZ, τR, τO, τA, τW, Sλ, FD, FDQ,
+           ω, se, d0, iuv, noscat, amr, nmax, Iλ, OZ, τR, τO, τA, τW, Sλ, FD, FDQ,
            S, ER, ERλ]) -> NamedTuple
 
 Compute clear sky solar radiation at a given place and time using a detailed atmospheric radiative transfer model.
@@ -897,7 +897,6 @@ Compute clear sky solar radiation at a given place and time using a detailed atm
 - `ω::Real=2π/365`: Mean angular orbital velocity of Earth (radians/day).
 - `se::Real=0.39779`: Precomputed solar elevation constant.
 - `d0::Real=80`: Reference day for declination calculations.
-- `lamb::Bool=false`: If `true`, returns wavelength-specific irradiance components.
 - `iuv::Bool=false`: If `true`, uses the full gamma-function model for diffuse radiation (expensive).
 - `noscat::Bool=true`: If `true`, disables scattered light computations (faster).
 - `amr::Quantity=25.0u"km"`: Mixing ratio height of the atmosphere.
@@ -931,7 +930,6 @@ A named tuple containing:
 - Radiation units are returned in `W/m²`. Internally, units like `mW/cm²` are used and converted as necessary using `Unitful.jl`.
 - Topographic shading is included via the `horizon_angles` input (horizon angle mask) but cloud effects on scattered solar should be added later.
 - Outputs are computed for each (day, hour) combination in the input vectors.
-- The function can be run in a high-resolution spectral mode (`lamb=true`) or in a broadband mode (`lamb=false`).
 - In optical air mass 'arims' calculation the difference between apparent and true zenith angle is neglected for z less than 88 degrees
 - Variation of airms with altitude is ignored since it is negligible up to at least 6 km above sea level
 """
