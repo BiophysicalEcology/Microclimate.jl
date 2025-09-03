@@ -26,14 +26,11 @@ const DEFAULT_τA=[0.269904738, 0.266147825, 0.262442906, 0.258789404, 0.2551867
         0.010882215, 0.009561062, 0.007961182, 0.006438984, 0.005558204, 0.006133532, 0.009277754
     ]
 
-export vapour_pressure, wet_air, dry_air, phase_transition
+export vapour_pressure, wet_air, dry_air
 
 export sinec!, vsine, hourly_vars
 
 export hour_angle, solar_geometry, elev_corr, dchxy, dexpi, solrad, gads, cloud_adjust_radiation
-
-# TODO Aqua says these dont actually exist to export
-# export check_skylight, gamma, λ_evap, MicroInput, air_pressure 
 
 export get_profile, get_longwave, get_pressure, get_λ_evap
 
@@ -41,7 +38,7 @@ export soil_properties
 
 export init_soillayers, init_moistlayers, MicroInputs
 
-export soil_energy_balance!, evap, soil_water_balance
+export soil_energy_balance!, evap, soil_water_balance, phase_transition
 
 export MicroParams, MicroForcing
 
