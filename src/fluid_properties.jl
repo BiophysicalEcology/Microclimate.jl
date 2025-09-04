@@ -1,21 +1,28 @@
-@compound H2O
-@compound O2
-@compound CO2
-@compound N2
+
+# TODO: Some of these are in PhysicalConstants.jl, we should use it
+const DEFAULT_PRESSURE = 101325u"Pa"
+const TEMPERATURE_LAPSE_RATE = -0.0065u"K/m"
+const TEMPERATURE_AT_REFERENCE_ALTITUDE = 288.0u"K"
+const GRAVITY = 9.80665u"m/s^2" # P
+const MASS_OF_DRY_AIR = 0.0289644u"kg/mol"
+const TRIPLE_POINT = 273.16 # triple point of water is 273.16
+const SPECIFIC_HEAT_OF_WATER = 4186.0u"J/kg/K"
+const LATENT_HEAT_OF_FUSION_OF_WATER = 333500.0u"J/kg" # latent heat of fusion of water
+
 """
-    get_pressure(h::Quantity;
-                 h_ref::Quantity = 0u"m",
-                 P_ref::Quantity = 101325u"Pa",
-                 L_ref::Quantity = -0.0065u"K/m",
-                 T_ref::Quantity = 288u"K",
-                 g_0::Quantity = 9.80665u"m/s^2",
-                 M::Quantity = 0.0289644u"kg/mol") -> Quantity
+    get_pressure(h::Quantity; kw...)
 
 Computes atmospheric pressure at a given altitude using the barometric formula,
 assuming a constant temperature lapse rate (standard tropospheric approximation).
 
 # Arguments
+
 - `h`: Elevation at which to compute pressure (with length units, e.g. `u"m"`).
+
+# Keywords
+
+TODO: these should be words not letters
+
 - `h_ref`: Reference altitude (default: `0u"m"`).
 - `P_ref`: Pressure at the reference altitude (default: `101325u"Pa"`, standard sea-level pressure).
 - `L_ref`: Temperature lapse rate (default: `-0.0065u"K/m"`).
@@ -24,28 +31,33 @@ assuming a constant temperature lapse rate (standard tropospheric approximation)
 - `M`: Molar mass of dry air (default: `0.0289644u"kg/mol"`).
 
 # Returns
+
 - `P_a`: Atmospheric pressure at altitude `h` (with pressure units, e.g. `u"Pa"`).
 
 # Notes
+
 - Uses the simplified barometric formula assuming a linear lapse rate and ideal gas behavior.
 - The universal gas constant `R` is used from the `Unitful` package.
 
 # Example
+
 ```julia
 using Unitful
 
 P = get_pressure(1500u"m")
 """
 function get_pressure(h::Quantity;
-    P_ref::Quantity = 101325u"Pa",
-    L_ref::Quantity = -0.0065u"K/m",
-    T_ref::Quantity = 288.0u"K",
-    g_0::Quantity = 9.80665u"m/s^2",
-    M::Quantity = 0.0289644u"kg/mol")
-    R=Unitful.R
-P_a = P_ref * (1 + (L_ref / T_ref) * h) ^ ((-g_0 * M) / (R * L_ref))#5.2553026003237262u"kg*m^2*J^-1*s^-2"#
+    P_ref::Quantity = DEFAULT_PRESSURE,
+    L_ref::Quantity = TEMPERATURE_LAPSE_RATE,
+    T_ref::Quantity = TEMPERATURE_AT_REFERENCE_ALTITUDE,
+    g_0::Quantity = GRAVITY,
+    M::Quantity = MASS_OF_DRY_AIR,
+)
+    R = Unitful.R
 
-return P_a
+    P_a = P_ref * (1 + (L_ref / T_ref) * h) ^ ((-g_0 * M) / (R * L_ref))#5.2553026003237262u"kg*m^2*J^-1*s^-2"#
+
+    return P_a
 end
 
 """
@@ -57,14 +69,20 @@ Calculates saturation vapour pressure (Pa) for a given air temperature.
 - `T`: air temperature in K.
 """
 function vapour_pressure(T)
-    T = Unitful.ustrip(T) + 0.01 # triple point of water is 273.16
+    T = Unitful.ustrip(u"K", T) + 0.01
     logP_vap = T
-    if T <= 273.16
-        logP_vap = -9.09718 * (273.16 / T - 1) - 3.56654 * log10(273.16 / T) + 0.876793 * (1 - T / 273.16) + log10(6.1071)
+    if T <= TRIPLE_POINT
+        # TODO: name the rest of these conststants as const above
+        logP_vap = -9.09718 * (TRIPLE_POINT / T - 1) - 3.56654 * log10(TRIPLE_POINT / T) + 0.876793 * (1 - T / TRIPLE_POINT) + log10(6.1071)
     else
-        logP_vap = -7.90298 * (373.16 / T - 1) + 5.02808 * log10(373.16 / T) - 1.3816E-07 * (10^(11.344 * (1 - T / 373.16)) - 1) + 8.1328E-03 * (10^(-3.49149 * (373.16 / T - 1)) - 1) + log10(1013.246)
+        logP_vap = -7.90298 * (373.16 / T - 1) + 
+            5.02808 * log10(373.16 / T) +
+            -1.3816E-07 * (10^(11.344 * (1 - T / 373.16)) - 1) + 
+            8.1328E-03 * (10^(-3.49149 * (373.16 / T - 1)) - 1) + 
+            log10(1013.246)
     end
-    (10^logP_vap) * 100u"Pa"
+
+    return (10^logP_vap) * 100u"Pa"
 end
 
 """
@@ -121,6 +139,7 @@ function wet_air(T_drybulb;
     return wet_air(T_drybulb, T_wetbulb, rh, T_dew, P_atmos, fO2, fCO2, fN2)
 end
 function wet_air(T_drybulb, T_wetbulb, rh, T_dew, P_atmos, fO2, fCO2, fN2)
+    # TODO: name these and the rest of the constants
     c_p_H2O_vap = 1864.40u"J/K/kg"
     c_p_dry_air = 1004.84u"J/K/kg" # should be 1006?
     f_w = 1.0053 # (-) correction factor for the departure of the mixture of air and water vapour from ideal gas laws
@@ -129,19 +148,20 @@ function wet_air(T_drybulb, T_wetbulb, rh, T_dew, P_atmos, fO2, fCO2, fN2)
     P_vap_sat = vapour_pressure(T_drybulb)
     if T_dew !== nothing
         P_vap = vapour_pressure(T_dew)
-        rh = (P_vap / P_vap_sat) * 100
+        rh = (P_vap / P_vap_sat) * 100 # Is this * 100 just a unit conversion? Use Unitful for this.
     else
         if rh !== nothing
             P_vap = P_vap_sat * rh / 100
         else
             δ_bulb = T_drybulb - T_wetbulb
+            # TODO: ustrip to K and Pa ? 
             δ_P_vap = (0.000660 * (1 + 0.00115 * (Unitful.ustrip(T_wetbulb)-273.15)) * Unitful.ustrip(P) * Unitful.ustrip(δ_bulb))u"Pa"
             P_vap = vapour_pressure(T_wetbulb) - δ_P_vap
             rh = (P_vap / P_vap_sat) * 100
         end
     end
     r_w = ((M_w / M_a) * f_w * P_vap) / (P_atmos - f_w * P_vap)
-    ρ_vap = P_vap * M_w / (0.998 * Unitful.R * T_drybulb) # 0.998 a correction factor?
+    ρ_vap = P_vap * M_w / (0.998 * Unitful.R * T_drybulb) # 0.998 a correction factor? TODO: explain what this number is
     ρ_vap = Unitful.uconvert(u"kg/m^3",ρ_vap) # simplify units
     T_vir = T_drybulb * ((1.0 + r_w / (M_w / M_a)) / (1 + r_w))
     T_vinc = T_vir - T_drybulb
@@ -154,7 +174,7 @@ function wet_air(T_drybulb, T_wetbulb, rh, T_dew, P_atmos, fO2, fCO2, fN2)
         (4.615e+5 * Unitful.ustrip(T_drybulb) * log(rh / 100))u"Pa"
     end
 
-    return (;P_vap, P_vap_sat, ρ_vap, r_w, T_vinc, ρ_air, c_p, ψ, rh)
+    return (; P_vap, P_vap_sat, ρ_vap, r_w, T_vinc, ρ_air, c_p, ψ, rh)
 end
 
 """
@@ -164,6 +184,9 @@ end
 """
 dry_air(T_drybulb; P_atmos=nothing, elev=0m, fO2 = 0.2095, fCO2 = 0.0004, fN2 = 0.79) = dry_air(T_drybulb, P_atmos, elev, fO2, fCO2, fN2)
 function dry_air(T_drybulb, P_atmos, elev, fO2, fCO2, fN2)
+    # TODO: Unitful use here is almost worse than not having it, we cant depend on any of the checking because
+    # `unstrip(x)` instead of `ustrip(target_units, x)` is used.
+    
     σ = Unitful.uconvert(u"W/m^2/K^4",Unitful.σ) # Stefan-Boltzmann constant, W/m^2/K^4, extract σ when calling Unitful when units issue is fixed in Unitful
     M_a = ((fO2*molO₂ + fCO2*molCO₂ + fN2*molN₂) |> u"kg")/1u"mol" # molar mass of air
     if isnothing(P_atmos)
@@ -189,8 +212,9 @@ function dry_air(T_drybulb, P_atmos, elev, fO2, fCO2, fN2)
 end
 
 function get_λ_evap(T)
-    Tw = Unitful.ustrip(u"°C"(T))
+    Tw = Unitful.ustrip(u"°C", T)
     if Tw > 0
+        # TODO more magic numbers that should be constants, and 1000 conversions that unitful.jl should do
         return (2500.8 - 2.36 * Tw + 0.0016 * Tw^2 - 0.00006 * Tw^3)*1000u"J/kg"
     else
         return (834.1 - 0.29 * Tw - 0.004 * Tw^2)*1000u"J/kg"
@@ -202,6 +226,7 @@ function waterprop(T::Quantity)
     T = ustrip(u"°C", T)  # Convert to Float64 in °C
 
     # Specific heat capacity (J/kg·K)
+    # TODO magic numbers that should be constants
     c_p = (4220.02 - 4.5531 * T + 0.182958 * T^2 -
          0.00310614 * T^3 + 1.89399e-5 * T^4) * u"J/kg/K"
 
@@ -236,8 +261,8 @@ function phase_transition(
     θ::Vector,       # soil moisture by layer
     dep::Vector      # soil depth boundaries (cm)
 )
-    HTOFN = 333500.0u"J/kg" # latent heat of fusion of waterper unit mass
-    c_p = 4186.0u"J/kg/K" # specific heat of water
+    HTOFN = LATENT_HEAT_OF_FUSION_OF_WATER
+    c_p = SPECIFIC_HEAT_OF_WATER pecific heat of water
     nodes = length(dep)
     layermass = zeros(Float64, nodes)u"kg"
     qphase = zeros(Float64, nodes)u"J"
@@ -255,6 +280,8 @@ function phase_transition(
 
             if meanTpast[j] > 273.15u"K" && meanT[j] <= 273.15u"K"
                 if j < nodes
+                    # TODO: are these 1000s just unit conversions? Unitful.jl should do this
+                    # nothing like this is needed in the code.
                     layermass[j] = u"m"(dep[j+1] - dep[j]) * 1000.0u"kg/m" * θ[j]
                 else
                     layermass[j] = u"m"(dep[j] + 100.0u"cm" - dep[j]) * 1000.0u"kg/m" * θ[j]
@@ -264,7 +291,7 @@ function phase_transition(
                 ∑phase[j] += qphase[j]
 
                 if ∑phase[j] > HTOFN * layermass[j]
-                    # Fully frozen
+                    # Fully frozen TODO these should be constants
                     T[j] = 273.14u"K"
                     if j < nodes
                         T[j+1] = 273.14u"K"
@@ -280,9 +307,6 @@ function phase_transition(
             end
         end
     end
-    return (;
-        ∑phase,
-        qphase,
-        T
-    )
+
+    return (; ∑phase, qphase, T)
 end

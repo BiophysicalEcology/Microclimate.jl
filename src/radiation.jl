@@ -4,23 +4,26 @@
 #export solrad
 
 """
-    hour_angle(t::Quantity, lonc::Quantity) -> Quantity
+    hour_angle(t::Real, loncorrection::Real)
 
 Compute the solar hour angle `h` in radians.
 
 # Arguments
+
+# TODO this isnt in unitful Quantities currently
 - `t`: Local solar hour (e.g., `14.0`)
-- `lonc`: Longitude correction in hours (e.g., `0.5`)
+- `loncorrection`: Longitude correction in hours (e.g., `0.5`)
 
 # Returns
+A `Tuple` `(h, tsn)` holding:
 - Hour angle `h` as a `Quantity` in radians
-- Time at solar noon, `tsn` as a time in hours
+- Time at solar noon `tsn` as a time in hours 
 
 # Reference
 McCullough & Porter 1971, Eq. 6
 """
-function hour_angle(t::Real, lonc::Real=0)
-    tsn = 12.0 + lonc                      # solar noon time
+function hour_angle(t::Real, loncorrection::Real=0)
+    tsn = 12.0 + loncorrection             # solar noon time
     h = (π / 12) * (t - tsn) * u"rad"      # convert hours to radians
     return h, tsn
 end
@@ -59,36 +62,31 @@ function solar_geometry(;
     ϵ::Real=0.0167238,
     se::Real=0.39784993#0.39779
 )
-    ζ = (ω * (d - d0)) + 2.0ϵ * (sin(ω * d) - sin(ω * d0))          # Eq.5
+    ζ = (ω * (d - d0)) + 2.0ϵ * (sin(ω * d) - sin(ω * d0))        # Eq.5
     δ = asin(se * sin(ζ))                                         # Eq.4
     cosZ = cos(lat) * cos(δ) * cos(h) + sin(lat) * sin(δ)         # Eq.3
     z = acos(cosZ)u"rad"                                          # Zenith angle
-    AR2 = 1.0 + (2.0ϵ) * cos(ω * d)                                   # Eq.2
+    AR2 = 1.0 + (2.0ϵ) * cos(ω * d)                               # Eq.2
     δ = δ * u"rad"
     ζ = ζ * u"rad"
     return ζ, δ, z, AR2
 end
 
 """
-    elev_corr(elev)
+    elevation_correction(elev)
 
 Calculates smooth polynomial approximations of atmospheric constituent correction factors 
 as a function of elevation (based on Kearney's modification of the ALTFCT array originally 
-from SOLAR.DAT). Input `elev` is the elevation in meters and can include units.
+from SOLAR.DAT). 
+
+# Arugments
+
+Input `elevation` is the elevation as a Unitful.jl `Quantity` of distance, like `10.0u"km"`. 
 
 # Description
 
-The array `ELEVFCT(i, j)` represents the **ratio of the total amount of a given 
-atmospheric constituent (index j) above the elevation of interest (index i) to that 
-above sea level**. The constituent indices are:
-
-- j = 1: Molecular
-- j = 2: Aerosol
-- j = 3: Ozone
-- j = 4: Water vapor
-
-For j = 1–3, values are derived from standard profiles. For water vapor (j = 4), no 
-standard profile exists, so only `ELEVFCT(1, 4)` is defined as 1.00.
+For `molecular`, `aerosol` and `ozone`, values are derived from standard profiles. 
+For `watervapor`, no standard profile exists, so only it is defined as `1.0`.
 
 The elevation index i runs from 1 to 21, corresponding to elevations from sea level to 
 20 km in 1 km steps.
@@ -98,39 +96,35 @@ from `elev` (in meters) using continuous approximation.
 
 # Returns
 
-A named tuple with the following keys:
-- `ELEVFCT1` for Molecular
-- `ELEVFCT2` for Aerosol
-- `ELEVFCT3` for Ozone
-- `ELEVFCT4` for Water vapor
+A `NamedTuple` of `(; molecular, aerosol, ozone, watervapor)`.
 """
-function elev_corr(elev)
-    # Strip units if present and convert to km, then add 1
-    elev_km = ustrip(u"m", elev) / 1000 + 1
+function elevation_correction(elevation::Quantity)
+    # Strip units if present and convert to km, then add 1 TODO: why +1 km
+    elev_km = ustrip(u"km", elev) + 1
 
-    ELEVFCT1 = 0.00007277 * elev_km^3 +
-               0.00507293 * elev_km^2 -
-               0.12482149 * elev_km +
-               1.11687469
+    molecular  = 0.00007277 * elev_km^3 +
+                 0.00507293 * elev_km^2 -
+                 0.12482149 * elev_km +
+                 1.11687469
+               
+    aerosol    = 8.35656e-7 * elev_km^6 -
+                 6.26384e-5 * elev_km^5 +
+                 1.86967e-3 * elev_km^4 -
+                 2.82585e-2 * elev_km^3 +
+                 2.26739e-1 * elev_km^2 -
+                 9.25268e-1 * elev_km +
+                 1.71321
+               
+    ozone      = 1.07573e-6 * elev_km^5 -
+                 5.14511e-5 * elev_km^4 +
+                 7.97960e-4 * elev_km^3 -
+                 4.90904e-3 * elev_km^2 +
+                 2.99258e-3 * elev_km +
+                 1.00238
 
-    ELEVFCT2 = 8.35656e-7 * elev_km^6 -
-               6.26384e-5 * elev_km^5 +
-               1.86967e-3 * elev_km^4 -
-               2.82585e-2 * elev_km^3 +
-               2.26739e-1 * elev_km^2 -
-               9.25268e-1 * elev_km +
-               1.71321
+    watervapor = 1.0
 
-    ELEVFCT3 = 1.07573e-6 * elev_km^5 -
-               5.14511e-5 * elev_km^4 +
-               7.97960e-4 * elev_km^3 -
-               4.90904e-3 * elev_km^2 +
-               2.99258e-3 * elev_km +
-               1.00238
-
-    ELEVFCT4 = 1.0
-
-    return (ELEVFCT1, ELEVFCT2, ELEVFCT3, ELEVFCT4)
+    return (; molecular, aerosol, ozone, watervapor)
 end
 
 function GAMMA(TAU1::Float64)
@@ -1255,15 +1249,15 @@ function solrad(;
                 mon = month(Date(year, 1, 1) + Day(d - 1)) # month from day of year
                 llat = clamp(llat, 1, size(OZ, 1))
                 ozone = OZ[llat, mon]  # ozone thickness (cm) from lookup table
-                ELEVFCT1, ELEVFCT2, ELEVFCT3, ELEVFCT4 = elev_corr(elev)
+                (; molecular, aerosol, ozone, watervapor) = elevation_correction(elev)
 
                 P = get_pressure(elev) # pressure from elevation
 
                 for N in 1:nmax
-                    τλ1 = (P / 101300u"Pa") * τR[N] * ELEVFCT1
-                    τλ2 = (25.0u"km" / amr) * τA[N] * ELEVFCT2
-                    τλ3 = (ozone / 0.34) * τO[N] * ELEVFCT3
-                    τλ4 = τW[N] * sqrt(airms * cmH2O * ELEVFCT4)
+                    τλ1 = (P / 101300u"Pa") * τR[N] * molecular
+                    τλ2 = (25.0u"km" / amr) * τA[N] * aerosol
+                    τλ3 = (ozone / 0.34) * τO[N] * ozone
+                    τλ4 = τW[N] * sqrt(airms * cmH2O * watervapor)
                     τλ = ((float(τλ1) + τλ2 + τλ3) * airms) + τλ4
 
                     if τλ > 80.0 # making sure that at low sun angles air mass doesn't make τλ too large

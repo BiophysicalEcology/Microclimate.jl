@@ -31,6 +31,11 @@ export MicroParams, MicroForcing
 
 export runmicro
 
+@compound H2O
+@compound O2
+@compound CO2
+@compound N2
+
 include("landscape.jl")   
 include("interpolation.jl")
 include("fluid_properties.jl")

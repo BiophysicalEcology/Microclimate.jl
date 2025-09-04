@@ -11,10 +11,10 @@ function sinec!(
     TSR = TMIN
     TREF = (TIMTMX - TIMSR) / 2 + TIMSR
     SS = 360.0 * (TIMSS - TREF) / (2.0 * (TIMTMX - TIMSR))
-    SY = SS / 57.29577
+    SY = SS / 57.29577 # TODO what is 57.29577
     ZS = sin(SY)
     TSS = A * ZS + TMIN + A
-    TAU = 3.0 / ((2400.0 - TIMSS) + TIMSR)
+    TAU = 3.0 / ((2400.0 - TIMSS) + TIMSR) # TODO What is 3.0 and 2400
 
     for I in 1:24
         J = I + 1
@@ -215,7 +215,7 @@ function hourly_vars(
         #     TIME OF AIR TEMPERATURE MINIMUM (NOTE: A KLUGE OF 200, I.E. 2
         #     HOURS IS BEING USED TO MAKE SINEC WORK WHEN MORNING MINIMUM
         #     IS NOT AT TRUE SUNRISE, THE ALGORITHM IS 2 HOURS OFF FOR SOME
-        #     UNKNOWN (6/7/89) REASON)
+        #     UNKNOWN (6/7/89) REASON) TODO: fix this 36 year old bug or delete the comment
         if TIMINS[1] > 0
             TSRHR = TIMINS[1] + 2.0
         else
