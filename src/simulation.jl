@@ -5,7 +5,7 @@ function runmicro(;
     hours = collect(0.:1:24.), # hour of day for solrad
     reference_height = 2u"m", # reference height of weather data (air temperature, wind speed, humidity)
     depths = [0.0, 2.5, 5.0, 10.0, 15.0, 20.0, 30.0, 40.0, 50.0, 100.0, 200.0]u"cm", # soil nodes - keep spacing close near the surface
-    heights = [1.0, 5.0, 10.0, 15.0, 20.0, 30.0, 40.0, 50.0, 100.0]u"cm", # air nodes for temperature, wind speed and humidity profile
+    heights = [1.0, ]u"cm", # air nodes for temperature, wind speed and humidity profile
     # terrain
     elevation = 226.0u"m", # elevation (m)
     horizon_angles = fill(0.0u"°", 24), # enter the horizon angles (degrees) so that they go from 0 degrees azimuth (north) clockwise in 15 degree intervals

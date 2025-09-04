@@ -78,6 +78,9 @@ micro_out = runmicro(;
     iuv = Bool(Int(microinput[:IUV])), # this makes it take ages if true!
 )
 
+using ProfileView
+@profview micro_out = runmicro(;)
+
 plot(micro_out.soil_temperature, legend=false)
 plot!(Matrix(soiltemps_NMR);
         xlabel="time", ylabel="soil temperature", lw=2,
