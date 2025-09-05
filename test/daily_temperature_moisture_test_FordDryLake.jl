@@ -4,9 +4,9 @@ using Plots
 using CSV, DataFrames, Dates
 
 # read in output from NicheMapR
-soil_temperature_NMR = (DataFrame(CSV.File("test/data/soil_FordDryLake.csv"))[:, 5:14]) .* u"°C"
-soil_moisture_NMR = (DataFrame(CSV.File("test/data/soilmoist_FordDryLake.csv"))[:, 5:14])
-soil_conductivity_NMR = (DataFrame(CSV.File("test/data/tcond_FordDryLake.csv"))[:, 5:14])
+soil_temperature_nmr = (DataFrame(CSV.File("test/data/soil_FordDryLake.csv"))[:, 5:14]) .* u"°C"
+soil_moisture_nmr = (DataFrame(CSV.File("test/data/soilmoist_FordDryLake.csv"))[:, 5:14])
+soil_conductivity_nmr = (DataFrame(CSV.File("test/data/tcond_FordDryLake.csv"))[:, 5:14])
 date = DateTime(2015, 1, 1):Hour(1):DateTime(2015, 12, 31, 23)
 
 microinput_vec = DataFrame(CSV.File("test/data/init_daily/microinput.csv"))[:, 2]
@@ -26,7 +26,7 @@ names = [
 # Zip into a NamedTuple
 microinput = (; zip(names, microinput_vec)...)
 
-days = collect(1:Int(length(soil_temperature_NMR[:, 1]) / 24)) # days of year to run (for solrad)
+days = collect(1:Int(length(soil_temperature_nmr[:, 1]) / 24)) # days of year to run (for solrad)
 depths = ((DataFrame(CSV.File("test/data/init_daily/DEP.csv"))[:, 2]) / 100.0)u"m" # Soil nodes (cm) - keep spacing close near the surface, last value is where it is assumed that the soil temperature is at the annual mean air temperature
 heights = [1.0,]u"cm" # air nodes for temperature, wind speed and humidity profile
 
@@ -114,10 +114,10 @@ pstart = 1 * 24
 pfinish = 24 * 24
 # plot soil temperature
 plot(date[pstart:pfinish], u"°C".(micro_out.soil_temperature[pstart:pfinish, :]), xlabel="time", ylabel="soil temperature", lw=2, label=string.(depths'), legend=:none, ylim=(-10u"°C", 85u"°C"))
-plot!(date[pstart:pfinish], Matrix(soil_temperature_NMR[pstart:pfinish, :]), xlabel="time", ylabel="soil temperature", lw=2, label=string.(depths'), legend=:none, ylim=(-10u"°C", 85u"°C"), linestyle=:dash, linecolor="grey")
+plot!(date[pstart:pfinish], Matrix(soil_temperature_nmr[pstart:pfinish, :]), xlabel="time", ylabel="soil temperature", lw=2, label=string.(depths'), legend=:none, ylim=(-10u"°C", 85u"°C"), linestyle=:dash, linecolor="grey")
 # plot soil moisture
 plot(date[pstart:pfinish], micro_out.soil_moisture[pstart:pfinish, :], xlabel="time", ylabel="soil moisture (m^3/m^3)", lw=2, label = string.(depths'), legend = :none, ylim = (0, 0.5))
-plot!(date[pstart:pfinish], Matrix(soil_moisture_NMR[pstart:pfinish, :]), xlabel="time", ylabel="soil moisture", legend = :none, lw=2, label = string.(depths'), ylim = (0, 0.5), linestyle=:dash, linecolor="grey")
+plot!(date[pstart:pfinish], Matrix(soil_moisture_nmr[pstart:pfinish, :]), xlabel="time", ylabel="soil moisture", legend = :none, lw=2, label = string.(depths'), ylim = (0, 0.5), linestyle=:dash, linecolor="grey")
 # plot soil thermal conductivity
 plot(date[pstart:pfinish], micro_out.soil_thermal_conductivity[pstart:pfinish, :], xlabel="time", ylabel="soil thermal conductivity", lw=2, label = string.(depths'), legend = :none, ylim = (0, 1))
-plot!(date[pstart:pfinish], Matrix(soil_conductivity_NMR[pstart:pfinish, :]), xlabel="time", ylabel="soil thermal conductivity", legend = :none, lw=2, label = string.(depths'), ylim = (0, 1), linestyle=:dash, linecolor="grey")
+plot!(date[pstart:pfinish], Matrix(soil_conductivity_nmr[pstart:pfinish, :]), xlabel="time", ylabel="soil thermal conductivity", legend = :none, lw=2, label = string.(depths'), ylim = (0, 1), linestyle=:dash, linecolor="grey")

@@ -41,7 +41,7 @@ Base.@kwdef struct MicroParams
     soilprops::Matrix{Union{Unitful.AbstractQuantity, Float64}}
     depths::Vector{<:Unitful.AbstractQuantity}
     reference_height::Quantity
-    ruf::Quantity
+    roughness_height::Quantity
     d0::Quantity
     zh::Quantity
     slope::Quantity

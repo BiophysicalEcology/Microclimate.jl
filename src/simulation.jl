@@ -202,11 +202,11 @@ function runmicro(;
         τA,
     )
     # limit max zenith angles to 90°
-    solrad_out.Zenith[solrad_out.Zenith.>90u"°"] .= 90u"°"
-    solrad_out.ZenithSlope[solrad_out.ZenithSlope.>90u"°"] .= 90u"°"
+    solrad_out.zenith_angle[solrad_out.zenith_angle.>90u"°"] .= 90u"°"
+    solrad_out.zenith_slope_angle[solrad_out.zenith_slope_angle.>90u"°"] .= 90u"°"
 
     # vector for removing extra interpolated hour
-    skip25 = setdiff(1:length(solrad_out.Zenith), 25:25:length(solrad_out.Zenith))
+    skip25 = setdiff(1:length(solrad_out.zenith_angle), 25:25:length(solrad_out.zenith_angle))
 
     if isnothing(air_temperatures)
         # interpolate daily min/max forcing variables to hourly
@@ -231,13 +231,13 @@ function runmicro(;
         humidities = RHs25[skip25] # remove every 25th output
         cloud_covers = CLDs25[skip25] # remove every 25th output
     end
-    zenith_angles = solrad_out.Zenith[skip25] # remove every 25th output
-    ZSLs = solrad_out.ZenithSlope[skip25] # remove every 25th output
+    zenith_angles = solrad_out.zenith_angle[skip25] # remove every 25th output
+    zenith_slope_angle = solrad_out.zenith_slope_angle[skip25] # remove every 25th output
     # adjust for cloud using Angstrom formula (formula 5.33 on P. 177 of "Climate Data and Resources" by Edward Linacre 1992
-    doy  = repeat(days, inner=length(hours))[skip25]
-    DIRs = solrad_out.Direct[skip25] # remove every 25th output
-    DIFs = solrad_out.Scattered[skip25] # remove every 25th output
-    global_solar, diffuse_solar, direct_solar = cloud_adjust_radiation(cloud_covers / 100., DIFs, DIRs, zenith_angles, doy)
+    day_of_year  = repeat(days, inner=length(hours))[skip25]
+    direct_total = solrad_out.direct_total[skip25] # remove every 25th output
+    diffuse_total = solrad_out.diffuse_total[skip25] # remove every 25th output
+    global_solar, diffuse_solar, direct_solar = cloud_adjust_radiation(cloud_covers / 100., diffuse_total, direct_total, zenith_angles, day_of_year)
     if isnothing(solar_radiation)
         solar_radiation = global_solar
     else
@@ -325,7 +325,7 @@ function runmicro(;
         sub1 = (iday*24-24+1):(iday*24)
         SOLR = solar_radiation[sub1]
         ZENR = zenith_angles[sub1]
-        ZSL = ZSLs[sub1]
+        ZSL = zenith_slope_angle[sub1]
         TAIR = air_temperatures[sub1]
         VEL = wind_speeds[sub1]
         RH = humidities[sub1]
@@ -351,7 +351,7 @@ function runmicro(;
             soilprops,
             depths,
             reference_height,
-            ruf = roughness_height,
+            roughness_height,
             d0,
             zh,
             slope,
@@ -459,9 +459,9 @@ function runmicro(;
                     # Parameters
                     params = MicroParams(;
                         soilprops,
-                        depths=depths,
+                        depths,
                         reference_height,
-                        ruf = roughness_height,
+                        roughness_height,
                         d0,
                         zh,
                         slope,
@@ -570,17 +570,18 @@ function runmicro(;
     # compute air temperature, wind speed and relative humidity profiles
     profile_out = map(1:length(air_temperatures)) do i
         # compute scalar profiles
-        get_profile(
-            ruf = roughness_height,
-            zh=zh,
-            d0=d0,
+        get_profile(;
+            reference_height,
+            z0 = roughness_height,
+            zh,
+            d0,
             TAREF=air_temperatures[i],
             VREF=wind_speeds[i],
             rh=humidities[i],
             D0cm=u"°C"(T_soils[i, 1]),  # top layer temp
             ZEN=zenith_angles[i],
-            heights=heights,
-            elevation=elevation,
+            heights,
+            elevation,
             warn=true
         )
     end

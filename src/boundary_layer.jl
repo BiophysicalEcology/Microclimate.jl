@@ -1,6 +1,6 @@
 function get_profile(;
     reference_height=1.2u"m",
-    ruf=0.004u"m",
+    z0=0.004u"m",
     zh=0.0u"m",
     d0=0.0u"m",
     κ=0.4, # Kármán constant
@@ -15,8 +15,8 @@ function get_profile(;
     elevation=0.0u"m",
     warn=false)
 
-    if minimum(heights) < ruf
-        error("ERROR: the minimum height is not greater than the roughness height (ruf).")
+    if minimum(heights) < z0
+        error("ERROR: the minimum height is not greater than the roughness height (z0).")
     end
 
     addheight = false
@@ -44,15 +44,15 @@ function get_profile(;
         return u"(cal*g)/(g*cm^3*K)"(ρ * c_p)
     end
     function PHI(z, GAM, AMOL)
-        return (1 - min(1, GAM * ustrip(z / AMOL)))^0.25
+        return (1.0 - min(1.0, GAM * ustrip(z / AMOL)))^0.25
     end
 
     function PSI1(X)
-        return 2 * log((1 + X) / 2) + log((1 + X^2) / 2) - 2 * atan(X) + π / 2
+        return 2.0 * log((1.0 + X) / 2.0) + log((1.0 + X^2) / 2.0) - 2.0 * atan(X) + π / 2.0
     end
 
     function PSI2(X)
-        return 2 * log((1 + X^2) / 2)
+        return 2.0 * log((1 + X^2.0) / 2.0)
     end
 
     function get_Obukhov(TA, TS, V, z, z0, rcptkg, κ)
@@ -62,7 +62,7 @@ function get_profile(;
         #RCPTKG = 6.003e-8u"cal/minute/cm/K" #CAL-MIN-CM-C
         z = u"cm"(z)
         z0 = u"cm"(z0)
-        ZRATIO = z / z0 + 1
+        ZRATIO = z / z0 + 1.0
         DUM = log(ZRATIO)
         TA = u"K"(TA)
         TS = u"K"(TS)
@@ -71,7 +71,7 @@ function get_profile(;
         RCP = RHOCP(TAVE)
         DEL = 1.0
         count = 0
-        USTAR = 0.0u"cm/minute"
+        USTAR = (κ * V / DUM)u"cm/minute"
         QC = 0.0u"cal/minute/cm^2"
         STO = 0.0
         STB = 0.0
@@ -94,7 +94,7 @@ function get_profile(;
                 QC = RCP * DIFFT * USTAR * STO
             end
 
-            AMOLN = rcptkg * USTAR^3 / QC
+            AMOLN = rcptkg * USTAR^3.0 / QC
             DEL = abs((AMOLN - AMOL) / AMOL)
             AMOL = AMOLN
         end
@@ -107,7 +107,7 @@ function get_profile(;
 
     # Units: m to cm
     z = u"cm"(reference_height)
-    z0 = u"cm"(ruf)
+    z0 = u"cm"(z0)
     zh_cm = u"cm"(zh)
     d0_cm = u"cm"(d0)
     V = u"cm/minute"(VREF)
@@ -130,7 +130,7 @@ function get_profile(;
     TREF = u"K"(TAREF)
     rcptkg = u"cal*minute^2/cm^4"(ρ * c_p * TREF / (κ * g))
     #rcptkg = 6.003e-8u"cal*minute^2/cm^4"
-    GAM = 16
+    GAM = 16.0
     ZRATIO = z / z0 + 1.0
     DUM = log(ZRATIO)
     USTAR = κ * V / DUM
@@ -193,7 +193,7 @@ function get_profile(;
     e = wet_air(T1, rh=rh).P_vap
     wet_air_out = wet_air.(T; rh=rh)
     es = getproperty.(wet_air_out, :P_vap_sat)
-    RHs = clamp.(e ./ es .* 100, 0, 100)
+    RHs = clamp.(e ./ es .* 100.0, 0.0, 100.0)
 
     if heights_extra !== nothing
         VV_extra = V .* (heights_extra ./ reference_height) .^ a

@@ -1363,22 +1363,22 @@ function solrad(;
         tsns[i] = tsn   # save today's time of sunrise
     end
     return (
-        Zenith=Zs,
-        ZenithSlope=ZSLs,
-        Azimuth=AZIs,
-        HHsr=HHs,
-        tsn=tsns,
-        doy=DOYs,
-        hour=times,
-        Rayleigh=DRRs .* (10u"W/m^2" / 1u"mW/cm^2"),
-        Direct=DRs .* (10u"W/m^2" / 1u"mW/cm^2"),
-        Scattered=SRs .* (10u"W/m^2" / 1u"mW/cm^2"),
-        Global=GRs .* (10u"W/m^2" / 1u"mW/cm^2"),
-        λ=Iλ,
-        λRayleigh=DRRλs .* (10u"W/m^2" / 1u"mW/cm^2"),
-        λDirect=DRλs .* (10u"W/m^2" / 1u"mW/cm^2"),
-        λScattered=SRλs .* (10u"W/m^2" / 1u"mW/cm^2"),
-        λGlobal=GRλs .* (10u"W/m^2" / 1u"mW/cm^2"),
+        zenith_angle = Zs,
+        zenith_slope_angle = ZSLs,
+        azimuth_angle = AZIs,
+        hour_angle_sunrise = HHs,
+        hour_solar_noon = tsns,
+        day_of_year = DOYs,
+        hour = times,
+        rayleigh_total = DRRs .* (10u"W/m^2" / 1u"mW/cm^2"),
+        direct_total = DRs .* (10u"W/m^2" / 1u"mW/cm^2"),
+        diffuse_total = SRs .* (10u"W/m^2" / 1u"mW/cm^2"),
+        global_total = GRs .* (10u"W/m^2" / 1u"mW/cm^2"),
+        wavelength = Iλ,
+        rayleigh_spectra = DRRλs .* (10u"W/m^2" / 1u"mW/cm^2"),
+        direct_spectra = DRλs .* (10u"W/m^2" / 1u"mW/cm^2"),
+        diffuse_spectra = SRλs .* (10u"W/m^2" / 1u"mW/cm^2"),
+        global_spectra = GRλs .* (10u"W/m^2" / 1u"mW/cm^2"),
     )
 end
 
@@ -1398,22 +1398,17 @@ function get_longwave(;
     # Constants
     σ = Unitful.uconvert(u"W/m^2/K^4", Unitful.σ) # Stefan-Boltzmann constant, W/m^2/K^4
     #σ = u"W/m^2/K^4"(0.8126e-10u"cal/minute/cm^2/K^4") # value used in NicheMapR (sigp)
-    Tair_K = ustrip(tair) + 273.15
-    σ_Wm2K = ustrip(σ)
     P_atmos = get_pressure(elevation)
     wet_air_out = wet_air(u"K"(tair); rh=rh, P_atmos=P_atmos)
 
     # Atmospheric radiation
     if swinbank
         # Swinbank, Eq. 10.11 in Campbell and Norman 1998
-        Tair_K = ustrip(tair) + 273.15
-        arad = ((9.2e-6 * (Tair_K)^2) * σ_Wm2K * (Tair_K)^4)u"W/m^2"
+        arad = ((9.2e-6 * (u"K"(tair))^2) * σ * (u"K"(tair))^4) / 1u"K^2" 
     else
         # Campbell and Norman 1998 eq. 10.10 to get emissivity of sky
         P_vap = wet_air_out.P_vap
-        P_vap_kPa = ustrip(P_vap)   # if P_vap is Quantity
-        arad = (1.72 * (P_vap_kPa / (Tair_K + 0.01))^(1/7) * σ_Wm2K * (Tair_K + 0.01)^4)u"W/m^2" 
-        #arad = u"W/m^2"(ustrip(1.72 * (ustrip(u"kPa"(P_vap)) / ustrip(u"K"(tair) + 0.01u"K"))^(1.0 / 7.0)) * σ * (u"K"(tair) + 0.01u"K")^4.0) 
+        arad = u"W/m^2"(ustrip(1.72 * (ustrip(u"kPa"(P_vap)) / ustrip(u"K"(tair) + 0.01u"K"))^(1.0 / 7.0)) * σ * (u"K"(tair) + 0.01u"K")^4.0) 
     end
     # Cloud radiation temperature (shade approximation, TAIR - 2°C)
     crad = σ * slep * (u"K"(tair) - 2.0u"K")^4.0
@@ -1433,7 +1428,7 @@ function get_longwave(;
     qradgr = ((100.0 - shade) / 100.0) * srad + (shade / 100.0) * hrad
     qradhl = hrad
     qrad = (qradsk + qradvg) * viewfactor + qradhl * (1.0 - viewfactor) - qradgr
-    tsky = (((qradsk + qradvg) * viewfactor + qradhl * (1.0 - viewfactor)) / σ)^(1//4)
+    tsky = (((qradsk + qradvg) * viewfactor + qradhl * (1.0 - viewfactor)) / σ)^0.25
     return (
         Tsky=tsky,
         Qrad=qrad,

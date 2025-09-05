@@ -198,8 +198,8 @@ function hourly_vars(
         RHARRY = fill(IRH, 25)
         CLDARRY = fill(ICLD, 25)
 
-        HH = solrad_out.HHsr[iday]
-        tsn = solrad_out.tsn[iday]
+        HH = solrad_out.hour_angle_sunrise[iday]
+        tsn = solrad_out.hour_solar_noon[iday]
 
         #     Air temperature calculations
         #     SUNSET IN MILITARY TIME
@@ -312,8 +312,8 @@ function hourly_vars(
         TIMARY = fill(0.0, 25)
         CLDARRY = fill(ICLD, 25)
 
-        HH = solrad_out.HHsr[iday]
-        tsn = solrad_out.tsn[iday]
+        HH = solrad_out.hour_angle_sunrise[iday]
+        tsn = solrad_out.hour_solar_noon[iday]
 
         #     Air temperature calculations
         #     SUNSET IN MILITARY TIME
