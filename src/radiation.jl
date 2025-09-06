@@ -132,97 +132,367 @@ function elev_corr(elevation)
     return (ELEVFCT1, ELEVFCT2, ELEVFCT3, ELEVFCT4)
 end
 
-function GAMMA(TAU1::Float64)
+# function GAMMA(TAU1::Float64)
 
-    CHX = zeros(Float64, 101)
-    CHY = zeros(Float64, 101)
-    CFA = zeros(Float64, 3)
-    AMU = zeros(Float64, 101)
-    X1 = zeros(Float64, 101)
-    Y1 = zeros(Float64, 101)
-    X2 = zeros(Float64, 101)
-    Y2 = zeros(Float64, 101)
-    AIL = zeros(Float64, 101)
-    AI = zeros(Float64, 30)
-    XA = zeros(Float64, 4)
-    XB = zeros(Float64, 8)
-    GAMR = zeros(Float64, 101)
-    GAML = zeros(Float64, 101)
+#     CHX = zeros(Float64, 101)
+#     CHY = zeros(Float64, 101)
+#     CFA = zeros(Float64, 3)
+#     AMU = zeros(Float64, 101)
+#     X1 = zeros(Float64, 101)
+#     Y1 = zeros(Float64, 101)
+#     X2 = zeros(Float64, 101)
+#     Y2 = zeros(Float64, 101)
+#     AIL = zeros(Float64, 101)
+#     AI = zeros(Float64, 30)
+#     XA = zeros(Float64, 4)
+#     XB = zeros(Float64, 8)
+#     GAMR = zeros(Float64, 101)
+#     GAML = zeros(Float64, 101)
+#     # Set up AMU array
+#     AMU[1] = 0.0
+#     @inbounds @simd for I in 2:101
+#         AMU[I] = 0.01 * (I - 1)
+#     end
+
+#     # Compute X1, Y1 using dchxy
+#     CFA[1] = 0.75
+#     CFA[2] = -0.75
+#     CFA[3] = 0.0
+#     NST = 111
+#     CHX, CHY, NTR = dchxy(TAU1, CFA, NST)
+#     @inbounds @simd for I in 1:101
+#         X1[I] = CHX[I]
+#         Y1[I] = CHY[I]
+#     end
+
+#     # Compute X2, Y2 using dchxy
+#     CFA[1] = 0.375
+#     CFA[2] = -0.375
+#     NST = 0
+#     CHX, CHY, NTR = dchxy(TAU1, CFA, NST)
+#     @inbounds @simd for I in 1:101
+#         X2[I] = CHX[I]
+#         Y2[I] = CHY[I]
+#     end
+
+#     # Compute AIL
+#     AIL[1] = 0.01 / 3.0
+#     CNU1 = 4.0 * AIL[1]
+#     CNU2 = 2.0 * AIL[1]
+#     @inbounds @simd for I in 2:2:100
+#         AIL[I] = CNU1
+#         AIL[I+1] = CNU2
+#     end
+#     AIL[101] = AIL[1]
+
+#     # Initialize integrals
+#     fill!(XA, 0.0)
+#     fill!(XB, 0.0)
+
+#     @inbounds @simd for I in 1:101
+#         c1 = AIL[I] * X1[I] * AMU[I]
+#         XA[1] += c1
+#         XA[2] += c1 * AMU[I]
+#         c2 = AIL[I] * Y1[I] * AMU[I]
+#         XA[3] += c2
+#         XA[4] += c2 * AMU[I]
+#         c3 = AIL[I] * X2[I]
+#         XB[1] += c3
+#         XB[2] += c3 * AMU[I]
+#         XB[3] += c3 * AMU[I]^2
+#         XB[4] += c3 * AMU[I]^3
+#         c4 = AIL[I] * Y2[I]
+#         XB[5] += c4
+#         XB[6] += c4 * AMU[I]
+#         XB[7] += c4 * AMU[I]^2
+#         XB[8] += c4 * AMU[I]^3
+#     end
+
+#     AI[1] = XB[1] + XB[5] - 8.0 / 3.0
+#     AI[2] = XB[2] + XB[6]
+#     AI[3] = XB[3] + XB[7]
+#     AI[4] = XB[1] - XB[5] - 8.0 / 3.0
+#     AI[5] = XB[2] - XB[6]
+#     AI[6] = XB[3] - XB[7]
+#     AI[7] = XB[4] - XB[8]
+#     AI[8] = XA[1] + XA[3]
+#     AI[9] = XA[2] + XA[4]
+#     AI[10] = XA[1] - XA[3]
+#     AI[11] = XA[2] - XA[4]
+
+#     AI[12] = (AI[1] - AI[3]) / ((AI[4] - AI[6]) * TAU1 + 2.0 * (AI[5] - AI[7]))
+#     AI[13] = 1.0 / (AI[4] * AI[10] - AI[5] * AI[11])
+#     AI[14] = 1.0 / (AI[1] * AI[8] - AI[2] * AI[9] - 2.0 * AI[12] * (AI[5] * AI[8] - AI[4] * AI[9]))
+#     AI[15] = 2.0 * (AI[8] * AI[10] - AI[9] * AI[11])
+#     AI[16] = AI[13] * AI[15]
+#     AI[17] = AI[14] * AI[15]
+
+#     CNU1 = 0.5 * (AI[16] - AI[17])
+#     CNU2 = 0.5 * (AI[16] + AI[17])
+
+#     AI[15] = AI[13] * (AI[5] * AI[8] - AI[4] * AI[9])
+#     AI[16] = AI[14] * (AI[2] * AI[10] - AI[1] * AI[11] - 2.0 * AI[12] * (AI[4] * AI[10] - AI[5] * AI[11]))
+#     CNU3 = 0.5 * (AI[15] - AI[16])
+#     CNU4 = 0.5 * (AI[15] + AI[16])
+
+#     AI[15] = AI[13] * (AI[2] * AI[10] - AI[1] * AI[11])
+#     AI[16] = AI[14] * (AI[5] * AI[8] - AI[4] * AI[9])
+#     CU3 = 0.5 * (AI[15] - AI[16])
+#     CU4 = 0.5 * (AI[15] + AI[16])
+
+#     AI[15] = AI[14] * (AI[1] * AI[8] - AI[2] * AI[9])
+#     SBAR = 1.0 - 0.375 * AI[12] * (AI[4] - AI[6]) *
+#                  ((CNU2 - CNU1) * AI[8] + (CU4 - CU3) * AI[2] - AI[15] * AI[6])
+
+#     AI[20] = 0.375 * AI[12] * (CNU2 - CNU1) * (AI[4] - AI[6])
+#     AI[21] = 0.375 * AI[12] * (AI[4] - AI[6])
+#     AI[22] = AI[21] * (CU4 - CU3)
+#     AI[23] = AI[21] * AI[15]
+
+#     @inbounds @simd for I in 1:101
+#         GAML[I] = AI[20] * (X1[I] + Y1[I])
+#         GAMR[I] = AI[22] * (X2[I] + Y2[I]) - AMU[I] * AI[23] * (X2[I] - Y2[I])
+#     end
+#     return GAMR, GAML, SBAR
+# end
+
+"""
+    GAMMA(TAU1::Float64) -> (GAMR::Vector{Float64}, GAML::Vector{Float64}, SBAR::Float64)
+
+Compute radiation scattered by a plane parallel homogeneous atmosphere
+using the method of the X and Y functions.
+
+# Arguments
+- `TAU1::Float64`: Optical depth of the atmosphere.
+
+# Returns
+- `GAMR::Vector{Float64}`: Right-hand scattering function (length 101).
+- `GAML::Vector{Float64}`: Left-hand scattering function (length 101).
+- `SBAR::Float64`: Mean scattering function.
+"""
+# function GAMMA(TAU1::Float64)
+
+#     # Preallocate
+#     CHX  = zeros(Float64, 101)
+#     CHY  = zeros(Float64, 101)
+#     CFA  = zeros(Float64, 3)
+#     AMU  = zeros(Float64, 101)
+#     X1   = zeros(Float64, 101)
+#     Y1   = zeros(Float64, 101)
+#     X2   = zeros(Float64, 101)
+#     Y2   = zeros(Float64, 101)
+#     AIL  = zeros(Float64, 101)
+#     AI   = zeros(Float64, 30)
+#     GAMR = zeros(Float64, 101)
+#     GAML = zeros(Float64, 101)
+
+#     # Set up AMU array
+#     AMU[1] = 0.0
+#     @inbounds @simd for I in 2:101
+#         AMU[I] = 0.01 * (I - 1)
+#     end
+
+#     # Compute X1, Y1 using dchxy
+#     CFA[1] = 0.75
+#     CFA[2] = -0.75
+#     CFA[3] = 0.0
+#     CHX, CHY, _ = dchxy(TAU1, CFA, 111)
+#     X1 .= CHX
+#     Y1 .= CHY
+#     # Compute X2, Y2 using dchxy
+#     CFA[1] = 0.375
+#     CFA[2] = -0.375
+#     CHX, CHY, _ = dchxy(TAU1, CFA, 0)
+#     @inbounds @simd for I in 1:101
+#         X2[I] = CHX[I]
+#         Y2[I] = CHY[I]
+#     end
+
+#     # Compute AIL (quadrature weights)
+#     AIL[1] = 0.01 / 3.0
+#     CNU1   = 4.0 * AIL[1]
+#     CNU2   = 2.0 * AIL[1]
+#     @inbounds @simd for I in 2:2:100
+#         AIL[I]   = CNU1
+#         AIL[I+1] = CNU2
+#     end
+#     AIL[101] = AIL[1]
+
+#     # Scalar accumulators instead of XA[1:4], XB[1:8]
+#     xa1 = xa2 = xa3 = xa4 = 0.0
+#     xb1 = xb2 = xb3 = xb4 = xb5 = xb6 = xb7 = xb8 = 0.0
+
+#     @inbounds @simd for I in 1:101
+#         a  = AMU[I]
+#         a2 = a * a
+#         a3 = a2 * a
+
+#         c1 = AIL[I] * X1[I] * a
+#         xa1 += c1
+#         xa2 += c1 * a
+
+#         c2 = AIL[I] * Y1[I] * a
+#         xa3 += c2
+#         xa4 += c2 * a
+
+#         c3 = AIL[I] * X2[I]
+#         xb1 += c3
+#         xb2 += c3 * a
+#         xb3 += c3 * a2
+#         xb4 += c3 * a3
+
+#         c4 = AIL[I] * Y2[I]
+#         xb5 += c4
+#         xb6 += c4 * a
+#         xb7 += c4 * a2
+#         xb8 += c4 * a3
+#     end
+
+#     # Fill AI vector
+#     AI[1]  = xb1 + xb5 - 8.0 / 3.0
+#     AI[2]  = xb2 + xb6
+#     AI[3]  = xb3 + xb7
+#     AI[4]  = xb1 - xb5 - 8.0 / 3.0
+#     AI[5]  = xb2 - xb6
+#     AI[6]  = xb3 - xb7
+#     AI[7]  = xb4 - xb8
+#     AI[8]  = xa1 + xa3
+#     AI[9]  = xa2 + xa4
+#     AI[10] = xa1 - xa3
+#     AI[11] = xa2 - xa4
+
+#     AI[12] = (AI[1] - AI[3]) / ((AI[4] - AI[6]) * TAU1 + 2.0 * (AI[5] - AI[7]))
+#     AI[13] = 1.0 / (AI[4] * AI[10] - AI[5] * AI[11])
+#     AI[14] = 1.0 / (AI[1] * AI[8] - AI[2] * AI[9] -
+#                     2.0 * AI[12] * (AI[5] * AI[8] - AI[4] * AI[9]))
+#     AI[15] = 2.0 * (AI[8] * AI[10] - AI[9] * AI[11])
+#     AI[16] = AI[13] * AI[15]
+#     AI[17] = AI[14] * AI[15]
+
+#     CNU1 = 0.5 * (AI[16] - AI[17])
+#     CNU2 = 0.5 * (AI[16] + AI[17])
+
+#     AI[15] = AI[13] * (AI[5] * AI[8] - AI[4] * AI[9])
+#     AI[16] = AI[14] * (AI[2] * AI[10] - AI[1] * AI[11] -
+#                        2.0 * AI[12] * (AI[4] * AI[10] - AI[5] * AI[11]))
+#     #CNU3 = 0.5 * (AI[15] - AI[16])
+#     #CNU4 = 0.5 * (AI[15] + AI[16])
+
+#     AI[15] = AI[13] * (AI[2] * AI[10] - AI[1] * AI[11])
+#     AI[16] = AI[14] * (AI[5] * AI[8] - AI[4] * AI[9])
+#     CU3   = 0.5 * (AI[15] - AI[16])
+#     CU4   = 0.5 * (AI[15] + AI[16])
+
+#     AI[15] = AI[14] * (AI[1] * AI[8] - AI[2] * AI[9])
+#     SBAR  = 1.0 - 0.375 * AI[12] * (AI[4] - AI[6]) *
+#                    ((CNU2 - CNU1) * AI[8] + (CU4 - CU3) * AI[2] - AI[15] * AI[6])
+
+#     AI[20] = 0.375 * AI[12] * (CNU2 - CNU1) * (AI[4] - AI[6])
+#     AI[21] = 0.375 * AI[12] * (AI[4] - AI[6])
+#     AI[22] = AI[21] * (CU4 - CU3)
+#     AI[23] = AI[21] * AI[15]
+
+#     @inbounds @simd for I in 1:101
+#         GAML[I] = AI[20] * (X1[I] + Y1[I])
+#         GAMR[I] = AI[22] * (X2[I] + Y2[I]) - AMU[I] * AI[23] * (X2[I] - Y2[I])
+#     end
+
+#     return GAMR, GAML, SBAR
+# end
+using StaticArrays
+
+function GAMMA(TAU1::Float64)
+    # Large arrays (mutable, normal)
+    CHX  = zeros(101)
+    CHY  = zeros(101)
+    AMU  = zeros(101)
+    X1   = zeros(101)
+    Y1   = zeros(101)
+    X2   = zeros(101)
+    Y2   = zeros(101)
+    AIL  = zeros(101)
+    GAMR = zeros(101)
+    GAML = zeros(101)
+
+    # Small fixed-size arrays (use StaticArrays)
+    CFA = @MVector zeros(3)
+    AI  = @MVector zeros(30)
+
     # Set up AMU array
     AMU[1] = 0.0
-    @inbounds @simd for I in 2:101
+    @inbounds for I in 2:101
         AMU[I] = 0.01 * (I - 1)
     end
 
     # Compute X1, Y1 using dchxy
-    CFA[1] = 0.75
-    CFA[2] = -0.75
-    CFA[3] = 0.0
-    NST = 111
-    CHX, CHY, NTR = dchxy(TAU1, CFA, NST)
-    @inbounds @simd for I in 1:101
-        X1[I] = CHX[I]
-        Y1[I] = CHY[I]
-    end
+    CFA .= (0.75, -0.75, 0.0)
+    CHX_, CHY_, _ = dchxy(TAU1, collect(CFA), 111)
+    X1 .= CHX_
+    Y1 .= CHY_
 
     # Compute X2, Y2 using dchxy
-    CFA[1] = 0.375
-    CFA[2] = -0.375
-    NST = 0
-    CHX, CHY, NTR = dchxy(TAU1, CFA, NST)
-    @inbounds @simd for I in 1:101
-        X2[I] = CHX[I]
-        Y2[I] = CHY[I]
-    end
+    CFA .= (0.375, -0.375, 0.0)
+    CHX_, CHY_, _ = dchxy(TAU1, collect(CFA), 0)
+    X2 .= CHX_
+    Y2 .= CHY_
 
-    # Compute AIL
+    # Compute AIL (quadrature weights)
     AIL[1] = 0.01 / 3.0
-    CNU1 = 4.0 * AIL[1]
-    CNU2 = 2.0 * AIL[1]
-    @inbounds @simd for I in 2:2:100
-        AIL[I] = CNU1
+    CNU1   = 4.0 * AIL[1]
+    CNU2   = 2.0 * AIL[1]
+    @inbounds for I in 2:2:100
+        AIL[I]   = CNU1
         AIL[I+1] = CNU2
     end
     AIL[101] = AIL[1]
 
-    # Initialize integrals
-    fill!(XA, 0.0)
-    fill!(XB, 0.0)
+    # Scalar accumulators
+    xa1 = xa2 = xa3 = xa4 = 0.0
+    xb1 = xb2 = xb3 = xb4 = xb5 = xb6 = xb7 = xb8 = 0.0
 
-    @inbounds @simd for I in 1:101
-        c1 = AIL[I] * X1[I] * AMU[I]
-        XA[1] += c1
-        XA[2] += c1 * AMU[I]
-        c2 = AIL[I] * Y1[I] * AMU[I]
-        XA[3] += c2
-        XA[4] += c2 * AMU[I]
+    @inbounds for I in 1:101
+        a  = AMU[I]
+        a2 = a * a
+        a3 = a2 * a
+
+        c1 = AIL[I] * X1[I] * a
+        xa1 += c1
+        xa2 += c1 * a
+
+        c2 = AIL[I] * Y1[I] * a
+        xa3 += c2
+        xa4 += c2 * a
+
         c3 = AIL[I] * X2[I]
-        XB[1] += c3
-        XB[2] += c3 * AMU[I]
-        XB[3] += c3 * AMU[I]^2
-        XB[4] += c3 * AMU[I]^3
+        xb1 += c3
+        xb2 += c3 * a
+        xb3 += c3 * a2
+        xb4 += c3 * a3
+
         c4 = AIL[I] * Y2[I]
-        XB[5] += c4
-        XB[6] += c4 * AMU[I]
-        XB[7] += c4 * AMU[I]^2
-        XB[8] += c4 * AMU[I]^3
+        xb5 += c4
+        xb6 += c4 * a
+        xb7 += c4 * a2
+        xb8 += c4 * a3
     end
 
-    AI[1] = XB[1] + XB[5] - 8.0 / 3.0
-    AI[2] = XB[2] + XB[6]
-    AI[3] = XB[3] + XB[7]
-    AI[4] = XB[1] - XB[5] - 8.0 / 3.0
-    AI[5] = XB[2] - XB[6]
-    AI[6] = XB[3] - XB[7]
-    AI[7] = XB[4] - XB[8]
-    AI[8] = XA[1] + XA[3]
-    AI[9] = XA[2] + XA[4]
-    AI[10] = XA[1] - XA[3]
-    AI[11] = XA[2] - XA[4]
+    # Fill AI vector
+    AI[1]  = xb1 + xb5 - 8.0 / 3.0
+    AI[2]  = xb2 + xb6
+    AI[3]  = xb3 + xb7
+    AI[4]  = xb1 - xb5 - 8.0 / 3.0
+    AI[5]  = xb2 - xb6
+    AI[6]  = xb3 - xb7
+    AI[7]  = xb4 - xb8
+    AI[8]  = xa1 + xa3
+    AI[9]  = xa2 + xa4
+    AI[10] = xa1 - xa3
+    AI[11] = xa2 - xa4
 
     AI[12] = (AI[1] - AI[3]) / ((AI[4] - AI[6]) * TAU1 + 2.0 * (AI[5] - AI[7]))
     AI[13] = 1.0 / (AI[4] * AI[10] - AI[5] * AI[11])
-    AI[14] = 1.0 / (AI[1] * AI[8] - AI[2] * AI[9] - 2.0 * AI[12] * (AI[5] * AI[8] - AI[4] * AI[9]))
+    AI[14] = 1.0 / (AI[1] * AI[8] - AI[2] * AI[9] -
+                    2.0 * AI[12] * (AI[5] * AI[8] - AI[4] * AI[9]))
     AI[15] = 2.0 * (AI[8] * AI[10] - AI[9] * AI[11])
     AI[16] = AI[13] * AI[15]
     AI[17] = AI[14] * AI[15]
@@ -231,116 +501,30 @@ function GAMMA(TAU1::Float64)
     CNU2 = 0.5 * (AI[16] + AI[17])
 
     AI[15] = AI[13] * (AI[5] * AI[8] - AI[4] * AI[9])
-    AI[16] = AI[14] * (AI[2] * AI[10] - AI[1] * AI[11] - 2.0 * AI[12] * (AI[4] * AI[10] - AI[5] * AI[11]))
-    CNU3 = 0.5 * (AI[15] - AI[16])
-    CNU4 = 0.5 * (AI[15] + AI[16])
+    AI[16] = AI[14] * (AI[2] * AI[10] - AI[1] * AI[11] -
+                       2.0 * AI[12] * (AI[4] * AI[10] - AI[5] * AI[11]))
 
     AI[15] = AI[13] * (AI[2] * AI[10] - AI[1] * AI[11])
     AI[16] = AI[14] * (AI[5] * AI[8] - AI[4] * AI[9])
-    CU3 = 0.5 * (AI[15] - AI[16])
-    CU4 = 0.5 * (AI[15] + AI[16])
+    CU3   = 0.5 * (AI[15] - AI[16])
+    CU4   = 0.5 * (AI[15] + AI[16])
 
     AI[15] = AI[14] * (AI[1] * AI[8] - AI[2] * AI[9])
-    SBAR = 1.0 - 0.375 * AI[12] * (AI[4] - AI[6]) *
-                 ((CNU2 - CNU1) * AI[8] + (CU4 - CU3) * AI[2] - AI[15] * AI[6])
+    SBAR  = 1.0 - 0.375 * AI[12] * (AI[4] - AI[6]) *
+                   ((CNU2 - CNU1) * AI[8] + (CU4 - CU3) * AI[2] - AI[15] * AI[6])
 
     AI[20] = 0.375 * AI[12] * (CNU2 - CNU1) * (AI[4] - AI[6])
     AI[21] = 0.375 * AI[12] * (AI[4] - AI[6])
     AI[22] = AI[21] * (CU4 - CU3)
     AI[23] = AI[21] * AI[15]
 
-    @inbounds @simd for I in 1:101
+    @inbounds for I in 1:101
         GAML[I] = AI[20] * (X1[I] + Y1[I])
         GAMR[I] = AI[22] * (X2[I] + Y2[I]) - AMU[I] * AI[23] * (X2[I] - Y2[I])
     end
+
     return GAMR, GAML, SBAR
 end
-
-# function GAMMA(TAU1::Float64)
-#     # Prepare grids and arrays
-#     AMU = range(0.0, 1.0, length=101) |> collect
-#     AMU2 = AMU .^ 2
-#     AMU3 = AMU .^ 3
-#     AIL = zeros(Float64, 101)
-#     AIL[1] = 0.01 / 3
-#     AIL[2:2:100] .= 4 * AIL[1]
-#     AIL[3:2:100] .= 2 * AIL[1]
-#     AIL[101] = AIL[1]
-
-#     # Preallocate outputs
-#     X1 = similar(AMU)
-#     Y1 = similar(AMU)
-#     X2 = similar(AMU)
-#     Y2 = similar(AMU)
-#     GAMR = similar(AMU)
-#     GAML = similar(AMU)
-
-#     # Compute X1, Y1
-#     CHX, CHY, _ = dchxy(TAU1, [0.75, -0.75, 0.0], 111)
-#     X1 .= CHX
-#     Y1 .= CHY
-
-#     # Compute X2, Y2
-#     CHX, CHY, _ = dchxy(TAU1, [0.375, -0.375, 0.0], 0)
-#     X2 .= CHX
-#     Y2 .= CHY
-
-#     # Compute integrals XA and XB
-#     XA = [sum(AIL .* X1 .* AMU), sum(AIL .* X1 .* AMU .* AMU),
-#           sum(AIL .* Y1 .* AMU), sum(AIL .* Y1 .* AMU .* AMU)]
-
-#     XB = [sum(AIL .* X2), sum(AIL .* X2 .* AMU), sum(AIL .* X2 .* AMU2), sum(AIL .* X2 .* AMU3),
-#           sum(AIL .* Y2), sum(AIL .* Y2 .* AMU), sum(AIL .* Y2 .* AMU2), sum(AIL .* Y2 .* AMU3)]
-
-#     # Compute AI coefficients
-#     AI = zeros(Float64, 30)
-#     AI[1]  = XB[1] + XB[5] - 8/3
-#     AI[2]  = XB[2] + XB[6]
-#     AI[3]  = XB[3] + XB[7]
-#     AI[4]  = XB[1] - XB[5] - 8/3
-#     AI[5]  = XB[2] - XB[6]
-#     AI[6]  = XB[3] - XB[7]
-#     AI[7]  = XB[4] - XB[8]
-#     AI[8]  = XA[1] + XA[3]
-#     AI[9]  = XA[2] + XA[4]
-#     AI[10] = XA[1] - XA[3]
-#     AI[11] = XA[2] - XA[4]
-#     AI[12] = (AI[1]-AI[3])/((AI[4]-AI[6])*TAU1 + 2*(AI[5]-AI[7]))
-#     AI[13] = 1/(AI[4]*AI[10] - AI[5]*AI[11])
-#     AI[14] = 1/(AI[1]*AI[8] - AI[2]*AI[9] - 2*AI[12]*(AI[5]*AI[8]-AI[4]*AI[9]))
-#     AI[15] = 2*(AI[8]*AI[10] - AI[9]*AI[11])
-#     AI[16] = AI[13]*AI[15]
-#     AI[17] = AI[14]*AI[15]
-
-#     CNU1 = 0.5*(AI[16]-AI[17])
-#     CNU2 = 0.5*(AI[16]+AI[17])
-
-#     AI[15] = AI[13]*(AI[5]*AI[8]-AI[4]*AI[9])
-#     AI[16] = AI[14]*(AI[2]*AI[10] - AI[1]*AI[11] - 2*AI[12]*(AI[4]*AI[10]-AI[5]*AI[11]))
-#     CNU3 = 0.5*(AI[15]-AI[16])
-#     CNU4 = 0.5*(AI[15]+AI[16])
-
-#     AI[15] = AI[14]*(AI[2]*AI[10]-AI[1]*AI[11])
-#     AI[16] = AI[14]*(AI[5]*AI[8]-AI[4]*AI[9])
-#     CU3 = 0.5*(AI[15]-AI[16])
-#     CU4 = 0.5*(AI[15]+AI[16])
-
-#     AI[15] = AI[14]*(AI[1]*AI[8]-AI[2]*AI[9])
-#     SBAR = 1.0 - 0.375*AI[12]*(AI[4]-AI[6])*((CNU2-CNU1)*AI[8] + (CU4-CU3)*AI[2] - AI[15]*AI[6])
-
-#     AI[20] = 0.375*AI[12]*(CNU2-CNU1)*(AI[4]-AI[6])
-#     AI[21] = 0.375*AI[12]*(AI[4]-AI[6])
-#     AI[22] = AI[21]*(CU4-CU3)
-#     AI[23] = AI[21]*AI[15]
-
-#     # Compute gamma functions
-#     @inbounds for I in 1:101
-#         GAML[I] = AI[20]*(X1[I] + Y1[I])
-#         GAMR[I] = AI[22]*(X2[I] + Y2[I]) - AMU[I]*AI[23]*(X2[I]-Y2[I])
-#     end
-
-#     return GAMR, GAML, SBAR
-# end
 
 function init_dchxy_buffers()
     arrays = Dict(
@@ -348,12 +532,12 @@ function init_dchxy_buffers()
         :AMU => zeros(Float64, 101),
         :XA => zeros(Float64, 101),
         :XB => zeros(Float64, 101),
-        :UMA => zeros(Float64, 5),
-        :ACAP => zeros(Float64, 5),
-        :TEMX => zeros(Float64, 8),
-        :TEMY => zeros(Float64, 8),
-        :RTK => zeros(Float64, 5),
-        :ALAM => zeros(Float64, 5),
+        #:UMA => zeros(Float64, 5),
+        #:ACAP => zeros(Float64, 5),
+        #:TEMX => zeros(Float64, 8),
+        #:TEMY => zeros(Float64, 8),
+        #:RTK => zeros(Float64, 5),
+        #:ALAM => zeros(Float64, 5),
         :FNPP => zeros(Float64, 101),
         :FNPN => zeros(Float64, 101),
         :FNC0 => zeros(Float64, 101),
@@ -363,7 +547,7 @@ function init_dchxy_buffers()
         :FNW => zeros(Float64, 101),
         :FMC0 => zeros(Float64, 101),
         :FMC1 => zeros(Float64, 101),
-        :XC => zeros(Float64, 101),
+        #:XC => zeros(Float64, 101),
         :XD => zeros(Float64, 101),
         :XE => zeros(Float64, 101),
         :CHXA => zeros(Float64, 101),
@@ -420,46 +604,22 @@ The program terminates with an error if:
 """
 function dchxy(TAU1::Float64, CFA::Vector{Float64}, NCASE::Int)
     buffers = init_dchxy_buffers()
-    # Initialize arrays
-    # PSI = zeros(Float64, 101)
-    # AMU = zeros(Float64, 101)
-    # XA = zeros(Float64, 101)
-    # XB = zeros(Float64, 101)
-    # UMA = zeros(Float64, 5)
-    # ACAP = zeros(Float64, 5)
-    # TEMX = zeros(Float64, 8)
-    # TEMY = zeros(Float64, 8)
-    # RTK = zeros(Float64, 5)
-    # ALAM = zeros(Float64, 5)
-    # FNPP = zeros(Float64, 101)
-    # FNPN = zeros(Float64, 101)
-    # FNC0 = zeros(Float64, 101)
-    # FNC1 = zeros(Float64, 101)
-    # FNX = zeros(Float64, 101)
-    # FNY = zeros(Float64, 101)
-    # FNW = zeros(Float64, 101)
-    # FMC0 = zeros(Float64, 101)
-    # FMC1 = zeros(Float64, 101)
-    # XC = zeros(Float64, 101)   # equivalence
-    # XD = zeros(Float64, 101)   # equivalence
-    # XE = zeros(Float64, 101)   # equivalence
-    # CHXA = zeros(Float64, 101)   # equivalence
-    # CHYA = zeros(Float64, 101)    # equivalence
-    # CHX = zeros(Float64, 101)
-    # CHY = zeros(Float64, 101)
-    # XA = zeros(Float64, 101)
-    # XB = zeros(Float64, 101)
-
     PSI   = buffers[:PSI]
     AMU   = buffers[:AMU]
     XA    = buffers[:XA]
     XB    = buffers[:XB]
-    UMA   = buffers[:UMA]
-    ACAP  = buffers[:ACAP]
-    TEMX  = buffers[:TEMX]
-    TEMY  = buffers[:TEMY]
-    RTK   = buffers[:RTK]
-    ALAM  = buffers[:ALAM]
+    #UMA   = buffers[:UMA]
+    UMA  = @MVector zeros(5)
+    #ACAP  = buffers[:ACAP]
+    ACAP = @MVector zeros(5)
+    #TEMX  = buffers[:TEMX]
+    #TEMY  = buffers[:TEMY]
+    TEMX = @MVector zeros(8)
+    TEMY = @MVector zeros(8)
+    #RTK   = buffers[:RTK]
+    #ALAM  = buffers[:ALAM]
+    RTK  = @MVector zeros(5)
+    ALAM = @MVector zeros(5)
     FNPP  = buffers[:FNPP]
     FNPN  = buffers[:FNPN]
     FNC0  = buffers[:FNC0]
@@ -469,7 +629,7 @@ function dchxy(TAU1::Float64, CFA::Vector{Float64}, NCASE::Int)
     FNW   = buffers[:FNW]
     FMC0  = buffers[:FMC0]
     FMC1  = buffers[:FMC1]
-    XC    = buffers[:XC]    # equivalence
+    #XC    = buffers[:XC]    # equivalence
     XD    = buffers[:XD]    # equivalence
     XE    = buffers[:XE]    # equivalence
     CHXA  = buffers[:CHXA]  # equivalence
@@ -501,7 +661,7 @@ function dchxy(TAU1::Float64, CFA::Vector{Float64}, NCASE::Int)
 
     # Variables
     PERA = 0.0
-    PERB = 0.0
+    #PERB = 0.0
 
     # Terminate if TAU1 is too large or negative
     if TAU1 <= 2.0
@@ -857,104 +1017,6 @@ function dchxy(TAU1::Float64, CFA::Vector{Float64}, NCASE::Int)
     nomitr = 1 # Fortran line 362
     converged = false
     TEMC = 0.0   # Initialize before convergence loop
-    # while converged == false
-    #     @inbounds @simd for I in 2:101
-    #         @inbounds @simd for IC in 1:101
-    #             XD[IC] = PSI[IC] * (FNX[I] * FNX[IC] - FNY[I] * FNY[IC]) / (AMU[I] + AMU[IC])
-    #             if I != IC
-    #                 XE[IC] = PSI[IC] * (FNY[I] * FNX[IC] - FNX[I] * FNY[IC]) / (AMU[I] - AMU[IC])
-    #             end
-    #             if I <= 3
-    #                 XE[I] = 0.5 * (XE[I+1] + XE[I-1])
-    #             else
-    #                 if I > 3 && I <= 5
-    #                     # Everett's formula two points on either side
-    #                     XE[I] = 0.0625 * (9.0 * (XE[I+1] + XE[I-1]) - XE[I+3] - XE[I-3])
-    #                 else
-    #                     if I > 5 && I <= 96
-    #                         # Everett's formula three points on either side
-    #                         XE[I] = 3.0 * (XE[I+5] + XE[I-5]) + 150.0 * (XE[I+1] + XE[I-1]) - 25.0 * (XE[I+3] + XE[I-3])
-    #                         XE[I] /= 256.0
-    #                     else
-    #                         # Interpolation for I > 96
-    #                         XE[I] = 5.0 * XE[I-1] + 10.0 * XE[I-3] + XE[I-5] - 10.0 * XE[I-2] - 5.0 * XE[I-4]
-    #                     end
-    #                 end
-    #             end
-    #             CHXA[I] = 0.0
-    #             CHYA[I] = 0.0
-    #             @inbounds @simd for IC in 1:101
-    #                 CHXA[I] += XA[IC] * XD[IC]
-    #                 CHYA[I] += XA[IC] * XE[IC]
-    #             end
-    #             CHXA[I] = 1.0 + AMU[I] * CHXA[I]
-    #             CHYA[I] = XB[I] + AMU[I] * CHYA[I]
-    #         end
-    #     end
-    #     # correction to the approximation
-    #     if nomitr == 1 && TAU1 != 0 # Fortran line 398
-    #         #TEMX[1] = -dexpi(-TAU1)
-    #         TEMX[1] = -expinti(-TAU1) # now using SpecialFunctions.expinti
-    #         @inbounds @simd for n in 2:7
-    #             TEMX[n] = (XB[101] - TAU1 * TEMX[n-1]) / (n - 1)
-    #         end
-    #         PERB = 2.0 * (
-    #             CFA[1] * (0.5 - TEMX[3]) +
-    #             CFA[2] * (0.25 - TEMX[5]) +
-    #             CFA[3] * ((1 / 6) - TEMX[7])
-    #         )
-    #     end
-    #     # accumulate TEMA, TEMB
-    #     if TAU1 != 0.0
-    #         TEMA = 0.0
-    #         TEMB = 0.0
-    #         @inbounds @simd for i in 1:101
-    #             TEMA += CHXA[i] * PSI[i] * XA[i]
-    #             TEMB += CHYA[i] * PSI[i] * XA[i]
-    #         end
-    #         # new TEMC
-    #         c1 = (1 - 2 * PERA) / (1 - TEMA + TEMB)
-    #         TEMC = TAU1 == 0 ? 0.0 : (1 - TEMA - TEMB - c1) / PERB
-    #     end
-    #     if TAU1 == 0.0
-    #         TEMC = 0.0
-    #     end
-    #     @inbounds @simd for i in 1:101
-    #         TEMD = TEMC * AMU[i] * (1.0 - XB[i])
-    #         CHX[i] = CHXA[i] + TEMD
-    #         CHY[i] = CHYA[i] + TEMD
-    #     end
-    #     if NPRT != 0 # Fortran line 422
-    #         TEMC_out = TEMA^2 - 2.0 * TEMA - TEMB^2 + 2.0 * PERA
-    #         #@printf(" NOMITR = %d, TEMA = %g, TEMB = %g, TEMC = %g\n", NOMITR, TEMA, TEMB, TEMC_out)
-    #     end
-
-    #     # Check for convergence
-    #     if nomitr > 1
-    #         #converged = true
-    #         @inbounds for I in 2:101
-    #             rel_error = abs((CHY[I] - FNY[I]) / CHY[I])
-    #             if rel_error <= 2.0e-4
-    #                 converged = true
-    #                 break
-    #             end
-    #         end
-    #     end
-
-    #     if converged
-    #         break
-    #     end
-
-    #     # Prepare for next iteration
-    #     @inbounds @simd for I in 1:101
-    #         FNX[I] = CHX[I]
-    #         FNY[I] = CHY[I]
-    #     end
-    #     nomitr += 1
-    #     if nomitr > 15
-    #         break
-    #     end
-    # end
     while !converged
         @inbounds for I in 2:101
             # Compute XD and XE for this I
@@ -976,9 +1038,14 @@ function dchxy(TAU1::Float64, CFA::Vector{Float64}, NCASE::Int)
                 XE[I] = 5.0*XE[I-1] + 10.0*XE[I-3] + XE[I-5] - 10.0*XE[I-2] - 5.0*XE[I-4]
             end
 
-            # Compute CHXA and CHYA using sum instead of inner loop
-            CHXA[I] = 1.0 + AMU[I] * sum(XA .* XD)
-            CHYA[I] = XB[I] + AMU[I] * sum(XA .* XE)
+            sxd = 0.0
+            sxe = 0.0
+            @inbounds @simd for ic in 1:101
+                sxd += XA[ic] * XD[ic]
+                sxe += XA[ic] * XE[ic]
+            end
+            CHXA[I] = 1.0 + AMU[I] * sxd
+            CHYA[I] = XB[I] + AMU[I] * sxe
         end
 
         # Correction to CHX and CHY
@@ -1562,7 +1629,7 @@ function get_longwave(;
     σ = Unitful.uconvert(u"W/m^2/K^4", Unitful.σ) # Stefan-Boltzmann constant, W/m^2/K^4
     #σ = u"W/m^2/K^4"(0.8126e-10u"cal/minute/cm^2/K^4") # value used in NicheMapR (sigp)
     P_atmos = get_pressure(elevation)
-    wet_air_out = wet_air(u"K"(tair); rh=rh, P_atmos=P_atmos)
+    wet_air_out = wet_air(u"K"(tair); rh, P_atmos)
 
     # Atmospheric radiation
     if swinbank

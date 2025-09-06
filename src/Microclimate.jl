@@ -12,7 +12,7 @@ using Unitful, UnitfulMoles, ModelParameters, DelimitedFiles
 
 using Unitful: °, rad, °C#, K, Pa, kPa, MPa, J, kJ, W, L, g, kg, cm, m, s, hr, d, mol, mmol, μmol, σ, R
 
-using SpecialFunctions
+using SpecialFunctions, StaticArrays
 
 # constants for the solrad function
 const DEFAULT_Iλ = Float64.([ # wavelengths across which to integrate
