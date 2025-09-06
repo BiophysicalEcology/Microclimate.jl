@@ -86,7 +86,7 @@ plot(λ, τA)
 plot!(λ, τA_nmr, linecolor="grey")
 
 using Infiltrator
-solrad_out = @inferred solrad(;
+@time solrad_out = @inferred solrad(;
     days,               # days of year
     hours,              # hours of day
     latitude,           # latitude (degrees)
@@ -95,9 +95,9 @@ solrad_out = @inferred solrad(;
     slope,              # slope (degrees, range 0-90)
     aspect,             # aspect (degrees, 0 = North, range 0-360)
     albedos,            # substrate solar albedoectivity (decimal %)
-    iuv,                # use Dave_Furkawa theory for UV radiation (290-360 nm)?
+    iuv,           # use Dave_Furukawa theory for UV radiation (290-360 nm)?
     τA                  # aerosol profile from gads (global aerosol data set)
-    )
+    );
 
 # using ProfileView
 # ProfileView.@profview solrad_out = @inferred solrad(;
@@ -109,7 +109,7 @@ solrad_out = @inferred solrad(;
 #     slope,              # slope (degrees, range 0-90)
 #     aspect,             # aspect (degrees, 0 = North, range 0-360)
 #     albedos,            # substrate solar albedoectivity (decimal %)
-#     iuv = true,         # use Dave_Furkawa theory for UV radiation (290-360 nm)?
+#     iuv = true,         # use Dave_Furukawa theory for UV radiation (290-360 nm)?
 #     τA                  # aerosol profile from gads (global aerosol data set)
 #     )
 
@@ -163,13 +163,14 @@ plot!(metout_nmr.ZEN, linestyle = :dash)
 plot(global_cloud, ylabel="Radiation", label="solrad.jl")
 plot!(metout_nmr.SOLR, linestyle = :dash, label="NMR")
 
-month2do = 6
+month2do = 1
 hour2do = 12
 i = (month2do - 1) * 24 + hour2do
 
 plot(λ, [direct_spectra[i, :] diffuse_spectra[i, :] rayleigh_spectra[i, :]], xlabel="Wavelength", ylabel="Spectral Irradiance", label=["Direct" "Diffuse" "Rayleigh"])
 plot!(λ, [direct_spectra_nmr_units[i, :] diffuse_spectra_nmr_units[i, :] rayleigh_spectra_nmr_units[i, :]], xlabel="Wavelength", ylabel="Spectral Irradiance", label=["Direct" "Diffuse" "Rayleigh"], linestyle=[:dash :dash :dash])
 
+# diffuse spectra test needs to be 1e-2 to pass with iuv=true
 @testset "solar radiation comparisons" begin
     @test τA ≈ τA_nmr atol=1e-7
     @test ustrip.(u"°", zenith_angle) ≈ metout_nmr.ZEN atol=1e-4

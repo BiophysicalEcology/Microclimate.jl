@@ -12,6 +12,8 @@ using Unitful, UnitfulMoles, ModelParameters, DelimitedFiles
 
 using Unitful: °, rad, °C#, K, Pa, kPa, MPa, J, kJ, W, L, g, kg, cm, m, s, hr, d, mol, mmol, μmol, σ, R
 
+using SpecialFunctions
+
 # constants for the solrad function
 const DEFAULT_Iλ = Float64.([ # wavelengths across which to integrate
         290, 295, 300, 305, 310, 315, 320, 330, 340, 350, 360, 370, 380, 390,
@@ -151,7 +153,7 @@ export gads
 
 export sinec!, vsine, hourly_vars
 
-export hour_angle, solar_geometry, elev_corr, dchxy, dexpi, solrad, cloud_adjust_radiation, get_longwave
+export hour_angle, solar_geometry, elev_corr, dchxy, solrad, cloud_adjust_radiation, get_longwave, init_dchxy_buffers
 
 export get_profile
 
