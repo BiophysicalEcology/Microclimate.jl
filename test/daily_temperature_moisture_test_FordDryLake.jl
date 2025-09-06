@@ -2,6 +2,7 @@ using Microclimate
 using Unitful
 using Plots
 using CSV, DataFrames, Dates
+using test
 
 # read in output from NicheMapR
 soil_temperature_nmr = (DataFrame(CSV.File("test/data/soil_FordDryLake.csv"))[:, 5:14]) .* u"°C"
@@ -121,3 +122,10 @@ plot!(date[pstart:pfinish], Matrix(soil_moisture_nmr[pstart:pfinish, :]), xlabel
 # plot soil thermal conductivity
 plot(date[pstart:pfinish], micro_out.soil_thermal_conductivity[pstart:pfinish, :], xlabel="time", ylabel="soil thermal conductivity", lw=2, label = string.(depths'), legend = :none, ylim = (0, 1))
 plot!(date[pstart:pfinish], Matrix(soil_conductivity_nmr[pstart:pfinish, :]), xlabel="time", ylabel="soil thermal conductivity", legend = :none, lw=2, label = string.(depths'), ylim = (0, 1), linestyle=:dash, linecolor="grey")
+
+# TODO include 1st node (currently left out, i.e. just columns 2:10, because way off at times)
+@testset "runmicro comparisons" begin
+    @test all(isapprox.(micro_out.soil_moisture[:, 2:10], Matrix(soil_moisture_nmr[:, 2:10]); atol=0.3)) # TODO make better!
+    @test all(isapprox.(micro_out.soil_temperature[:, 2:10], u"K".(Matrix(soil_temperature_nmr[:, 2:10])); atol=5u"K")) # TODO make better!
+    @test all(isapprox.(micro_out.soil_thermal_conductivity[:, 2:10], Matrix(soil_conductivity_nmr[:, 2:10])u"W * m^-1 * K^-1"; atol=1u"W * m^-1 * K^-1")) # TODO make better!
+end 

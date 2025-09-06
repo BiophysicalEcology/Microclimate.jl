@@ -221,7 +221,9 @@ if(write_input){
   write.table(ZENhr,file="../data/init_monthly/ZENhr.csv", sep = ",", col.names = NA, qmethod = "double")
   write.table(IRDhr,file="../data/init_monthly/IRDhr.csv", sep = ",", col.names = NA, qmethod = "double")
 }
+ptm <- proc.time() # Start timing
 microut <- microclimate(micro) # run the model in Fortran
+print(proc.time() - ptm) # Stop the clock
 
 metout <- as.data.frame(microut$metout) # retrieve above ground microclimatic conditions, min shade
 shadmet <- as.data.frame(microut$shadmet) # retrieve above ground microclimatic conditions, max shade
@@ -258,9 +260,9 @@ for(i in 1:10){
 
 # plot(metout$SOLR, type = 'l')
 
-write.csv(metout, file = 'c:/git/Microclimate.jl/tests/data/metout_monthly.csv')
-write.csv(soil, file = 'c:/git/Microclimate.jl/tests/data/soil_monthly.csv')
-write.csv(drlam, file = 'c:/git/Microclimate.jl/tests/data/drlam_monthly.csv')
-write.csv(drrlam, file = 'c:/git/Microclimate.jl/tests/data/drrlam_monthly.csv')
-write.csv(srlam, file = 'c:/git/Microclimate.jl/tests/data/srlam_monthly.csv')
+write.csv(metout, file = 'c:/git/Microclimate.jl/test/data/metout_monthly.csv')
+write.csv(soil, file = 'c:/git/Microclimate.jl/test/data/soil_monthly.csv')
+write.csv(drlam, file = 'c:/git/Microclimate.jl/test/data/drlam_monthly.csv')
+write.csv(drrlam, file = 'c:/git/Microclimate.jl/test/data/drrlam_monthly.csv')
+write.csv(srlam, file = 'c:/git/Microclimate.jl/test/data/srlam_monthly.csv')
 

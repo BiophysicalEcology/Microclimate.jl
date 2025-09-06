@@ -108,7 +108,7 @@ solrad_out = @inferred solrad(;
 #     slope,              # slope (degrees, range 0-90)
 #     aspect,             # aspect (degrees, 0 = North, range 0-360)
 #     albedos,            # substrate solar albedoectivity (decimal %)
-#     iuv = true,                # use Dave_Furkawa theory for UV radiation (290-360 nm)?
+#     iuv = true,         # use Dave_Furkawa theory for UV radiation (290-360 nm)?
 #     τA                  # aerosol profile from gads (global aerosol data set)
 #     )
 
@@ -136,7 +136,7 @@ rayleigh_total = solrad_out.rayleigh_total
 # Angstrom formula (formula 5.33 on P. 177 of "Climate Data and Resources" by Edward Linacre 1992
 day_of_year = repeat(days, inner=length(hours))
 global_cloud, diffuse_cloud, direct_cloud = cloud_adjust_radiation(cloud_covers / 100., diffuse_total, direct_total, zenith_angle, day_of_year)
-#Global = Global .* (0.36 .+ 0.64 * (1.0 .- (CLDs / 100.0))) # Angstrom formula (formula 5.33 on P. 177 of "Climate Data and Resources" by Edward Linacre 1992
+#global_cloud = global_total .* (0.36 .+ 0.64 * (1.0 .- (cloud_covers ./ 100.0))) # Angstrom formula (formula 5.33 on P. 177 of "Climate Data and Resources" by Edward Linacre 1992
 
 wavelength = solrad_out.wavelength
 global_spectra = solrad_out.global_spectra
@@ -171,7 +171,7 @@ plot!(λ, [direct_spectra_nmr_units[i, :] diffuse_spectra_nmr_units[i, :] raylei
 
 @testset "solar radiation comparisons" begin
     @test τA ≈ τA_nmr atol=1e-7
-    @test ustrip.(u"°", Zenith) ≈ metout_nmr.ZEN atol=1e-4
+    @test ustrip.(u"°", zenith_angle) ≈ metout_nmr.ZEN atol=1e-4
     @test all(isapprox.(ustrip.(u"W/m^2", solrad_out.global_total), metout_nmr.SOLR; atol=0.5))
     @test direct_spectra ≈ direct_spectra_nmr_units atol=1e-4u"W/nm/m^2"
     @test diffuse_spectra ≈ diffuse_spectra_nmr_units atol=1e-6u"W/nm/m^2"

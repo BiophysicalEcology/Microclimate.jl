@@ -74,6 +74,26 @@ function runmicro(;
     reference_height = 2u"m", # reference height of weather data (air temperature, wind speed, humidity)
     depths = [0.0, 2.5, 5.0, 10.0, 15.0, 20.0, 30.0, 40.0, 50.0, 100.0, 200.0]u"cm", # soil nodes - keep spacing close near the surface
     heights = [1.0, ]u"cm", # air nodes for temperature, wind speed and humidity profile
+    # solar radiation
+    cmH2O = 1, # precipitable cm H2O in air column, 0.1 = VERY DRY; 1 = MOIST AIR CONDITIONS; 2 = HUMID, TROPICAL CONDITIONS (note this is for the whole atmospheric profile, not just near the ground)
+    ϵ = 0.0167238,
+    ω = 2π / 365,
+    se = 0.39784993, #0.39779,
+    d0_solrad = 80.0,
+    iuv = false, # Use gamma function for scattered solar radiation? (computationally intensive)
+    noscat = true,
+    amr = 25.0u"km",
+    nmax = 111, # maximum number of wavelengths
+    Iλ = DEFAULT_Iλ,
+    OZ = DEFAULT_OZ,
+    τR = DEFAULT_τR,
+    τO = DEFAULT_τO,
+    τA = DEFAULT_τA,
+    τW = DEFAULT_τW,
+    Sλ = DEFAULT_Sλ, 
+    FD = DEFAULT_FD,
+    FDQ = DEFAULT_FDQ,
+    S = DEFAULT_S,
     # terrain
     elevation = 226.0u"m", # elevation (m)
     horizon_angles = fill(0.0u"°", 24), # enter the horizon angles (degrees) so that they go from 0 degrees azimuth (north) clockwise in 15 degree intervals
@@ -106,7 +126,6 @@ function runmicro(;
     moist_count = 500, # maximum iterations of soil moisture algorithm
     moist_step = 360.0u"s", # time step over which to simulate soil moisture (< =  1 hour)
     maxpool = 1.0e4u"kg/m^2", # maximum depth of pooling water
-    τA = DEFAULT_τA,
     # daily environmental vectors
     albedos = fill(0.1, length(days)), # substrate albedo (decimal %)
     shades = fill(0.0, length(days)), # % shade cast by vegetation
@@ -140,7 +159,6 @@ function runmicro(;
     daily = false, # doing consecutive days?
     runmoist = false, # run soil moisture algorithm?
     spinup = false, # spin-up the first day by iterate_day iterations?
-    iuv = false, # this makes it take ages if true!
 )
 
     ndays = length(days)
@@ -194,12 +212,29 @@ function runmicro(;
         hours,
         latitude,
         elevation,
-        horizon_angles,
         slope,
         aspect,
+        horizon_angles,
         albedos,
+        cmH2O,
+        ϵ,
+        ω,
+        se,
+        d0 = d0_solrad, #TODO better name for this
         iuv,
+        noscat,
+        amr,
+        nmax,
+        Iλ,
+        OZ,
+        τR,
+        τO,
         τA,
+        τW,
+        Sλ, 
+        FD,
+        FDQ,
+        S,
     )
     # limit max zenith angles to 90°
     solrad_out.zenith_angle[solrad_out.zenith_angle.>90u"°"] .= 90u"°"
@@ -408,7 +443,7 @@ function runmicro(;
                     if runmoist
                         infil_out, pctwet, pool, θ_soil0_b = get_soil_water_balance(;
                                 reference_height,
-                                ruf = roughness_height,
+                                roughness_height,
                                 zh,
                                 d0,
                                 TAIRs = air_temperatures,
@@ -497,7 +532,7 @@ function runmicro(;
                     if runmoist
                         infil_out, pctwet, pool, θ_soil0_b = get_soil_water_balance(;
                                 reference_height,
-                                ruf = roughness_height,
+                                roughness_height,
                                 zh,
                                 d0,
                                 TAIRs = air_temperatures,
