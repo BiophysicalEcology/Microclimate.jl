@@ -147,9 +147,11 @@ const DEFAULT_FDQ::Matrix{<:Real}=reshape([
         ], (11, 19))
 const DEFAULT_S::Vector{<:Real}=[0.2, 0.255, 0.315, 0.365, 0.394, 0.405, 0.405, 0.395, 0.37, 0.343, 0.32]
 
+export gads
+
 export sinec!, vsine, hourly_vars
 
-export hour_angle, solar_geometry, elev_corr, dchxy, dexpi, solrad, gads, cloud_adjust_radiation, get_longwave
+export hour_angle, solar_geometry, elev_corr, dchxy, dexpi, solrad, cloud_adjust_radiation, get_longwave
 
 export get_profile
 
@@ -163,6 +165,7 @@ export MicroParams, MicroForcing
 
 export runmicro
 
+include("gads.jl")
 include("landscape.jl")   
 include("interpolation.jl")
 include("soil_properties.jl")

@@ -85,6 +85,7 @@ p_eval(x) = p_scaled(scale_xs(x))
 plot(λ, τA)
 plot!(λ, τA_nmr, linecolor="grey")
 
+using Infiltrator
 solrad_out = @inferred solrad(;
     days,               # days of year
     hours,              # hours of day
