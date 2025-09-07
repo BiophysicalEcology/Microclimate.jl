@@ -76,23 +76,23 @@ function runmicro(;
     heights = [1.0, ]u"cm", # air nodes for temperature, wind speed and humidity profile
     # solar radiation
     cmH2O = 1, # precipitable cm H2O in air column, 0.1 = VERY DRY; 1 = MOIST AIR CONDITIONS; 2 = HUMID, TROPICAL CONDITIONS (note this is for the whole atmospheric profile, not just near the ground)
-    ϵ = 0.0167238,
-    ω = 2π / 365,
-    se = 0.39784993, #0.39779,
-    d0_solrad = 80.0,
-    iuv = false, # Use gamma function for scattered solar radiation? (computationally intensive)
-    noscat = true,
-    amr = 25.0u"km",
-    nmax = 111, # maximum number of wavelengths
-    Iλ = DEFAULT_Iλ,
-    OZ = DEFAULT_OZ,
-    τR = DEFAULT_τR,
-    τO = DEFAULT_τO,
-    τA = DEFAULT_τA,
-    τW = DEFAULT_τW,
-    Sλ = DEFAULT_Sλ, 
-    FD = DEFAULT_FD,
-    FDQ = DEFAULT_FDQ,
+    ϵ = 0.0167238, # Orbital eccentricity of Earth
+    ω = 2π / 365, # Mean angular orbital velocity of Earth (radians/day)
+    se = 0.39784993, # Precomputed solar elevation constant
+    d0_solrad = 80.0, # Reference day for declination calculations
+    iuv = false, # If `true`, uses the full gamma-function model for diffuse radiation (expensive)
+    scattered = true, # If `false`, disables scattered light computations (faster)
+    amr = 25.0u"km", # Mixing ratio height of the atmosphere
+    nmax = 111, # Maximum number of wavelength intervals
+    Iλ = DEFAULT_Iλ, # Vector of wavelength bins (e.g. in `nm`)
+    OZ = DEFAULT_OZ, # Ozone column depth table indexed by latitude band and month (size 19×12)
+    τR = DEFAULT_τR, # Vector of optical depths per wavelength for Rayleigh scattering
+    τO = DEFAULT_τO, # Vector of optical depths per wavelength for ozone
+    τA = DEFAULT_τA, # Vector of optical depths per wavelength for aerosols
+    τW = DEFAULT_τW, # Vector of optical depths per wavelength for water vapor
+    Sλ = DEFAULT_Sλ, # Solar spectral irradiance per wavelength bin (e.g. in `mW * cm^-2 * nm^-1`)
+    FD = DEFAULT_FD, # Auxiliary data vector for biologically effective radiation models
+    FDQ = DEFAULT_FDQ, # Auxiliary data vectors for biologically effective radiation models
     S = DEFAULT_S,
     # terrain
     elevation = 226.0u"m", # elevation (m)
@@ -222,7 +222,7 @@ function runmicro(;
         se,
         d0 = d0_solrad, #TODO better name for this
         iuv,
-        noscat,
+        scattered,
         amr,
         nmax,
         Iλ,

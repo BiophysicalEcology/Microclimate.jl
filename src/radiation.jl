@@ -532,12 +532,6 @@ function init_dchxy_buffers()
         :AMU => zeros(Float64, 101),
         :XA => zeros(Float64, 101),
         :XB => zeros(Float64, 101),
-        #:UMA => zeros(Float64, 5),
-        #:ACAP => zeros(Float64, 5),
-        #:TEMX => zeros(Float64, 8),
-        #:TEMY => zeros(Float64, 8),
-        #:RTK => zeros(Float64, 5),
-        #:ALAM => zeros(Float64, 5),
         :FNPP => zeros(Float64, 101),
         :FNPN => zeros(Float64, 101),
         :FNC0 => zeros(Float64, 101),
@@ -547,7 +541,6 @@ function init_dchxy_buffers()
         :FNW => zeros(Float64, 101),
         :FMC0 => zeros(Float64, 101),
         :FMC1 => zeros(Float64, 101),
-        #:XC => zeros(Float64, 101),
         :XD => zeros(Float64, 101),
         :XE => zeros(Float64, 101),
         :CHXA => zeros(Float64, 101),
@@ -601,6 +594,15 @@ The program terminates with an error if:
 - tau1 > 2.0
 - the characteristic function is negative for any μ
 - the integral of the characteristic function exceeds 0.5
+
+References
+
+https://en.wikipedia.org/wiki/Chandrasekhar%27s_X-_and_Y-function
+
+McCullough, E. C., & Porter, W. P. (1971). Computing clear day solar radiation 
+spectra for the terrestrial ecological environment. Ecology, 52(6), 1008–1015.
+     https://doi.org/10.2307/1933806
+
 """
 function dchxy(TAU1::Float64, CFA::Vector{Float64}, NCASE::Int)
     buffers = init_dchxy_buffers()
@@ -608,16 +610,10 @@ function dchxy(TAU1::Float64, CFA::Vector{Float64}, NCASE::Int)
     AMU   = buffers[:AMU]
     XA    = buffers[:XA]
     XB    = buffers[:XB]
-    #UMA   = buffers[:UMA]
     UMA  = @MVector zeros(5)
-    #ACAP  = buffers[:ACAP]
     ACAP = @MVector zeros(5)
-    #TEMX  = buffers[:TEMX]
-    #TEMY  = buffers[:TEMY]
     TEMX = @MVector zeros(8)
     TEMY = @MVector zeros(8)
-    #RTK   = buffers[:RTK]
-    #ALAM  = buffers[:ALAM]
     RTK  = @MVector zeros(5)
     ALAM = @MVector zeros(5)
     FNPP  = buffers[:FNPP]
@@ -629,7 +625,6 @@ function dchxy(TAU1::Float64, CFA::Vector{Float64}, NCASE::Int)
     FNW   = buffers[:FNW]
     FMC0  = buffers[:FMC0]
     FMC1  = buffers[:FMC1]
-    #XC    = buffers[:XC]    # equivalence
     XD    = buffers[:XD]    # equivalence
     XE    = buffers[:XE]    # equivalence
     CHXA  = buffers[:CHXA]  # equivalence
@@ -661,7 +656,6 @@ function dchxy(TAU1::Float64, CFA::Vector{Float64}, NCASE::Int)
 
     # Variables
     PERA = 0.0
-    #PERB = 0.0
 
     # Terminate if TAU1 is too large or negative
     if TAU1 <= 2.0
@@ -1226,7 +1220,7 @@ end
 
 """
     solrad(; days, hours, latitude...[, year, lonc, elevation, slope, aspect, horizon_angles, albedos, cmH2O, ϵ,
-           ω, se, d0, iuv, noscat, amr, nmax, Iλ, OZ, τR, τO, τA, τW, Sλ, FD, FDQ,
+           ω, se, d0, iuv, scattered, amr, nmax, Iλ, OZ, τR, τO, τA, τW, Sλ, FD, FDQ,
            S, ER, ERλ]) -> NamedTuple
 
 Compute clear sky solar radiation at a given place and time using a detailed atmospheric radiative transfer model.
@@ -1250,14 +1244,16 @@ Compute clear sky solar radiation at a given place and time using a detailed atm
 - `se::Real=0.39779`: Precomputed solar elevation constant.
 - `d0::Real=80`: Reference day for declination calculations.
 - `iuv::Bool=false`: If `true`, uses the full gamma-function model for diffuse radiation (expensive).
-- `noscat::Bool=true`: If `true`, disables scattered light computations (faster).
+- `scattered::Bool=true`: If `true`, disables scattered light computations (faster).
 - `amr::Quantity=25.0u"km"`: Mixing ratio height of the atmosphere.
 - `nmax::Integer=111`: Maximum number of wavelength intervals.
 - `Iλ::Vector{Quantity}`: Vector of wavelength bins (e.g. in `nm`).
 - `OZ::Matrix{Float64}`: Ozone column depth table indexed by latitude band and month (size 19×12).
 - `τR`, `τO`, `τA`, `τW`: Vectors of optical depths per wavelength for Rayleigh scattering, ozone, aerosols, and water vapor.
 - `Sλ::Vector{Quantity}`: Solar spectral irradiance per wavelength bin (e.g. in `mW * cm^-2 * nm^-1`).
-- `FD`, `FDQ`: Auxiliary data vectors for biologically effective radiation models.
+- `FD`, `FDQ`: Radiation scattered from the direct solar beam and reflected radiation 
+    rescattered downward as a function of wavelength, from tables in Dave & Furukawa (1966).
+- `S`: S_bar, a function of τR linked to molecular scattering in the UV range (< 360 nm)
 
 # Returns
 A named tuple containing:
@@ -1284,6 +1280,13 @@ A named tuple containing:
 - Outputs are computed for each (day, hour) combination in the input vectors.
 - In optical air mass 'arims' calculation the difference between apparent and true zenith angle is neglected for z less than 88 degrees
 - Variation of airms with altitude is ignored since it is negligible up to at least 6 km above sea level
+
+# References
+FD and FDQ derived from tables in Dave and Furukawa (1967)
+Dave, J. V., & Furukawa, P. M. (1966). Scattered radiation in the ozone 
+ absorption bands at selected levels of a terrestrial, Rayleigh atmosphere (Vol. 7).
+ Americal Meteorological Society.
+
 """
 function solrad(;
     days::Vector{<:Real}=[15, 46, 74, 105, 135, 166, 196, 227, 258, 288, 319, 349],
@@ -1302,7 +1305,7 @@ function solrad(;
     se::Real=0.39784993, #0.39779,
     d0::Real=80.0,
     iuv::Bool=false, # Use gamma function for scattered solar radiation? (computationally intensive)
-    noscat::Bool=true,
+    scattered::Bool=true,
     amr::Quantity=25.0u"km",
     nmax::Integer=111, # maximum number of wavelengths
     Iλ::AbstractVector = DEFAULT_Iλ,
@@ -1310,7 +1313,7 @@ function solrad(;
     τR::Vector{<:Real} = DEFAULT_τR,
     τO::Vector{<:Real} = DEFAULT_τO,
     τA::Vector{<:Real} = DEFAULT_τA,
-    τW::Vector{<:Real}=DEFAULT_τW,
+    τW::Vector{<:Real} = DEFAULT_τW,
     Sλ::AbstractVector = DEFAULT_Sλ, 
     FD::Matrix{<:Real} = DEFAULT_FD,
     FDQ::Matrix{<:Real} = DEFAULT_FDQ,
@@ -1519,7 +1522,7 @@ function solrad(;
                     end
 
                     # Sky (SRλ) and Global Radiation (GRλ)
-                    if noscat == false
+                    if scattered == false
                         SRλ[N] = 0.0u"mW / cm^2 / nm"
                     elseif iuv
                         if τλ1 >= 0.03
@@ -1536,6 +1539,13 @@ function solrad(;
                         if N > 11
                             SRλ[N] = 0.0u"mW / cm^2 / nm"
                         else
+                            # The option iuv = false has caused the program to enter this section which
+                            # computes scattered radiation (SRλ) for 290 nm to 360 nm using a theory
+                            # of radiation scattered from a Rayleigh (molecular) atmosphere with
+                            # ozone absorption. The functions needed for the computation are stored
+                            # as FD(N,I) and FDQ(N,I) where N is the wavelength index and I is
+                            # (zenith angle + 5)/5 rounded off to the nearest integer value.
+                            # The arrays FD and FDQ are for sea level (P = 1013 mb).
                             B = ustrip(Z) / 5
                             IA = trunc(Int, B)
                             C = B - IA

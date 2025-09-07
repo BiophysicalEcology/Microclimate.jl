@@ -96,7 +96,7 @@ using Infiltrator
     aspect,             # aspect (degrees, 0 = North, range 0-360)
     albedos,            # substrate solar albedoectivity (decimal %)
     iuv,           # use Dave_Furukawa theory for UV radiation (290-360 nm)?
-    τA                  # aerosol profile from gads (global aerosol data set)
+    τA,                  # aerosol profile from gads (global aerosol data set)
     );
 
 # using ProfileView
