@@ -75,25 +75,25 @@ function runmicro(;
     depths = [0.0, 2.5, 5.0, 10.0, 15.0, 20.0, 30.0, 40.0, 50.0, 100.0, 200.0]u"cm", # soil nodes - keep spacing close near the surface
     heights = [1.0, ]u"cm", # air nodes for temperature, wind speed and humidity profile
     # solar radiation
-    cmH2O = 1, # precipitable cm H2O in air column, 0.1 = VERY DRY; 1 = MOIST AIR CONDITIONS; 2 = HUMID, TROPICAL CONDITIONS (note this is for the whole atmospheric profile, not just near the ground)
-    ϵ = 0.0167238, # Orbital eccentricity of Earth
-    ω = 2π / 365, # Mean angular orbital velocity of Earth (radians/day)
-    se = 0.39784993, # Precomputed solar elevation constant
-    d0_solrad = 80.0, # Reference day for declination calculations
-    iuv = false, # If `true`, uses the full gamma-function model for diffuse radiation (expensive)
-    scattered = true, # If `false`, disables scattered light computations (faster)
-    amr = 25.0u"km", # Mixing ratio height of the atmosphere
+    cmH2O = 1, # precipitable cm H2O in air column, 0.1 = very dry; 1 = moist air conditions; 2 = humid, tropical conditions (note this is for the whole atmospheric profile, not just near the ground)
+    ϵ = 0.0167238, # orbital eccentricity of Earth
+    ω = 2π / 365, # mean angular orbital velocity of Earth (radians/day)
+    se = 0.39784993, # precomputed solar elevation constant
+    d0_solrad = 80.0, # reference day for declination calculations
+    iuv = false, # if `true`, uses the full gamma-function model for diffuse radiation (expensive)
+    scattered = true, # if `false`, disables scattered light computations (faster)
+    amr = 25.0u"km", # mixing ratio height of the atmosphere
     nmax = 111, # Maximum number of wavelength intervals
-    Iλ = DEFAULT_Iλ, # Vector of wavelength bins (e.g. in `nm`)
-    OZ = DEFAULT_OZ, # Ozone column depth table indexed by latitude band and month (size 19×12)
-    τR = DEFAULT_τR, # Vector of optical depths per wavelength for Rayleigh scattering
-    τO = DEFAULT_τO, # Vector of optical depths per wavelength for ozone
-    τA = DEFAULT_τA, # Vector of optical depths per wavelength for aerosols
-    τW = DEFAULT_τW, # Vector of optical depths per wavelength for water vapor
-    Sλ = DEFAULT_Sλ, # Solar spectral irradiance per wavelength bin (e.g. in `mW * cm^-2 * nm^-1`)
-    FD = DEFAULT_FD, # Auxiliary data vector for biologically effective radiation models
-    FDQ = DEFAULT_FDQ, # Auxiliary data vectors for biologically effective radiation models
-    S = DEFAULT_S,
+    Iλ = DEFAULT_Iλ, # cector of wavelength bins (e.g. in `nm`)
+    OZ = DEFAULT_OZ, # ozone column depth table indexed by latitude band and month (size 19×12)
+    τR = DEFAULT_τR, # vector of optical depths per wavelength for Rayleigh scattering
+    τO = DEFAULT_τO, # vector of optical depths per wavelength for ozone
+    τA = DEFAULT_τA, # vector of optical depths per wavelength for aerosols
+    τW = DEFAULT_τW, # vector of optical depths per wavelength for water vapor
+    Sλ = DEFAULT_Sλ, # solar spectral irradiance per wavelength bin (e.g. in `mW * cm^-2 * nm^-1`)
+    FD = DEFAULT_FD, # interpolated functino of radiation scattered from the direct solar beam
+    FDQ = DEFAULT_FDQ, # interpolated function of radiation scattered from ground-reflected radiation
+    s̄ = DEFAULT_s̄, # a function of τR linked to molecular scattering in the UV range (< 360 nm)
     # terrain
     elevation = 226.0u"m", # elevation (m)
     horizon_angles = fill(0.0u"°", 24), # enter the horizon angles (degrees) so that they go from 0 degrees azimuth (north) clockwise in 15 degree intervals
@@ -166,30 +166,13 @@ function runmicro(;
     #TODO - running mean when longer than a year
     tannulrun = fill(tannul, ndays) # monthly deep soil temperature (2m) (°C)
 
-    # defining view factor based on horizon angles
+    # defining view factor for sky radiation based on horizon angles
     viewfactor = 1 - sum(sin.(horizon_angles)) / length(horizon_angles) # convert horizon angles to radians and calc view factor(s)
 
     # Soil properties
     # set up a profile of soil properites with depth for each day to be run
     numnodes_a = length(depths) # number of soil nodes for temperature calcs and final output
     numnodes_b = numnodes_a * 2 - 2 # number of soil nodes for soil moisture calcs
-    # if runmoist & length(depths) != 10
-    #     depths_orig = [0.0, 2.5, 5.0, 10.0, 15.0, 20.0, 30.0, 40.0, 50.0, 100.0, 200.0]u"cm"
-    #     mids_orig = [(depths_orig[i] + depths_orig[i+1]) / 2 for i in 1:length(depths_orig)-1]
-    #     expanded_depths_orig = sort(unique([depths_orig; mids_orig]))
-    #     mids = [(depths[i] + depths[i+1]) / 2 for i in 1:length(depths)-1]
-    #     expanded_depths = sort(unique([depths; mids]))
-    #     function spline_to_depths(base_depths, base_values, new_depths)
-    #         # strip units for interpolation
-    #         x = ustrip.(u"cm", base_depths)
-    #         y = base_values ./ unit(base_values)  # plain numbers
-    #         itp = LinearInterpolation(x, y, extrapolation_bc=Line())  # or CubicSplineInterpolation
-    #         # evaluate at new depths
-    #         y_new = itp.(ustrip.(u"cm", new_depths)) * unit(base_values)
-    #         return y_new
-    #     end
-    #     L2 = spline_to_depths(expanded_depths, root_density, expanded_depths)
-    # end
     nodes_day = zeros(numnodes_a, ndays) # array of all possible soil nodes
     nodes_day[1, 1:ndays] .= numnodes_a # deepest node for first substrate type
     # Create an empty 10×5 matrix that can store any type (including different units)
@@ -234,7 +217,7 @@ function runmicro(;
         Sλ, 
         FD,
         FDQ,
-        S,
+        s̄,
     )
     # limit max zenith angles to 90°
     solrad_out.zenith_angle[solrad_out.zenith_angle.>90u"°"] .= 90u"°"
@@ -279,8 +262,27 @@ function runmicro(;
         global_solar = solar_radiation # keep global solar output as original solar radiation input
     end
 
+    # TODO make sure root density is interpolated from original values by default if number of
+    # depth nodes is altered
+    # if runmoist & length(depths) != 10
+    #     depths_orig = [0.0, 2.5, 5.0, 10.0, 15.0, 20.0, 30.0, 40.0, 50.0, 100.0, 200.0]u"cm"
+    #     mids_orig = [(depths_orig[i] + depths_orig[i+1]) / 2 for i in 1:length(depths_orig)-1]
+    #     expanded_depths_orig = sort(unique([depths_orig; mids_orig]))
+    #     mids = [(depths[i] + depths[i+1]) / 2 for i in 1:length(depths)-1]
+    #     expanded_depths = sort(unique([depths; mids]))
+    #     function spline_to_depths(base_depths, base_values, new_depths)
+    #         # strip units for interpolation
+    #         x = ustrip.(u"cm", base_depths)
+    #         y = base_values ./ unit(base_values)  # plain numbers
+    #         itp = LinearInterpolation(x, y, extrapolation_bc=Line())  # or CubicSplineInterpolation
+    #         # evaluate at new depths
+    #         y_new = itp.(ustrip.(u"cm", new_depths)) * unit(base_values)
+    #         return y_new
+    #     end
+    #     L2 = spline_to_depths(expanded_depths, root_density, expanded_depths)
+    # end
 
-    # Initial conditions
+    # initial conditions
     if !daily && !isnothing(initial_soil_temperature)
         initial_soil_temperature = fill(u"K"(mean(ustrip(TAIRs25[1:25]))u"°C"), numnodes_a) # mean monthly temp as in R version
     end
@@ -321,10 +323,12 @@ function runmicro(;
     sub = vcat(findall(isodd, 1:numnodes_b), numnodes_b)
     soil_saturation_moisture = 1.0 .- soil_bulk_density2 ./ soil_mineral_density2
     ψ_soils[1, :] = air_entry_water_potential[sub] .* (soil_saturation_moisture[sub] ./ θ_soil0_a) .^ Campbells_b_parameter[sub]
-    MW = 0.01801528u"kg/mol" # molar mass of water, kg/mol
+    MW = 0.01801528u"kg/mol" # molar mass of water, kg/mol # TODO use UnitfulMoles
     rh_soils[1, :] = clamp.(exp.(MW .* ψ_soils[1, :] ./ (Unitful.R .* T0)), 0, 1)
     pools[1] = 0.0u"kg/m^2"
-    # sky temperature
+    
+    # sky temperature given cloud cover, shade, hillshade (viewfactor)
+    # air temperature and humidity TODO have two options, Swinbank and Campbell
     longwave_out = get_longwave(
         elevation=elevation,
         rh=humidities[1],
@@ -338,10 +342,11 @@ function runmicro(;
     )
     Tsky = longwave_out.Tsky
     T_skys[1] = Tsky
+
     # simulate all days
-    pool = 0.0u"kg/m^2"
-    heights_water_balance = [0.01] .* u"m"
-    niter_moist = ustrip(3600 / moist_step)
+    pool = 0.0u"kg/m^2" # initialise depth of pooling water TODO make this an init option
+    heights_water_balance = [0.01] .* u"m" # for evaporation calculation TODO how sensitive ot this height?
+    niter_moist = ustrip(3600 / moist_step) # TODO use a solver for soil moisture calc
     ∑phase = zeros(Float64, numnodes_a)u"J"
     infil_out = nothing
     for j in 1:ndays

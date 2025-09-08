@@ -1221,7 +1221,7 @@ end
 """
     solrad(; days, hours, latitude...[, year, lonc, elevation, slope, aspect, horizon_angles, albedos, cmH2O, ϵ,
            ω, se, d0, iuv, scattered, amr, nmax, Iλ, OZ, τR, τO, τA, τW, Sλ, FD, FDQ,
-           S, ER, ERλ]) -> NamedTuple
+           s̄, ER, ERλ]) -> NamedTuple
 
 Compute clear sky solar radiation at a given place and time using a detailed atmospheric radiative transfer model.
 
@@ -1253,7 +1253,7 @@ Compute clear sky solar radiation at a given place and time using a detailed atm
 - `Sλ::Vector{Quantity}`: Solar spectral irradiance per wavelength bin (e.g. in `mW * cm^-2 * nm^-1`).
 - `FD`, `FDQ`: Radiation scattered from the direct solar beam and reflected radiation 
     rescattered downward as a function of wavelength, from tables in Dave & Furukawa (1966).
-- `S`: S_bar, a function of τR linked to molecular scattering in the UV range (< 360 nm)
+- `s̄`: a function of τR linked to molecular scattering in the UV range (< 360 nm)
 
 # Returns
 A named tuple containing:
@@ -1317,7 +1317,7 @@ function solrad(;
     Sλ::AbstractVector = DEFAULT_Sλ, 
     FD::Matrix{<:Real} = DEFAULT_FD,
     FDQ::Matrix{<:Real} = DEFAULT_FDQ,
-    S::Vector{<:Real} = DEFAULT_S
+    s̄::Vector{<:Real} = DEFAULT_s̄
 )
     ndays = length(days)    # number of days
     ntimes = length(hours)  # number of times
@@ -1556,7 +1556,7 @@ function solrad(;
                             end
                             FDAV = FD[N, I]
                             FDQDAV = FDQ[N, I]
-                            SRλ[N] = (Sλ[N] / π) * (FDAV + FDQDAV * (albedo / (1.0 - (albedo * S[N])))) / 1000.0
+                            SRλ[N] = (Sλ[N] / π) * (FDAV + FDQDAV * (albedo / (1.0 - (albedo * s̄[N])))) / 1000.0
                             SRλ[N] *= AR2
                         end
                     end
