@@ -62,7 +62,7 @@ hori <- rep(0, 24) # enter the horizon angles (degrees) so that they go from 0 d
 VIEWF <- 1 - sum(sin(hori * pi / 180)) / length(hori) # convert horizon angles to radians and calc view factor(s)
 solonly <- 0 # Only run SOLRAD to get solar radiation? 1=yes, 0=no
 lamb <- 1 # Return wavelength-specific solar radiation output?
-IUV <- 0 # Use gamma function for scattered solar radiation? (computationally intensive)
+IUV <- 1 # Use gamma function for scattered solar radiation? (computationally intensive)
 minshade <- 0 # minimum available shade (%)
 maxshade <- 90 # maximum available shade (%)
 PCTWET <- 0 # percentage of surface area acting as a free water surface (%)

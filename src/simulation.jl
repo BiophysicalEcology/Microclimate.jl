@@ -65,6 +65,29 @@ Returns a named tuple containing:
   `i == 1` or `i < length(hours)`; confirm 
   matches Fortran/R logic.
 """
+# TODO 1. Needs the snow algorithm to be incorporated. The way I did this in the Fortran version was not
+# elegant.
+# TODO 2. Needs to dispatch differently depending on what combinations of hourly and daily forcing data
+# are provided, which will be well defined when using different data sets e.g., ERA5, NCEP, SILO etc.,
+# for which I have separate functions in NicheMapR, but needs to be more customisable for when local
+# measured data is used (e.g., from a portable weather station)
+# TODO 3. Now that it's easier to change the structure of the model, we should include the phase transition
+# and soil moisture/snow calcululation in the solver so they are all solved togther (and ultimately the plant
+# DEB model)
+# TODO 4. Need to resolve the fact that soil temperature is computed with fewer nodes than soil moisture, where
+# I added extra nodes at the mid points of the soil nodes, so 10 soil nodes and 19 soil moisture nodes, the 19th
+# node being a constant (saturated) boundary condition. The root density is specified per node and so needs to
+# generalise.
+# TODO 5. Need to incorporate leap years.
+# TODO 6. Dispatch differently depending on which scattered radiation algorithm, downwelling longwave radiation
+# algorithm, vertical profile algorithm is being used
+# TODO 7. Add an general function for computing cloud cover from solar radiation data (I have code for this in
+# the different micro_ functions in NicheMapR - computes clear sky solar with SOLRAD and then compares the ratio
+# of this with observed solar, e.g. daily integrated values as in AGCD/AWAP or hourly values as in ERA5)
+# TODO 8. Need to build in things currently done by Ilya's microclima package, e.g. downscaling NCEP/ERA5, 
+# computing diffuse and direct radiation
+# TODO 9. Make it work on GPUs for rapid computation of grids, with intelligent initialisation based on near
+# neighbours.
 
 function runmicro(;
     # locations, times, depths and heights

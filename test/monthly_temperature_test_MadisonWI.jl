@@ -88,7 +88,7 @@ plot!(Matrix(soiltemps_nmr);
         xlabel="time", ylabel="soil temperature", lw=2,
         linestyle=:dash, linecolor="grey"
     )
-dayplot=4
+dayplot=2
 sub=((dayplot-1)*24+1):(dayplot*24)
 plt = plot(u"°C".(micro_out.soil_temperature[sub,:]), xlabel="Time", ylabel="Soil Temperature", lw=2, legend=false)
 plot!(plt, Matrix(soiltemps_nmr[sub,:]);
@@ -116,9 +116,12 @@ plot(micro_out.air_temperature[:, 2:3], xlabel="time", ylabel="air temperature",
 plot!(ta1cm_nmr, xlabel="time", ylabel="air temperature", lw=2, label="1cm NMR", linestyle=:dash, linecolor="grey")
 plot!(ta2m_nmr, xlabel="time", ylabel="air temperature", lw=2, label="200cm NMR", linestyle=:dash, linecolor="grey")
 
+plot(micro_out.relative_humidity[:, 2:3], xlabel="time", ylabel="humidity (%)", lw=2)
+plot!(rh1cm_nmr, xlabel="time", ylabel="humidity (%)", lw=2, label="1cm NMR", linestyle=:dash, linecolor="grey")
+plot!(rh2m_nmr, xlabel="time", ylabel="humidity (%)", lw=2, label="200cm NMR", linestyle=:dash, linecolor="grey")
 plot(micro_out.relative_humidity[1:24, 2:3], xlabel="time", ylabel="humidity (%)", lw=2)
-plot!(rh1cm_nmr[1:24], xlabel="time", ylabel="humidity (%)", lw=2, label="1cm NMR", linestyle=:dash, linecolor="grey")
-plot!(rh2m_nmr[1:24], xlabel="time", ylabel="humidity (%)", lw=2, label="200cm NMR", linestyle=:dash, linecolor="grey")
+#plot!(rh1cm_nmr[1:24], xlabel="time", ylabel="humidity (%)", lw=2, label="1cm NMR", linestyle=:dash, linecolor="grey")
+#plot!(rh2m_nmr[1:24], xlabel="time", ylabel="humidity (%)", lw=2, label="200cm NMR", linestyle=:dash, linecolor="grey")
 
 # note tests seem to need to be in K rather than °C to work properly
 # not all tests passing, some commented out, possibly due to different
