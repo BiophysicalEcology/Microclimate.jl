@@ -1,6 +1,6 @@
 name = "Microclimate"
 uuid = "fa5d2a79-de00-40ba-a9f4-ff140fbe07ba"
-authors = ["m.kearney@unimelb.edu.au"]
+authors = ["m.kearney@unimelb.edu.au", "rafaelschouten@gmail.com"]
 version = "0.1.0"
 
 [deps]
@@ -29,6 +29,7 @@ DataFrames = "1.7.0"
 DataStructures = "0.18, 0.19"
 Dates = "1"
 DelimitedFiles = "1"
+FluidProperties = "0.1"
 Interpolations = "0.15.1"
 ModelParameters = "0.4"
 OrdinaryDiffEq = "6.58.2"
