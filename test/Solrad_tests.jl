@@ -85,7 +85,6 @@ p_eval(x) = p_scaled(scale_xs(x))
 plot(λ, τA)
 plot!(λ, τA_nmr, linecolor="grey")
 
-using Infiltrator
 @time solrad_out = @inferred solrad(;
     days,               # days of year
     hours,              # hours of day
@@ -97,7 +96,7 @@ using Infiltrator
     albedos,            # substrate solar albedoectivity (decimal %)
     iuv,           # use Dave_Furukawa theory for UV radiation (290-360 nm)?
     τA,                  # aerosol profile from gads (global aerosol data set)
-    );
+);
 
 # using ProfileView
 # ProfileView.@profview solrad_out = @inferred solrad(;
