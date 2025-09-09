@@ -1,3 +1,6 @@
+# computes hourly air temperature from max/min values and times of sunrise/sunset
+# relative to solar noon, with an exponential decay overnight.
+# TODO de-Fortran the varibales, generalise it beyond hourly, speed up
 function sinec!(
     ITAIR, TIMARY, TAIRRY, TMIN, TMAX, TMIN2, TMAX2, TIMSR, TIMSS, TIMTMX, daily, iday
 )
@@ -69,6 +72,9 @@ function sinec!(
     ITAIR = TAIRRY[25]
 end
 
+# linearly interpolates wind speed, cloud cover and relative humidity relative
+# to sunrise, sunset and solar noon
+# TODO generalise beyond hourly, speed up, perhaps incorporate Interpolations.jl
 function vsine(VMIN, VMAX, TIMSR, TIMSS, TIMIN, TIMAX, daily, iday, IVAR)
     vinit = 0.0 * VMIN[1]
     XA = fill(0.0, 25)
@@ -166,7 +172,9 @@ function vsine(VMIN, VMAX, TIMSR, TIMSS, TIMIN, TIMAX, daily, iday, IVAR)
     return YA
 end
 
+# general function to do interpolations from daily min/max to hourly
 # this version does all variables
+# TODO make it variable-specific
 function hourly_vars(
     air_temperature_min::Vector,
     air_temperature_max::Vector,
@@ -295,7 +303,7 @@ function hourly_vars(
     return air_temperatures, wind_speeds, humidites, cloud_covers
 end
 
-# TODO this does just cloud_covers but should generalise first version better down the track
+# TODO this does just cloud_covers but should generalise first version down the track
 function hourly_vars(
     cloud_min::Vector,
     cloud_max::Vector,

@@ -10,6 +10,7 @@ DelimitedFiles = "8bb1440f-4735-579b-a4ab-409b98df4dab"
 FluidProperties = "d16f1b92-71d3-42f3-aafa-43e5bb0efda8"
 Interpolations = "a98d9a8b-a2ab-59e6-89dd-64a1c18fca59"
 ModelParameters = "4744a3fa-6c31-4707-899e-a3298e4618ad"
+NCDatasets = "85f8d34a-cbdd-5861-8df4-14fed0d494ab"
 OrdinaryDiffEq = "1dea7af3-3e70-54e6-95c3-0bf5283fa5ed"
 Printf = "de0858da-6303-5e67-8744-51eddeeeb8d7"
 SpecialFunctions = "276daf66-3868-5448-9aa4-cd146d93841b"
@@ -17,6 +18,9 @@ StaticArrays = "90137ffa-7385-5640-81b9-e52037218182"
 Statistics = "10745b16-79ce-11e8-11f9-7d13ad32a3b2"
 Unitful = "1986cc42-f94f-5a68-af5c-568840ba703d"
 UnitfulMoles = "999f2bd7-36bf-5ba7-9bc1-c9473aa75374"
+
+[sources]
+FluidProperties = {rev = "main", url = "https://github.com/BiophysicalEcology/FluidProperties.jl"}
 
 [compat]
 Aqua = "0.8"
@@ -28,6 +32,7 @@ DelimitedFiles = "1"
 FluidProperties = "0.1"
 Interpolations = "0.15.1"
 ModelParameters = "0.4"
+NCDatasets = "0.14.8"
 OrdinaryDiffEq = "6.58.2"
 Plots = "1"
 Polynomials = "4"
@@ -50,9 +55,6 @@ Polynomials = "f27b6e38-b328-58d1-80ce-0feddd5e7a45"
 SafeTestsets = "1bc83da4-3b8d-516f-aca4-4fe02f6d838f"
 Statistics = "10745b16-79ce-11e8-11f9-7d13ad32a3b2"
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
-
-[sources]
-FluidProperties = {url = "https://github.com/BiophysicalEcology/FluidProperties.jl", rev = "main"}
 
 [targets]
 test = ["Aqua", "CSV", "DataFrames", "Plots", "Polynomials", "SafeTestsets", "Statistics", "Test"]

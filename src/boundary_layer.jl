@@ -1,3 +1,7 @@
+# computes profiles of air temperature, wind speed and relative humidity
+# given surface properties, reference values at weather station height,
+# and measured or calculated soil temperature
+# TODO de-Fortran variable names and speed up, add docstring and refs
 function get_profile(;
     reference_height=1.2u"m",
     z0=0.004u"m",

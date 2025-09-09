@@ -12,7 +12,7 @@ using Unitful, UnitfulMoles, ModelParameters, DelimitedFiles
 
 using Unitful: °, rad, °C#, K, Pa, kPa, MPa, J, kJ, W, L, g, kg, cm, m, s, hr, d, mol, mmol, μmol, σ, R
 
-using SpecialFunctions, StaticArrays
+using SpecialFunctions, StaticArrays, NCDatasets
 
 # constants for the solrad function
 const DEFAULT_Iλ = Float64.([ # wavelengths across which to integrate
@@ -167,6 +167,8 @@ export MicroParams, MicroForcing
 
 export runmicro
 
+export load_CRU_CL_v2
+
 include("gads.jl")
 include("landscape.jl")   
 include("interpolation.jl")
@@ -175,5 +177,6 @@ include("radiation.jl")
 include("boundary_layer.jl")
 include("soil_balance.jl")
 include("simulation.jl")
+include("weather_and_climate.jl")
 
 end

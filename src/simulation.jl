@@ -88,6 +88,7 @@ Returns a named tuple containing:
 # computing diffuse and direct radiation
 # TODO 9. Make it work on GPUs for rapid computation of grids, with intelligent initialisation based on near
 # neighbours.
+# TODO 10. Use fractional only for humdity and cloud cover?
 
 function runmicro(;
     # locations, times, depths and heights
@@ -154,15 +155,15 @@ function runmicro(;
     shades = fill(0.0, length(days)), # % shade cast by vegetation
     pctwets = fill(0.0, length(days)), # % surface wetness
     sles = fill(0.96, length(days)), # - surface emissivity
-    daily_rainfall = ([28, 28.2, 54.6, 79.7, 81.3, 100.1, 101.3, 102.5, 89.7, 62.4, 54.9, 41.2])u"kg/m^2",
+    daily_rainfall = ([28/31, 28.2/28, 54.6/31, 79.7/30, 81.3/31, 100.1/30, 101.3/31, 102.5/31, 89.7/30, 62.4/31, 54.9/30, 41.2/31])u"kg/d/m^2",
     air_temperature_min = ([-14.3, -12.1, -5.1, 1.2, 6.9, 12.3, 15.2, 13.6, 8.9, 3, -3.2, -10.6] * 1.0)u"°C",
     air_temperature_max = ([-3.2, 0.1, 6.8, 14.6, 21.3, 26.4, 29, 27.7, 23.3, 16.6, 7.8, -0.4] * 1.0)u"°C",
-    wind_min = ([4.9, 4.8, 5.2, 5.3, 4.6, 4.3, 3.8, 3.7, 4, 4.6, 4.9, 4.8] * 0.1)u"m/s",
-    wind_max = ([4.9, 4.8, 5.2, 5.3, 4.6, 4.3, 3.8, 3.7, 4, 4.6, 4.9, 4.8] * 1.0)u"m/s",
+    wind_speed_min = ([4.9, 4.8, 5.2, 5.3, 4.6, 4.3, 3.8, 3.7, 4, 4.6, 4.9, 4.8] * 0.1)u"m/s",
+    wind_speed_max = ([4.9, 4.8, 5.2, 5.3, 4.6, 4.3, 3.8, 3.7, 4, 4.6, 4.9, 4.8] * 1.0)u"m/s",
     humidity_min = [50.2, 48.4, 48.7, 40.8, 40, 42.1, 45.5, 47.3, 47.6, 45, 51.3, 52.8],
     humidity_max = [100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100],
-    cloud_min = [50.3, 47, 48.2, 47.5, 40.9, 35.7, 34.1, 36.6, 42.6, 48.4, 61.1, 60.1],
-    cloud_max = [50.3, 47, 48.2, 47.5, 40.9, 35.7, 34.1, 36.6, 42.6, 48.4, 61.1, 60.1],
+    cloud_cover_min = [50.3, 47, 48.2, 47.5, 40.9, 35.7, 34.1, 36.6, 42.6, 48.4, 61.1, 60.1],
+    cloud_cover_max = [50.3, 47, 48.2, 47.5, 40.9, 35.7, 34.1, 36.6, 42.6, 48.4, 61.1, 60.1],
     minima_times = [0, 0, 1, 1], # time of minima for air temp, wind, humidity and cloud cover (h), air & wind mins relative to sunrise, humidity and cloud cover mins relative to solar noon
     maxima_times = [1, 1, 0, 0], # time of maxima for air temp, wind, humidity and cloud cover (h), air temp & wind maxs relative to solar noon, humidity and cloud cover maxs relative to sunrise
     # hourly weather vectors
@@ -226,7 +227,7 @@ function runmicro(;
         ϵ,
         ω,
         se,
-        d0 = d0_solrad, #TODO better name for this
+        d0 = d0_solrad, #TODO better name for this - conflicts with get_profile parameter d0
         iuv,
         scattered,
         amr,
@@ -249,17 +250,18 @@ function runmicro(;
     # vector for removing extra interpolated hour
     skip25 = setdiff(1:length(solrad_out.zenith_angle), 25:25:length(solrad_out.zenith_angle))
 
-    if isnothing(air_temperatures)
+    # interpolation from daily to hourly code
+    if isnothing(air_temperatures) # TODO need to generalise this because it will vary what is provided hourly vs. daily
         # interpolate daily min/max forcing variables to hourly
         TAIRs25, VELs25, RHs25, CLDs25 = hourly_vars(
             air_temperature_min,
             air_temperature_max,
-            wind_min,
-            wind_max,
+            wind_speed_min,
+            wind_speed_max,
             humidity_min,
             humidity_max,
-            cloud_min,
-            cloud_max,
+            cloud_cover_min,
+            cloud_cover_max,
             solrad_out,
             minima_times,
             maxima_times,
@@ -282,7 +284,7 @@ function runmicro(;
     if isnothing(solar_radiation)
         solar_radiation = global_solar
     else
-        global_solar = solar_radiation # keep global solar output as original solar radiation input
+        global_solar = solar_radiation # keep global solar output as original inputted solar radiation
     end
 
     # TODO make sure root density is interpolated from original values by default if number of
@@ -307,7 +309,8 @@ function runmicro(;
 
     # initial conditions
     if !daily && !isnothing(initial_soil_temperature)
-        initial_soil_temperature = fill(u"K"(mean(ustrip(TAIRs25[1:25]))u"°C"), numnodes_a) # mean monthly temp as in R version
+        # mean monthly temp as in R version
+        initial_soil_temperature = fill(u"K"(mean(ustrip(TAIRs25[1:25]))u"°C"), numnodes_a) 
     end
     soillayers = init_soillayers(numnodes_b)  # only once
     moistlayers = init_moistlayers(numnodes_b)  # only once
@@ -323,7 +326,7 @@ function runmicro(;
         end
     end
 
-    # output arrays
+    # initialise output arrays
     nsteps = ndays * (length(hours) - 1)
     T_soils = Array{Float64}(undef, nsteps, numnodes_a)u"K"
     θ_soils = Array{Float64}(undef, nsteps, numnodes_a)
@@ -339,19 +342,21 @@ function runmicro(;
     T0 = initial_soil_temperature
     T_soils[1, :] = T0
     θ_soils[1, :] = θ_soil0_a
+    # get bulk soil properties given mineral properties, bulk density, temperature and moisture
     λ_b, c_p_b, ρ_b = soil_properties(T0, θ_soil0_a, nodes_day[:, 1], soilprops, elevation, runmoist, false)
     λ_bulk[1, :] = λ_b
     c_p_bulk[1, :] = c_p_b
     ρ_bulk[1, :] = ρ_b
-    sub = vcat(findall(isodd, 1:numnodes_b), numnodes_b)
     soil_saturation_moisture = 1.0 .- soil_bulk_density2 ./ soil_mineral_density2
+    sub = vcat(findall(isodd, 1:numnodes_b), numnodes_b) # get every second node of expanded soil moisture vector
     ψ_soils[1, :] = air_entry_water_potential[sub] .* (soil_saturation_moisture[sub] ./ θ_soil0_a) .^ Campbells_b_parameter[sub]
     MW = 0.01801528u"kg/mol" # molar mass of water, kg/mol # TODO use UnitfulMoles
     rh_soils[1, :] = clamp.(exp.(MW .* ψ_soils[1, :] ./ (Unitful.R .* T0)), 0, 1)
     pools[1] = 0.0u"kg/m^2"
     
     # sky temperature given cloud cover, shade, hillshade (viewfactor)
-    # air temperature and humidity TODO have two options, Swinbank and Campbell
+    # air temperature and humidity 
+    # TODO have two options, Swinbank and Campbell
     longwave_out = get_longwave(
         elevation=elevation,
         rh=humidities[1],
@@ -370,10 +375,8 @@ function runmicro(;
     pool = 0.0u"kg/m^2" # initialise depth of pooling water TODO make this an init option
     heights_water_balance = [0.01] .* u"m" # for evaporation calculation TODO how sensitive ot this height?
     niter_moist = ustrip(3600 / moist_step) # TODO use a solver for soil moisture calc
-    ∑phase = zeros(Float64, numnodes_a)u"J"
     infil_out = nothing
     for j in 1:ndays
-        #j = 1
         iday = j
         lai = leaf_area_index[iday]
         albedo = albedos[iday]
@@ -446,7 +449,7 @@ function runmicro(;
         )
         step = 1
         # loop through hours of day
-        if spinup && j == 1 && i == 1 || daily == false
+        if spinup && j == 1 && i == 1 || daily == false # check if doing a spin-up
             niter = iterate_day # number of interations for steady periodic
         else
             niter = 1
@@ -454,9 +457,9 @@ function runmicro(;
         if daily == false
             ∑phase = zeros(Float64, numnodes_a)u"J"
             sub2 = (iday*25-25+1):(iday*25) # for getting mean monthly over the 25 hrs as in fortran version
-            initial_soil_temperature = u"K"(mean(ustrip(TAIRs25[sub2]))u"°C") # make initial soil temps equal to mean annual temperature
+            # make initial soil temps equal to mean annual temperature
+            initial_soil_temperature = u"K"(mean(ustrip(TAIRs25[sub2]))u"°C") 
             T0 = fill(initial_soil_temperature, numnodes_a)
-            #T_soils[step, :] = T0
             θ_soil0_a = collect(fill(initial_soil_moisture[iday], numnodes_a)) # initial soil moisture
         end
         @inbounds for iter = 1:niter
@@ -467,8 +470,9 @@ function runmicro(;
                 if i == 1 # make first hour of day equal last hour of previous iteration
                     T_soils[step, :] = T0
                     step = (j - 1) * (length(hours) - 1) + i
-                    pool += rainfall
+                    pool += rainfall * 1u"d" # add to pooling water on surface
                     if runmoist
+                        # call soil moisture algorithm
                         infil_out, pctwet, pool, θ_soil0_b = get_soil_water_balance(;
                                 reference_height,
                                 roughness_height,
@@ -509,11 +513,13 @@ function runmicro(;
                     pools[step] = pool
                     pool = clamp(pool, 0.0u"kg/m^2", maxpool)
                     T_skys[step] = Tsky
+                    # update soil properties given new temperature and moisture level
                     λ_b, c_p_b, ρ_b = soil_properties(T0, θ_soil0_a, nodes, soilprops, elevation, runmoist, false)
                     λ_bulk[step, :] = λ_b
                     c_p_bulk[step, :] = c_p_b
                     ρ_bulk[step, :] = ρ_b
                     if runmoist && iday > 1
+                        # update soil moisture outputs
                         θ_soils[step, :] = infil_out.θ_soil[sub]
                         ψ_soils[step, :] = infil_out.ψ_soil[sub]
                         rh_soils[step, :] = infil_out.rh_soil[sub]
@@ -558,6 +564,7 @@ function runmicro(;
                         T_soils[step, :] = T0
                     end
                     if runmoist
+                        # run soil moisture algorithm
                         infil_out, pctwet, pool, θ_soil0_b = get_soil_water_balance(;
                                 reference_height,
                                 roughness_height,
@@ -615,6 +622,7 @@ function runmicro(;
                     end
                     sub = vcat(findall(isodd, 1:numnodes_b), numnodes_b)
                     θ_soil0_a = θ_soil0_b[sub]
+                    # update soil properties given current temperature and moisture levels
                     λ_b, c_p_b, ρ_b = soil_properties(T0, θ_soil0_a, nodes, soilprops, elevation, runmoist, false)
                     λ_bulk[step, :] = λ_b
                     c_p_bulk[step, :] = c_p_b

@@ -427,6 +427,11 @@ function soil_water_balance(;
     ) 
 end
 
+# Campbell's (1985) infiltration algorithm
+# TODO use symbols linked to math in original book,
+# add the two approaches for solving water balance described
+# in Campbell, one faster for wet soil, and
+# one faster for dry soil
 function get_soil_water_balance(;
     reference_height,
     roughness_height,
@@ -572,6 +577,8 @@ function get_soil_water_balance(;
     )
 end
 
+# keep track of phase transition in soil temperatures given soil
+# moisture level and temperature
 function phase_transition(
     T::Vector,       # current temps at nodes
     T_past::Vector,  # temps at previous step
