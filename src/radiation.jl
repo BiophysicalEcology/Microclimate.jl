@@ -26,7 +26,7 @@ function hour_angle(t::Real, lonc::Real=0)
 end
 
 """
-    solar_geometry(d::Real, lat::Quantity, h::Quantity; d0::Real = 80, ω::Real = 2π/365, ϵ::Real = 0.0167, se::Real = 0.39779)
+    solar_geometry(d::Real, latitude::Quantity, h::Quantity; d0::Real = 80, ω::Real = 2π/365, ϵ::Real = 0.0167, se::Real = 0.39779)
 
 Computes key solar geometry parameters based on McCullough & Porter (1971):
 
@@ -37,7 +37,7 @@ Computes key solar geometry parameters based on McCullough & Porter (1971):
 
 # Arguments
 - `d`: Day of year (1–365)
-- `lat`: Latitude (with angle units, e.g. `u"°"` or `u"rad"`)
+- `latitude`: Latitude (with angle units, e.g. `u"°"` or `u"rad"`)
 - `h`: Hour angle (radians)
 - `d0`: Reference day (default: 80)
 - `ω`: Angular frequency of Earth’s orbit (default: `2π/365`)
@@ -52,72 +52,29 @@ McCullough & Porter (1971)
 """
 function solar_geometry(;
     d::Real=1.0,
-    lat::Quantity=83.07305u"°",
+    latitude::Quantity=83.07305u"°",
     h::Quantity=-2.87979u"rad",
     d0::Real=80,
     ω::Real=2π / 365,
     ϵ::Real=0.0167238,
     se::Real=0.39784993#0.39779
 )
-    ζ = (ω * (d - d0)) + 2ϵ * (sin(ω * d) - sin(ω * d0))          # Eq.5
+    ζ = (ω * (d - d0)) + 2.0ϵ * (sin(ω * d) - sin(ω * d0))          # Eq.5
     δ = asin(se * sin(ζ))                                         # Eq.4
-    cosZ = cos(lat) * cos(δ) * cos(h) + sin(lat) * sin(δ)         # Eq.3
+    cosZ = cos(latitude) * cos(δ) * cos(h) + sin(latitude) * sin(δ)         # Eq.3
     z = acos(cosZ)u"rad"                                          # Zenith angle
-    AR2 = 1 + (2ϵ) * cos(ω * d)                                   # Eq.2
+    AR2 = 1.0 + (2.0ϵ) * cos(ω * d)                                   # Eq.2
     δ = δ * u"rad"
     ζ = ζ * u"rad"
-    return ζ, δ, z, AR2
+    return(; ζ, δ, z, AR2)
 end
 
 """
-    check_skylight(z, nmax, SRINT, GRINT)
-
-Checks for possible skylight before sunrise or after sunset based on zenith angle.
-Modifies SRINT and GRINT at index `nmax` if skylight is present. Based on 
- and Documenta Geigy Scientific 
-Tables. 1966. 6th ed. K. Diem, ed.
-
-# Arguments
-- `z::Quantity`: Zenith angle
-- `nmax::Int`: Index into result arrays
-- `SRINT::Vector{Quantity}`: Scattered radiation array [W/m²]
-- `GRINT::Vector{Quantity}`: Global radiation array [W/m²]
-
-# References
-McCullough & Porter (1971). Ecology, 52(6), 1008–1015. https://doi.org/10.2307/1933806
-G.V. Rozenberg. 1966. Twilight. Plenum Press
-Documenta Geigy Scientific Tables. 1966. 6th ed. K. Diem, ed.
-"""
-function check_skylight(
-    z::Quantity,
-    nmax::Int,
-    SRINT::Vector,
-    GRINT::Vector)
-    Z = uconvert(u"°", z).val # convert to degrees
-    if Z < 107.0
-        if Z > 88.0
-            # Compute skylight based on G.V. Rozenberg. 1966. Twilight. Plenum Press.
-            # p. 18,19.  First computing lumens: y = b - mx. Regression of data is:
-            Elog = 41.34615384 - 0.423076923 * Z
-            # Converting lux (lumen/m2) to W/m2 on horizontal surface -
-            # Twilight - scattered skylight before sunrise or after sunset
-            # From p. 239 Documenta Geigy Scientific Tables. 1966. 6th ed. K. Diem, ed.
-            # Mech./elect equiv. of light = 1.46*10^-3 kW/lumen
-            Skylum = (10.0^Elog) * 1.46E-03u"mW * cm^-2"
-            SRINT[nmax] = Skylum
-            GRINT[nmax] = SRINT[nmax]
-        end
-    end
-
-    return nothing
-end
-
-"""
-    elev_corr(elev)
+    elev_corr(elevation)
 
 Calculates smooth polynomial approximations of atmospheric constituent correction factors 
 as a function of elevation (based on Kearney's modification of the ALTFCT array originally 
-from SOLAR.DAT). Input `elev` is the elevation in meters and can include units.
+from SOLAR.DAT). Input `elevation` is the elevation in meters and can include units.
 
 # Description
 
@@ -137,7 +94,7 @@ The elevation index i runs from 1 to 21, corresponding to elevations from sea le
 20 km in 1 km steps.
 
 This function implements fitted polynomials to reproduce this correction smoothly 
-from `elev` (in meters) using continuous approximation.
+from `elevation` (in meters) using continuous approximation.
 
 # Returns
 
@@ -147,9 +104,8 @@ A named tuple with the following keys:
 - `ELEVFCT3` for Ozone
 - `ELEVFCT4` for Water vapor
 """
-function elev_corr(elev)
-    # Strip units if present and convert to km, then add 1
-    elev_km = ustrip(u"m", elev) / 1000 + 1
+function elev_corr(elevation)
+    elev_km = ustrip(u"km"(elevation) + 1.0u"km")
 
     ELEVFCT1 = 0.00007277 * elev_km^3 +
                0.00507293 * elev_km^2 -
@@ -176,97 +132,367 @@ function elev_corr(elev)
     return (ELEVFCT1, ELEVFCT2, ELEVFCT3, ELEVFCT4)
 end
 
-function GAMMA(TAU1::Float64)
+# function GAMMA(TAU1::Float64)
 
-    CHX = zeros(Float64, 101)
-    CHY = zeros(Float64, 101)
-    CFA = zeros(Float64, 3)
-    AMU = zeros(Float64, 101)
-    X1 = zeros(Float64, 101)
-    Y1 = zeros(Float64, 101)
-    X2 = zeros(Float64, 101)
-    Y2 = zeros(Float64, 101)
-    AIL = zeros(Float64, 101)
-    AI = zeros(Float64, 30)
-    XA = zeros(Float64, 4)
-    XB = zeros(Float64, 8)
-    GAMR = zeros(Float64, 101)
-    GAML = zeros(Float64, 101)
+#     CHX = zeros(Float64, 101)
+#     CHY = zeros(Float64, 101)
+#     CFA = zeros(Float64, 3)
+#     AMU = zeros(Float64, 101)
+#     X1 = zeros(Float64, 101)
+#     Y1 = zeros(Float64, 101)
+#     X2 = zeros(Float64, 101)
+#     Y2 = zeros(Float64, 101)
+#     AIL = zeros(Float64, 101)
+#     AI = zeros(Float64, 30)
+#     XA = zeros(Float64, 4)
+#     XB = zeros(Float64, 8)
+#     GAMR = zeros(Float64, 101)
+#     GAML = zeros(Float64, 101)
+#     # Set up AMU array
+#     AMU[1] = 0.0
+#     @inbounds @simd for I in 2:101
+#         AMU[I] = 0.01 * (I - 1)
+#     end
+
+#     # Compute X1, Y1 using dchxy
+#     CFA[1] = 0.75
+#     CFA[2] = -0.75
+#     CFA[3] = 0.0
+#     NST = 111
+#     CHX, CHY, NTR = dchxy(TAU1, CFA, NST)
+#     @inbounds @simd for I in 1:101
+#         X1[I] = CHX[I]
+#         Y1[I] = CHY[I]
+#     end
+
+#     # Compute X2, Y2 using dchxy
+#     CFA[1] = 0.375
+#     CFA[2] = -0.375
+#     NST = 0
+#     CHX, CHY, NTR = dchxy(TAU1, CFA, NST)
+#     @inbounds @simd for I in 1:101
+#         X2[I] = CHX[I]
+#         Y2[I] = CHY[I]
+#     end
+
+#     # Compute AIL
+#     AIL[1] = 0.01 / 3.0
+#     CNU1 = 4.0 * AIL[1]
+#     CNU2 = 2.0 * AIL[1]
+#     @inbounds @simd for I in 2:2:100
+#         AIL[I] = CNU1
+#         AIL[I+1] = CNU2
+#     end
+#     AIL[101] = AIL[1]
+
+#     # Initialize integrals
+#     fill!(XA, 0.0)
+#     fill!(XB, 0.0)
+
+#     @inbounds @simd for I in 1:101
+#         c1 = AIL[I] * X1[I] * AMU[I]
+#         XA[1] += c1
+#         XA[2] += c1 * AMU[I]
+#         c2 = AIL[I] * Y1[I] * AMU[I]
+#         XA[3] += c2
+#         XA[4] += c2 * AMU[I]
+#         c3 = AIL[I] * X2[I]
+#         XB[1] += c3
+#         XB[2] += c3 * AMU[I]
+#         XB[3] += c3 * AMU[I]^2
+#         XB[4] += c3 * AMU[I]^3
+#         c4 = AIL[I] * Y2[I]
+#         XB[5] += c4
+#         XB[6] += c4 * AMU[I]
+#         XB[7] += c4 * AMU[I]^2
+#         XB[8] += c4 * AMU[I]^3
+#     end
+
+#     AI[1] = XB[1] + XB[5] - 8.0 / 3.0
+#     AI[2] = XB[2] + XB[6]
+#     AI[3] = XB[3] + XB[7]
+#     AI[4] = XB[1] - XB[5] - 8.0 / 3.0
+#     AI[5] = XB[2] - XB[6]
+#     AI[6] = XB[3] - XB[7]
+#     AI[7] = XB[4] - XB[8]
+#     AI[8] = XA[1] + XA[3]
+#     AI[9] = XA[2] + XA[4]
+#     AI[10] = XA[1] - XA[3]
+#     AI[11] = XA[2] - XA[4]
+
+#     AI[12] = (AI[1] - AI[3]) / ((AI[4] - AI[6]) * TAU1 + 2.0 * (AI[5] - AI[7]))
+#     AI[13] = 1.0 / (AI[4] * AI[10] - AI[5] * AI[11])
+#     AI[14] = 1.0 / (AI[1] * AI[8] - AI[2] * AI[9] - 2.0 * AI[12] * (AI[5] * AI[8] - AI[4] * AI[9]))
+#     AI[15] = 2.0 * (AI[8] * AI[10] - AI[9] * AI[11])
+#     AI[16] = AI[13] * AI[15]
+#     AI[17] = AI[14] * AI[15]
+
+#     CNU1 = 0.5 * (AI[16] - AI[17])
+#     CNU2 = 0.5 * (AI[16] + AI[17])
+
+#     AI[15] = AI[13] * (AI[5] * AI[8] - AI[4] * AI[9])
+#     AI[16] = AI[14] * (AI[2] * AI[10] - AI[1] * AI[11] - 2.0 * AI[12] * (AI[4] * AI[10] - AI[5] * AI[11]))
+#     CNU3 = 0.5 * (AI[15] - AI[16])
+#     CNU4 = 0.5 * (AI[15] + AI[16])
+
+#     AI[15] = AI[13] * (AI[2] * AI[10] - AI[1] * AI[11])
+#     AI[16] = AI[14] * (AI[5] * AI[8] - AI[4] * AI[9])
+#     CU3 = 0.5 * (AI[15] - AI[16])
+#     CU4 = 0.5 * (AI[15] + AI[16])
+
+#     AI[15] = AI[14] * (AI[1] * AI[8] - AI[2] * AI[9])
+#     SBAR = 1.0 - 0.375 * AI[12] * (AI[4] - AI[6]) *
+#                  ((CNU2 - CNU1) * AI[8] + (CU4 - CU3) * AI[2] - AI[15] * AI[6])
+
+#     AI[20] = 0.375 * AI[12] * (CNU2 - CNU1) * (AI[4] - AI[6])
+#     AI[21] = 0.375 * AI[12] * (AI[4] - AI[6])
+#     AI[22] = AI[21] * (CU4 - CU3)
+#     AI[23] = AI[21] * AI[15]
+
+#     @inbounds @simd for I in 1:101
+#         GAML[I] = AI[20] * (X1[I] + Y1[I])
+#         GAMR[I] = AI[22] * (X2[I] + Y2[I]) - AMU[I] * AI[23] * (X2[I] - Y2[I])
+#     end
+#     return GAMR, GAML, SBAR
+# end
+
+"""
+    GAMMA(TAU1::Float64) -> (GAMR::Vector{Float64}, GAML::Vector{Float64}, SBAR::Float64)
+
+Compute radiation scattered by a plane parallel homogeneous atmosphere
+using the method of the X and Y functions.
+
+# Arguments
+- `TAU1::Float64`: Optical depth of the atmosphere.
+
+# Returns
+- `GAMR::Vector{Float64}`: Right-hand scattering function (length 101).
+- `GAML::Vector{Float64}`: Left-hand scattering function (length 101).
+- `SBAR::Float64`: Mean scattering function.
+"""
+# function GAMMA(TAU1::Float64)
+
+#     # Preallocate
+#     CHX  = zeros(Float64, 101)
+#     CHY  = zeros(Float64, 101)
+#     CFA  = zeros(Float64, 3)
+#     AMU  = zeros(Float64, 101)
+#     X1   = zeros(Float64, 101)
+#     Y1   = zeros(Float64, 101)
+#     X2   = zeros(Float64, 101)
+#     Y2   = zeros(Float64, 101)
+#     AIL  = zeros(Float64, 101)
+#     AI   = zeros(Float64, 30)
+#     GAMR = zeros(Float64, 101)
+#     GAML = zeros(Float64, 101)
+
+#     # Set up AMU array
+#     AMU[1] = 0.0
+#     @inbounds @simd for I in 2:101
+#         AMU[I] = 0.01 * (I - 1)
+#     end
+
+#     # Compute X1, Y1 using dchxy
+#     CFA[1] = 0.75
+#     CFA[2] = -0.75
+#     CFA[3] = 0.0
+#     CHX, CHY, _ = dchxy(TAU1, CFA, 111)
+#     X1 .= CHX
+#     Y1 .= CHY
+#     # Compute X2, Y2 using dchxy
+#     CFA[1] = 0.375
+#     CFA[2] = -0.375
+#     CHX, CHY, _ = dchxy(TAU1, CFA, 0)
+#     @inbounds @simd for I in 1:101
+#         X2[I] = CHX[I]
+#         Y2[I] = CHY[I]
+#     end
+
+#     # Compute AIL (quadrature weights)
+#     AIL[1] = 0.01 / 3.0
+#     CNU1   = 4.0 * AIL[1]
+#     CNU2   = 2.0 * AIL[1]
+#     @inbounds @simd for I in 2:2:100
+#         AIL[I]   = CNU1
+#         AIL[I+1] = CNU2
+#     end
+#     AIL[101] = AIL[1]
+
+#     # Scalar accumulators instead of XA[1:4], XB[1:8]
+#     xa1 = xa2 = xa3 = xa4 = 0.0
+#     xb1 = xb2 = xb3 = xb4 = xb5 = xb6 = xb7 = xb8 = 0.0
+
+#     @inbounds @simd for I in 1:101
+#         a  = AMU[I]
+#         a2 = a * a
+#         a3 = a2 * a
+
+#         c1 = AIL[I] * X1[I] * a
+#         xa1 += c1
+#         xa2 += c1 * a
+
+#         c2 = AIL[I] * Y1[I] * a
+#         xa3 += c2
+#         xa4 += c2 * a
+
+#         c3 = AIL[I] * X2[I]
+#         xb1 += c3
+#         xb2 += c3 * a
+#         xb3 += c3 * a2
+#         xb4 += c3 * a3
+
+#         c4 = AIL[I] * Y2[I]
+#         xb5 += c4
+#         xb6 += c4 * a
+#         xb7 += c4 * a2
+#         xb8 += c4 * a3
+#     end
+
+#     # Fill AI vector
+#     AI[1]  = xb1 + xb5 - 8.0 / 3.0
+#     AI[2]  = xb2 + xb6
+#     AI[3]  = xb3 + xb7
+#     AI[4]  = xb1 - xb5 - 8.0 / 3.0
+#     AI[5]  = xb2 - xb6
+#     AI[6]  = xb3 - xb7
+#     AI[7]  = xb4 - xb8
+#     AI[8]  = xa1 + xa3
+#     AI[9]  = xa2 + xa4
+#     AI[10] = xa1 - xa3
+#     AI[11] = xa2 - xa4
+
+#     AI[12] = (AI[1] - AI[3]) / ((AI[4] - AI[6]) * TAU1 + 2.0 * (AI[5] - AI[7]))
+#     AI[13] = 1.0 / (AI[4] * AI[10] - AI[5] * AI[11])
+#     AI[14] = 1.0 / (AI[1] * AI[8] - AI[2] * AI[9] -
+#                     2.0 * AI[12] * (AI[5] * AI[8] - AI[4] * AI[9]))
+#     AI[15] = 2.0 * (AI[8] * AI[10] - AI[9] * AI[11])
+#     AI[16] = AI[13] * AI[15]
+#     AI[17] = AI[14] * AI[15]
+
+#     CNU1 = 0.5 * (AI[16] - AI[17])
+#     CNU2 = 0.5 * (AI[16] + AI[17])
+
+#     AI[15] = AI[13] * (AI[5] * AI[8] - AI[4] * AI[9])
+#     AI[16] = AI[14] * (AI[2] * AI[10] - AI[1] * AI[11] -
+#                        2.0 * AI[12] * (AI[4] * AI[10] - AI[5] * AI[11]))
+#     #CNU3 = 0.5 * (AI[15] - AI[16])
+#     #CNU4 = 0.5 * (AI[15] + AI[16])
+
+#     AI[15] = AI[13] * (AI[2] * AI[10] - AI[1] * AI[11])
+#     AI[16] = AI[14] * (AI[5] * AI[8] - AI[4] * AI[9])
+#     CU3   = 0.5 * (AI[15] - AI[16])
+#     CU4   = 0.5 * (AI[15] + AI[16])
+
+#     AI[15] = AI[14] * (AI[1] * AI[8] - AI[2] * AI[9])
+#     SBAR  = 1.0 - 0.375 * AI[12] * (AI[4] - AI[6]) *
+#                    ((CNU2 - CNU1) * AI[8] + (CU4 - CU3) * AI[2] - AI[15] * AI[6])
+
+#     AI[20] = 0.375 * AI[12] * (CNU2 - CNU1) * (AI[4] - AI[6])
+#     AI[21] = 0.375 * AI[12] * (AI[4] - AI[6])
+#     AI[22] = AI[21] * (CU4 - CU3)
+#     AI[23] = AI[21] * AI[15]
+
+#     @inbounds @simd for I in 1:101
+#         GAML[I] = AI[20] * (X1[I] + Y1[I])
+#         GAMR[I] = AI[22] * (X2[I] + Y2[I]) - AMU[I] * AI[23] * (X2[I] - Y2[I])
+#     end
+
+#     return GAMR, GAML, SBAR
+# end
+using StaticArrays
+
+function GAMMA(TAU1::Float64)
+    # Large arrays (mutable, normal)
+    CHX  = zeros(101)
+    CHY  = zeros(101)
+    AMU  = zeros(101)
+    X1   = zeros(101)
+    Y1   = zeros(101)
+    X2   = zeros(101)
+    Y2   = zeros(101)
+    AIL  = zeros(101)
+    GAMR = zeros(101)
+    GAML = zeros(101)
+
+    # Small fixed-size arrays (use StaticArrays)
+    CFA = @MVector zeros(3)
+    AI  = @MVector zeros(30)
+
     # Set up AMU array
     AMU[1] = 0.0
-    for I in 2:101
+    @inbounds for I in 2:101
         AMU[I] = 0.01 * (I - 1)
     end
 
     # Compute X1, Y1 using dchxy
-    CFA[1] = 0.75
-    CFA[2] = -0.75
-    CFA[3] = 0.0
-    NST = 111
-    CHX, CHY, NTR = dchxy(TAU1, CFA, NST)
-    for I in 1:101
-        X1[I] = CHX[I]
-        Y1[I] = CHY[I]
-    end
+    CFA .= (0.75, -0.75, 0.0)
+    CHX_, CHY_, _ = dchxy(TAU1, collect(CFA), 111)
+    X1 .= CHX_
+    Y1 .= CHY_
 
     # Compute X2, Y2 using dchxy
-    CFA[1] = 0.375
-    CFA[2] = -0.375
-    NST = 0
-    CHX, CHY, NTR = dchxy(TAU1, CFA, NST)
-    for I in 1:101
-        X2[I] = CHX[I]
-        Y2[I] = CHY[I]
-    end
+    CFA .= (0.375, -0.375, 0.0)
+    CHX_, CHY_, _ = dchxy(TAU1, collect(CFA), 0)
+    X2 .= CHX_
+    Y2 .= CHY_
 
-    # Compute AIL
+    # Compute AIL (quadrature weights)
     AIL[1] = 0.01 / 3.0
-    CNU1 = 4.0 * AIL[1]
-    CNU2 = 2.0 * AIL[1]
-    for I in 2:2:100
-        AIL[I] = CNU1
+    CNU1   = 4.0 * AIL[1]
+    CNU2   = 2.0 * AIL[1]
+    @inbounds for I in 2:2:100
+        AIL[I]   = CNU1
         AIL[I+1] = CNU2
     end
     AIL[101] = AIL[1]
 
-    # Initialize integrals
-    fill!(XA, 0.0)
-    fill!(XB, 0.0)
+    # Scalar accumulators
+    xa1 = xa2 = xa3 = xa4 = 0.0
+    xb1 = xb2 = xb3 = xb4 = xb5 = xb6 = xb7 = xb8 = 0.0
 
-    for I in 1:101
-        c1 = AIL[I] * X1[I] * AMU[I]
-        XA[1] += c1
-        XA[2] += c1 * AMU[I]
-        c2 = AIL[I] * Y1[I] * AMU[I]
-        XA[3] += c2
-        XA[4] += c2 * AMU[I]
+    @inbounds for I in 1:101
+        a  = AMU[I]
+        a2 = a * a
+        a3 = a2 * a
+
+        c1 = AIL[I] * X1[I] * a
+        xa1 += c1
+        xa2 += c1 * a
+
+        c2 = AIL[I] * Y1[I] * a
+        xa3 += c2
+        xa4 += c2 * a
+
         c3 = AIL[I] * X2[I]
-        XB[1] += c3
-        XB[2] += c3 * AMU[I]
-        XB[3] += c3 * AMU[I]^2
-        XB[4] += c3 * AMU[I]^3
+        xb1 += c3
+        xb2 += c3 * a
+        xb3 += c3 * a2
+        xb4 += c3 * a3
+
         c4 = AIL[I] * Y2[I]
-        XB[5] += c4
-        XB[6] += c4 * AMU[I]
-        XB[7] += c4 * AMU[I]^2
-        XB[8] += c4 * AMU[I]^3
+        xb5 += c4
+        xb6 += c4 * a
+        xb7 += c4 * a2
+        xb8 += c4 * a3
     end
 
-    AI[1] = XB[1] + XB[5] - 8.0 / 3.0
-    AI[2] = XB[2] + XB[6]
-    AI[3] = XB[3] + XB[7]
-    AI[4] = XB[1] - XB[5] - 8.0 / 3.0
-    AI[5] = XB[2] - XB[6]
-    AI[6] = XB[3] - XB[7]
-    AI[7] = XB[4] - XB[8]
-    AI[8] = XA[1] + XA[3]
-    AI[9] = XA[2] + XA[4]
-    AI[10] = XA[1] - XA[3]
-    AI[11] = XA[2] - XA[4]
+    # Fill AI vector
+    AI[1]  = xb1 + xb5 - 8.0 / 3.0
+    AI[2]  = xb2 + xb6
+    AI[3]  = xb3 + xb7
+    AI[4]  = xb1 - xb5 - 8.0 / 3.0
+    AI[5]  = xb2 - xb6
+    AI[6]  = xb3 - xb7
+    AI[7]  = xb4 - xb8
+    AI[8]  = xa1 + xa3
+    AI[9]  = xa2 + xa4
+    AI[10] = xa1 - xa3
+    AI[11] = xa2 - xa4
 
     AI[12] = (AI[1] - AI[3]) / ((AI[4] - AI[6]) * TAU1 + 2.0 * (AI[5] - AI[7]))
     AI[13] = 1.0 / (AI[4] * AI[10] - AI[5] * AI[11])
-    AI[14] = 1.0 / (AI[1] * AI[8] - AI[2] * AI[9] - 2.0 * AI[12] * (AI[5] * AI[8] - AI[4] * AI[9]))
+    AI[14] = 1.0 / (AI[1] * AI[8] - AI[2] * AI[9] -
+                    2.0 * AI[12] * (AI[5] * AI[8] - AI[4] * AI[9]))
     AI[15] = 2.0 * (AI[8] * AI[10] - AI[9] * AI[11])
     AI[16] = AI[13] * AI[15]
     AI[17] = AI[14] * AI[15]
@@ -275,125 +501,139 @@ function GAMMA(TAU1::Float64)
     CNU2 = 0.5 * (AI[16] + AI[17])
 
     AI[15] = AI[13] * (AI[5] * AI[8] - AI[4] * AI[9])
-    AI[16] = AI[14] * (AI[2] * AI[10] - AI[1] * AI[11] - 2.0 * AI[12] * (AI[4] * AI[10] - AI[5] * AI[11]))
-    CNU3 = 0.5 * (AI[15] - AI[16])
-    CNU4 = 0.5 * (AI[15] + AI[16])
+    AI[16] = AI[14] * (AI[2] * AI[10] - AI[1] * AI[11] -
+                       2.0 * AI[12] * (AI[4] * AI[10] - AI[5] * AI[11]))
 
     AI[15] = AI[13] * (AI[2] * AI[10] - AI[1] * AI[11])
     AI[16] = AI[14] * (AI[5] * AI[8] - AI[4] * AI[9])
-    CU3 = 0.5 * (AI[15] - AI[16])
-    CU4 = 0.5 * (AI[15] + AI[16])
+    CU3   = 0.5 * (AI[15] - AI[16])
+    CU4   = 0.5 * (AI[15] + AI[16])
 
     AI[15] = AI[14] * (AI[1] * AI[8] - AI[2] * AI[9])
-    SBAR = 1.0 - 0.375 * AI[12] * (AI[4] - AI[6]) *
-                 ((CNU2 - CNU1) * AI[8] + (CU4 - CU3) * AI[2] - AI[15] * AI[6])
+    SBAR  = 1.0 - 0.375 * AI[12] * (AI[4] - AI[6]) *
+                   ((CNU2 - CNU1) * AI[8] + (CU4 - CU3) * AI[2] - AI[15] * AI[6])
 
     AI[20] = 0.375 * AI[12] * (CNU2 - CNU1) * (AI[4] - AI[6])
     AI[21] = 0.375 * AI[12] * (AI[4] - AI[6])
     AI[22] = AI[21] * (CU4 - CU3)
     AI[23] = AI[21] * AI[15]
 
-    for I in 1:101
+    @inbounds for I in 1:101
         GAML[I] = AI[20] * (X1[I] + Y1[I])
         GAMR[I] = AI[22] * (X2[I] + Y2[I]) - AMU[I] * AI[23] * (X2[I] - Y2[I])
     end
+
     return GAMR, GAML, SBAR
 end
 
-# function dchxy(tau1::Float64, cfa::Vector{Float64}, nst::Int)
-#     chx = zeros(Float64, 101)
-#     chy = zeros(Float64, 101)
+function init_dchxy_buffers()
+    arrays = Dict(
+        :PSI => zeros(Float64, 101),
+        :AMU => zeros(Float64, 101),
+        :XA => zeros(Float64, 101),
+        :XB => zeros(Float64, 101),
+        :FNPP => zeros(Float64, 101),
+        :FNPN => zeros(Float64, 101),
+        :FNC0 => zeros(Float64, 101),
+        :FNC1 => zeros(Float64, 101),
+        :FNX => zeros(Float64, 101),
+        :FNY => zeros(Float64, 101),
+        :FNW => zeros(Float64, 101),
+        :FMC0 => zeros(Float64, 101),
+        :FMC1 => zeros(Float64, 101),
+        :XD => zeros(Float64, 101),
+        :XE => zeros(Float64, 101),
+        :CHXA => zeros(Float64, 101),
+        :CHYA => zeros(Float64, 101),
+        :CHX => zeros(Float64, 101),
+        :CHY => zeros(Float64, 101)
+    )
+    return arrays
+end
 
-#     if tau1 < 0.0
-#         return chx, chy, 1
-#     end
+"""
+    dchxy(TAU1::Float64, CFA::Vector{Float64}, NCASE::Int) 
+        -> (CHX::Vector{Float64}, CHY::Vector{Float64}, nomitr::Int)
 
-#     c = zeros(Float64, 3)
-#     u = zeros(Float64, 3)
-#     c[1] = cfa[1]
-#     c[2] = cfa[2]
-#     c[3] = cfa[3]
+Compute Chandrasekhar's X and Y functions for radiative transfer.
 
-#     # Calculate initial values for root finding
-#     cc = 0.0
-#     cd = 0.0
-#     for n in 1:3
-#         cc += (2n - 1) * c[n]
-#         cd += (2n - 1)^2 * c[n]
-#     end
+# Description
+This routine evaluates the X- and Y-functions of Chandrasekhar using
+double precision arithmetic. The method starts with the fourth
+approximation given in Sec. 59 of Chandrasekhar’s *Radiative Transfer*
+(Dover Publications, 1960), and iteratively refines the values
+according to the procedure in Sec. 60. Iteration terminates when
+successive corrected values of the Y-function agree to four significant
+figures.
 
-#     # Compute roots of characteristic equation (up to 4 roots)
-#     q = zeros(ComplexF64, 4)
-#     d = zeros(ComplexF64, 4)
-#     ntr = 2
-#     q[1] = sqrt(Complex(0.25 * cc + 0.5 * sqrt(Complex(cd))))
-#     q[2] = sqrt(Complex(0.25 * cc - 0.5 * sqrt(Complex(cd))))
-#     d[1] = 1.0 / (2.0 * q[1] * (2.0 * q[1]^2 - cc))
-#     d[2] = 1.0 / (2.0 * q[2] * (2.0 * q[2]^2 - cc))
+# Inputs
+- `TAU1::Float64`:  
+  Normal optical thickness of the atmosphere.  
+  Must be ≤ 2.0.
 
-#     # Compute exponential terms using dexpi
-#     e1 = dexpi(-real(q[1]) * tau1)
-#     e2 = dexpi(-real(q[2]) * tau1)
+- `CFA::NTuple{3,Float64}`:  
+  Coefficients of the characteristic function in polynomial form:  
+  ```math
+  C(μ) = Σⱼ Aⱼ * μ^(2(j-1)),   j = 1,2,3
 
-#     # Initialize mu array (Gauss quadrature nodes)
-#     mu = zeros(Float64, 101)
-#     mu[1] = 0.0
-#     for i in 2:101
-#         mu[i] = 0.01 * (i - 1)
-#     end
+Outputs
 
-#     # Compute chx and chy using X and Y function definitions
-#     for i in 1:101
-#         sumx = 0.0 + 0im
-#         sumy = 0.0 + 0im
-#         for j in 1:ntr
-#             qq = q[j]
-#             dj = d[j]
-#             sumx += dj * mu[i] / (mu[i]^2 - qq^2)
-#             sumy += dj * qq / (mu[i]^2 - qq^2)
-#         end
-#         chx[i] = real(1.0 + 2.0 * mu[i] * sumx)
-#         chy[i] = real(2.0 * sumy)
-#     end
+CHX::Vector{Float64}
+Values of the X-function at 101 evenly spaced μ values from 0.00 to 1.00 in steps of 0.01.
 
-#     return chx, chy, ntr
-# end
+CHY::Vector{Float64}
+Values of the Y-function at the same μ grid.
 
+nomitr::Int
+Number of iterations performed before convergence.
+
+Notes
+
+If ncase != 0, a conservative case is assumed and a standard solution is returned.
+The program terminates with an error if:
+- tau1 > 2.0
+- the characteristic function is negative for any μ
+- the integral of the characteristic function exceeds 0.5
+
+References
+
+https://en.wikipedia.org/wiki/Chandrasekhar%27s_X-_and_Y-function
+
+McCullough, E. C., & Porter, W. P. (1971). Computing clear day solar radiation 
+spectra for the terrestrial ecological environment. Ecology, 52(6), 1008–1015.
+     https://doi.org/10.2307/1933806
+
+"""
 function dchxy(TAU1::Float64, CFA::Vector{Float64}, NCASE::Int)
-    # Format placeholders (not used directly here, but shown for reference)
-    # 5 FORMAT(//T5,'THE PROGRAM IS TERMINATED AS PSI(I) =',D15.6,T50,' FOR I = ',I5//)
-    # 20 FORMAT(//T10,'NO COMPUTATIONS CAN BE DONE AS THE COEFFIECIENTS ARE = ',3F15.5//)
-    # 30 FORMAT(//T5,' THE PROGRAM IS TERMINATED BECAUSE TAU1 = ',D15.5//)
+    buffers = init_dchxy_buffers()
+    PSI   = buffers[:PSI]
+    AMU   = buffers[:AMU]
+    XA    = buffers[:XA]
+    XB    = buffers[:XB]
+    UMA  = @MVector zeros(5)
+    ACAP = @MVector zeros(5)
+    TEMX = @MVector zeros(8)
+    TEMY = @MVector zeros(8)
+    RTK  = @MVector zeros(5)
+    ALAM = @MVector zeros(5)
+    FNPP  = buffers[:FNPP]
+    FNPN  = buffers[:FNPN]
+    FNC0  = buffers[:FNC0]
+    FNC1  = buffers[:FNC1]
+    FNX   = buffers[:FNX]
+    FNY   = buffers[:FNY]
+    FNW   = buffers[:FNW]
+    FMC0  = buffers[:FMC0]
+    FMC1  = buffers[:FMC1]
+    XD    = buffers[:XD]    # equivalence
+    XE    = buffers[:XE]    # equivalence
+    CHXA  = buffers[:CHXA]  # equivalence
+    CHYA  = buffers[:CHYA]  # equivalence
+    CHX   = buffers[:CHX]
+    CHY   = buffers[:CHY]
+    XA    = buffers[:XA]
+    XB    = buffers[:XB]
 
-    # Initialize arrays
-    PSI = zeros(Float64, 101)
-    AMU = zeros(Float64, 101)
-    XA = zeros(Float64, 101)
-    XB = zeros(Float64, 101)
-    UMA = zeros(Float64, 5)
-    ACAP = zeros(Float64, 5)
-    TEMX = zeros(Float64, 8)
-    TEMY = zeros(Float64, 8)
-    RTK = zeros(Float64, 5)
-    ALAM = zeros(Float64, 5)
-    FNPP = zeros(Float64, 101)
-    FNPN = zeros(Float64, 101)
-    FNC0 = zeros(Float64, 101)
-    FNC1 = zeros(Float64, 101)
-    FNX = zeros(Float64, 101)
-    FNY = zeros(Float64, 101)
-    FNW = zeros(Float64, 101)
-    FMC0 = zeros(Float64, 101)
-    FMC1 = zeros(Float64, 101)
-    XC = zeros(Float64, 101)   # equivalence
-    XD = zeros(Float64, 101)   # equivalence
-    XE = zeros(Float64, 101)   # equivalence
-    CHXA = zeros(Float64, 101)   # equivalence
-    CHYA = zeros(Float64, 101)    # equivalence
-    CHX = zeros(Float64, 101)
-    CHY = zeros(Float64, 101)
-    XA = zeros(Float64, 101)
-    XB = zeros(Float64, 101)
     # Integer arrays
     NC0 = reshape(Int[
             3, 4, 1, 2,
@@ -416,7 +656,6 @@ function dchxy(TAU1::Float64, CFA::Vector{Float64}, NCASE::Int)
 
     # Variables
     PERA = 0.0
-    PERB = 0.0
 
     # Terminate if TAU1 is too large or negative
     if TAU1 <= 2.0
@@ -447,7 +686,7 @@ function dchxy(TAU1::Float64, CFA::Vector{Float64}, NCASE::Int)
     end
 
     # Compute MU, PSI(MU), and weights
-    for i in 1:101
+    @inbounds for i in 1:101
         AMU[i] = (i - 1) * 0.01
         TEMA = AMU[i]^2
         PSI[i] = CFA[1] + CFA[2] * TEMA + CFA[3] * (TEMA^2)
@@ -463,7 +702,7 @@ function dchxy(TAU1::Float64, CFA::Vector{Float64}, NCASE::Int)
     XA[1] = 0.01 / 3.0
     TEMA = 4.0 * XA[1]
     TEMB = 2.0 * XA[1]
-    for i in 2:2:100
+    @inbounds @simd for i in 2:2:100
         XA[i] = TEMA
         XA[i+1] = TEMB
     end
@@ -500,7 +739,7 @@ function dchxy(TAU1::Float64, CFA::Vector{Float64}, NCASE::Int)
         ACAP[4] = 0.36268378337836198
     end
 
-    for i in 1:KMX
+    @inbounds @simd for i in 1:KMX
         TEMX[i] = UMA[i]^2
         TEMY[i] = CFA[1] + CFA[2] * TEMX[i] + CFA[3] * TEMX[i]^2
         TEMY[i] = 2.0 * ACAP[i] * TEMY[i]
@@ -513,7 +752,7 @@ function dchxy(TAU1::Float64, CFA::Vector{Float64}, NCASE::Int)
         IST = 1
     end
 
-    for i in IST:KMX # Fortran line 152
+    @inbounds @simd for i in IST:KMX # Fortran line 152
         RTK[i] = (1.0 - TEMY[i]) / TEMX[i]
         if i == 1
             TEMA = 1.0 / UMA[1]^2
@@ -542,7 +781,7 @@ function dchxy(TAU1::Float64, CFA::Vector{Float64}, NCASE::Int)
         end
 
         TEMC = 1.0
-        for i in 1:KMX
+        @inbounds @simd for i in 1:KMX
             TEMC -= TEMY[i] / (1.0 - RTK[J] * TEMX[i])
         end
         TEMD = abs(TEMC)
@@ -564,7 +803,7 @@ function dchxy(TAU1::Float64, CFA::Vector{Float64}, NCASE::Int)
             end
 
             TEMD = 0.0
-            for i in 1:KMX
+            @inbounds @simd for i in 1:KMX
                 TEMD -= (TEMY[i] * TEMX[i]) / (1.0 - RTK[J] * TEMX[i])^2
             end
 
@@ -578,14 +817,14 @@ function dchxy(TAU1::Float64, CFA::Vector{Float64}, NCASE::Int)
         end
     end
 
-    for i in 1:KMX
+    @inbounds @simd for i in 1:KMX
         RTK[i] = sqrt(RTK[i])
     end
 
     if NCASE != 0
         N1 = 11
         KMX = 4
-        for j in 1:KMX
+        @inbounds @simd for j in 1:KMX
             RTK[j] = RTK[j+1]
         end
     end
@@ -600,9 +839,9 @@ function dchxy(TAU1::Float64, CFA::Vector{Float64}, NCASE::Int)
     ACAP[4] = 0.36268378337836198
 
     # --- COMPUTE FUNCTIONS LAMDA, P AND W ---
-    for j in 1:KMX
+    @inbounds @simd for j in 1:KMX
         ALAM[j] = 1.0
-        for i in 1:KMX
+        @inbounds @simd for i in 1:KMX
             ALAM[j] *= (RTK[j] * UMA[i] + 1.0) / (RTK[j] * UMA[i] - 1.0)
         end
         ALAM[j] = exp(-RTK[j] * TAU1) / ALAM[j]
@@ -612,17 +851,17 @@ function dchxy(TAU1::Float64, CFA::Vector{Float64}, NCASE::Int)
         Printf.printf("%12.5E %12.5E %12.5E\n", CFA[1], CFA[2], CFA[3])
         Printf.printf("%12.5E\n", TAU1)
         Printf.printf("\n")
-        for j in 1:KMX
+        @inbounds @simd for j in 1:KMX
             TEMA = 1.0 / RTK[j]
             # (In the FORTRAN code, TEMA is calculated but not used or printed here)
         end
     end
 
-    for i in 1:101 # Fortran line 225
+    @inbounds @simd for i in 1:101 # Fortran line 225
         FNPP[i] = 1.0
         FNPN[i] = 1.0
         FNW[i] = 1.0
-        for j in 1:KMX
+        @inbounds @simd for j in 1:KMX
             FNPP[i] *= (AMU[i] / UMA[j] - 1.0)
             FNPN[i] *= (-AMU[i] / UMA[j] - 1.0)
             FNW[i] *= (1.0 - RTK[j]^2 * AMU[i]^2)
@@ -632,11 +871,11 @@ function dchxy(TAU1::Float64, CFA::Vector{Float64}, NCASE::Int)
 
     TEMX[1] = 1.0
     TEMX[8] = 1.0
-    for k in 2:7
+    @inbounds for k in 2:7
         TEMX[k] = 1.0
-        for i in 1:2
+        @inbounds for i in 1:2
             N1 = NC0[i, k-1]
-            for j in 1:2
+            @inbounds for j in 1:2
                 N2 = NC0[j+2, k-1]
                 TEMX[k] *= (RTK[N1] + RTK[N2]) / (RTK[N1] - RTK[N2])
             end
@@ -644,29 +883,29 @@ function dchxy(TAU1::Float64, CFA::Vector{Float64}, NCASE::Int)
         TEMX[k] = -TEMX[k]
     end
 
-    for k in 1:4
+    @inbounds for k in 1:4
         TEMY[k] = 1.0
         N2 = NC1[4, k]
-        for i in 1:3
+        @inbounds for i in 1:3
             N1 = NC1[i, k]
             TEMY[k] *= (RTK[N1] + RTK[N2]) / (RTK[N1] - RTK[N2])
         end
     end
 
-    for k in 5:8
+    @inbounds for k in 5:8
         TEMY[k] = 1.0
         N1 = NC1[1, k]
-        for j in 1:3
+        @inbounds for j in 1:3
             N2 = NC1[j+1, k]
             TEMY[k] *= (RTK[N1] + RTK[N2]) / (RTK[N1] - RTK[N2])
         end
         TEMY[k] = -TEMY[k]
     end
 
-    for i in 1:101 # Fortran line 266
+    @inbounds @simd for i in 1:101 # Fortran line 266
         TEMA = 1.0
         TEMB = 1.0
-        for j in 1:4
+        @inbounds for j in 1:4
             TEMA *= (1.0 + RTK[j] * AMU[i])
             TEMB *= (1.0 - RTK[j] * AMU[i])
         end
@@ -675,7 +914,7 @@ function dchxy(TAU1::Float64, CFA::Vector{Float64}, NCASE::Int)
 
         TEMA = 1.0
         TEMB = 1.0
-        for j in 1:4
+        @inbounds for j in 1:4
             TEMA *= (1.0 - RTK[j] * AMU[i]) * ALAM[j]
             TEMB *= (1.0 + RTK[j] * AMU[i]) * ALAM[j]
         end
@@ -686,12 +925,12 @@ function dchxy(TAU1::Float64, CFA::Vector{Float64}, NCASE::Int)
         while IST <= 7
             TEMA = 1.0
             TEMB = 1.0
-            for k in 1:2
+            @inbounds for k in 1:2
                 N2 = NC0[k+2, IST-1]
                 TEMA *= (1.0 - RTK[N2] * AMU[i]) * ALAM[N2]
                 TEMB *= (1.0 + RTK[N2] * AMU[i]) * ALAM[N2]
             end
-            for j in 1:2
+            @inbounds for j in 1:2
                 N1 = NC0[j, IST-1]
                 TEMA *= (1.0 + RTK[N1] * AMU[i])
                 TEMB *= (1.0 - RTK[N1] * AMU[i])
@@ -702,7 +941,7 @@ function dchxy(TAU1::Float64, CFA::Vector{Float64}, NCASE::Int)
             IST += 1
         end
     end
-    for i in 1:101
+    @inbounds @simd for i in 1:101
         FNC1[i] = 0.0
         FMC1[i] = 0.0
         IST = 1
@@ -710,7 +949,7 @@ function dchxy(TAU1::Float64, CFA::Vector{Float64}, NCASE::Int)
             N2 = NC1[4, IST]
             TEMA = (1.0 - RTK[N2] * AMU[i]) * ALAM[N2]
             TEMB = (1.0 + RTK[N2] * AMU[i]) * ALAM[N2]
-            for j in 1:3
+            @inbounds for j in 1:3
                 N1 = NC1[j, IST]
                 TEMA *= (1.0 + RTK[N1] * AMU[i])
                 TEMB *= (1.0 - RTK[N1] * AMU[i])
@@ -723,7 +962,7 @@ function dchxy(TAU1::Float64, CFA::Vector{Float64}, NCASE::Int)
             N1 = NC1[1, IST]
             TEMA = 1.0 + RTK[N1] * AMU[i]
             TEMB = 1.0 - RTK[N1] * AMU[i]
-            for j in 1:3
+            @inbounds for j in 1:3
                 N2 = NC1[j+1, IST]
                 TEMA *= (1.0 - RTK[N2] * AMU[i]) * ALAM[N2]
                 TEMB *= (1.0 + RTK[N2] * AMU[i]) * ALAM[N2]
@@ -743,7 +982,7 @@ function dchxy(TAU1::Float64, CFA::Vector{Float64}, NCASE::Int)
         println("TAU1 = ", TAU1)
         println("Table header for output:")
 
-        for i in 1:101
+        @inbounds @simd for i in 1:101
             TEMD = FNC0[i] * FMC0[i] - FNC1[i] * FMC1[i] - (FNC0[1]^2 - FNC1[1]^2) * FNW[i]
             println(AMU[i], " ", FNPP[i], " ", FNPN[i], " ", FNW[i], " ", FNC0[i], " ", FMC0[i], " ", FNC1[i], " ", FMC1[i], " ", TEMD)
         end
@@ -756,12 +995,12 @@ function dchxy(TAU1::Float64, CFA::Vector{Float64}, NCASE::Int)
         XB[1] = 1.0
     end
 
-    for i in 2:101
+    @inbounds @simd for i in 2:101
         XB[i] = exp(-TAU1 / AMU[i])
     end
 
     TEMA = 1.0 / sqrt(FNC0[1]^2 - FNC1[1]^2)
-    for i in 1:101
+    @inbounds @simd for i in 1:101
         TEMC = TEMA / FNW[i]
         FNX[i] = (FNPN[i] * FMC0[i] - XB[i] * FNPP[i] * FNC1[i]) * TEMC
         FNY[i] = (XB[i] * FNPP[i] * FNC0[i] - FNPN[i] * FMC1[i]) * TEMC
@@ -771,118 +1010,80 @@ function dchxy(TAU1::Float64, CFA::Vector{Float64}, NCASE::Int)
     CHYA[1] = XB[1]
     nomitr = 1 # Fortran line 362
     converged = false
-while converged == false
-    for I in 2:101
-        for IC in 1:101
-            XD[IC] = PSI[IC] * (FNX[I] * FNX[IC] - FNY[I] * FNY[IC]) / (AMU[I] + AMU[IC])
-            if I != IC
-                XE[IC] = PSI[IC] * (FNY[I] * FNX[IC] - FNX[I] * FNY[IC]) / (AMU[I] - AMU[IC])
-            end
-            if I <= 3
-                XE[I] = 0.5 * (XE[I+1] + XE[I-1])
-            else
-                if I > 3 && I <= 5
-                    # Everett's formula two points on either side
-                    XE[I] = 0.0625 * (9.0 * (XE[I+1] + XE[I-1]) - XE[I+3] - XE[I-3])
-                else
-                    if I > 5 && I <= 96
-                        # Everett's formula three points on either side
-                        XE[I] = 3.0 * (XE[I+5] + XE[I-5]) + 150.0 * (XE[I+1] + XE[I-1]) - 25.0 * (XE[I+3] + XE[I-3])
-                        XE[I] /= 256.0
-                    else
-                        # Interpolation for I > 96
-                        XE[I] = 5.0 * XE[I-1] + 10.0 * XE[I-3] + XE[I-5] - 10.0 * XE[I-2] - 5.0 * XE[I-4]
-                    end
+    TEMC = 0.0   # Initialize before convergence loop
+    while !converged
+        @inbounds for I in 2:101
+            # Compute XD and XE for this I
+            @inbounds for IC in 1:101
+                XD[IC] = PSI[IC] * (FNX[I] * FNX[IC] - FNY[I] * FNY[IC]) / (AMU[I] + AMU[IC])
+                if I != IC
+                    XE[IC] = PSI[IC] * (FNY[I] * FNX[IC] - FNX[I] * FNY[IC]) / (AMU[I] - AMU[IC])
                 end
             end
-            CHXA[I] = 0.0
-            CHYA[I] = 0.0
-            for IC in 1:101
-                CHXA[I] += XA[IC] * XD[IC]
-                CHYA[I] += XA[IC] * XE[IC]
+
+            # Everett's formula / interpolation for XE[I]
+            if I <= 3
+                XE[I] = 0.5 * (XE[I+1] + XE[I-1])
+            elseif I <= 5
+                XE[I] = 0.0625 * (9.0*(XE[I+1] + XE[I-1]) - XE[I+3] - XE[I-3])
+            elseif I <= 96
+                XE[I] = (3.0*(XE[I+5] + XE[I-5]) + 150.0*(XE[I+1] + XE[I-1]) - 25.0*(XE[I+3] + XE[I-3])) / 256.0
+            else
+                XE[I] = 5.0*XE[I-1] + 10.0*XE[I-3] + XE[I-5] - 10.0*XE[I-2] - 5.0*XE[I-4]
             end
-            CHXA[I] = 1.0 + AMU[I] * CHXA[I]
-            CHYA[I] = XB[I] + AMU[I] * CHYA[I]
-        end
-    end
-    # correction to the approximation
 
-    if nomitr == 1 && TAU1 != 0 # Fortran line 398
-        TEMX[1] = -dexpi(-TAU1)
-        for n in 2:7
-            TEMX[n] = (XB[101] - TAU1 * TEMX[n-1]) / (n - 1)
+            sxd = 0.0
+            sxe = 0.0
+            @inbounds @simd for ic in 1:101
+                sxd += XA[ic] * XD[ic]
+                sxe += XA[ic] * XE[ic]
+            end
+            CHXA[I] = 1.0 + AMU[I] * sxd
+            CHYA[I] = XB[I] + AMU[I] * sxe
         end
-        PERB = 2.0 * (
-            CFA[1] * (0.5 - TEMX[3]) +
-            CFA[2] * (0.25 - TEMX[5]) +
-            CFA[3] * ((1 / 6) - TEMX[7])
-        )
-    end
-    # accumulate TEMA, TEMB
-    if TAU1 != 0.0
-        TEMA = 0.0
-        TEMB = 0.0
-        for i in 1:101
-            TEMA += CHXA[i] * PSI[i] * XA[i]  
-            TEMB += CHYA[i] * PSI[i] * XA[i]  
-        end
-        # new TEMC
-        c1 = (1 - 2 * PERA) / (1 - TEMA + TEMB)
-        TEMC = TAU1 == 0 ? 0.0 : (1 - TEMA - TEMB - c1) / PERB
-    end
-    if TAU1 == 0.0
-        TEMC = 0.0
-    end
-    for i in 1:101
-        TEMD = TEMC * AMU[i] * (1.0 - XB[i])
-        CHX[i] = CHXA[i] + TEMD
-        CHY[i] = CHYA[i] + TEMD
-    end
-    if NPRT != 0 # Fortran line 422
-        TEMC_out = TEMA^2 - 2.0*TEMA - TEMB^2 + 2.0*PERA
-        #@printf(" NOMITR = %d, TEMA = %g, TEMB = %g, TEMC = %g\n", NOMITR, TEMA, TEMB, TEMC_out)
-    end
 
-    # Check for convergence
-    if nomitr > 1
-        #converged = true
-        for I in 2:101
-            rel_error = abs((CHY[I] - FNY[I]) / CHY[I])
-            if rel_error <= 2.0e-4
-                converged = true
-                break
+        # Correction to CHX and CHY
+        @inbounds @simd for i in 1:101
+            TEMD = TEMC * AMU[i] * (1.0 - XB[i])
+            CHX[i] = CHXA[i] + TEMD
+            CHY[i] = CHYA[i] + TEMD
+        end
+
+        # Check convergence (same as before)
+        if nomitr > 1
+            @inbounds for I in 2:101
+                rel_error = abs((CHY[I] - FNY[I]) / CHY[I])
+                if rel_error <= 2.0e-4
+                    converged = true
+                    break
+                end
             end
         end
-    end
 
-    if converged
-        break
-    end
+        # Prepare for next iteration
+        @inbounds @simd for I in 1:101
+            FNX[I] = CHX[I]
+            FNY[I] = CHY[I]
+        end
 
-    # Prepare for next iteration
-    for I in 1:101
-        FNX[I] = CHX[I]
-        FNY[I] = CHY[I]
+        nomitr += 1
+        if nomitr > 15
+            break
+        end
     end
-    nomitr += 1
-    if nomitr > 15
-        break
-    end
-end
-
     # if NCASE ≠ 0, generate standard solution (Fortran 975…990)
     if NCASE != 0
         tsumx = 0.0
         tsumb = 0.0
         tsumc = 0.0
-        for i in 1:101
+        @inbounds @simd for i in 1:101
             δ = PSI[i] * AMU[i] * XA[i]
             tsumx += δ * CHX[i]
             tsumb += δ * CHY[i]
             tsumc += PSI[i] * CHY[i] * XA[i]
         end
         ratio = tsumc / (tsumx + tsumb)
-        for i in 1:101
+        @inbounds @simd for i in 1:101
             Δ = ratio * AMU[i] * (CHX[i] + CHY[i])
             CHX[i] += Δ
             CHY[i] -= Δ
@@ -893,127 +1094,166 @@ end
 
 end
 
-function dexpi(x::Float64)
-    # Constants
-    gamma = 0.57721566490153286
 
-    # Coefficients
-    A1 = [0.1193095930415985, 0.3306046932331323, 0.4662347571015760]
-    B1 = [0.4679139345726910, 0.3607615730481386, 0.1713244923791703]
-    A2 = [0.02823912701457739, 30.52042817823067, 215.8885931211323,
-        410.4611319636983, 278.5527592726121, 71.33086969436196, 0.5758931590224375]
-    B2 = [10.0, 138.3869728490638, 488.08581830736, 634.8804630786363,
-        344.1289899236299, 77.08964199043784, 0.5758934565014882]
-    A3 = [0.07630772325814641, 21.23699219410890, 47.45350785776186,
-        29.66421696379266, 6.444800036068992, 0.04295808082119383]
-    B3 = [10.0, 52.78950049492932, 71.96111390658517, 35.67945294128107,
-        6.874380519301884, 0.04295808112146861]
-    A4 = [0.1157221173580207, 0.6117574845151307, 1.512610269776419,
-        2.833751337743507, 4.599227639418348, 6.844525453115177,
-        9.621316842456867, 13.00605499330635, 17.11685518746226,
-        22.15109037939701, 28.48796725098400, 37.09912104446692]
-    B4 = [0.2647313710554432, 0.3777592758731380, 0.2440820113198776,
-        0.09044922221168093, 0.02010238115463410, 0.002663973541865316,
-        0.0002032315926629994, 8.365055856819799e-5, 1.668493876540910e-6,
-        1.342391030515004e-8, 3.061601635035021e-11, 8.148077467426242e-15]
-    A5 = [0.03202844643130281, 0.09555943373680816, 0.1575213398480817,
-        0.2168967538130226, 0.2727107356944198, 0.3240468259684878,
-        0.3700620957892772, 0.4100009929869515, 0.4432077635022005,
-        0.4691372760013664, 0.4873642779856547, 0.4975936099985107]
-    B5 = [0.1279381953467522, 0.1258374563468283, 0.1216704729278034,
-        0.1155056680537256, 0.1074442701159656, 0.09761865210411389,
-        0.08619016153195328, 0.07334648141108031, 0.05929858491543678,
-        0.04427743881741981, 0.02853138862893366, 0.01234122979998720]
 
-    if x == 0.0
-        error("The argument of DEXPI is very close to zero.")
-    elseif x < 0.0
-        ax = abs(x)
-        if x > -1e-20
-            return log(ax) + gamma
-        elseif x > -1.5
-            yy = exp(-0.5 * ax)
-            s = 0.0
-            for i in 1:3
-                yz = exp(A1[i] * ax)
-                s += B1[i] * ((1 - yy / yz) / (0.5 + A1[i]) + (1 - yy * yz) / (0.5 - A1[i]))
-            end
-            return -0.5 * s + log(ax) + gamma
-        elseif x > -4.65
-            sumn = evalpoly(ax, reverse(A2))
-            sumd = evalpoly(ax, reverse(B2))
-            return (sumn / (sumd * x)) * exp(x)
-        elseif x > -12.0
-            sumn = evalpoly(ax, reverse(A3))
-            sumd = evalpoly(ax, reverse(B3))
-            return (sumn / (sumd * x)) * exp(x)
-        elseif x > -170.0
-            dexpi = 0.0
-            for j in 1:12
-                dexpi += B4[j] / (1 + A4[j] / ax)
-            end
-            return (exp(x) / ax) * (-dexpi)
-        else
-            return 0.0
-        end
-    else
-        if x <= 1e-20
-            return log(x) + gamma
-        elseif x <= 40.0
-            yy = exp(0.5 * x)
-            dexpi = 0.0
-            for j in 1:12
-                yz = exp(-A5[j] * x)
-                dexpi += ((1 - yy / yz) / (0.5 + A5[j]) + (1 - yy * yz) / (0.5 - A5[j])) * B5[j]
-            end
-            return -0.5 * dexpi + log(x) + gamma
-        elseif x <= 173.0
-            dexpi = 0.0
-            for j in 1:12
-                dexpi += B4[j] / (1 - A4[j] / x)
-            end
-            return (exp(x) / x) * dexpi
-        else
-            error("The argument of DEXPI is very large.")
-        end
-    end
-end
+# """
+#     dexpi(x::Float64) -> Float64
+
+# Compute the exponential integral with ~15 significant figure accuracy.  
+
+# Implements the algorithm described in the original FORTRAN code, which switches 
+# between polynomial ratios and numerical quadrature depending on the range of `x`.
+
+# # Inputs
+# - `x::Float64`  
+#   Argument of the exponential integral.
+
+# # Output
+# - `E1::Float64`  
+#   The exponential integral evaluated at `x`.
+
+# # Method
+# Different computational strategies are applied depending on the sign and magnitude of `x`:
+
+# - **For negative `x`:**
+#   - `x > -1.0e-20` → `γ + log(|x|)`  
+#   - `-1.0e-20 ≥ x > -1.5` → 3-point Gaussian quadrature  
+#   - `-1.5 ≥ x > -4.65` → ratio of two 7-term polynomials  
+#   - `-4.65 ≥ x > -12.0` → ratio of two 6-term polynomials  
+#   - `-12.0 ≥ x > -170.0` → 12-point Gauss–Laguerre quadrature  
+
+# - **For positive `x`:**
+#   - `x < 1.0e-20` → `γ + log(x)`  
+#   - `1.0e-20 ≤ x ≤ 40.0` → 12-point Gaussian quadrature  
+#   - `40.0 < x ≤ 173.0` → 12-point Gauss–Laguerre quadrature  
+
+# # Notes
+# - `γ` denotes the Euler–Mascheroni constant.  
+# - Accuracy is approximately 15 significant figures across the supported domain.  
+# - Outside the ranges listed above, behavior is not guaranteed.
+# """
+# function dexpi(x::Float64)
+#     # Constants
+#     gamma = 0.57721566490153286
+
+#     # Coefficients
+#     A1 = [0.1193095930415985, 0.3306046932331323, 0.4662347571015760]
+#     B1 = [0.4679139345726910, 0.3607615730481386, 0.1713244923791703]
+#     A2 = [0.02823912701457739, 30.52042817823067, 215.8885931211323,
+#         410.4611319636983, 278.5527592726121, 71.33086969436196, 0.5758931590224375]
+#     B2 = [10.0, 138.3869728490638, 488.08581830736, 634.8804630786363,
+#         344.1289899236299, 77.08964199043784, 0.5758934565014882]
+#     A3 = [0.07630772325814641, 21.23699219410890, 47.45350785776186,
+#         29.66421696379266, 6.444800036068992, 0.04295808082119383]
+#     B3 = [10.0, 52.78950049492932, 71.96111390658517, 35.67945294128107,
+#         6.874380519301884, 0.04295808112146861]
+#     A4 = [0.1157221173580207, 0.6117574845151307, 1.512610269776419,
+#         2.833751337743507, 4.599227639418348, 6.844525453115177,
+#         9.621316842456867, 13.00605499330635, 17.11685518746226,
+#         22.15109037939701, 28.48796725098400, 37.09912104446692]
+#     B4 = [0.2647313710554432, 0.3777592758731380, 0.2440820113198776,
+#         0.09044922221168093, 0.02010238115463410, 0.002663973541865316,
+#         0.0002032315926629994, 8.365055856819799e-5, 1.668493876540910e-6,
+#         1.342391030515004e-8, 3.061601635035021e-11, 8.148077467426242e-15]
+#     A5 = [0.03202844643130281, 0.09555943373680816, 0.1575213398480817,
+#         0.2168967538130226, 0.2727107356944198, 0.3240468259684878,
+#         0.3700620957892772, 0.4100009929869515, 0.4432077635022005,
+#         0.4691372760013664, 0.4873642779856547, 0.4975936099985107]
+#     B5 = [0.1279381953467522, 0.1258374563468283, 0.1216704729278034,
+#         0.1155056680537256, 0.1074442701159656, 0.09761865210411389,
+#         0.08619016153195328, 0.07334648141108031, 0.05929858491543678,
+#         0.04427743881741981, 0.02853138862893366, 0.01234122979998720]
+
+#     if x == 0.0
+#         error("The argument of DEXPI is very close to zero.")
+#     elseif x < 0.0
+#         ax = abs(x)
+#         if x > -1e-20
+#             return log(ax) + gamma
+#         elseif x > -1.5
+#             yy = exp(-0.5 * ax)
+#             s = 0.0
+#             for i in 1:3
+#                 yz = exp(A1[i] * ax)
+#                 s += B1[i] * ((1 - yy / yz) / (0.5 + A1[i]) + (1 - yy * yz) / (0.5 - A1[i]))
+#             end
+#             return -0.5 * s + log(ax) + gamma
+#         elseif x > -4.65
+#             sumn = evalpoly(ax, reverse(A2))
+#             sumd = evalpoly(ax, reverse(B2))
+#             return (sumn / (sumd * x)) * exp(x)
+#         elseif x > -12.0
+#             sumn = evalpoly(ax, reverse(A3))
+#             sumd = evalpoly(ax, reverse(B3))
+#             return (sumn / (sumd * x)) * exp(x)
+#         elseif x > -170.0
+#             dexpi = 0.0
+#             for j in 1:12
+#                 dexpi += B4[j] / (1 + A4[j] / ax)
+#             end
+#             return (exp(x) / ax) * (-dexpi)
+#         else
+#             return 0.0
+#         end
+#     else
+#         if x <= 1e-20
+#             return log(x) + gamma
+#         elseif x <= 40.0
+#             yy = exp(0.5 * x)
+#             dexpi = 0.0
+#             for j in 1:12
+#                 yz = exp(-A5[j] * x)
+#                 dexpi += ((1 - yy / yz) / (0.5 + A5[j]) + (1 - yy * yz) / (0.5 - A5[j])) * B5[j]
+#             end
+#             return -0.5 * dexpi + log(x) + gamma
+#         elseif x <= 173.0
+#             dexpi = 0.0
+#             for j in 1:12
+#                 dexpi += B4[j] / (1 - A4[j] / x)
+#             end
+#             return (exp(x) / x) * dexpi
+#         else
+#             error("The argument of DEXPI is very large.")
+#         end
+#     end
+# end
 
 """
-    solrad(; days, hours, lat...[, year, lonc, elev, slope, aspect, hori, refl, cmH2O, ϵ,
-           ω, se, d0, lamb, iuv, noscat, amr, nmax, Iλ, OZ, τR, τO, τA, τW, Sλ, FD, FDQ,
-           S, ER, ERλ]) -> NamedTuple
+    solrad(; days, hours, latitude...[, year, lonc, elevation, slope, aspect, horizon_angles, albedos, cmH2O, ϵ,
+           ω, se, d0, iuv, scattered, amr, nmax, Iλ, OZ, τR, τO, τA, τW, Sλ, FD, FDQ,
+           s̄, ER, ERλ]) -> NamedTuple
 
-Compute solar radiation at a given place and time using a detailed atmospheric radiative transfer model.
+Compute clear sky solar radiation at a given place and time using a detailed atmospheric radiative transfer model.
 
 # Arguments
 - `days::Vector{Float64}`: Days of the year (1–365/366) to evaluate.
 - `hours::Vector{Float64}`: Decimal hours of the day (0.0–24.0).
-- `lat::Quantity`: Latitude in degrees, e.g. `43.0u"°"`.
+- `latitude::Quantity`: Latitude in degrees, e.g. `43.0u"°"`.
 
 # Keyword Arguments
 - `year::Real=2001`: Year used for ozone table lookup.
 - `lonc::Real=0.0`: Longitude correction in hours (positive west of standard meridian).
-- `elev::Quantity=0.0u"m"`: Elevation above sea level.
+- `elevation::Quantity=0.0u"m"`: Elevation above sea level.
 - `slope::Quantity=0u"°"`: Slope angle of the surface.
 - `aspect::Quantity=0u"°"`: Azimuth of slope aspect (from north).
-- `hori::Vector{Quantity}`: Horizon angles for each of 24 azimuth sectors (default 0°).
-- `refl::Real=0.10`: Ground reflectance (albedo), fraction [0, 1].
+- `horizon_angles::Vector{Quantity}`: Horizon angles for each of 24 azimuth sectors (default 0°).
+- `albedos::Vector{<:Real}=fill(0.15, length(days))`: Daily ground albedo, fraction [0, 1].
 - `cmH2O::Real=1`: Precipitable water in cm for atmospheric column (e.g. 0.1: dry, 1.0: moist, 2.0: humid).
 - `ϵ::Real=0.0167238`: Orbital eccentricity of Earth.
 - `ω::Real=2π/365`: Mean angular orbital velocity of Earth (radians/day).
 - `se::Real=0.39779`: Precomputed solar elevation constant.
 - `d0::Real=80`: Reference day for declination calculations.
-- `lamb::Bool=false`: If `true`, returns wavelength-specific irradiance components.
 - `iuv::Bool=false`: If `true`, uses the full gamma-function model for diffuse radiation (expensive).
-- `noscat::Bool=true`: If `true`, disables scattered light computations (faster).
+- `scattered::Bool=true`: If `true`, disables scattered light computations (faster).
 - `amr::Quantity=25.0u"km"`: Mixing ratio height of the atmosphere.
 - `nmax::Integer=111`: Maximum number of wavelength intervals.
 - `Iλ::Vector{Quantity}`: Vector of wavelength bins (e.g. in `nm`).
 - `OZ::Matrix{Float64}`: Ozone column depth table indexed by latitude band and month (size 19×12).
 - `τR`, `τO`, `τA`, `τW`: Vectors of optical depths per wavelength for Rayleigh scattering, ozone, aerosols, and water vapor.
 - `Sλ::Vector{Quantity}`: Solar spectral irradiance per wavelength bin (e.g. in `mW * cm^-2 * nm^-1`).
-- `FD`, `FDQ`: Auxiliary data vectors for biologically effective radiation models.
+- `FD`, `FDQ`: Radiation scattered from the direct solar beam and reflected radiation 
+    rescattered downward as a function of wavelength, from tables in Dave & Furukawa (1966).
+- `s̄`: a function of τR linked to molecular scattering in the UV range (< 360 nm)
 
 # Returns
 A named tuple containing:
@@ -1029,171 +1269,55 @@ A named tuple containing:
 - `Global::Float64`: Broadband global irradiance (direct + diffuse) [W/m²].
 
 - `Zenith::Float64`: Solar zenith angle [degrees].
+- `ZenithSlope::Float64`: Slope solar zenith angle [degrees].
+- `Azimuth::Float64`: Solar azimuth angle [degrees].
 - `doy::Int`: Day of year.
 - `hour::Float64`: Decimal hour of day.
 
 # Notes
 - Radiation units are returned in `W/m²`. Internally, units like `mW/cm²` are used and converted as necessary using `Unitful.jl`.
-- Topographic shading is included via the `hori` input (horizon angle mask).
+- Topographic shading is included via the `horizon_angles` input (horizon angle mask) but cloud effects on scattered solar should be added later.
 - Outputs are computed for each (day, hour) combination in the input vectors.
-- The function can be run in a high-resolution spectral mode (`lamb=true`) or in a broadband mode (`lamb=false`).
 - In optical air mass 'arims' calculation the difference between apparent and true zenith angle is neglected for z less than 88 degrees
 - Variation of airms with altitude is ignored since it is negligible up to at least 6 km above sea level
+
+# References
+FD and FDQ derived from tables in Dave and Furukawa (1967)
+Dave, J. V., & Furukawa, P. M. (1966). Scattered radiation in the ozone 
+ absorption bands at selected levels of a terrestrial, Rayleigh atmosphere (Vol. 7).
+ Americal Meteorological Society.
+
 """
 function solrad(;
     days::Vector{<:Real}=[15, 46, 74, 105, 135, 166, 196, 227, 258, 288, 319, 349],
     hours::Vector{<:Real}=collect(0.0:24.0),
     year::Real=2001.0, # needed to determine if a leap year
-    lat::Quantity=43.1379u"°",
+    latitude::Quantity=43.1379u"°",
     lonc::Real=0.0, # longitude correction, hours
-    elev::Quantity=276.0u"m", # elevation, m
+    elevation::Quantity=276.0u"m", # elevation, m
     slope::Quantity=0u"°",
     aspect::Quantity=0u"°",
-    hori::Vector{typeof(0.0u"°")}=fill(0.0, 24) .* u"°",
-    refl::Real=0.15, # substrate solar reflectivity (decimal %)
+    horizon_angles::Vector{typeof(0.0u"°")}=fill(0.0, 24) .* u"°",
+    albedos::Vector{<:Real}=fill(0.15, length(days)), # substrate albedo (decimal %)
     cmH2O::Real=1, # precipitable cm H2O in air column, 0.1 = VERY DRY; 1 = MOIST AIR CONDITIONS; 2 = HUMID, TROPICAL CONDITIONS (note this is for the whole atmospheric profile, not just near the ground)
     ϵ::Real=0.0167238,
     ω::Real=2π / 365,
     se::Real=0.39784993, #0.39779,
     d0::Real=80.0,
     iuv::Bool=false, # Use gamma function for scattered solar radiation? (computationally intensive)
-    noscat::Bool=true,
+    scattered::Bool=true,
     amr::Quantity=25.0u"km",
     nmax::Integer=111, # maximum number of wavelengths
-    Iλ::Vector{typeof(0.0u"nm")}=float.([ # wavelengths across which to integrate
-        290, 295, 300, 305, 310, 315, 320, 330, 340, 350, 360, 370, 380, 390,
-        400, 420, 440, 460, 480, 500, 520, 540, 560, 580, 600, 620, 640, 660, 680, 700,
-        720, 740, 760, 780, 800, 820, 840, 860, 880, 900, 920, 940, 960, 980, 1000, 1020,
-        1080, 1100, 1120, 1140, 1160, 1180, 1200, 1220, 1240, 1260, 1280, 1300, 1320,
-        1380, 1400, 1420, 1440, 1460, 1480, 1500, 1540, 1580, 1600, 1620, 1640, 1660,
-        1700, 1720, 1780, 1800, 1860, 1900, 1950, 2000, 2020, 2050, 2100, 2120, 2150,
-        2200, 2260, 2300, 2320, 2350, 2380, 2400, 2420, 2450, 2490, 2500, 2600, 2700,
-        2800, 2900, 3000, 3100, 3200, 3300, 3400, 3500, 3600, 3700, 3800, 3900, 4000
-    ]) * u"nm",
-    OZ::Matrix{<:Real}=reshape([ # seasonal variation of atmospheric ozone in cm, Robinson 1966 Table 4.2
-            0.31, 0.31, 0.32, 0.32, 0.31, 0.3, 0.27, 0.24, 0.23, 0.22, 0.23, 0.24,
-            0.27, 0.3, 0.32, 0.33, 0.34, 0.34, 0.33, 0.3, 0.31, 0.31, 0.31, 0.3, 0.29, 0.28,
-            0.25, 0.24, 0.22, 0.24, 0.26, 0.28, 0.32, 0.36, 0.39, 0.4, 0.4, 0.39, 0.3, 0.31,
-            0.31, 0.3, 0.29, 0.28, 0.26, 0.24, 0.24, 0.23, 0.24, 0.26, 0.29, 0.33, 0.38, 0.42,
-            0.45, 0.46, 0.46, 0.27, 0.28, 0.29, 0.3, 0.3, 0.29, 0.27, 0.25, 0.24, 0.23, 0.25,
-            0.27, 0.3, 0.34, 0.38, 0.4, 0.42, 0.43, 0.42, 0.34, 0.35, 0.34, 0.33, 0.32, 0.31,
-            0.28, 0.25, 0.24, 0.24, 0.26, 0.28, 0.3, 0.34, 0.37, 0.39, 0.4, 0.4, 0.39, 0.38,
-            0.4, 0.39, 0.38, 0.36, 0.33, 0.28, 0.25, 0.24, 0.24, 0.25, 0.27, 0.3, 0.33, 0.35,
-            0.36, 0.36, 0.36, 0.34, 0.43, 0.44, 0.43, 0.41, 0.39, 0.35, 0.29, 0.25, 0.24, 0.24,
-            0.25, 0.26, 0.29, 0.31, 0.33, 0.34, 0.34, 0.33, 0.32, 0.45, 0.46, 0.45, 0.42, 0.4,
-            0.37, 0.31, 0.26, 0.24, 0.23, 0.24, 0.26, 0.28, 0.3, 0.31, 0.32, 0.31, 0.3, 0.3,
-            0.41, 0.42, 0.43, 0.42, 0.4, 0.38, 0.32, 0.26, 0.24, 0.23, 0.24, 0.26, 0.27, 0.28,
-            0.3, 0.3, 0.29, 0.28, 0.27, 0.37, 0.38, 0.4, 0.4, 0.39, 0.37, 0.32, 0.26, 0.24,
-            0.22, 0.23, 0.25, 0.26, 0.27, 0.28, 0.28, 0.28, 0.27, 0.26, 0.34, 0.36, 0.38, 0.39,
-            0.37, 0.34, 0.29, 0.26, 0.24, 0.22, 0.23, 0.25, 0.26, 0.28, 0.29, 0.3, 0.29, 0.29,
-            0.28, 0.31, 0.32, 0.34, 0.35, 0.35, 0.32, 0.29, 0.25, 0.23, 0.22, 0.23, 0.25, 0.27,
-            0.29, 0.3, 0.31, 0.31, 0.31, 0.3
-        ], (19, 12)),
-    τR::Vector{<:Real}=[
-        1.41, 1.31, 1.23, 1.14, 1.05, 0.99, 0.92, 0.81, 0.72, 0.63, 0.56, 0.5,
-        0.45, 0.4, 0.36, 0.3, 0.25, 0.2, 0.17, 0.15, 0.12, 0.1, 0.09, 0.08, 0.07, 0.06,
-        0.06, 0.05, 0.04, 0.04, 0.03, 0.03, 0.03, 0.02, 0.02, 0.02, 0.02, 0.01, 0.01,
-        0.01, 0.01, 0.01, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0
-    ],
-    τO::Vector{<:Real}=[
-        11.5, 6.3, 3.2, 1.62, 0.83, 0.44, 0.26, 0.03, 0.02, 0.01, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
-    ],
-    τA::Vector{<:Real}=[0.269904738, 0.266147825, 0.262442906, 0.258789404, 0.255186744, 0.251634356, 0.248131676, 0.2412732,
-        0.234606887, 0.228128378, 0.221833385, 0.215717692, 0.20977715, 0.204007681, 0.198405272, 0.187685927,
-        0.177588357, 0.168082846, 0.159140695, 0.150734206, 0.142836655, 0.135422274, 0.128466227, 0.12194459,
-        0.115834329, 0.110113284, 0.104760141, 0.099754417, 0.09507644, 0.090707328, 0.086628967, 0.082823998,
-        0.07927579, 0.075968428, 0.072886691, 0.070016034, 0.067342571, 0.064853053, 0.062534858, 0.060375964,
-        0.058364941, 0.056490925, 0.054743609, 0.053113222, 0.051590514, 0.050166738, 0.046408775, 0.045302803,
-        0.044259051, 0.043271471, 0.042334415, 0.041442618, 0.040591184, 0.039775572, 0.038991583, 0.038235345,
-        0.037503301, 0.036792197, 0.036099067, 0.034101935, 0.033456388, 0.032817888, 0.032184949, 0.031556287,
-        0.030930816, 0.030307633, 0.029065372, 0.027825562, 0.027205981, 0.026586556, 0.025967391, 0.025348692,
-        0.024114005, 0.023498886, 0.021669152, 0.021066668, 0.019292088, 0.018144698, 0.016762709, 0.015451481,
-        0.014949794, 0.014224263, 0.013093462, 0.012670686, 0.012070223, 0.011164062, 0.010241734, 0.009731103,
-        0.009507687, 0.009212683, 0.008965785, 0.008827751, 0.008710756, 0.008574128, 0.008462605, 0.008446967,
-        0.008539475, 0.009015237, 0.009748444, 0.010586023, 0.011359647, 0.011901268, 0.012062153, 0.011735443,
-        0.010882215, 0.009561062, 0.007961182, 0.006438984, 0.005558204, 0.006133532, 0.009277754
-    ],
-    τW::Vector{<:Real}=[
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0.123, 0.117, 0.1, 0.23, 0.174, 0.058, 0, 0.024, 0.027,
-        0.036, 0.215, 0.25, 0.136, 0.058, 0.047, 0.036, 0.042, 0.098, 0.044, 0, 0.038,
-        0.83, 0, 0, 0.38, 0.289, 0.258, 0.173, 0.008, 0, 0, 0, 0, 0, 0, 0, 0, 0.57, 0.76, 0,
-        0.185, 0.291, 0.178, 0.196, 0.112, 0.075, 0.074, 0.07, 0.007, 0, 0, 0, 0.086,
-        0.122, 0.132, 0.14, 0.207, 0.259, 0, 0, 0, 0.549, 0.297, 0.462, 0.52, 0.374, 0.222,
-        0.614, 0.058, 0.038, 0.03, 0.04, 0.16
-    ],
-    Sλ::Vector{typeof(0.0u"mW * cm^-2 * nm^-1")}=[
-        48.2, 58.4, 51.4, 60.2, 68.6, 75.7, 81.9, 103.7, 105, 107.4, 105.5,
-        117.3, 111.7, 109.9, 143.3, 175.8, 182.3, 208, 208.5, 194.6, 183.3, 178.3,
-        169.5, 170.5, 164.6, 157.6, 151.7, 146.8, 141.8, 136.9, 131.4, 126, 120, 115,
-        110.7, 105, 100, 95, 91, 88, 85, 83, 80, 77, 75, 70, 61, 59, 56, 54, 51, 49, 48, 45,
-        42, 41, 40, 39, 38, 34, 33, 32, 31, 30, 29, 28, 26, 25, 24, 24, 23, 22, 21, 19, 16, 15,
-        12, 11, 10.7, 10.3, 10, 9.7, 9, 8.8, 8.5, 7.9, 7.4, 6.8, 6.7, 6.6, 6.5, 6.4, 6.2,
-        5.9, 5.5, 5.4, 4.8, 4.3, 3.9, 3.5, 3.1, 2.6, 2.3, 1.9, 1.7, 1.5, 1.4, 1.2, 1.1, 1, 1
-    ] * u"mW * cm^-2 * nm^-1",
-
-    FD::Matrix{<:Real}=reshape([
-            8.00e-5, 6.50e-5, 4.00e-5, 2.30e-5, 1.00e-5, 4.50e-6, 1.00e-6, 1.00e-7, 5.50e-9,
-            1.00e-9, 3.50e-10, 1.60e-10, 1.00e-10, 1.00e-10, 1.00e-10, 1.00e-10, 1.00e-10,
-            1.00e-10, 1.00e-10, 1.00e-3, 9.50e-4, 9.00e-4, 8.00e-4, 7.00e-4, 6.00e-4,
-            4.50e-4, 3.00e-4, 1.70e-4, 8.00e-5, 3.30e-5, 1.80e-5, 1.00e-5, 8.00e-6,
-            6.30e-6, 5.00e-6, 4.10e-6, 3.50e-6, 3.00e-6, 3.50e-2, 3.30e-2, 3.10e-2,
-            2.90e-2, 2.50e-2, 2.20e-2, 1.75e-2, 1.30e-2, 7.50e-3, 4.50e-3, 2.50e-3,
-            1.30e-3, 5.60e-4, 2.70e-4, 1.40e-4, 7.10e-5, 4.20e-5, 2.60e-5, 1.70e-5,
-            1.55e-1, 1.40e-1, 1.40e-1, 1.30e-1, 1.20e-1, 1.10e-1, 1.00e-1, 9.00e-2,
-            8.20e-2, 7.00e-2, 5.20e-2, 3.50e-2, 2.20e-2, 1.00e-2, 4.00e-3, 1.20e-3,
-            4.50e-4, 1.90e-4, 8.00e-5, 3.70e-1, 3.70e-1, 3.60e-1, 3.50e-1, 3.30e-1,
-            3.10e-1, 2.90e-1, 2.60e-1, 2.30e-1, 2.00e-1, 1.70e-1, 1.50e-1, 1.00e-1,
-            7.00e-2, 3.80e-2, 1.60e-2, 5.00e-3, 1.20e-3, 3.00e-4, 5.50e-1, 5.50e-1,
-            5.50e-1, 5.30e-1, 5.10e-1, 5.00e-1, 4.70e-1, 4.40e-1, 4.00e-1, 3.60e-1,
-            3.10e-1, 2.70e-1, 2.25e-1, 1.80e-1, 1.20e-1, 6.00e-2, 2.50e-2, 4.50e-3,
-            7.00e-4, 6.50e-1, 6.50e-1, 6.50e-1, 6.50e-1, 6.20e-1, 6.00e-1, 5.70e-1,
-            5.50e-1, 5.00e-1, 4.50e-1, 4.20e-1, 3.80e-1, 3.25e-1, 2.70e-1, 1.90e-1,
-            1.15e-1, 5.00e-2, 1.10e-2, 1.20e-3, 7.88e-1, 7.80e-1, 8.00e-1, 8.00e-1,
-            8.00e-1, 7.60e-1, 7.35e-1, 7.10e-1, 7.00e-1, 6.50e-1, 6.00e-1, 5.50e-1,
-            5.14e-1, 4.50e-1, 3.50e-1, 2.68e-1, 1.50e-1, 6.27e-2, 1.20e-2, 7.48e-1,
-            7.40e-1, 7.40e-1, 7.30e-1, 7.20e-1, 7.10e-1, 7.04e-1, 6.90e-1, 6.70e-1,
-            6.20e-1, 5.70e-1, 5.30e-1, 5.16e-1, 4.80e-1, 3.90e-1, 2.90e-1, 1.70e-1,
-            7.62e-2, 3.00e-2, 7.00e-1, 7.00e-1, 7.00e-1, 6.90e-1, 6.80e-1, 6.80e-1,
-            6.60e-1, 6.50e-1, 6.30e-1, 6.00e-1, 5.60e-1, 5.21e-1, 5.00e-1, 4.70e-1,
-            3.90e-1, 3.00e-1, 1.85e-1, 9.00e-2, 2.60e-2, 6.51e-1, 6.50e-1, 6.50e-1,
-            6.40e-1, 6.30e-1, 6.25e-1, 6.22e-1, 6.00e-1, 5.90e-1, 5.70e-1, 5.50e-1,
-            5.20e-1, 4.89e-1, 4.60e-1, 3.90e-1, 3.08e-1, 2.00e-1, 9.55e-2, 2.20e-2
-        ], (11, 19)),
-    FDQ::Matrix{<:Real}=reshape([
-            8.00e-6, 7.00e-6, 5.20e-6, 3.50e-6, 1.70e-6, 5.50e-7, 1.00e-7, 2.50e-8, 6.00e-9,
-            1.50e-9, 3.00e-10, 6.00e-11, 1.00e-11, 1.00e-11, 1.00e-11, 1.00e-11, 1.00e-11,
-            1.00e-11, 1.00e-11, 6.10e-4, 6.00e-4, 5.50e-4, 4.50e-4, 3.40e-4, 2.30e-4,
-            1.20e-4, 5.50e-5, 2.60e-5, 1.20e-5, 6.00e-6, 3.50e-6, 2.00e-6, 1.50e-6,
-            1.00e-6, 6.00e-7, 4.00e-7, 2.30e-7, 1.00e-7, 2.40e-2, 2.30e-2, 2.20e-2,
-            2.10e-2, 1.80e-2, 1.50e-2, 1.20e-2, 7.50e-3, 4.80e-3, 2.50e-3, 1.20e-3,
-            5.00e-4, 2.50e-4, 1.00e-4, 4.50e-5, 2.00e-5, 1.00e-5, 5.50e-6, 2.50e-6,
-            1.30e-1, 1.20e-1, 1.10e-1, 1.00e-1, 9.10e-2, 8.50e-2, 7.20e-2, 6.50e-2,
-            5.20e-2, 4.00e-2, 2.80e-2, 1.70e-2, 1.00e-2, 3.00e-3, 1.00e-3, 4.00e-4,
-            1.70e-4, 6.70e-5, 2.50e-5, 3.40e-1, 3.30e-1, 3.20e-1, 3.00e-1, 2.90e-1,
-            2.70e-1, 2.50e-1, 2.00e-1, 1.70e-1, 1.50e-1, 1.20e-1, 8.00e-2, 5.80e-2,
-            3.00e-2, 1.30e-2, 6.20e-3, 2.00e-3, 6.00e-4, 1.90e-4, 5.40e-1, 5.30e-1,
-            5.10e-1, 5.00e-1, 4.80e-1, 4.50e-1, 4.20e-1, 3.70e-1, 3.20e-1, 2.70e-1,
-            2.20e-1, 1.70e-1, 1.20e-1, 8.00e-2, 5.00e-2, 2.30e-2, 8.00e-3, 4.70e-3,
-            9.00e-4, 6.50e-1, 6.40e-1, 6.20e-1, 6.10e-1, 6.00e-1, 5.60e-1, 5.10e-1,
-            4.70e-1, 4.20e-1, 3.60e-1, 3.00e-1, 2.50e-1, 1.80e-1, 1.30e-1, 8.00e-2,
-            5.00e-2, 2.00e-2, 4.60e-3, 1.50e-3, 8.20e-1, 8.10e-1, 8.10e-1, 8.00e-1,
-            7.90e-1, 7.50e-1, 7.00e-1, 6.50e-1, 6.00e-1, 5.40e-1, 4.60e-1, 3.80e-1,
-            3.20e-1, 2.50e-1, 1.80e-1, 1.20e-1, 6.00e-2, 2.50e-2, 8.00e-3, 8.60e-1,
-            8.40e-1, 8.20e-1, 8.00e-1, 7.50e-1, 7.00e-1, 6.80e-1, 6.30e-1, 5.80e-1,
-            5.00e-1, 4.40e-1, 3.70e-1, 3.20e-1, 2.40e-1, 1.70e-1, 1.20e-1, 6.00e-2,
-            2.70e-2, 1.00e-2, 8.00e-1, 7.90e-1, 7.70e-1, 7.60e-1, 7.30e-1, 6.85e-1,
-            6.40e-1, 5.90e-1, 5.40e-1, 4.75e-1, 4.20e-1, 3.65e-1, 3.20e-1, 2.50e-1,
-            1.80e-1, 1.30e-1, 7.00e-2, 2.90e-2, 1.10e-2, 7.50e-1, 7.40e-1, 7.30e-1,
-            7.20e-1, 7.00e-1, 6.70e-1, 6.10e-1, 5.50e-1, 5.00e-1, 4.50e-1, 4.00e-1,
-            3.60e-1, 3.20e-1, 2.60e-1, 1.90e-1, 1.40e-1, 8.00e-2, 3.10e-2, 1.20e-2
-        ], (11, 19)),
-    S::Vector{<:Real}=[0.2, 0.255, 0.315, 0.365, 0.394, 0.405, 0.405, 0.395, 0.37, 0.343, 0.32]
+    Iλ::AbstractVector = DEFAULT_Iλ,
+    OZ::Matrix{<:Real} = DEFAULT_OZ,
+    τR::Vector{<:Real} = DEFAULT_τR,
+    τO::Vector{<:Real} = DEFAULT_τO,
+    τA::Vector{<:Real} = DEFAULT_τA,
+    τW::Vector{<:Real} = DEFAULT_τW,
+    Sλ::AbstractVector = DEFAULT_Sλ, 
+    FD::Matrix{<:Real} = DEFAULT_FD,
+    FDQ::Matrix{<:Real} = DEFAULT_FDQ,
+    s̄::Vector{<:Real} = DEFAULT_s̄
 )
     ndays = length(days)    # number of days
     ntimes = length(hours)  # number of times
@@ -1209,18 +1333,19 @@ function solrad(;
     DRs = fill(0.0, nsteps)u"mW/cm^2"           # total direct radiation
     SRs = fill(0.0, nsteps)u"mW/cm^2"           # total scattered radiation
 
-    # arrays to hold zenith angles each step
-    Zs = fill(0.0, nsteps)u"°"                  # zenith angles
-    ZSLs = fill(0.0, nsteps)u"°"                # slope zenith angles
+    # arrays to hold zenith and azimuth angles each step
+    Zs = fill(90.0, nsteps)u"°"                 # zenith angles
+    ZSLs = fill(90.0, nsteps)u"°"               # slope zenith angles
+    AZIs = Vector{Union{Missing,typeof(0.0u"°")}}(undef, nsteps)
+    fill!(AZIs, 90.0u"°")   
     HHs = fill(0.0, ndays)                      # hour angles
     tsns = fill(0.0, ndays)                     # hour at solar noon
     DOYs = Vector{Int}(undef, nsteps)           # day of year
     times = Vector{Real}(undef, nsteps)         # time
-
     step = 1
     HH = 0.0 # initialise sunrise hour angle
     tsn = 12.0 # initialise time of solar noon
-    for i in 1:ndays
+    @inbounds for i in 1:ndays
         # arrays to hold radiation for a given hour between 300 and 320 nm in 2 nm steps
         GRINT = fill(0.0, nmax)u"mW/cm^2"   # integrated global radiation component (direct + scattered)
         DRRINT = fill(0.0, nmax)u"mW/cm^2"  # integrated direct Rayleigh radiation component
@@ -1231,51 +1356,85 @@ function solrad(;
         DRRλ = GRINT * u"1/nm"              # wavelength-specific direct Rayleigh radiation component
         DRλ = GRINT * u"1/nm"               # wavelength-specific direct radiation component
         SRλ = GRINT * u"1/nm"               # wavelength-specific scattered radiation component
-
-        for j in 1:ntimes
+        albedo = albedos[i]
+        @inbounds for j in 1:ntimes
             d = days[i]
             t = hours[j]
             h, tsn = hour_angle(t, lonc) # hour angle (radians)
-            ζ, δ, z, AR2 = solar_geometry(d=d, lat=lat, h=h, d0=d0, ω=ω, ϵ=ϵ, se=se) # compute ecliptic, declination, zenith angle and (a/r)^2
+            (; ζ, δ, z, AR2) = solar_geometry(; d, latitude, h, d0, ω, ϵ, se) # compute ecliptic, declination, zenith angle and (a/r)^2
             Z = uconvert(u"°", z)
             Zsl = Z
-            check_skylight(z, nmax, SRINT, GRINT) # checking zenith angle for possible skylight before sunrise or after sunset
+            amult = 1.0
+            if sign(latitude) < 0
+                amult = -1.0
+            end
+            if Z < 107.0u"°"
+                if Z > 88.0u"°"
+                    # Compute skylight based on G.V. Rozenberg. 1966. Twilight. Plenum Press.
+                    # p. 18,19.  First computing lumens: y = b - mx. Regression of data is:
+                    Elog = 41.34615384 - 0.423076923 * ustrip(u"°", Z)
+                    # Converting lux (lumen/m2) to W/m2 on horizontal surface -
+                    # Twilight - scattered skylight before sunrise or after sunset
+                    # From p. 239 Documenta Geigy Scientific Tables. 1966. 6th ed. K. Diem, ed.
+                    # Mech./elect equiv. of light = 1.46*10^-3 kW/lumen
+                    Skylum = (10.0^Elog) * 1.46E-03u"mW * cm^-2"
+                    SRINT[nmax] = Skylum
+                    GRINT[nmax] = SRINT[nmax]
+                    GRs[step] = GRINT[nmax]
+                    SRs[step] = SRINT[nmax]
+                end
+            end
             # testing cos(h) to see if it exceeds +1 or -1
-            TDTL = -tan(δ) * tan(lat) # from eq.7 McCullough & Porter 1971
+            TDTL = -tan(δ) * tan(latitude) # from eq.7 McCullough & Porter 1971
             if abs(TDTL) >= 1 # long day or night
                 H = π
             else
                 H = abs(acos(TDTL))
             end
             # check if sunrise
-            HH = 12 * H / π
+            HH = 12.0 * H / π
             ts = t - tsn
-            if !((ts <= 0 && abs(ts) - HH > 0) || (ts > 0 && ts - HH >= 0) || (TDTL >= 1)) # sun is up, proceed
-                h, tsn = hour_angle(t, lonc) # hour angle (radians)
-                ζ, δ, z, AR2 = solar_geometry(d=d, lat=lat, h=h, d0=d0, ω=ω, ϵ=ϵ, se=se) # compute ecliptic, declination, zenith angle and (a/r)^2 - redundant?
+
+            sun_up = true
+
+            if ts <= 0.0 && abs(ts) > HH
+                sun_up = false
+            elseif ts > 0.0 && ts >= HH
+                sun_up = false
+            end
+
+            if sun_up || TDTL == 1 # sun is up, proceed
                 alt = (π / 2 - z)u"rad"
                 altdeg = uconvert(u"°", alt).val
-                cazsun = (sin(δ) - sin(lat) * sin(alt)) / (cos(lat) * cos(alt)) # cos(solar azimuth)
-                #      Error checking for instability in trig function
-                if cazsun < -0.9999999
-                    azsun = π
-                else
-                    if cazsun > 0.9999999
-                        azsun = 0
+                # tazsun corresponds to tangent of azimuth
+                tazsun = sin(h) / (cos(latitude) * tan(δ) - sin(latitude) * cos(h))
+                # sun azimuth in radians
+                azsun = atan(tazsun) * amult
+                # azimuth in degrees
+                dazsun = uconvert(u"°", azsun)
+                # correcting for hemisphere/quadrant
+                if h <= 0.0
+                    # Morning - east of reference
+                    if dazsun <= 0.0u"°"
+                        # 1st Quadrant (0–90°)
+                        dazsun = -1.0 * dazsun
                     else
-                        azsun = acos(cazsun)
+                        # 2nd Quadrant (90–180°)
+                        dazsun = 180.0u"°" - dazsun
+                    end
+                else
+                    # Afternoon - west of reference
+                    if dazsun < 0.0u"°"
+                        # 3rd Quadrant (180–270°)
+                        dazsun = 180.0u"°" - dazsun
+                    else
+                        # 4th Quadrant (270–360°)
+                        dazsun = 360.0u"°" - dazsun
                     end
                 end
-                if h <= 0
-                    # Morning
-                    dazsun = uconvert(u"°", azsun).val
-                else
-                    # Afternoon
-                    if sign(lat) < 0
-                        dazsun = 360u"°" - uconvert(u"°", azsun).val
-                    else
-                        dazsun = 180u"°" + (180u"°" - uconvert(u"°", azsun).val)
-                    end
+                # Special case: hour angle = 0
+                if h == 0.0
+                    dazsun = 180.0u"°"
                 end
 
                 cz = cos(z)
@@ -1283,9 +1442,9 @@ function solrad(;
                 Z = uconvert(u"°", z)  # zenith angle in degrees
 
                 # horizon angle - check this works when starting at 0 rather than e.g. 15 deg
-                azi = range(0u"°", stop=360u"°" - 360u"°" / length(hori), length=length(hori))
-                ahoriz = hori[argmin(abs.(dazsun .- azi))]
-                                
+                azi = range(0u"°", stop=360u"°" - 360u"°" / length(horizon_angles), length=length(horizon_angles))
+                ahoriz = horizon_angles[argmin(abs.(dazsun .- azi))]
+
                 # slope zenith angle calculation (Eq. 3.15 in Sellers 1965. Physical Climatology. U. Chicago Press)
                 if slope > 0u"°"
                     czsl = cos(z) * cos(slope) + sin(z) * sin(slope) * cos(dazsun - aspect)
@@ -1316,7 +1475,7 @@ function solrad(;
 
                 # atmospheric ozone lookup
                 # convert latitude in degrees to nearest 10-degree index
-                tlat = (lat + 100.0u"°") / 10.0u"°"
+                tlat = (latitude + 100.0u"°") / 10.0u"°"
                 llat = Int(floor(tlat))
                 allat = llat
                 ala = allat + 0.5
@@ -1327,20 +1486,13 @@ function solrad(;
                 mon = month(Date(year, 1, 1) + Day(d - 1)) # month from day of year
                 llat = clamp(llat, 1, size(OZ, 1))
                 ozone = OZ[llat, mon]  # ozone thickness (cm) from lookup table
-                ELEVFCT1, ELEVFCT2, ELEVFCT3, ELEVFCT4 = elev_corr(elev)
+                ELEVFCT1, ELEVFCT2, ELEVFCT3, ELEVFCT4 = elev_corr(elevation)
 
-                # deal with this:
-                # c     mutliplier to correct hourly solar data for horizon angle
-                #     if(altdeg.lt.ahoriz)then
-                # c	   diffuse only - cut down to diffuse fraction      
-                #     TDD(111+IT)=TDD(111+IT)* (0.12 + 0.83 * ((CCMINN(IDAY) + 
-                #    &  CCMAXX(IDAY))/ 2. / 100.)) ! from Butt et al. 2010 Agricultural and Forest Meteorology 150 (2010) 361–368
-                #     endif
-                P = get_pressure(elev) # pressure from elevation
+                P = get_pressure(elevation) # pressure from elevation
 
-                for N in 1:nmax
+                @inbounds @simd for N in 1:nmax
                     τλ1 = (P / 101300u"Pa") * τR[N] * ELEVFCT1
-                    τλ2 = (25u"km" / amr) * τA[N] * ELEVFCT2
+                    τλ2 = (25.0u"km" / amr) * τA[N] * ELEVFCT2
                     τλ3 = (ozone / 0.34) * τO[N] * ELEVFCT3
                     τλ4 = τW[N] * sqrt(airms * cmH2O * ELEVFCT4)
                     τλ = ((float(τλ1) + τλ2 + τλ3) * airms) + τλ4
@@ -1352,9 +1504,9 @@ function solrad(;
                     part1 = Sλ[N] * AR2 * cz
                     part2 = τλ > 0.0 ? exp(-τλ) : 0.0
                     if part2 < 1.0e-24
-                        DRλ[N] = 0u"mW / cm^2 / nm"
+                        DRλ[N] = 0.0u"mW / cm^2 / nm"
                     else
-                        DRλ[N] = ((ustrip(part1) * part2) / 1000) * u"mW / cm^2 / nm"
+                        DRλ[N] = ((ustrip(part1) * part2) / 1000.0) * u"mW / cm^2 / nm"
                     end
 
                     # so the integrator doesn't get confused at very low sun angles
@@ -1365,18 +1517,18 @@ function solrad(;
                     DRRλ[N] = (Sλ[N] * AR2 * cz) * exp(-float(τλ1) * airms) / 1000.0
 
                     if altdeg < ahoriz
-                        DRλ[N] = 1.0e-24u"mW / cm^2 / nm"
-                        DRRλ[N] = 1.0e-24u"mW / cm^2 / nm"
+                        DRλ[N] = 1.0e-25u"mW / cm^2 / nm"
+                        DRRλ[N] = 1.0e-25u"mW / cm^2 / nm"
                     end
 
                     # Sky (SRλ) and Global Radiation (GRλ)
-                    if noscat == false
+                    if scattered == false
                         SRλ[N] = 0.0u"mW / cm^2 / nm"
                     elseif iuv
                         if τλ1 >= 0.03
                             GAMR, GAML, SBAR = GAMMA(τλ1)
                             SRλ[N] = (
-                                         ((float(GAML[intcz]) + float(GAMR[intcz])) / (2.0 * (1.0 - refl * float(SBAR))))
+                                         ((float(GAML[intcz]) + float(GAMR[intcz])) / (2.0 * (1.0 - albedo * float(SBAR))))
                                          -
                                          exp(-float(τλ1) * airms)
                                      ) * cz * Sλ[N] * AR2 / 1000.0
@@ -1387,10 +1539,24 @@ function solrad(;
                         if N > 11
                             SRλ[N] = 0.0u"mW / cm^2 / nm"
                         else
-                            I = round(Int, (ustrip(Z) + 5) / 5)
+                            # The option iuv = false has caused the program to enter this section which
+                            # computes scattered radiation (SRλ) for 290 nm to 360 nm using a theory
+                            # of radiation scattered from a Rayleigh (molecular) atmosphere with
+                            # ozone absorption. The functions needed for the computation are stored
+                            # as FD(N,I) and FDQ(N,I) where N is the wavelength index and I is
+                            # (zenith angle + 5)/5 rounded off to the nearest integer value.
+                            # The arrays FD and FDQ are for sea level (P = 1013 mb).
+                            B = ustrip(Z) / 5
+                            IA = trunc(Int, B)
+                            C = B - IA
+                            if C > 0.5
+                                I = IA + 2
+                            else
+                                I = IA + 1
+                            end
                             FDAV = FD[N, I]
                             FDQDAV = FDQ[N, I]
-                            SRλ[N] = (Sλ[N] / π) * (FDAV + FDQDAV * (refl / (1.0 - (refl * S[N])))) / 1000.0
+                            SRλ[N] = (Sλ[N] / π) * (FDAV + FDQDAV * (albedo / (1.0 - (albedo * s̄[N])))) / 1000.0
                             SRλ[N] *= AR2
                         end
                     end
@@ -1414,97 +1580,170 @@ function solrad(;
                         GRINT[N] = GRINT[N-1] + (Δλ * GRλ[N-1]) + (0.5 * Δλ * (GRλ[N] - GRλ[N-1]))
                     end
                 end
+                GRλs[step, :] .= GRλ
+                DRRλs[step, :] .= DRRλ
+                DRλs[step, :] .= DRλ
+                SRλs[step, :] .= SRλ
+                GRs[step] = GRINT[nmax]
+                DRRs[step] = DRRINT[nmax]
+                DRs[step] = DRINT[nmax]
+                SRs[step] = SRINT[nmax]
             else # sunrise, sunset or long day
-
+                dazsun = missing
             end
             # Store into row `step`
-            GRλs[step, :] .= GRλ
-            DRRλs[step, :] .= DRRλ
-            DRλs[step, :] .= DRλ
-            SRλs[step, :] .= SRλ
-            GRs[step] = GRINT[nmax]
-            DRRs[step] = DRRINT[nmax]
-            DRs[step] = DRINT[nmax]
-            SRs[step] = SRINT[nmax]
             Zs[step] = Z
             ZSLs[step] = Zsl
+            AZIs[step] = dazsun
             DOYs[step] = d
             times[step] = t
-            Zs[Zs.>90u"°"] .= 90u"°"
             step += 1
         end
         HHs[i] = HH     # save today's sunrise hour angle
         tsns[i] = tsn   # save today's time of sunrise
     end
     return (
-        Zenith=Zs,
-        ZenithSlope=ZSLs,
-        HHsr=HHs,
-        tsn=tsns,
-        doy=DOYs,
-        hour=times,
-        Rayleigh=DRRs .* (10u"W/m^2" / 1u"mW/cm^2"),
-        Direct=DRs .* (10u"W/m^2" / 1u"mW/cm^2"),
-        Scattered=SRs .* (10u"W/m^2" / 1u"mW/cm^2"),
-        Global=GRs .* (10u"W/m^2" / 1u"mW/cm^2"),
-        λ=Iλ,
-        λRayleigh=DRRλs .* (10u"W/m^2" / 1u"mW/cm^2"),
-        λDirect=DRλs .* (10u"W/m^2" / 1u"mW/cm^2"),
-        λScattered=SRλs .* (10u"W/m^2" / 1u"mW/cm^2"),
-        λGlobal=GRλs .* (10u"W/m^2" / 1u"mW/cm^2"),
+        zenith_angle = Zs,
+        zenith_slope_angle = ZSLs,
+        azimuth_angle = AZIs,
+        hour_angle_sunrise = HHs,
+        hour_solar_noon = tsns,
+        day_of_year = DOYs,
+        hour = times,
+        rayleigh_total = DRRs .* (10u"W/m^2" / 1u"mW/cm^2"),
+        direct_total = DRs .* (10u"W/m^2" / 1u"mW/cm^2"),
+        diffuse_total = SRs .* (10u"W/m^2" / 1u"mW/cm^2"),
+        global_total = GRs .* (10u"W/m^2" / 1u"mW/cm^2"),
+        wavelength = Iλ,
+        rayleigh_spectra = DRRλs .* (10u"W/m^2" / 1u"mW/cm^2"),
+        direct_spectra = DRλs .* (10u"W/m^2" / 1u"mW/cm^2"),
+        diffuse_spectra = SRλs .* (10u"W/m^2" / 1u"mW/cm^2"),
+        global_spectra = GRλs .* (10u"W/m^2" / 1u"mW/cm^2"),
     )
 end
 
 function get_longwave(;
-    elev::Quantity,
+    elevation::Quantity,
     rh::Real,
     tair::Quantity,
     tsurf::Quantity,
     slep::Real,
     sle::Real,
     cloud::Real,
-    viewf::Real,
-    shade::Real
+    viewfactor::Real,
+    shade::Real,
+    swinbank::Bool=false
 )
     # Longwave radiation (handle both IR modes)
     # Constants
     σ = Unitful.uconvert(u"W/m^2/K^4", Unitful.σ) # Stefan-Boltzmann constant, W/m^2/K^4
     #σ = u"W/m^2/K^4"(0.8126e-10u"cal/minute/cm^2/K^4") # value used in NicheMapR (sigp)
-    P_atmos = get_pressure(elev)
-    wet_air_out = wet_air(u"K"(tair); rh=rh, P_atmos=P_atmos)
+    P_atmos = get_pressure(elevation)
+    wet_air_out = wet_air(u"K"(tair); rh, P_atmos)
 
     # Atmospheric radiation
-    P_vap = wet_air_out.P_vap
-    arad = u"W/m^2"(ustrip(1.72 * (ustrip(u"kPa"(P_vap))/ustrip(u"K"(tair))) ^ (1.0/7.0)) * σ * (u"K"(tair)) ^ 4) # Campbell and Norman 1998 eq. 10.10 to get emissivity of sky
-    #arad = ((0.0000092 * (u"K"(tair))^2) * σ * (u"K"(tair))^4) / 1u"K^2" # Swinbank, Eq. 10.11 in Campbell and Norman 1998
-
+    if swinbank
+        # Swinbank, Eq. 10.11 in Campbell and Norman 1998
+        arad = ((9.2e-6 * (u"K"(tair))^2) * σ * (u"K"(tair))^4) / 1u"K^2" 
+    else
+        # Campbell and Norman 1998 eq. 10.10 to get emissivity of sky
+        P_vap = wet_air_out.P_vap
+        arad = u"W/m^2"(ustrip(1.72 * (ustrip(u"kPa"(P_vap)) / ustrip(u"K"(tair) + 0.01u"K"))^(1.0 / 7.0)) * σ * (u"K"(tair) + 0.01u"K")^4.0) 
+    end
     # Cloud radiation temperature (shade approximation, TAIR - 2°C)
-    crad = σ * slep * (u"K"(tair) - 2u"K")^4
+    crad = σ * slep * (u"K"(tair) - 2.0u"K")^4.0
 
     # Hillshade radiation temperature (approximated as air temperature)
-    hrad = σ * slep * (u"K"(tair))^4
+    hrad = σ * slep * (u"K"(tair))^4.0
 
     # Ground surface radiation temperature
-    srad = σ * sle * (u"K"(tsurf))^4
+    srad = σ * sle * (u"K"(tsurf))^4.0
 
     # Clear sky fraction
     clr = 1.0 - cloud / 100.0
     clear = arad * clr
-    clod = crad * (cloud / 100)
+    clod = crad * (cloud / 100.0)
     qradsk = (clear + clod) * ((100 - shade) / 100.0)
     qradvg = (shade / 100.0) * hrad
     qradgr = ((100.0 - shade) / 100.0) * srad + (shade / 100.0) * hrad
     qradhl = hrad
-    qrad = (qradsk + qradvg) * viewf + qradhl * (1.0 - viewf) - qradgr
-    tsky = (((qradsk + qradvg) * viewf + qradhl * (1.0 - viewf)) / σ)^0.25
-    return(
-        Tsky = tsky,
-        Qrad = qrad,
-        Qrad_sky = qradsk,
-        Qrad_veg = qradvg,
-        Qrad_ground = qradgr,
-        Qrad_hill = qradhl
-        )
+    qrad = (qradsk + qradvg) * viewfactor + qradhl * (1.0 - viewfactor) - qradgr
+    tsky = (((qradsk + qradvg) * viewfactor + qradhl * (1.0 - viewfactor)) / σ)^0.25
+    return (
+        Tsky=tsky,
+        Qrad=qrad,
+        Qrad_sky=qradsk,
+        Qrad_veg=qradvg,
+        Qrad_ground=qradgr,
+        Qrad_hill=qradhl
+    )
 end
 
-#end
+"""
+    cloud_adjust_radiation(cloud, D_cs, B_cs, zenith, doy; a=0.25, b=0.5, gamma=1.0)
+
+Compute global (G), diffuse (D), and direct-beam (B) solar on a horizontal surface
+given cloud cover fraction `cloud` (0–1), clear-sky diffuse `D_cs` and direct `B_cs`,
+solar zenith angle `zenith` (radians), and day-of-year `doy`.
+
+- Ångström scaling: G = (a + b*S) * (D_cs + B_cs), with S ≈ (1 - cloud)^gamma
+- Diffuse fraction via Erbs (uses extraterrestrial horizontal irradiance) via
+    a clearness index (Maxwwell 1987) which is the ratio of global to extraterrestrial
+    irradiance on a horizontal plane
+
+Returns `(G, D, B)`; works with arrays but needs to not use 'similar' if to work with
+    scalars.
+
+Reference
+Maxwell, E. L., "A Quasi-Physical Model for Converting Hourly
+           Global Horizontal to Direct Normal Insolation", Technical
+           Report No. SERI/TR-215-3087, Golden, CO: Solar Energy Research
+           Institute, 1987.
+"""
+function cloud_adjust_radiation(cloud, D_cs, B_cs, zenith, doy; a=0.36, b=0.64, gamma=1.0)
+    # Solar geometry
+    cosz     = cos.(zenith)
+    cosz_pos = max.(cosz, 0.0)
+
+    # 1) Extraterrestrial horizontal irradiance (W/m²)
+    I_sc  = 1367.0u"W/m^2"
+    E0    = 1.00011 .+ 0.034221*cosd.(360.0 .* (doy .- 1) ./ 365.0) .+
+                     0.00128*sind.(360.0 .* (doy .- 1) ./ 365.0) .+
+                     0.000719*cosd.(2 .* 360.0 .* (doy .- 1) ./ 365.0) .+
+                     0.000077*sind.(2 .* 360.0 .* (doy .- 1) ./ 365.0)
+    G0h   = I_sc .* E0 #.* cosz_pos  # on horizontal; 0 at night
+
+    # 2) Ångström–Prescott scaling of clear-sky global by cloud cover
+    S     = (1 .- cloud).^gamma                 # approx. sunshine fraction
+    T     = a .+ b .* S                         # transmittance
+    G_cs  = D_cs .+ B_cs                        # clear-sky global
+    G     = max.(T .* G_cs, 0.0u"W/m^2") #.* (cosz_pos .> 0)  # zero at night
+
+    # 3) Split G into diffuse/direct using Erbs diffuse fraction vs clearness index K_t
+    ϵ     = 1e-9u"W/m^2"
+    Kt    = G ./ max.(G0h, ϵ)
+    Kt    = clamp.(Kt, 0.0, 1.2)
+
+    Fd = similar(Kt) # diffuse fraction
+    @inbounds for i in eachindex(Kt)
+        if Kt[i] <= 0.22
+            Fd[i] = 1 - 0.09*Kt[i]
+        elseif Kt[i] <= 0.80
+            Fd[i] = 0.9511 - 0.1604*Kt[i] + 4.388*Kt[i]^2 - 16.638*Kt[i]^3 + 12.336*Kt[i]^4
+        else
+            Fd[i] = 0.165
+        end
+    end
+    Fd = clamp.(Fd, 0.0, 1.0)
+
+    D = Fd .* G
+    B = G .- D
+
+    # Zero everything at night
+    # night = (cosz_pos .== 0)
+    # D[night] .= 0.0u"W/m^2"
+    # B[night] .= 0.0u"W/m^2"
+    # G[night] .= 0.0u"W/m^2"
+
+    return G, D, B
+end

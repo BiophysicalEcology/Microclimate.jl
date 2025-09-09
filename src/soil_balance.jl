@@ -12,20 +12,20 @@ function soil_energy_balance!(
     #dT_K = dT .* 60 .* u"K/minute"  # convert Float64 time back to unitful
     # extract prameters
     p = i.params
-    (; ruf, pctwet, sle, slep, refl, viewf, elev, slope, shade, dep, refhyt, d0, zh, tdeep, nodes, soilprops, θ_soil, runmoist) = p
+    (; roughness_height, pctwet, sle, slep, albedo, viewfactor, elevation, slope, shade, depths, reference_height, d0, zh, tdeep, nodes, soilprops, θ_soil, runmoist) = p
     # extract layer property vectors
     sl = i.soillayers
     (; depp, wc, c) = sl
     
-    sabnew = 1.0 - refl
+    sabnew = 1.0 - albedo
 
     # check for unstable conditions of ground surface temperature
     T .= clamp.(T, (-81.0+273.15)u"K", (85.0+273.15)u"K")
 
-    N = length(dep)
+    N = length(depths)
 
     # get soil properties
-    λ_b, cp_b, ρ_b = soil_properties(T, θ_soil, nodes, soilprops, elev, runmoist, false)
+    λ_b, c_p_b, ρ_b = soil_properties(T, θ_soil, nodes, soilprops, elevation, runmoist, false)
 
     # Get environmental data at time t
     f = i.forcing
@@ -33,16 +33,16 @@ function soil_energy_balance!(
     vel = max(0.1u"m/s", f.VELt(ustrip(t)))
     zenr = min(90u"°", u"°"(round(f.ZENRt(ustrip(t)), digits=3)))
     solr = max(0.0u"W/m^2", f.SOLRt(ustrip(t)))
-    cloud = max(0.0, f.CLDt(ustrip(t)))
-    rh = max(0.0, f.RHt(ustrip(t)))
+    cloud = clamp(f.CLDt(ustrip(t)), 0.0, 100.0)
+    rh = clamp(f.RHt(ustrip(t)), 0.0, 100.0)
     zslr = min(90u"°", f.ZSLt(ustrip(t)))
 
     T[N] = tdeep # set boundary condition of deep soil temperature
 
-    depp[1:N] = dep
+    depp[1:N] = depths
     # Compute soil layer properties
     @inbounds for i in 1:N
-        rcsp = ρ_b[i] * cp_b[i]
+        rcsp = ρ_b[i] * c_p_b[i]
         if i == 1
             wc[i] = rcsp * depp[2] / 2.0
             sok = λ_b[1]
@@ -55,10 +55,6 @@ function soil_energy_balance!(
     end
 
     # Solar radiation
-    if cloud > 0.0
-        # Angstrom formula (formula 5.33 on P. 177 of "Climate Data and Resources" by Edward Linacre 1992
-        solr = solr * (0.36 + 0.64 * (1.0 - (cloud / 100.0))) # Angstrom formula (formula 5.33 on P. 177 of "Climate Data and Resources" by Edward Linacre 1992
-    end
     qsolar = sabnew * solr * ((100.0 - shade) / 100.0)
     if slope > 0 && zenr < 90u"°"
         cz = cosd(zenr)
@@ -68,14 +64,14 @@ function soil_energy_balance!(
 
     # Longwave radiation
     longwave_out = get_longwave(
-        elev = elev, 
+        elevation = elevation, 
         rh = rh, 
         tair = tair, 
         tsurf = T[1], 
         slep = slep, 
         sle = sle, 
         cloud = cloud, 
-        viewf = viewf,
+        viewfactor = viewfactor,
         shade = shade
         )
     qrad = longwave_out.Qrad
@@ -84,29 +80,29 @@ function soil_energy_balance!(
     qcond = c[1] * (T[2] - T[1])
 
     # Convection
-    profile_out = get_profile(
-        refhyt = refhyt,
-        ruf = ruf, 
+    profile_out = get_profile(;
+        reference_height,
+        z0 = roughness_height, 
         d0 = d0, 
         zh = zh, 
-        D0cm=u"°C"(T[1]), 
-        TAREF=u"°C"(tair), 
-        VREF=vel, 
-        ZEN=zenr, 
-        heights=[0.01] .* u"m", 
-        rh=rh, 
-        elev=elev
+        D0cm = u"°C"(T[1]), 
+        TAREF = u"°C"(tair), 
+        VREF = vel, 
+        ZEN = zenr, 
+        heights = [0.01] .* u"m", 
+        rh, 
+        elevation
         )
-    qconv = profile_out.QCONV
+    qconv = profile_out.qconv
     hc = max(abs(qconv / (T[1] - tair)), 0.5u"W/m^2/K")
-    P_atmos = get_pressure(elev)
+    P_atmos = get_pressure(elevation)
     
     # Evaporation
     wet_air_out = wet_air(u"K"(tair); rh=rh, P_atmos=P_atmos)
-    cp_air = wet_air_out.cp
+    c_p_air = wet_air_out.c_p
     ρ_air = wet_air_out.ρ_air
-    hd = (hc / (cp_air * ρ_air)) * (0.71 / 0.60)^0.666
-    qevap, gwsurf = evap(tsurf=u"K"(T[1]), tair=u"K"(tair), rh=rh, rhsurf=100.0, hd=hd, elev=elev, pctwet=pctwet, sat=false)
+    hd = (hc / (c_p_air * ρ_air)) * (0.71 / 0.60)^0.666
+    qevap, gwsurf = evap(tsurf=u"K"(T[1]), tair=u"K"(tair), rh=rh, rhsurf=100.0, hd=hd, elevation=elevation, pctwet=pctwet, sat=false)
 
     # Energy balance at surface
     dT[1] = (qsolar + qrad + qcond + qconv - qevap) / wc[1]
@@ -120,7 +116,7 @@ function soil_energy_balance!(
     #@. dT = ustrip.(u"K/minute", dT_K) ./ 60.0
 end
 
-function evap(;tsurf, tair, rh, rhsurf, hd, elev, pctwet, sat)
+function evap(;tsurf, tair, rh, rhsurf, hd, elevation, pctwet, sat)
     # Assumes all units are SI (Kelvin, Pascal, meters, seconds, kg, etc.)
 
     # Ground-level variables, shared via global or passed in as needed
@@ -133,7 +129,7 @@ function evap(;tsurf, tair, rh, rhsurf, hd, elev, pctwet, sat)
     tsurf = tsurf < u"K"(-81.0u"°C") ? u"K"(-81.0u"°C") : tsurf
 
     # Atmospheric pressure from elevation
-    P_atmos = get_pressure(elev)
+    P_atmos = get_pressure(elevation)
 
     # surface and air vapor densities
     ρ_vap_surf = wet_air(u"K"(tsurf); rh=rhsurf, P_atmos=P_atmos).ρ_vap
@@ -175,7 +171,7 @@ function soil_water_balance(;
     depth = [0.0, 0.025, 0.05, 0.1, 0.15, 0.2, 0.3, 0.5, 1.0, 2.0]u"m",
     T10 = fill(293.15u"K", div(M+2,2)),
     dt = 360u"s",
-    elev = 0.0u"m",
+    elevation = 0.0u"m",
     L = [0, 0, 8.2, 8.0, 7.8, 7.4, 7.1, 6.4, 5.8, 4.8, 4.0, 1.8, 0.9, 0.6, 0.8, 0.4 ,0.4, 0, 0]*1e4u"m/m^3", # root density, m m-3
     rw = 2.5e+10u"m^3/kg/s", # resistance per unit length of root, m3 kg-1 s-1
     pc = -1500.0u"J/kg", # critical leaf water potential for stomatal closure, J kg-1
@@ -184,7 +180,7 @@ function soil_water_balance(;
     r1 = 0.001u"m", # root radius, m
     lai = 0.1,
     im = 1e-6u"kg/m^2/s", # maximum overall mass balance error allowed, kg m-2 s-1
-    maxcount=500,
+    moist_count=500,
     ml::MoistLayers
 )
 (; P, Z, V, W, WN, K, H, T, rh_soil, ψ_soil, ψ_root, PR, PP, B1, N, N1, WS,
@@ -207,7 +203,7 @@ function soil_water_balance(;
     # N1 = zeros(Float64, M+1)
     # WS = zeros(Float64, M+1)
 
-    P_atmos = get_pressure(elev)
+    P_atmos = get_pressure(elevation)
 
     # Constants
     MW = 0.01801528u"kg/mol" # molar mass of water, kg/mol
@@ -298,7 +294,7 @@ function soil_water_balance(;
     K[1] = 0.0u"kg*s/m^3"
 
     # Evapotranspiration
-    EP = exp(-0.82 * lai) * ET # partition potential evaporation from potential evapotranspiration, EQ12.30
+    EP = exp(-0.82 * ustrip(lai)) * ET # partition potential evaporation from potential evapotranspiration, EQ12.30
     TP = ET - EP # now get potential transpiration
 
     # Plant water uptake
@@ -316,7 +312,7 @@ function soil_water_balance(;
 
     # Newton-Raphson to estimate PL
     counter = 0
-    while counter < maxcount
+    while counter < moist_count
         if PL > PB
             PL = PB - TP * (RB + rl) # variation on EQ11.18
         end
@@ -349,7 +345,7 @@ function soil_water_balance(;
     # F2 = zeros(M + 1)u"J/kg"
     # DP = zeros(M + 1)u"J/kg"
     counter = 0
-    while counter < maxcount
+    while counter < moist_count
         SE = 0.0u"kg/m^2/s"
         counter += 1
         @inbounds for i in 2:M
@@ -429,4 +425,207 @@ function soil_water_balance(;
         Δ_H2O = SW,
         drain = Unitful.gn * K[M]
     ) 
+end
+
+function get_soil_water_balance(;
+    reference_height,
+    roughness_height,
+    zh,
+    d0,
+    TAIRs,
+    VELs,
+    RHs,
+    ZENRs,
+    T0,
+    heights,
+    elevation,
+    pool,
+    θ_soil0_b,
+    PE,
+    KS,
+    BB,
+    BD,
+    DD,
+    depths,
+    moist_step,
+    L,
+    rw,
+    pc,
+    rl,
+    sp,
+    r1,
+    lai,
+    im,
+    moist_count,
+    moistlayers,
+    niter_moist,
+    pctwet,
+    step,
+    maxpool,
+    )
+    # compute scalar profiles
+    profile_out = get_profile(;
+        reference_height,
+        z0=roughness_height,
+        zh,
+        d0,
+        TAREF = TAIRs[step],
+        VREF = VELs[step],
+        rh = RHs[step],
+        D0cm = u"°C"(T0[1]),  # top layer temp
+        ZEN = ZENRs[step],
+        heights,
+        elevation,
+        warn=true
+    )
+
+    # convection
+    qconv = profile_out.qconv
+
+    # evaporation
+    P_atmos = get_pressure(elevation)
+    rh_loc = min(0.99, profile_out.humidities[2] / 100)
+    hc = max(abs(qconv / (T0[1] - u"K"(TAIRs[step]))), 0.5u"W/m^2/K")
+    wet_air_out = wet_air(u"K"(TAIRs[step]); rh=RHs[step], P_atmos=P_atmos)
+    c_p_air = wet_air_out.c_p
+    ρ_air = wet_air_out.ρ_air
+    hd = (hc / (c_p_air * ρ_air)) * (0.71 / 0.60)^0.666
+    qevap, gwsurf = evap(tsurf=u"K"(T0[1]), tair=u"K"(TAIRs[step]), rh=RHs[step], rhsurf=100.0, hd=hd, elevation=elevation, pctwet=pctwet, sat=true)
+    λ_evap = get_λ_evap(T0[1])
+    EP = max(1e-7u"kg/m^2/s", qevap / λ_evap) # evaporation potential, mm/s (kg/m2/s)
+
+    if pool > 0.0u"kg/m^2" # surface is wet - saturate it for infiltration
+        θ_soil0_b[1] = 1 - BD[1] / DD[1]
+    end
+    # run infiltration algorithm
+    infil_out = soil_water_balance(;
+        PE,
+        KS,
+        BB,
+        BD,
+        DD,
+        rh_loc,
+        θ_soil=θ_soil0_b,
+        ET=EP,
+        T10=T0,
+        depth=depths,
+        dt=moist_step,
+        elevation,
+        L,
+        rw,
+        pc,
+        rl,
+        sp,
+        r1,
+        lai,
+        im,
+        moist_count,
+        ml=moistlayers
+    )
+    θ_soil0_b = infil_out.θ_soil
+    surf_evap = max(0.0u"kg/m^2", infil_out.evap)
+    Δ_H2O = max(0.0u"kg/m^2", infil_out.Δ_H2O)
+    pool = clamp(pool - Δ_H2O - surf_evap, 0.0u"kg/m^2", maxpool) # pooling surface water
+    if pool > 0.0u"kg/m^2" # surface is wet - saturate it for infiltration
+        θ_soil0_b[1] = 1 - BD[1] / DD[1]
+    end
+    for _ in 1:(niter_moist-1)
+        infil_out = soil_water_balance(;
+            PE,
+            KS,
+            BB,
+            BD,
+            DD,
+            rh_loc=rh_loc,
+            θ_soil=θ_soil0_b,
+            ET=EP,
+            T10=T0,
+            depth=depths,
+            dt=moist_step,
+            elevation=elevation,
+            L,
+            rw,
+            pc,
+            rl,
+            sp,
+            r1,
+            lai,
+            im,
+            moist_count,
+            ml=moistlayers
+        )
+        θ_soil0_b = infil_out.θ_soil
+        surf_evap = max(0.0u"kg/m^2", infil_out.evap)
+        Δ_H2O = max(0.0u"kg/m^2", infil_out.Δ_H2O)
+        pool = clamp(pool - Δ_H2O - surf_evap, 0.0u"kg/m^2", maxpool)
+        if pool > 0.0u"kg/m^2"
+            θ_soil0_b[1] = 1 - BD[1] / DD[1]
+        end
+    end
+    pctwet = clamp(abs(surf_evap / (EP * moist_step) * 100), 0, 100)
+
+    return(
+    infil_out,
+    pctwet,
+    pool,
+    θ_soil0_b
+    )
+end
+
+function phase_transition(
+    T::Vector,       # current temps at nodes
+    T_past::Vector,  # temps at previous step
+    ∑phase::Vector,  # accumulated latent heat
+    θ::Vector,       # soil moisture by layer
+    depths::Vector      # soil depth boundaries (cm)
+)
+    HTOFN = 333500.0u"J/kg" # latent heat of fusion of waterper unit mass
+    c_p = 4186.0u"J/kg/K" # specific heat of water
+    nodes = length(depths)
+    layermass = zeros(Float64, nodes)u"kg"
+    qphase = zeros(Float64, nodes)u"J"
+    meanT = similar(T)
+    meanTpast = similar(T)
+    for j in 1:nodes
+        if θ[j] > 0.0
+            if j < nodes
+                meanT[j] = (T[j] + T[j+1]) / 2.0
+                meanTpast[j] = (T_past[j] + T_past[j+1]) / 2.0
+            else
+                meanT[j] = T[j]
+                meanTpast[j] = T_past[j]
+            end
+
+            if meanTpast[j] > 273.15u"K" && meanT[j] <= 273.15u"K"
+                if j < nodes
+                    layermass[j] = u"m"(depths[j+1] - depths[j]) * 1000.0u"kg/m" * θ[j]
+                else
+                    layermass[j] = u"m"(depths[j] + 100.0u"cm" - depths[j]) * 1000.0u"kg/m" * θ[j]
+                end
+
+                qphase[j] = (meanTpast[j] - meanT[j]) * layermass[j] * c_p
+                ∑phase[j] += qphase[j]
+
+                if ∑phase[j] > HTOFN * layermass[j]
+                    # Fully frozen
+                    T[j] = 273.14u"K"
+                    if j < nodes
+                        T[j+1] = 273.14u"K"
+                    end
+                    ∑phase[j] = 0.0u"J"
+                else
+                    # In the process of freezing
+                    T[j] = 273.16u"K"
+                    if j < nodes
+                        T[j+1] = 273.16u"K"
+                    end
+                end
+            end
+        end
+    end
+    return (;
+        ∑phase,
+        qphase,
+        T
+    )
 end
