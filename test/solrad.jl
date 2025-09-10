@@ -76,8 +76,7 @@ cloud_covers = hourly_vars(
 zenith_angle = solrad_out.zenith_angle
 zenith_angle[zenith_angle.>90u"°"] .= 90u"°"
 azimuth_angle = solrad_out.azimuth_angle
-plot(azimuth_angle)
-plot(zenith_angle)
+
 hour_angle_sunrise = solrad_out.hour_angle_sunrise
 hour_solar_noon = solrad_out.hour_solar_noon
 global_total = solrad_out.global_total

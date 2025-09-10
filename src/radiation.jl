@@ -848,9 +848,9 @@ function dchxy(TAU1::Float64, CFA::Vector{Float64}, NCASE::Int)
     end
 
     if NPRT != 0
-        Printf.printf("%12.5E %12.5E %12.5E\n", CFA[1], CFA[2], CFA[3])
-        Printf.printf("%12.5E\n", TAU1)
-        Printf.printf("\n")
+        #Printf.printf("%12.5E %12.5E %12.5E\n", CFA[1], CFA[2], CFA[3])
+        #Printf.printf("%12.5E\n", TAU1)
+        #Printf.printf("\n")
         @inbounds @simd for j in 1:KMX
             TEMA = 1.0 / RTK[j]
             # (In the FORTRAN code, TEMA is calculated but not used or printed here)
