@@ -9,3 +9,4 @@ end
 
 # Tests
 @safetestset "solar radiation" begin include("Solrad_tests.jl") end
+@safetestset "monthly simulation" begin include("micro_testrun_monthly.jl") end
