@@ -55,7 +55,7 @@ micro_out = runmicro(;
     soil_saturation_moisture = (CSV.File("$testdir/data/init_monthly/soilprop.csv")[1, 1][3]) * 1.0u"m^3/m^3", # volumetric water content at saturation (0.1 bar matric potential) (m3/m3)
     # daily environmental vectors
     albedos = (DataFrame(CSV.File("$testdir/data/init_monthly/REFLS.csv"))[:, 2] * 1.0), # substrate albedo (decimal %)
-    shades = (DataFrame(CSV.File("$testdir/data/init_monthly/MINSHADES.csv"))[:, 2] * 1.0), # daily shade (%)
+    shades = (DataFrame(CSV.File("$testdir/data/init_monthly/Minshades.csv"))[:, 2] * 1.0), # daily shade from vegetation (%)
     pctwets = (DataFrame(CSV.File("$testdir/data/init_monthly/PCTWET.csv"))[:, 2] * 1.0),
     sles = (DataFrame(CSV.File("$testdir/data/init_monthly/SLES.csv"))[:, 2] * 1.0), # - surface emissivity
     daily_rainfall = ((DataFrame(CSV.File("$testdir/data/init_monthly/rain.csv"))[:, 2] * 1.0) / 1000)u"kg/m^2", # monthly total rainfall
