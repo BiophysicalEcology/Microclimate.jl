@@ -1,8 +1,7 @@
 using Microclimate
 using Unitful
-using Plots
 using CSV, DataFrames, Dates
-using test
+using Test
 
 # read in output from NicheMapR
 soil_temperature_nmr = (DataFrame(CSV.File("test/data/soil_FordDryLake.csv"))[:, 5:14]) .* u"°C"
