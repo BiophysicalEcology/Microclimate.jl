@@ -29,9 +29,9 @@ longlat = (DataFrame(CSV.File("$testdir/data/init_monthly/longlat.csv"))[:, 2] *
 days = [15, 46, 74, 105, 135, 166, 196, 227, 258, 288, 319, 349]
 LAIs = fill(0.1, length(days))
 depths = ((DataFrame(CSV.File("$testdir/data/init_monthly/DEP.csv"))[:, 2]) / 100.0)u"m"
-heights = [1.0,]u"cm" # air nodes for temperature, wind speed and humidity profile
+heights = [0.01]u"m" # air nodes for temperature, wind speed and humidity profile
 
-micro_out = runmicro(;
+keywords = (;
     # locations, times, depths and heights
     latitude = longlat[2]*1.0u"°",
     days, # days of year for solrad
@@ -81,6 +81,13 @@ micro_out = runmicro(;
     iuv = Bool(Int(microinput[:IUV])), # this makes it take ages if true!
 )
 
+@time micro_out = runmicro(; keywords...);
+using ProfileView
+using Cthulhu
+@profview 1+1
+@aprofview runmicro(; keywords...);
+descend_clicked()
+
 # subset NicheMapR predictions
 vel1cm_nmr = collect(metout_nmr[:, 8]) .* 1u"m/s"
 vel2m_nmr = collect(metout_nmr[:, 9]) .* 1u"m/s"
@@ -101,7 +108,7 @@ tskyC_nmr = collect(metout_nmr[:, 15]) .* u"°C"
     @test micro_out.wind_speed[:, 3] ≈ vel2m_nmr atol=1e-6u"m/s"
     #@test u"K".(micro_out.air_temperature) ≈ ta1cm_nmr atol=1u"K" # TODO make this better!
     @test u"K".(micro_out.air_temperature[:, 3]) ≈ ta2m_nmr atol=1e-5u"K"
-    @test micro_out.sky_temperature ≈ u"K".(tskyC_nmr) atol=1u"K" # TODO make this better
+    @test micro_out.sky_temperature ≈ u"K".(tskyC_nmr) atol=1.0u"K" # TODO make this better
     #@test all(isapprox.(micro_out.soil_temperature, u"K".(Matrix(soiltemps_nmr)); atol=0.5"K"))
     #@test all(isapprox.(micro_out.soil_temperature[:, 2:10], u"K".(Matrix(soiltemps_nmr[:, 2:10])); atol=0.5u"K")) # TODO make better!
 end  

@@ -5,18 +5,14 @@ function soil_properties(
     T_soil::AbstractVector{<:Quantity},
     θ_soil::AbstractVector{<:Real},
     nodes::AbstractVector{<:Real},
-    soilprops::Matrix{<:Any},
+    soilprops::NamedTuple,
     elevation::Quantity,
     runmoist::Bool,
     runsnow::Bool,
 )
     NON = length(nodes)
     numtyps = findfirst(nodes .== 0.0) - 1
-    θ_sat = soilprops[:, 2]
-    λ_m = soilprops[:, 3]
-    cp_m = soilprops[:, 4]
-    ρ_m = u"kg/m^3".(soilprops[:, 5])
-    ρ_dry = u"kg/m^3".(soilprops[:, 1])
+    (; ρ_dry, θ_sat, λ_m, cp_m, ρ_m) = soilprops
     λ_b = fill(λ_m[1], NON)
     cp_b = fill(cp_m[1], NON)
     ρ_b = fill(ρ_m[1], NON)

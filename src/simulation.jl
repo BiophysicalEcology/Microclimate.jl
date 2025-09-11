@@ -96,7 +96,7 @@ function runmicro(;
     hours = collect(0.:1:24.), # hour of day for solrad
     reference_height = 2u"m", # reference height of weather data (air temperature, wind speed, humidity)
     depths = [0.0, 2.5, 5.0, 10.0, 15.0, 20.0, 30.0, 40.0, 50.0, 100.0, 200.0]u"cm", # soil nodes - keep spacing close near the surface
-    heights = [1.0, ]u"cm", # air nodes for temperature, wind speed and humidity profile
+    heights = [0.01]u"m", # air nodes for temperature, wind speed and humidity profile
     # solar radiation
     cmH2O = 1, # precipitable cm H2O in air column, 0.1 = very dry; 1 = moist air conditions; 2 = humid, tropical conditions (note this is for the whole atmospheric profile, not just near the ground)
     ϵ = 0.0167238, # orbital eccentricity of Earth
@@ -195,18 +195,14 @@ function runmicro(;
     numnodes_b = numnodes_a * 2 - 2 # number of soil nodes for soil moisture calcs
     nodes_day = zeros(numnodes_a, ndays) # array of all possible soil nodes
     nodes_day[1, 1:ndays] .= numnodes_a # deepest node for first substrate type
-    # Create an empty 10×5 matrix that can store any type (including different units)
-    soilprops = Matrix{Any}(undef, numnodes_a, 5)
-    # Fill row 1 (top layer) with the defined values
-    soilprops[1, 1] = soil_bulk_density
-    soilprops[1, 2] = soil_saturation_moisture
-    soilprops[1, 3] = soil_mineral_conductivity
-    soilprops[1, 4] = soil_mineral_heat_capacity
-    soilprops[1, 5] = soil_mineral_density
-    # Copy the same properties to all other layers
-    for i in 2:numnodes_a
-        soilprops[i, :] .= soilprops[1, :]
-    end
+    # Create vectors of soil properties
+    soilprops = (; 
+        ρ_dry =  fill(soil_bulk_density, numnodes_a),
+        θ_sat = fill(soil_saturation_moisture, numnodes_a),
+        λ_m = fill(soil_mineral_conductivity, numnodes_a),
+        cp_m = fill(soil_mineral_heat_capacity, numnodes_a),
+        ρ_m = fill(soil_mineral_density, numnodes_a),
+    )
     ∑phase = zeros(Float64, numnodes_a)u"J" # zero phase transition for liquid water in soil
 
     # compute clear sky solar radiation

@@ -1,14 +1,13 @@
 module Microclimate
 
-using FluidProperties: wet_air, dry_air, vapour_pressure, get_λ_evap, waterprop, get_pressure
-
 using OrdinaryDiffEq, Interpolations, Statistics, Dates
-
 using Unitful, UnitfulMoles, ModelParameters, DelimitedFiles
-
-using Unitful: °, rad, °C#, K, Pa, kPa, MPa, J, kJ, W, L, g, kg, cm, m, s, hr, d, mol, mmol, μmol, σ, R
-
 using SpecialFunctions, StaticArrays
+
+using FluidProperties: wet_air, dry_air, vapour_pressure, get_λ_evap, waterprop, get_pressure
+using Unitful: °, rad, °C#, K, Pa, kPa, MPa, J, kJ, W, L, g, kg, cm, m, s, hr, d, mol, mmol, μmol, σ, R
+using Interpolations: AbstractInterpolation
+
 
 export sinec!, vsine, hourly_vars
 
@@ -26,6 +25,7 @@ export MicroParams, MicroForcing
 
 export runmicro
 
+
 include("constants.jl")
 include("landscape.jl")   
 include("interpolation.jl")
@@ -34,6 +34,7 @@ include("radiation.jl")
 include("boundary_layer.jl")
 include("soil_balance.jl")
 include("simulation.jl")
+
 
 function __init__()
     Unitful.register(Microclimate)
