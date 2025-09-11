@@ -28,13 +28,15 @@ function soil_properties(
     p_a0 = 101325.0u"Pa"
     p_a = get_pressure(elevation)
 
+    ϵ(λ_λ, λ_f) = 2.0 / (3.0 * (1.0 + g_a * (λ_λ / λ_f - 1.0))) + 1.0 / (3.0 * (1.0 + g_c * (λ_λ / λ_f - 1.0)))
+
     ii, ij = runsnow ? (9, 8) : (1, 0)
     for i in ii:NON
         j = searchsortedlast(nodes, i - ij)
         j = min(j, numtyps)
 
         T_K = T_soil[i]
-        T_C = ustrip(T_K)-273.15
+        T_C = ustrip(u"°C", T_K)
 
         m = runsnow ? θ_soil[i - 8] : θ_soil[i]
         θj = θ_soil[j]
@@ -54,7 +56,7 @@ function soil_properties(
         ρ_hat = ρ_hat0 * (p_a / p_a0) * (273.15 / T_K)
         λ_vap = (45144.0 - 48.0 * T_C)u"J/mol"
 
-        e_a = wet_air(T_K; rh = 99.0, P_atmos = p_a).P_vap
+        e_a = wet_air(T_K; rh=99.0, P_atmos=p_a).P_vap
         e_a1 = wet_air(T_K - 1u"K"; rh = 99.0, P_atmos = p_a).P_vap
         e_a2 = wet_air(T_K + 1u"K"; rh = 99.0, P_atmos = p_a).P_vap
         ∇x = (e_a2 - e_a1) / 2.0
@@ -67,11 +69,8 @@ function soil_properties(
         λ_g = λ_a + λ_vap * ∇x * f_w * ρ_hat * D_v / (p_a - e_a)
         λ_f = λ_g + f_w * (λ_w - λ_g)
 
-        ϵ = λ_λ -> 2.0 / (3.0 * (1.0 + g_a * (λ_λ / λ_f - 1.0))) +
-                      1.0 / (3.0 * (1.0 + g_c * (λ_λ / λ_f - 1.0)))
-
-        λ_b[i] = (θ * ϵ(λ_w) * λ_w + ϕ_m * ϵ(λ_m[j]) * λ_m[j] + ϕ_g * ϵ(λ_g) * λ_g) /
-                 (θ * ϵ(λ_w) + ϕ_m * ϵ(λ_m[j]) + ϕ_g * ϵ(λ_g))
+        λ_b[i] = (θ * ϵ(λ_w, λ_f) * λ_w + ϕ_m * ϵ(λ_m[j], λ_f) * λ_m[j] + ϕ_g * ϵ(λ_g, λ_f) * λ_g) /
+                 (θ * ϵ(λ_w, λ_f) + ϕ_m * ϵ(λ_m[j], λ_f) + ϕ_g * ϵ(λ_g, λ_f))
     end
 
     #HTOFN = 333500.0  # J/kg

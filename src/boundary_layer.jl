@@ -24,7 +24,10 @@ function get_profile(;
     heights_extra = nothing
     if minimum(heights) > reference_height
         addheight = true
-        heights = vcat([0.01]u"m", heights)
+        newheights = Vector{eltype(heights)}(length(heights) + 1)
+        newheights[1] = 0.01u"m"
+        newheights[2:end] .= heights
+        heights = newheights
     end
 
     if maximum(heights) >= reference_height && warn
@@ -44,10 +47,13 @@ function get_profile(;
     d0_cm = u"cm"(d0)
     V = u"cm/minute"(VREF)
     # define air heights
-    AIRDP = vcat(z, reverse(u"cm".(heights)))
+    # TODO: move this further our the allocation is expensive
+    NAIR = length(heights) + 1
+    AIRDP = Vector{typeof(z)}(undef, NAIR)
+    AIRDP[1] = z
+    AIRDP[end:-1:2] .= u"cm".(heights)
     ZZ = AIRDP
-    NAIR = length(AIRDP)
-    VV = (zeros(Float64, NAIR)) .* 1u"cm/minute" # output wind speeds
+    VV = zeros(Float64, NAIR) .* 1u"cm/minute" # output wind speeds
     T = Vector{typeof(0.0u"K")}(undef, NAIR) # output temperatures, need to do this otherwise get InexactError
     RHs = zeros(Float64, NAIR) # output relative humidities
     VV[1] = V
@@ -118,7 +124,8 @@ function get_profile(;
         end
     end
 
-    heights = [0.0u"cm"; reverse(ZZ); u"cm"(reference_height)]
+    # TODO why are we doing this and allocating another array
+    heights = [0.0u"m"; reverse(ZZ); u"m"(reference_height)]
     VV = [0.0u"cm/minute"; reverse(VV)]
     T = [T3; reverse(T)]
 
