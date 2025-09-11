@@ -165,6 +165,7 @@ function runmicro(;
     cloud_max = [50.3, 47, 48.2, 47.5, 40.9, 35.7, 34.1, 36.6, 42.6, 48.4, 61.1, 60.1],
     minima_times = [0, 0, 1, 1], # time of minima for air temp, wind, humidity and cloud cover (h), air & wind mins relative to sunrise, humidity and cloud cover mins relative to solar noon
     maxima_times = [1, 1, 0, 0], # time of maxima for air temp, wind, humidity and cloud cover (h), air temp & wind maxs relative to solar noon, humidity and cloud cover maxs relative to sunrise
+    deep_soil_temperatures = fill(7.741666u"°C", length(days)),
     # hourly weather vectors
     air_temperatures = nothing,
     humidities = nothing,
@@ -185,10 +186,6 @@ function runmicro(;
 )
 
     ndays = length(days)
-    tannul = mean(Unitful.ustrip.(vcat(air_temperature_max, air_temperature_min)))u"°C" # annual mean temperature for getting monthly deep soil temperature (°C)
-    #TODO - running mean when longer than a year
-    tannulrun = fill(tannul, ndays) # monthly deep soil temperature (2m) (°C)
-
     # defining view factor for sky radiation based on horizon angles
     viewfactor = 1 - sum(sin.(horizon_angles)) / length(horizon_angles) # convert horizon angles to radians and calc view factor(s)
 
@@ -381,7 +378,7 @@ function runmicro(;
         sle = sles[iday] # set up vector of ground emissivities for each day
         slep = sle # - cloud emissivity
         pctwet = pctwets[iday] # set up vector of soil wetness for each day
-        tdeep = u"K"(tannulrun[iday]) # annual mean temperature for getting daily deep soil temperature (°C)
+        tdeep = u"K"(deep_soil_temperatures[iday]) # daily deep soil temperature (°C)
         nodes = nodes_day[:, iday]
         rainfall = daily_rainfall[iday]
         # get today's weather

@@ -87,6 +87,7 @@ micro_out = runmicro(;
     humidity_max = nothing,
     cloud_min = nothing,
     cloud_max = nothing,
+    deep_soil_temperatures = (DataFrame(CSV.File("$testdir/data/init_daily/tannulrun.csv"))[1:days2do, 2] * 1.0)u"°C", # daily deep soil temperatures
     # hourly weather vectors
     air_temperatures = Float64.(CSV.File("$testdir/data/init_daily/TAIRhr.csv").x[1:hours2do])u"°C",
     humidities = clamp.(Float64.(CSV.File("$testdir/data/init_daily/RHhr.csv").x[1:hours2do]), 0, 100),
@@ -110,6 +111,6 @@ micro_out = runmicro(;
 # TODO include 1st node (currently left out, i.e. just columns 2:10, because way off at times)
 @testset "runmicro comparisons" begin
     @test all(isapprox.(micro_out.soil_moisture[:, 2:10], Matrix(soil_moisture_nmr[1:hours2do, 2:10]); atol=0.3)) # TODO make better!
-    #@test all(isapprox.(micro_out.soil_temperature[:, 2:10], u"K".(Matrix(soil_temperature_nmr[1:hours2do, 2:10])); atol=10u"K")) # TODO make better!
+    @test all(isapprox.(micro_out.soil_temperature[:, 2:10], u"K".(Matrix(soil_temperature_nmr[1:hours2do, 2:10])); atol=10u"K")) # TODO make better!
     @test all(isapprox.(micro_out.soil_thermal_conductivity[:, 2:10], Matrix(soil_conductivity_nmr[1:hours2do, 2:10])u"W * m^-1 * K^-1"; atol=1u"W * m^-1 * K^-1")) # TODO make better!
 end 
