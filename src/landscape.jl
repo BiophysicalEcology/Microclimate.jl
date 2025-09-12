@@ -37,41 +37,44 @@ Base.@kwdef struct MoistLayers
 end
 
 
-Base.@kwdef struct MicroParams
-    soilprops::Matrix{Union{Unitful.AbstractQuantity, Float64}}
-    depths::Vector{<:Unitful.AbstractQuantity}
-    reference_height::Quantity
-    roughness_height::Quantity
-    d0::Quantity
-    zh::Quantity
-    slope::Quantity
+Base.@kwdef struct MicroParams{SP,D<:Vector{<:Number},ReH<:Number,RoH<:Number,D0,Z<:Number,Sl<:Number,E<:Number,TD}
+    soilprops::SP
+    depths::D
+    reference_height::ReH
+    roughness_height::RoH
+    d0::D0
+    zh::Z
+    slope::Sl
     shade::Float64
     viewfactor::Float64
-    elevation::Quantity
+    elevation::E
     albedo::Float64
     sle::Float64
     slep::Float64
     pctwet::Float64
     nodes::Vector{Float64}
-    tdeep::Quantity
+    tdeep::TD
     θ_soil::Vector{Float64}
     runmoist::Bool
 end
 
-Base.@kwdef struct MicroForcing
-    SOLRt::Interpolations.AbstractInterpolation
-    ZENRt::Interpolations.AbstractInterpolation
-    ZSLt::Interpolations.AbstractInterpolation
-    TAIRt::Interpolations.AbstractInterpolation
-    VELt::Interpolations.AbstractInterpolation
-    RHt::Interpolations.AbstractInterpolation
-    CLDt::Interpolations.AbstractInterpolation
+Base.@kwdef struct MicroForcing{
+    S<:AbstractInterpolation,ZE<:AbstractInterpolation,ZS<:AbstractInterpolation,T<:AbstractInterpolation,
+    V<:AbstractInterpolation,RH<:AbstractInterpolation,CL<:AbstractInterpolation,
+}
+    SOLRt::S
+    ZENRt::ZE
+    ZSLt::ZS
+    TAIRt::T
+    VELt::V
+    RHt::RH
+    CLDt::CL
 end
 
-Base.@kwdef struct MicroInputs
-    params::MicroParams
-    forcing::MicroForcing
-    soillayers::SoilLayers
+Base.@kwdef struct MicroInputs{MP<:MicroParams,MF<:MicroForcing,SL<:SoilLayers}
+    params::MP
+    forcing::MF
+    soillayers::SL
 end
 
 #Base.@kwdef struct MicroInputs{MP::MicroParams,MF<:MicroForcing,SL<:SoilLayers}

@@ -424,6 +424,7 @@ function GAMMA(TAU1::Float64)
         AMU[I] = 0.01 * (I - 1)
     end
 
+
     # Compute X1, Y1 using dchxy
     CFA .= (0.75, -0.75, 0.0)
     CHX_, CHY_, _ = dchxy(TAU1, collect(CFA), 111)
@@ -527,26 +528,26 @@ function GAMMA(TAU1::Float64)
 end
 
 function init_dchxy_buffers()
-    arrays = Dict(
-        :PSI => zeros(Float64, 101),
-        :AMU => zeros(Float64, 101),
-        :XA => zeros(Float64, 101),
-        :XB => zeros(Float64, 101),
-        :FNPP => zeros(Float64, 101),
-        :FNPN => zeros(Float64, 101),
-        :FNC0 => zeros(Float64, 101),
-        :FNC1 => zeros(Float64, 101),
-        :FNX => zeros(Float64, 101),
-        :FNY => zeros(Float64, 101),
-        :FNW => zeros(Float64, 101),
-        :FMC0 => zeros(Float64, 101),
-        :FMC1 => zeros(Float64, 101),
-        :XD => zeros(Float64, 101),
-        :XE => zeros(Float64, 101),
-        :CHXA => zeros(Float64, 101),
-        :CHYA => zeros(Float64, 101),
-        :CHX => zeros(Float64, 101),
-        :CHY => zeros(Float64, 101)
+    arrays = (;
+        PSI = zeros(Float64, 101),
+        AMU = zeros(Float64, 101),
+        XA = zeros(Float64, 101),
+        XB = zeros(Float64, 101),
+        FNPP = zeros(Float64, 101),
+        FNPN = zeros(Float64, 101),
+        FNC0 = zeros(Float64, 101),
+        FNC1 = zeros(Float64, 101),
+        FNX = zeros(Float64, 101),
+        FNY = zeros(Float64, 101),
+        FNW = zeros(Float64, 101),
+        FMC0 = zeros(Float64, 101),
+        FMC1 = zeros(Float64, 101),
+        XD = zeros(Float64, 101),
+        XE = zeros(Float64, 101),
+        CHXA = zeros(Float64, 101),
+        CHYA = zeros(Float64, 101),
+        CHX = zeros(Float64, 101),
+        CHY = zeros(Float64, 101)
     )
     return arrays
 end
@@ -606,33 +607,33 @@ spectra for the terrestrial ecological environment. Ecology, 52(6), 1008–1015.
 """
 function dchxy(TAU1::Float64, CFA::Vector{Float64}, NCASE::Int)
     buffers = init_dchxy_buffers()
-    PSI   = buffers[:PSI]
-    AMU   = buffers[:AMU]
-    XA    = buffers[:XA]
-    XB    = buffers[:XB]
+    PSI   = buffers.PSI
+    AMU   = buffers.AMU
+    XA    = buffers.XA
+    XB    = buffers.XB
     UMA  = @MVector zeros(5)
     ACAP = @MVector zeros(5)
     TEMX = @MVector zeros(8)
     TEMY = @MVector zeros(8)
     RTK  = @MVector zeros(5)
     ALAM = @MVector zeros(5)
-    FNPP  = buffers[:FNPP]
-    FNPN  = buffers[:FNPN]
-    FNC0  = buffers[:FNC0]
-    FNC1  = buffers[:FNC1]
-    FNX   = buffers[:FNX]
-    FNY   = buffers[:FNY]
-    FNW   = buffers[:FNW]
-    FMC0  = buffers[:FMC0]
-    FMC1  = buffers[:FMC1]
-    XD    = buffers[:XD]    # equivalence
-    XE    = buffers[:XE]    # equivalence
-    CHXA  = buffers[:CHXA]  # equivalence
-    CHYA  = buffers[:CHYA]  # equivalence
-    CHX   = buffers[:CHX]
-    CHY   = buffers[:CHY]
-    XA    = buffers[:XA]
-    XB    = buffers[:XB]
+    FNPP  = buffers.FNPP
+    FNPN  = buffers.FNPN
+    FNC0  = buffers.FNC0
+    FNC1  = buffers.FNC1
+    FNX   = buffers.FNX
+    FNY   = buffers.FNY
+    FNW   = buffers.FNW
+    FMC0  = buffers.FMC0
+    FMC1  = buffers.FMC1
+    XD    = buffers.XD    # equivalence
+    XE    = buffers.XE    # equivalence
+    CHXA  = buffers.CHXA  # equivalence
+    CHYA  = buffers.CHYA  # equivalence
+    CHX   = buffers.CHX
+    CHY   = buffers.CHY
+    XA    = buffers.XA
+    XB    = buffers.XB
 
     # Integer arrays
     NC0 = reshape(Int[
@@ -982,7 +983,7 @@ function dchxy(TAU1::Float64, CFA::Vector{Float64}, NCASE::Int)
         println("TAU1 = ", TAU1)
         println("Table header for output:")
 
-        @inbounds @simd for i in 1:101
+        for i in 1:101
             TEMD = FNC0[i] * FMC0[i] - FNC1[i] * FMC1[i] - (FNC0[1]^2 - FNC1[1]^2) * FNW[i]
             println(AMU[i], " ", FNPP[i], " ", FNPN[i], " ", FNW[i], " ", FNC0[i], " ", FMC0[i], " ", FNC1[i], " ", FMC1[i], " ", TEMD)
         end
@@ -1010,15 +1011,22 @@ function dchxy(TAU1::Float64, CFA::Vector{Float64}, NCASE::Int)
     CHYA[1] = XB[1]
     nomitr = 1 # Fortran line 362
     converged = false
-    TEMC = 0.0   # Initialize before convergence loop
+    TEMC = 0.0 # Initialize before convergence loop
     while !converged
         @inbounds for I in 2:101
             # Compute XD and XE for this I
-            @inbounds for IC in 1:101
+            # The most performance intensive code of the package: loop inside loop, called from another loop
+            # We split the inner loop so there is not conditional check and it can SIMD
+            # Possibly there is a faster algorithm too.
+            # TODO: put the math in a function?
+            @inbounds for IC in 1:I-1
                 XD[IC] = PSI[IC] * (FNX[I] * FNX[IC] - FNY[I] * FNY[IC]) / (AMU[I] + AMU[IC])
-                if I != IC
-                    XE[IC] = PSI[IC] * (FNY[I] * FNX[IC] - FNX[I] * FNY[IC]) / (AMU[I] - AMU[IC])
-                end
+                XE[IC] = PSI[IC] * (FNY[I] * FNX[IC] - FNX[I] * FNY[IC]) / (AMU[I] - AMU[IC])
+            end
+            @inbounds XD[I] = PSI[I] * (FNX[I] * FNX[I] - FNY[I] * FNY[I]) / (AMU[I] + AMU[I])
+            @inbounds for IC in I+1:101
+                XD[IC] = PSI[IC] * (FNX[I] * FNX[IC] - FNY[I] * FNY[IC]) / (AMU[I] + AMU[IC])
+                XE[IC] = PSI[IC] * (FNY[I] * FNX[IC] - FNX[I] * FNY[IC]) / (AMU[I] - AMU[IC])
             end
 
             # Everett's formula / interpolation for XE[I]
@@ -1053,6 +1061,7 @@ function dchxy(TAU1::Float64, CFA::Vector{Float64}, NCASE::Int)
         if nomitr > 1
             @inbounds for I in 2:101
                 rel_error = abs((CHY[I] - FNY[I]) / CHY[I])
+                # TODO this seems wrong? shouldnt it only break if errors are <= 2.0e-4 for all I ?
                 if rel_error <= 2.0e-4
                     converged = true
                     break
@@ -1490,7 +1499,7 @@ function solrad(;
 
                 P = get_pressure(elevation) # pressure from elevation
 
-                @inbounds @simd for N in 1:nmax
+                @inbounds for N in 1:nmax
                     τλ1 = (P / 101300u"Pa") * τR[N] * ELEVFCT1
                     τλ2 = (25.0u"km" / amr) * τA[N] * ELEVFCT2
                     τλ3 = (ozone / 0.34) * τO[N] * ELEVFCT3
@@ -1648,16 +1657,16 @@ function get_longwave(;
     else
         # Campbell and Norman 1998 eq. 10.10 to get emissivity of sky
         P_vap = wet_air_out.P_vap
-        arad = u"W/m^2"(ustrip(1.72 * (ustrip(u"kPa"(P_vap)) / ustrip(u"K"(tair) + 0.01u"K"))^(1.0 / 7.0)) * σ * (u"K"(tair) + 0.01u"K")^4.0) 
+        arad = u"W/m^2"(ustrip(1.72 * (ustrip(u"kPa"(P_vap)) / ustrip(u"K"(tair) + 0.01u"K"))^(1.0 / 7.0)) * σ * (u"K"(tair) + 0.01u"K")^4) 
     end
     # Cloud radiation temperature (shade approximation, TAIR - 2°C)
-    crad = σ * slep * (u"K"(tair) - 2.0u"K")^4.0
+    crad = σ * slep * (u"K"(tair) - 2.0u"K")^4
 
     # Hillshade radiation temperature (approximated as air temperature)
-    hrad = σ * slep * (u"K"(tair))^4.0
+    hrad = σ * slep * (u"K"(tair))^4
 
     # Ground surface radiation temperature
-    srad = σ * sle * (u"K"(tsurf))^4.0
+    srad = σ * sle * (u"K"(tsurf))^4
 
     # Clear sky fraction
     clr = 1.0 - cloud / 100.0
@@ -1668,7 +1677,7 @@ function get_longwave(;
     qradgr = ((100.0 - shade) / 100.0) * srad + (shade / 100.0) * hrad
     qradhl = hrad
     qrad = (qradsk + qradvg) * viewfactor + qradhl * (1.0 - viewfactor) - qradgr
-    tsky = (((qradsk + qradvg) * viewfactor + qradhl * (1.0 - viewfactor)) / σ)^0.25
+    tsky = (((qradsk + qradvg) * viewfactor + qradhl * (1.0 - viewfactor)) / σ)^(1//4)
     return (
         Tsky=tsky,
         Qrad=qrad,
