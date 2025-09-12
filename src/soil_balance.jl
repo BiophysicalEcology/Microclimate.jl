@@ -11,11 +11,9 @@ function soil_energy_balance!(
     #T_K = T .* u"K"  # convert Float64 time back to unitful
     #dT_K = dT .* 60 .* u"K/minute"  # convert Float64 time back to unitful
     # extract prameters
-    p = i.params
-    (; roughness_height, pctwet, sle, slep, albedo, viewfactor, elevation, slope, shade, depths, reference_height, d0, zh, tdeep, nodes, soilprops, θ_soil, runmoist) = p
-    # extract layer property vectors
-    sl = i.soillayers
-    (; depp, wc, c) = sl
+    (; soillayers, params, buffers) = i
+    (; roughness_height, pctwet, sle, slep, albedo, viewfactor, elevation, slope, shade, depths, reference_height, d0, zh, tdeep, nodes, soilprops, θ_soil, runmoist) = params
+    (; depp, wc, c) = soillayers
     
     sabnew = 1.0 - albedo
 
@@ -80,8 +78,7 @@ function soil_energy_balance!(
     qcond = c[1] * (T[2] - T[1])
 
     # Convection
-    profile_out = get_profile(;
-        reference_height,
+    profile_out = get_profile!(buffers.profile;
         z0 = roughness_height, 
         d0 = d0, 
         zh = zh, 
@@ -89,10 +86,9 @@ function soil_energy_balance!(
         TAREF = u"°C"(tair), 
         VREF = vel, 
         ZEN = zenr, 
-        heights = [0.01] .* u"m", 
         rh, 
         elevation
-        )
+    )
     qconv = profile_out.qconv
     hc = max(abs(qconv / (T[1] - tair)), 0.5u"W/m^2/K")
     P_atmos = get_pressure(elevation)
@@ -476,7 +472,6 @@ function get_soil_water_balance(;
         ZEN = ZENRs[step],
         heights,
         elevation,
-        warn=true
     )
 
     # convection

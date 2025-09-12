@@ -401,18 +401,27 @@ using the method of the X and Y functions.
 # end
 using StaticArrays
 
-function GAMMA(TAU1::Float64)
+function allocate_gamma()
+    (;
+        CHX  = zeros(101),
+        CHY  = zeros(101),
+        AMU  = zeros(101),
+        X1   = zeros(101),
+        Y1   = zeros(101),
+        X2   = zeros(101),
+        Y2   = zeros(101),
+        AIL  = zeros(101),
+        GAMR = zeros(101),
+        GAML = zeros(101),
+        dchxy_buffers = init_dchxy_buffers(),
+    )
+end
+
+GAMMA(TAU1::Float64) = GAMMA!(allocate_gamma(), TAU1)
+
+function GAMMA!(buffers, TAU1::Float64)
     # Large arrays (mutable, normal)
-    CHX  = zeros(101)
-    CHY  = zeros(101)
-    AMU  = zeros(101)
-    X1   = zeros(101)
-    Y1   = zeros(101)
-    X2   = zeros(101)
-    Y2   = zeros(101)
-    AIL  = zeros(101)
-    GAMR = zeros(101)
-    GAML = zeros(101)
+    (; CHX, CHY, AMU, X1, Y1, X2, Y2, AIL, GAMR, GAML, dchxy_buffers) = buffers
 
     # Small fixed-size arrays (use StaticArrays)
     CFA = @MVector zeros(3)
@@ -427,13 +436,13 @@ function GAMMA(TAU1::Float64)
 
     # Compute X1, Y1 using dchxy
     CFA .= (0.75, -0.75, 0.0)
-    CHX_, CHY_, _ = dchxy(TAU1, collect(CFA), 111)
+    CHX_, CHY_, _ = dchxy!(dchxy_buffers, TAU1, collect(CFA), 111)
     X1 .= CHX_
     Y1 .= CHY_
 
     # Compute X2, Y2 using dchxy
     CFA .= (0.375, -0.375, 0.0)
-    CHX_, CHY_, _ = dchxy(TAU1, collect(CFA), 0)
+    CHX_, CHY_, _ = dchxy!(dchxy_buffers, TAU1, collect(CFA), 0)
     X2 .= CHX_
     Y2 .= CHY_
 
@@ -605,8 +614,10 @@ spectra for the terrestrial ecological environment. Ecology, 52(6), 1008–1015.
      https://doi.org/10.2307/1933806
 
 """
-function dchxy(TAU1::Float64, CFA::Vector{Float64}, NCASE::Int)
-    buffers = init_dchxy_buffers()
+dchxy(TAU1::Float64, CFA::Vector{Float64}, NCASE::Int) =
+    dchxy!(init_dchxy_buffers(), TAU1, CFA, NCASE)
+
+function dchxy!(buffers, TAU1::Float64, CFA::Vector{Float64}, NCASE::Int)
     PSI   = buffers.PSI
     AMU   = buffers.AMU
     XA    = buffers.XA
@@ -1341,6 +1352,7 @@ function solrad(;
     DRRs = fill(0.0, nsteps)u"mW/cm^2"          # total direct Rayleigh radiation
     DRs = fill(0.0, nsteps)u"mW/cm^2"           # total direct radiation
     SRs = fill(0.0, nsteps)u"mW/cm^2"           # total scattered radiation
+    gamma_buffers = allocate_gamma()
 
     # arrays to hold zenith and azimuth angles each step
     Zs = fill(90.0, nsteps)u"°"                 # zenith angles
@@ -1535,7 +1547,7 @@ function solrad(;
                         SRλ[N] = 0.0u"mW / cm^2 / nm"
                     elseif iuv
                         if τλ1 >= 0.03
-                            GAMR, GAML, SBAR = GAMMA(τλ1)
+                            GAMR, GAML, SBAR = GAMMA!(gamma_buffers, τλ1)
                             SRλ[N] = (
                                          ((float(GAML[intcz]) + float(GAMR[intcz])) / (2.0 * (1.0 - albedo * float(SBAR))))
                                          -

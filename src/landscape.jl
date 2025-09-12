@@ -71,17 +71,12 @@ Base.@kwdef struct MicroForcing{
     CLDt::CL
 end
 
-Base.@kwdef struct MicroInputs{MP<:MicroParams,MF<:MicroForcing,SL<:SoilLayers}
+Base.@kwdef struct MicroInputs{MP<:MicroParams,MF<:MicroForcing,SL<:SoilLayers,B}
     params::MP
     forcing::MF
     soillayers::SL
+    buffers::B
 end
-
-#Base.@kwdef struct MicroInputs{MP::MicroParams,MF<:MicroForcing,SL<:SoilLayers}
-#    params::MP
-#    forcing::MF
-#    soillayers::SL
-#end
 
 function init_soillayers(N)
     depp = fill(0.0u"cm", N + 1)
