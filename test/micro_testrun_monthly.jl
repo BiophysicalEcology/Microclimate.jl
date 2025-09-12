@@ -30,8 +30,7 @@ days = [15, 46, 74, 105, 135, 166, 196, 227, 258, 288, 319, 349]
 LAIs = fill(0.1, length(days))
 depths = ((DataFrame(CSV.File("$testdir/data/init_monthly/DEP.csv"))[:, 2]) / 100.0)u"m"
 heights = [0.01]u"m" # air nodes for temperature, wind speed and humidity profile
-
-micro_out = runmicro(;
+keywords = (;
     # locations, times, depths and heights
     latitude = longlat[2]*1.0u"°",
     days, # days of year for solrad
@@ -80,6 +79,10 @@ micro_out = runmicro(;
     spinup = Bool(Int(microinput[:spinup])), # spin-up the first day by iterate_day iterations?
     iuv = Bool(Int(microinput[:IUV])), # this makes it take ages if true!
 )
+
+@time micro_out = runmicro(; keywords...);
+using ProfileView
+@profview runmicro(; keywords...);
 
 # subset NicheMapR predictions
 vel1cm_nmr = collect(metout_nmr[:, 8]) .* 1u"m/s"
