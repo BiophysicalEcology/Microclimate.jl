@@ -1,7 +1,9 @@
 module Microclimate
 
 using OrdinaryDiffEq, Interpolations, Statistics, Dates
-using Unitful, UnitfulMoles, ModelParameters, DelimitedFiles
+using Unitful, UnitfulMoles
+using PhysicalConstants.CODATA2022: g_n, σ, atm, R
+using ModelParameters, DelimitedFiles
 using SpecialFunctions, StaticArrays
 
 using FluidProperties: wet_air, dry_air, vapour_pressure, get_λ_evap, waterprop, get_pressure
