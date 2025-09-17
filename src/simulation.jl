@@ -340,7 +340,7 @@ function runmicro(;
     soil_saturation_moisture = 1.0 .- soil_bulk_density2 ./ soil_mineral_density2
     ψ_soils[1, :] = air_entry_water_potential[sub] .* (soil_saturation_moisture[sub] ./ θ_soil0_a) .^ Campbells_b_parameter[sub]
     MW = 0.01801528u"kg/mol" # molar mass of water, kg/mol # TODO use UnitfulMoles
-    rh_soils[1, :] = clamp.(exp.(MW .* ψ_soils[1, :] ./ (Unitful.R .* T0)), 0, 1)
+    rh_soils[1, :] = clamp.(exp.(MW .* ψ_soils[1, :] ./ (R .* T0)), 0, 1)
     pools[1] = 0.0u"kg/m^2"
     
     # sky temperature given cloud cover, shade, hillshade (viewfactor)

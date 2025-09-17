@@ -64,9 +64,8 @@ function get_profile(;
     wet_air_out = wet_air(u"K"(TAREF), rh=rh)
     ρ = dry_air_out.ρ_air
     c_p = wet_air_out.c_p
-    g = 9.80665u"m/s^2"
     TREF = u"K"(TAREF)
-    rcptkg = u"cal*minute^2/cm^4"(ρ * c_p * TREF / (κ * g))
+    rcptkg = u"cal*minute^2/cm^4"(ρ * c_p * TREF / (κ * g_n))
     #rcptkg = 6.003e-8u"cal*minute^2/cm^4"
     GAM = 16.0
     ZRATIO = z / z0 + 1.0
