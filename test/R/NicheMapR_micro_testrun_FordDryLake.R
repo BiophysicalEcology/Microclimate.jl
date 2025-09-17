@@ -279,7 +279,9 @@ if(write_input){
   write.table(IRDhr,file="../data/init_daily/IRDhr.csv", sep = ",", col.names = NA, qmethod = "double")
 }
 
+ptm <- proc.time() # Start timing
 micro <- microclimate(microin) # run the model in Fortran
+print(proc.time() - ptm) # Stop the clock
 
 dates <- weather$datetime[1:nrow(micro$metout)]
 metout <- as.data.frame(micro$metout) # retrieve above ground microclimatic conditions, min shade
@@ -392,10 +394,10 @@ points(dates, tcond$TC5cm, type='l',xlim = c(tstart, tfinish), col = 3, xaxt = "
 # text(tstart, 40,"100cm",col="black",pos = 4, cex = 1.5)
 # mtext(site$name, outer = TRUE)
 
-write.csv(metout, file = 'c:/git/Microclimate.jl/tests/data/metout_FordDryLake.csv')
-write.csv(soil, file = 'c:/git/Microclimate.jl/tests/data/soil_FordDryLake.csv')
-write.csv(soilmoist, file = 'c:/git/Microclimate.jl/tests/data/soilmoist_FordDryLake.csv')
-write.csv(soilpot, file = 'c:/git/Microclimate.jl/tests/data/soilpot_FordDryLake.csv')
-write.csv(tcond, file = 'c:/git/Microclimate.jl/tests/data/tcond_FordDryLake.csv')
-write.csv(specheat, file = 'c:/git/Microclimate.jl/tests/data/specheat_FordDryLake.csv')
-write.csv(densit, file = 'c:/git/Microclimate.jl/tests/data/densit_FordDryLake.csv')
+write.csv(metout, file = 'c:/git/Microclimate.jl/test/data/metout_FordDryLake.csv')
+write.csv(soil, file = 'c:/git/Microclimate.jl/test/data/soil_FordDryLake.csv')
+write.csv(soilmoist, file = 'c:/git/Microclimate.jl/test/data/soilmoist_FordDryLake.csv')
+write.csv(soilpot, file = 'c:/git/Microclimate.jl/test/data/soilpot_FordDryLake.csv')
+write.csv(tcond, file = 'c:/git/Microclimate.jl/test/data/tcond_FordDryLake.csv')
+write.csv(specheat, file = 'c:/git/Microclimate.jl/test/data/specheat_FordDryLake.csv')
+write.csv(densit, file = 'c:/git/Microclimate.jl/test/data/densit_FordDryLake.csv')
