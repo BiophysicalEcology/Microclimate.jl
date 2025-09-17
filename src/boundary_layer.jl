@@ -1,5 +1,34 @@
-function get_profile(;
-    reference_height=1.2u"m",
+const DEFAULT_HEIGHTS = [0.01, 0.05, 0.1, 0.2, 0.3, 0.4, 0.5, 0.75, 1.0] .* u"m"
+
+function allocate_profile(heights, reference_height)
+    if minimum(heights) > reference_height
+        throw(ArgumentError("`reference_height` is lower than minimum height in `heights`"))
+        # addheight = true
+        # newheights = Vector{eltype(heights)}(length(heights) + 1)
+        # newheights[1] = 0.01u"m"
+        # newheights[2:end] .= heights
+        # heights = newheights
+    elseif maximum(heights) >= reference_height
+        throw(ArgumentError("Some values in `heights` are larger than `reference_height`"))
+    end
+    heights = filter(h -> h < reference_height, heights)
+    NAIR = length(heights) + 1
+    AIRDP = Vector{typeof(reference_height)}(undef, NAIR)
+    AIRDP[1] = reference_height
+    AIRDP[end:-1:2] .= u"m".(heights)
+    VV = zeros(typeof(1.0u"m/minute"), NAIR) # output wind speeds
+    T = zeros(typeof(0.0u"K"), NAIR) # output temperatures, need to do this otherwise get InexactError
+    RHs = zeros(Float64, NAIR) # output relative humidities
+    # heights_orig = copy(heights)
+    # heights = fill(0.0u"m", NAIR + 1)
+    # heights[end:-1:2] .= AIRDP
+
+    return (; heights, reference_height, AIRDP, VV, T, RHs)
+end
+
+get_profile(; heights=DEFAULT_HEIGHTS, reference_height=1.2u"m", kw...) =
+    get_profile!(allocate_profile(heights, reference_height); kw...)
+function get_profile!(buffers;
     z0=0.004u"m",
     zh=0.0u"m",
     d0=0.0u"m",
@@ -11,32 +40,13 @@ function get_profile(;
     maxsurf=95.0u"°C",
     ZEN=21.50564u"°",
     a=0.15,
-    heights::Vector{typeof(1.0u"m")}=[0.01, 0.05, 0.1, 0.2, 0.3, 0.4, 0.5, 0.75, 1.0] .* u"m",
     elevation=0.0u"m",
-    warn=false
 )
+    (; heights, reference_height, AIRDP, VV, T, RHs) = buffers
 
-    if minimum(heights) < z0
-        error("ERROR: the minimum height is not greater than the roughness height (z0).")
-    end
+    minimum(heights) < z0 && _minimum_heigth_error(heights, z0)
 
-    addheight = false
-    heights_extra = nothing
-    if minimum(heights) > reference_height
-        addheight = true
-        newheights = Vector{eltype(heights)}(length(heights) + 1)
-        newheights[1] = 0.01u"m"
-        newheights[2:end] .= heights
-        heights = newheights
-    end
-
-    if maximum(heights) >= reference_height && warn
-        println("Warning: some heights are ≥ reference height. Using constant air temperature and adjusting wind speed.")
-    end
-
-    heights_orig = copy(heights)
-    heights = filter(h -> h < reference_height, heights_orig)::Vector{typeof(1.0u"m")}
-
+    NAIR = length(T)
     T1 = u"K"(TAREF)
     T3 = u"K"(D0cm)
 
@@ -47,21 +57,13 @@ function get_profile(;
     d0_cm = u"cm"(d0)
     V = u"cm/minute"(VREF)
     # define air heights
-    # TODO: move this further our the allocation is expensive
-    NAIR = length(heights) + 1
-    AIRDP = Vector{typeof(z)}(undef, NAIR)
-    AIRDP[1] = z
-    AIRDP[end:-1:2] .= u"cm".(heights)
-    ZZ = AIRDP
-    VV = zeros(Float64, NAIR) .* 1u"cm/minute" # output wind speeds
-    T = Vector{typeof(0.0u"K")}(undef, NAIR) # output temperatures, need to do this otherwise get InexactError
-    RHs = zeros(Float64, NAIR) # output relative humidities
+    ZZ = AIRDP # TODO why rename
     VV[1] = V
     T[1] = T1
 
     # compute rcptkg (was a constant in original Fortran version)
-    dry_air_out = dry_air(u"K"(TAREF), elevation=elevation)
-    wet_air_out = wet_air(u"K"(TAREF), rh=rh)
+    dry_air_out = dry_air(u"K"(TAREF); elevation)
+    wet_air_out = wet_air(u"K"(TAREF); rh)
     ρ = dry_air_out.ρ_air
     c_p = wet_air_out.c_p
     TREF = u"K"(TAREF)
@@ -76,6 +78,7 @@ function get_profile(;
     RCP = RHOCP(TAVE)#, elevation, rh)
     AMOL = -30.0u"cm"
     if zh > 0.0u"m"
+        # TODO ustrip to what
         STS = 0.62 / (ustrip(z0) * ustrip(USTAR) / 12)^(9//20)
         STB = 0.64 / DUM
         QC = RCP * DIFFT * USTAR * STB / (1.0 + STB / STS)
@@ -96,7 +99,8 @@ function get_profile(;
         end
     else
         if T1 ≥ T3 || T3 ≤ u"K"(maxsurf) || ZEN ≥ 90°
-            STS = 0.62 / (ustrip(z0) * ustrip(USTAR) / 12.)^(9//20)
+            # TODO ustrip to what
+            STS = 0.62 / (ustrip(z0) * ustrip(USTAR) / 12.0)^(9//20)
             STB = 0.64 / DUM
             QC = RCP * DIFFT * USTAR * STB / (1.0 + STB / STS)
 
@@ -122,59 +126,37 @@ function get_profile(;
             end
         end
     end
-
-    # TODO why are we doing this and allocating another array
-    heights = [0.0u"m"; reverse(ZZ); u"m"(reference_height)]
-    VV = [0.0u"cm/minute"; reverse(VV)]
-    T = [T3; reverse(T)]
-
-    e = wet_air(T1, rh=rh).P_vap
-    wet_air_out = wet_air.(T; rh=rh)
-    es = [x.P_vap_sat for x in wet_air_out]
-    RHs = clamp.(e ./ es .* 100.0, 0.0, 100.0)
-
-    if heights_extra !== nothing
-        VV_extra = V .* (heights_extra ./ reference_height) .^ a
-        T_extra = fill(TAREF, length(heights_extra))
-        RH_extra = fill(rh, length(heights_extra))
-
-        heights = vcat(heights, heights_extra)
-        VV = vcat(VV, VV_extra)
-        T = vcat(T, T_extra)
-        RHs = vcat(RHs, RH_extra)
-    end
-
-    if addheight
-        VV = deleteat!(VV, 2)
-        T = deleteat!(T, 2)
-        RHs = deleteat!(RHs, 2)
-        heights = deleteat!(heights, 2)
-    end
+    e = wet_air(T1; rh).P_vap
+    RHs .= clamp.(e ./ vapour_pressure.(T) .* 100.0, 0.0, 100.0)
 
     return (;
-        heights=unique(heights),
-        wind_speeds=u"m/s".(VV),      # m/s
-        air_temperatures=u"°C".(T),         # deg C
+        # heights=unique(heights), # There should be not duplicates at this stage?
+        heights,
+        wind_speeds=VV,      # m/s
+        air_temperatures=T,         # deg C
         humidities=RHs,               # %
         qconv=u"W/m^2"(QC),    # W
         ustar=u"m/s"(USTAR)    # m/s
     )
 end
 
+@noinline _minimum_heigth_error(heights, z0) =
+    error("The minimum height $(minimum(heights)) is not greater than the roughness height ($z0).")
 
 function RHOCP(TAVE)
+    # TODO ustrip to what
     return u"(cal*g)/(g*cm^3*K)" * (0.08472 / ustrip(TAVE))
 end
-
 function RHOCP(TAVE, elevation, rh)
-    dry_air_out = dry_air(u"K"(TAVE), elevation=elevation)
-    wet_air_out = wet_air(u"K"(TAVE), rh=rh)
+    dry_air_out = dry_air(u"K"(TAVE); elevation)
+    wet_air_out = wet_air(u"K"(TAVE); rh)
     ρ = dry_air_out.ρ_air
     c_p = wet_air_out.c_p
     return u"(cal*g)/(g*cm^3*K)"(ρ * c_p)
 end
 
 function PHI(z, GAM, AMOL)
+    # TODO ustrip to what
     return (1.0 - min(1.0, GAM * ustrip(z / AMOL)))^(1//4)
 end
 
@@ -214,10 +196,12 @@ function get_Obukhov(TA, TS, V, z, z0, rcptkg, κ)
         USTAR = κ * V / (log(z / z0) - Y)
 
         if AMOL > 0.0u"cm"
+            # TODO ustrip to what
             STS = 0.62 / (ustrip(z0) * ustrip(USTAR) / 12)^(9//20)
             STB = 0.64 / DUM
             QC = RCP * DIFFT * USTAR * STB / (1.0 + STB / STS)
         else
+            # TODO ustrip to what
             STS = 0.62 / (ustrip(z0) * ustrip(USTAR) / 12)^(9//20)
             STB = (0.64 / DUM) * (1 - 0.1 * z / AMOL)
             STO = STB / (1 + STB / STS)

@@ -1,4 +1,5 @@
 using Microclimate
+using GLMakie
 using Unitful
 using CSV, DataFrames
 using Test
@@ -32,8 +33,8 @@ depths = ((DataFrame(CSV.File("$testdir/data/init_daily/DEP.csv"))[:, 2]) / 100.
 heights = [0.01]u"m" # air nodes for temperature, wind speed and humidity profile
 days2do = 30
 hours2do = days2do * 24
-# now try the simulation function
-@time micro_out = runmicro(;
+
+keywords = (;
     # locations, times, depths and heights
     latitude = (microinput[:ALAT] + microinput[:AMINUT] / 60) * 1.0u"°", # latitude
     days = days[1:days2do], # days of year to simulate - TODO leap years
@@ -108,9 +109,18 @@ hours2do = days2do * 24
     iuv = Bool(Int(microinput[:IUV])), # this makes it take ages if true!
 );
 
+# now try the simulation function
+@time micro_out = runmicro(; keywords...);
+
+plot(micro_out)
+
+using ProfileView
+@profview micro_out = runmicro(; keywords...)
+
 # TODO include 1st node (currently left out, i.e. just columns 2:10, because way off at times)
 @testset "runmicro comparisons" begin
+    soiltemps_mat = reinterpret(reshape, typeof(1.0u"K"), micro_out.soil_temperature)'[:, 2:10]
+    @test all(isapprox.(soiltemps_mat, u"K".(Matrix(soil_temperature_nmr[1:hours2do, 2:10])); atol=10u"K")) # TODO make better!
     @test all(isapprox.(micro_out.soil_moisture[:, 2:10], Matrix(soil_moisture_nmr[1:hours2do, 2:10]); atol=0.3)) # TODO make better!
-    @test all(isapprox.(micro_out.soil_temperature[:, 2:10], u"K".(Matrix(soil_temperature_nmr[1:hours2do, 2:10])); atol=10u"K")) # TODO make better!
     @test all(isapprox.(micro_out.soil_thermal_conductivity[:, 2:10], Matrix(soil_conductivity_nmr[1:hours2do, 2:10])u"W * m^-1 * K^-1"; atol=1u"W * m^-1 * K^-1")) # TODO make better!
 end 
