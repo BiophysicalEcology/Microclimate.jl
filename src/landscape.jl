@@ -52,3 +52,30 @@ function init_soillayers(N)
     c = fill(1.0u"W/K/m^2", N)
     return SoilLayers(depp, wc, c)
 end
+
+abstract type AbstractEnvironment end
+
+@kwdef struct MicroResult{AT,WS,RH,CC,GS,DrS,DfS,ZA,SkT,SoT,SM,SWP,SH,STC,SPH,SBD,SW,SR,Pr} <: AbstractEnvironment
+    air_temperature::AT 
+    wind_speed::WS
+    relative_humidity::RH
+    cloud_cover::CC
+    global_solar::GS
+    direct_solar::DrS
+    diffuse_solar::DfS
+    zenith_angle::ZA 
+    sky_temperature::SkT
+    # TODO: should things like soil_temperature be sub-components? soil.temperature ?
+    soil_temperature::SoT
+    soil_moisture::SM
+    soil_water_potential::SWP
+    soil_humidity::SH 
+    soil_thermal_conductivity::STC
+    soil_specific_heat::SPH 
+    soil_bulk_density::SBD 
+    surface_water::SW
+    solrad::SR
+    profile::Pr
+end
+
+Base.show(io::IO, mr::MicroResult) = print(io, "MicroResult")

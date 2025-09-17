@@ -653,17 +653,19 @@ function runmicro(;
     wind_speed = reduce(hcat, profiles.wind_speeds)'
     relative_humidity = reduce(hcat, profiles.humidities)'
 
-    return (;
+    return MicroResult(;
         air_temperature,
         wind_speed,
         relative_humidity,
+        # TODO just use the same names in the code above 
+        # all these name conversions are unnecesary
         cloud_cover=cloud_covers,
         global_solar,
         direct_solar,
         diffuse_solar,
         zenith_angle = zenith_angles,
         sky_temperature = T_skys,
-        soil_temperature = T_soils,
+        soil_temperature = reshape(reinterpret(typeof(1.0u"K"), T_soils), length(T_soils), :),
         soil_moisture = θ_soils,
         soil_water_potential = ψ_soils,
         soil_humidity = rh_soils,
@@ -671,7 +673,7 @@ function runmicro(;
         soil_specific_heat = c_p_bulk,
         soil_bulk_density = ρ_bulk,
         surface_water = pools,
-        solrad_out = solrad_out,
-        profile_out = profile_out,
+        solrad=solrad_out,
+        profile=profile_out,
     )
 end

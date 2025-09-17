@@ -1,4 +1,5 @@
 using Microclimate
+using GLMakie
 using Unitful
 using CSV, DataFrames
 using Test
@@ -109,6 +110,9 @@ keywords = (;
 
 # now try the simulation function
 @time micro_out = runmicro(; keywords...);
+
+plot(micro_out)
+
 using ProfileView
 @profview micro_out = runmicro(; keywords...)
 

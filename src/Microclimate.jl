@@ -34,8 +34,4 @@ include("boundary_layer.jl")
 include("soil_balance.jl")
 include("simulation.jl")
 
-function __init__()
-    Unitful.register(Microclimate)
-end
-
 end
