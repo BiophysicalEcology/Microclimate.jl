@@ -81,8 +81,6 @@ keywords = (;
 )
 
 @time micro_out = runmicro(; keywords...);
-using ProfileView
-@profview runmicro(; keywords...);
 
 # subset NicheMapR predictions
 vel1cm_nmr = collect(metout_nmr[:, 8]) .* 1u"m/s"
@@ -98,13 +96,17 @@ tskyC_nmr = collect(metout_nmr[:, 15]) .* u"°C"
 # solvers and possibly to do with floating point error and issue with 
 # the way the phase transition is being calculated
 @testset "runmicro comparisons" begin
-    #@test micro_out.relative_humidity[:, 2] ≈ rh1cm_nmr atol=2 # TODO make this work
-    #@test micro_out.relative_humidity[:, 3] ≈ rh2m_nmr atol=1e-5
+    @test_broken micro_out.relative_humidity[:, 2] ≈ rh1cm_nmr atol=0.2 # TODO make this work
+    @test micro_out.relative_humidity[:, 1] ≈ rh2m_nmr atol=1e-5
     @test micro_out.wind_speed[:, 2] ≈ vel1cm_nmr atol=1e-6u"m/s"
-    @test micro_out.wind_speed[:, 3] ≈ vel2m_nmr atol=1e-6u"m/s"
-    #@test u"K".(micro_out.air_temperature) ≈ ta1cm_nmr atol=1u"K" # TODO make this better!
-    @test u"K".(micro_out.air_temperature[:, 3]) ≈ ta2m_nmr atol=1e-5u"K"
+    # TODO numbering is reversed now, need to know why it was how it was...
+    @test all(isapprox.(micro_out.wind_speed[:, 1], vel2m_nmr; atol=1e-6u"m/s"))
+    @test_broken all(isapprox.(u"K".(micro_out.air_temperature), ta1cm_nmr; atol=0.1u"K"))
+    # TODO make this better!
+    @test u"K".(micro_out.air_temperature[:, 1]) ≈ ta2m_nmr atol=1e-5u"K"
     @test micro_out.sky_temperature ≈ u"K".(tskyC_nmr) atol=1u"K" # TODO make this better
-    #@test all(isapprox.(micro_out.soil_temperature, u"K".(Matrix(soiltemps_nmr)); atol=0.5"K"))
-    #@test all(isapprox.(micro_out.soil_temperature[:, 2:10], u"K".(Matrix(soiltemps_nmr[:, 2:10])); atol=0.5u"K")) # TODO make better!
+    # The last column is different for these
+    soiltemps_mat = reinterpret(reshape, typeof(1.0u"K"), micro_out.soil_temperature)'
+    @test_broken all(isapprox.(soiltemps_mat, u"K".(Matrix(soiltemps_nmr)); atol=0.2u"K"))
+    @test_broken all(isapprox.(soiltemps_mat[:, 2:10], u"K".(Matrix(soiltemps_nmr)[:, 2:10]); atol=0.5u"K")) # TODO make better!
 end  

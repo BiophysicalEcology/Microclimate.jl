@@ -17,8 +17,8 @@ function allocate_profile(heights, reference_height)
     AIRDP[1] = reference_height
     AIRDP[end:-1:2] .= u"m".(heights)
     VV = zeros(typeof(1.0u"m/minute"), NAIR) # output wind speeds
-    T = zeros(typeof(0.0u"K"), NAIR + 1) # output temperatures, need to do this otherwise get InexactError
-    RHs = zeros(Float64, NAIR + 1) # output relative humidities
+    T = zeros(typeof(0.0u"K"), NAIR) # output temperatures, need to do this otherwise get InexactError
+    RHs = zeros(Float64, NAIR) # output relative humidities
     # heights_orig = copy(heights)
     # heights = fill(0.0u"m", NAIR + 1)
     # heights[end:-1:2] .= AIRDP
@@ -44,11 +44,9 @@ function get_profile!(buffers;
 )
     (; heights, reference_height, AIRDP, VV, T, RHs) = buffers
 
-    if minimum(heights) < z0
-        error("ERROR: the minimum height $(minimum(heights)) is not greater than the roughness height ($z0).")
-    end
+    minimum(heights) < z0 && _minimum_heigth_error(heights, z0)
 
-    NAIR = length(heights)
+    NAIR = length(T)
     T1 = u"K"(TAREF)
     T3 = u"K"(D0cm)
 
@@ -59,6 +57,7 @@ function get_profile!(buffers;
     d0_cm = u"cm"(d0)
     V = u"cm/minute"(VREF)
     # define air heights
+    ZZ = AIRDP # TODO why rename
     VV[1] = V
     T[1] = T1
 
@@ -80,6 +79,7 @@ function get_profile!(buffers;
     RCP = RHOCP(TAVE)#, elevation, rh)
     AMOL = -30.0u"cm"
     if zh > 0.0u"m"
+        # TODO ustrip to what
         STS = 0.62 / (ustrip(z0) * ustrip(USTAR) / 12)^(9//20)
         STB = 0.64 / DUM
         QC = RCP * DIFFT * USTAR * STB / (1.0 + STB / STS)
@@ -100,6 +100,7 @@ function get_profile!(buffers;
         end
     else
         if T1 ≥ T3 || T3 ≤ u"K"(maxsurf) || ZEN ≥ 90°
+            # TODO ustrip to what
             STS = 0.62 / (ustrip(z0) * ustrip(USTAR) / 12.0)^(9//20)
             STB = 0.64 / DUM
             QC = RCP * DIFFT * USTAR * STB / (1.0 + STB / STS)
@@ -127,12 +128,11 @@ function get_profile!(buffers;
         end
     end
     e = wet_air(T1; rh).P_vap
-    # TODO what is this * 100 doing, and is it a unit conversion
     RHs .= clamp.(e ./ vapour_pressure.(T) .* 100.0, 0.0, 100.0)
 
     return (;
         # heights=unique(heights), # There should be not duplicates at this stage?
-        heights=unique(heights),
+        heights,
         wind_speeds=VV,      # m/s
         air_temperatures=T,         # deg C
         humidities=RHs,               # %
@@ -141,21 +141,23 @@ function get_profile!(buffers;
     )
 end
 
+@noinline _minimum_heigth_error(heights, z0) =
+    error("The minimum height $(minimum(heights)) is not greater than the roughness height ($z0).")
 
 function RHOCP(TAVE)
     # TODO ustrip to what
     return u"(cal*g)/(g*cm^3*K)" * (0.08472 / ustrip(TAVE))
 end
-
 function RHOCP(TAVE, elevation, rh)
-    dry_air_out = dry_air(u"K"(TAVE), elevation=elevation)
-    wet_air_out = wet_air(u"K"(TAVE), rh=rh)
+    dry_air_out = dry_air(u"K"(TAVE); elevation)
+    wet_air_out = wet_air(u"K"(TAVE); rh)
     ρ = dry_air_out.ρ_air
     c_p = wet_air_out.c_p
     return u"(cal*g)/(g*cm^3*K)"(ρ * c_p)
 end
 
 function PHI(z, GAM, AMOL)
+    # TODO ustrip to what
     return (1.0 - min(1.0, GAM * ustrip(z / AMOL)))^(1//4)
 end
 
@@ -195,10 +197,12 @@ function get_Obukhov(TA, TS, V, z, z0, rcptkg, κ)
         USTAR = κ * V / (log(z / z0) - Y)
 
         if AMOL > 0.0u"cm"
+            # TODO ustrip to what
             STS = 0.62 / (ustrip(z0) * ustrip(USTAR) / 12)^(9//20)
             STB = 0.64 / DUM
             QC = RCP * DIFFT * USTAR * STB / (1.0 + STB / STS)
         else
+            # TODO ustrip to what
             STS = 0.62 / (ustrip(z0) * ustrip(USTAR) / 12)^(9//20)
             STB = (0.64 / DUM) * (1 - 0.1 * z / AMOL)
             STO = STB / (1 + STB / STS)
