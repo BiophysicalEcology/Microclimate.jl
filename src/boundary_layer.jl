@@ -16,7 +16,7 @@ function allocate_profile(heights, reference_height)
     AIRDP = Vector{typeof(reference_height)}(undef, NAIR)
     AIRDP[1] = reference_height
     AIRDP[end:-1:2] .= u"m".(heights)
-    VV = zeros(typeof(1.0u"m/minute"), NAIR) # output wind speeds
+    VV = zeros(typeof(1.0u"m/s"), NAIR) # output wind speeds
     T = zeros(typeof(0.0u"K"), NAIR) # output temperatures, need to do this otherwise get InexactError
     RHs = zeros(Float64, NAIR) # output relative humidities
     # heights_orig = copy(heights)
@@ -44,7 +44,7 @@ function get_profile!(buffers;
 )
     (; heights, reference_height, AIRDP, VV, T, RHs) = buffers
 
-    minimum(heights) < z0 && _minimum_heigth_error(heights, z0)
+    minimum(heights) < z0 && _minimum_height_error(heights, z0)
 
     NAIR = length(T)
     T1 = u"K"(TAREF)
@@ -140,7 +140,7 @@ function get_profile!(buffers;
     )
 end
 
-@noinline _minimum_heigth_error(heights, z0) =
+@noinline _minimum_height_error(heights, z0) =
     error("The minimum height $(minimum(heights)) is not greater than the roughness height ($z0).")
 
 function RHOCP(TAVE)
