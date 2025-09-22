@@ -62,8 +62,8 @@ function get_profile!(buffers;
     T[1] = T1
 
     # compute rcptkg (was a constant in original Fortran version)
-    dry_air_out = dry_air(u"K"(TAREF); elevation)
-    wet_air_out = wet_air(u"K"(TAREF); rh)
+    dry_air_out = dry_air_properties(u"K"(TAREF); elevation)
+    wet_air_out = wet_air_properties(u"K"(TAREF); rh)
     ρ = dry_air_out.ρ_air
     c_p = wet_air_out.c_p
     TREF = u"K"(TAREF)
@@ -126,7 +126,7 @@ function get_profile!(buffers;
             end
         end
     end
-    e = wet_air(T1; rh).P_vap
+    e = wet_air_properties(T1; rh).P_vap
     RHs .= clamp.(e ./ vapour_pressure.(T) .* 100.0, 0.0, 100.0)
 
     return (;
@@ -148,8 +148,8 @@ function RHOCP(TAVE)
     return u"(cal*g)/(g*cm^3*K)" * (0.08472 / ustrip(TAVE))
 end
 function RHOCP(TAVE, elevation, rh)
-    dry_air_out = dry_air(u"K"(TAVE); elevation)
-    wet_air_out = wet_air(u"K"(TAVE); rh)
+    dry_air_out = dry_air_properties(u"K"(TAVE); elevation)
+    wet_air_out = wet_air_properties(u"K"(TAVE); rh)
     ρ = dry_air_out.ρ_air
     c_p = wet_air_out.c_p
     return u"(cal*g)/(g*cm^3*K)"(ρ * c_p)

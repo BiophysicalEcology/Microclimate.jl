@@ -8,6 +8,7 @@ DataStructures = "864edb3b-99cc-5e75-8d2d-829cb0a9cfe8"
 Dates = "ade2ca70-3891-5945-98fb-dc099432e06a"
 DelimitedFiles = "8bb1440f-4735-579b-a4ab-409b98df4dab"
 FluidProperties = "d16f1b92-71d3-42f3-aafa-43e5bb0efda8"
+GLMakie = "e9467ef8-e4e7-5192-8a1a-b1aee30e663a"
 Interpolations = "a98d9a8b-a2ab-59e6-89dd-64a1c18fca59"
 ModelParameters = "4744a3fa-6c31-4707-899e-a3298e4618ad"
 OrdinaryDiffEq = "1dea7af3-3e70-54e6-95c3-0bf5283fa5ed"
@@ -21,12 +22,11 @@ UnitfulMoles = "999f2bd7-36bf-5ba7-9bc1-c9473aa75374"
 [weakdeps]
 Makie = "ee78f7c6-11fb-53f2-987a-cfe4a2b5a57a"
 
+[sources]
+FluidProperties = {rev = "main", url = "https://github.com/BiophysicalEcology/FluidProperties.jl"}
+
 [extensions]
 MicroclimateMakieExt = "Makie"
-
-[sources]
-FluidProperties = {rev = "add-PhysicalConstants", url = "https://github.com/BiophysicalEcology/FluidProperties.jl"}
-
 
 [compat]
 Aqua = "0.8"
@@ -36,6 +36,7 @@ DataStructures = "0.18, 0.19"
 Dates = "1"
 DelimitedFiles = "1"
 FluidProperties = "0.1"
+GLMakie = "0.10.18"
 Interpolations = "0.15.1"
 Makie = "0.20, 0.21, 0.22, 0.23, 0.24"
 ModelParameters = "0.4"
