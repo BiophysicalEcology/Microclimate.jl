@@ -19,9 +19,9 @@ export get_profile
 
 export soil_properties
 
-export init_soillayers, init_moistlayers, MicroInputs
+export MicroInputs
 
-export soil_energy_balance!, evap, soil_water_balance, phase_transition
+export soil_energy_balance, evap, soil_water_balance!, phase_transition
 
 export MicroParams, MicroForcing
 
