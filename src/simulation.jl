@@ -665,7 +665,7 @@ function runmicro(;
         diffuse_solar,
         zenith_angle = zenith_angles,
         sky_temperature = T_skys,
-        soil_temperature = reshape(reinterpret(typeof(1.0u"K"), T_soils), length(T_soils), :),
+        soil_temperature = reduce(vcat, transpose.(T_soils)),
         soil_moisture = θ_soils,
         soil_water_potential = ψ_soils,
         soil_humidity = rh_soils,
