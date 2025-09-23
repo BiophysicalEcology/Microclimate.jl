@@ -16,7 +16,7 @@ function allocate_profile(heights, reference_height)
     AIRDP = Vector{typeof(reference_height)}(undef, NAIR)
     AIRDP[1] = reference_height
     AIRDP[end:-1:2] .= u"m".(heights)
-    VV = zeros(typeof(1.0u"m/s"), NAIR) # output wind speeds
+    VV = zeros(typeof(1.0u"m/minute"), NAIR) # output wind speeds
     T = zeros(typeof(0.0u"K"), NAIR) # output temperatures, need to do this otherwise get InexactError
     RHs = zeros(Float64, NAIR) # output relative humidities
     # heights_orig = copy(heights)
