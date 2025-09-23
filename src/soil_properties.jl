@@ -73,9 +73,9 @@ function soil_properties!(
         # TODO: wet_air_properties is overkill for just P_vap. 
         # Can the compiler figure out to skip the extra work?
         # This is some of the most expensive code in the package
-        e_a = vapour_pressure(T_K) * 0.99
-        e_a1 = vapour_pressure(T_K - 1u"K") * 0.99
-        e_a2 = vapour_pressure(T_K + 1u"K") * 0.99
+        e_a = wet_air(T_K; rh=99.0, P_atmos=p_a).P_vap
+        e_a1 = wet_air(T_K - 1u"K"; rh=99.0, P_atmos=p_a).P_vap
+        e_a2 = wet_air(T_K + 1u"K"; rh=99.0, P_atmos=p_a).P_vap
         ################################################################
 
 
