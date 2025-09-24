@@ -95,7 +95,7 @@ function soil_energy_balance!(
         )
     qconv = profile_out.qconv
     hc = max(abs(qconv / (T[1] - tair)), 0.5u"W/m^2/K")
-    P_atmos = get_pressure(elevation)
+    P_atmos = atmospheric_pressure(elevation)
     
     # Evaporation
     wet_air_out = wet_air_properties(u"K"(tair); rh=rh, P_atmos=P_atmos)
@@ -129,7 +129,7 @@ function evap(;tsurf, tair, rh, rhsurf, hd, elevation, pctwet, sat)
     tsurf = tsurf < u"K"(-81.0u"°C") ? u"K"(-81.0u"°C") : tsurf
 
     # Atmospheric pressure from elevation
-    P_atmos = get_pressure(elevation)
+    P_atmos = atmospheric_pressure(elevation)
 
     # surface and air vapor densities
     ρ_vap_surf = wet_air_properties(u"K"(tsurf); rh=rhsurf, P_atmos=P_atmos).ρ_vap
@@ -203,7 +203,7 @@ function soil_water_balance(;
     # N1 = zeros(Float64, M+1)
     # WS = zeros(Float64, M+1)
 
-    P_atmos = get_pressure(elevation)
+    P_atmos = atmospheric_pressure(elevation)
 
     # Constants
     MW = 0.01801528u"kg/mol" # molar mass of water, kg/mol
@@ -483,7 +483,7 @@ function get_soil_water_balance(;
     qconv = profile_out.qconv
 
     # evaporation
-    P_atmos = get_pressure(elevation)
+    P_atmos = atmospheric_pressure(elevation)
     rh_loc = min(0.99, profile_out.humidities[2] / 100)
     hc = max(abs(qconv / (T0[1] - u"K"(TAIRs[step]))), 0.5u"W/m^2/K")
     wet_air_out = wet_air_properties(u"K"(TAIRs[step]); rh=RHs[step], P_atmos=P_atmos)

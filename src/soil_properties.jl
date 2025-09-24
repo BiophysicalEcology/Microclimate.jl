@@ -26,7 +26,7 @@ function soil_properties(
     g_a = 0.1
     g_c = 1.0 - 2.0 * g_a
     p_a0 = 101325.0u"Pa"
-    p_a = get_pressure(elevation)
+    p_a = atmospheric_pressure(elevation)
 
     ϵ(λ_λ, λ_f) = 2.0 / (3.0 * (1.0 + g_a * (λ_λ / λ_f - 1.0))) + 1.0 / (3.0 * (1.0 + g_c * (λ_λ / λ_f - 1.0)))
 
