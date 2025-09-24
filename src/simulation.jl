@@ -639,11 +639,11 @@ function runmicro(;
             z0 = roughness_height,
             zh,
             d0,
-            TAREF=air_temperatures[i],
-            VREF=wind_speeds[i],
-            rh=humidities[i],
-            D0cm=u"°C"(T_soils[i][1]),  # top layer temp
-            ZEN=zenith_angles[i],
+            reference_temperature=air_temperatures[i],
+            reference_wind_speed=wind_speeds[i],
+            relative_humidity=humidities[i],
+            surface_temperature=u"°C"(T_soils[i][1]),  # top layer temp
+            zenith_angle=zenith_angles[i],
             elevation,
         )
     end

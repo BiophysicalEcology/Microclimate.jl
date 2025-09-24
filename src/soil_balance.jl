@@ -82,11 +82,11 @@ function soil_energy_balance(
         z0 = roughness_height, 
         d0 = d0, 
         zh = zh, 
-        D0cm = u"°C"(T2[1]), 
-        TAREF = u"°C"(tair), 
-        VREF = vel, 
-        ZEN = zenr, 
-        rh, 
+        surface_temperature = u"°C"(T2[1]), 
+        reference_temperature = u"°C"(tair), 
+        reference_wind_speed = vel, 
+        zenith_angle = zenr, 
+        relative_humidity = rh, 
         elevation
     )
     qconv = profile_out.qconv
@@ -480,11 +480,11 @@ function get_soil_water_balance!(buffers;
         z0=roughness_height,
         zh,
         d0,
-        TAREF = TAIRs[step],
-        VREF = VELs[step],
-        rh = RHs[step],
-        D0cm = u"°C"(T0[1]),  # top layer temp
-        ZEN = ZENRs[step],
+        reference_temperature = TAIRs[step],
+        reference_wind_speed = VELs[step],
+        relative_humidity = RHs[step],
+        surface_temperature = u"°C"(T0[1]),  # top layer temp
+        zenith_angle = ZENRs[step],
         elevation,
     )
 

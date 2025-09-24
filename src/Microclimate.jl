@@ -11,7 +11,7 @@ using Unitful: °, rad, °C#, K, Pa, kPa, MPa, J, kJ, W, L, g, kg, cm, m, s, hr,
 using Interpolations: AbstractInterpolation
 
 
-export sinec!, vsine, hourly_vars
+export sine_exponential!, vsine, hourly_vars
 
 export hour_angle, solar_geometry, elev_corr, dchxy, solrad, cloud_adjust_radiation, get_longwave, init_dchxy_buffers
 
