@@ -33,7 +33,7 @@ heights = [0.01]u"m" # air nodes for temperature, wind speed and humidity profil
 days2do = 30
 hours2do = days2do * 24
 # now try the simulation function
-@time micro_out = runmicro(;
+keywords = (;
     # locations, times, depths and heights
     latitude = (microinput[:ALAT] + microinput[:AMINUT] / 60) * 1.0u"°", # latitude
     days = days[1:days2do], # days of year to simulate - TODO leap years
@@ -106,7 +106,13 @@ hours2do = days2do * 24
     runmoist = Bool(Int(microinput[:runmoist])), # run soil moisture algorithm?
     spinup = Bool(Int(microinput[:spinup])), # spin-up the first day by iterate_day iterations?
     iuv = Bool(Int(microinput[:IUV])), # this makes it take ages if true!
-);
+)
+
+# now try the simulation function
+@time micro_out = runmicro(; keywords...);
+
+# TODO test plotting again at some stage, but it slows down CI a lot
+# plot(micro_out)
 
 # TODO include 1st node (currently left out, i.e. just columns 2:10, because way off at times)
 @testset "runmicro comparisons" begin
