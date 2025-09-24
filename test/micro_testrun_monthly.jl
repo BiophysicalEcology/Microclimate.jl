@@ -96,12 +96,12 @@ tskyC_nmr = collect(metout_nmr[:, 15]) .* u"°C"
 # solvers and possibly to do with floating point error and issue with 
 # the way the phase transition is being calculated
 @testset "runmicro comparisons" begin
-    @test_broken micro_out.relative_humidity[:, 2] ≈ rh1cm_nmr atol=0.2 # TODO make this work
-    @test micro_out.relative_humidity[:, 3] ≈ rh2m_nmr atol=1e-5
-    @test micro_out.wind_speed[:, 2] ≈ vel1cm_nmr atol=1e-6u"m/s"
-    @test micro_out.wind_speed[:, 3] ≈ vel2m_nmr atol=1e-6u"m/s"
-    @test all(isapprox.(micro_out.wind_speed[:, 3], vel2m_nmr; atol=1e-6u"m/s"))
-    @test u"K".(micro_out.air_temperature[:, 3]) ≈ ta2m_nmr atol=1e-5u"K"
+    @test_broken micro_out.relative_humidity[:, 1] ≈ rh1cm_nmr atol=0.2 # TODO make this work
+    @test micro_out.relative_humidity[:, 2] ≈ rh2m_nmr atol=1e-5
+    @test micro_out.wind_speed[:, 1] ≈ vel1cm_nmr atol=1e-6u"m/s"
+    @test micro_out.wind_speed[:, 2] ≈ vel2m_nmr atol=1e-6u"m/s"
+    @test all(isapprox.(micro_out.wind_speed[:, 2], vel2m_nmr; atol=1e-6u"m/s"))
+    @test u"K".(micro_out.air_temperature[:, 2]) ≈ ta2m_nmr atol=1e-5u"K"
     @test micro_out.sky_temperature ≈ u"K".(tskyC_nmr) atol=1u"K" # TODO make this better
     # The last column is different for these
     soiltemps_mat = reinterpret(reshape, typeof(1.0u"K"), micro_out.soil_temperature)'

@@ -14,7 +14,7 @@ using Interpolations: AbstractInterpolation
 
 export MicroParams, MicroForcing, MicroInputs
 
-export sinec!, vsine, hourly_vars
+export sine_exponential!, vsine, hourly_vars
 
 export hour_angle, solar_geometry, elev_corr, dchxy, solrad, cloud_adjust_radiation, get_longwave, init_dchxy_buffers
 

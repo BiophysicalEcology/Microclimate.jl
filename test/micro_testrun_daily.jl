@@ -29,8 +29,8 @@ microinput = (; zip(names, microinput_vec)...)
 
 days = collect(1:Int(length(soil_temperature_nmr[:, 1]) / 24)) # days of year to run (for solrad)
 depths = ((DataFrame(CSV.File("$testdir/data/init_daily/DEP.csv"))[:, 2]) / 100.0)u"m" # Soil nodes (cm) - keep spacing close near the surface, last value is where it is assumed that the soil temperature is at the annual mean air temperature
-heights = [0.01]u"m" # air nodes for temperature, wind speed and humidity profile
-days2do = 365
+heights = [0.01, microinput[:Refhyt]]u"m" # air nodes for temperature, wind speed and humidity profile
+days2do = 30
 hours2do = days2do * 24
 # now try the simulation function
 keywords = (;
@@ -38,7 +38,6 @@ keywords = (;
     latitude = (microinput[:ALAT] + microinput[:AMINUT] / 60) * 1.0u"°", # latitude
     days = days[1:days2do], # days of year to simulate - TODO leap years
     hours = collect(0.:1:24.), # hour of day for solrad
-    reference_height = microinput[:Refhyt] * 1.0u"m", # reference height of weather data (air temperature, wind speed, humidity)
     depths = depths, # soil nodes - keep spacing close near the surface
     heights = heights, # air nodes for temperature, wind speed and humidity profile
     # terrain
@@ -117,7 +116,7 @@ keywords = (;
 # TODO include 1st node (currently left out, i.e. just columns 2:10, because way off at times)
 @testset "runmicro comparisons" begin
     soiltemps_mat = reinterpret(reshape, typeof(1.0u"K"), micro_out.soil_temperature)'[:, 2:10]
-    @test all(isapprox.(soiltemps_mat, u"K".(Matrix(soil_temperature_nmr[1:hours2do, 2:10])); atol=10u"K")) # TODO make better!
+    @test all(isapprox.(micro_out.soil_temperature[:, 2:10], u"K".(Matrix(soil_temperature_nmr[1:hours2do, 2:10])); atol=10u"K")) # TODO make better!
     @test all(isapprox.(micro_out.soil_moisture[:, 2:10], Matrix(soil_moisture_nmr[1:hours2do, 2:10]); atol=0.3)) # TODO make better!
     @test all(isapprox.(micro_out.soil_thermal_conductivity[:, 2:10], Matrix(soil_conductivity_nmr[1:hours2do, 2:10])u"W * m^-1 * K^-1"; atol=1u"W * m^-1 * K^-1")) # TODO make better!
 end 

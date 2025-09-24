@@ -372,7 +372,7 @@ function runmicro(;
 
     # simulate all days
     pool = 0.0u"kg/m^2" # initialise depth of pooling water TODO make this an init option
-    heights_water_balance = [0.01, reference_height] .* u"m" # for evaporation calculation TODO how sensitive to this height?
+    heights_water_balance = [0.01u"m", reference_height] # for evaporation calculation TODO how sensitive to this height?
     soil_water_balance_buffers = allocate_soil_water_balance(numnodes_b)  # only once
     niter_moist = ustrip(3600 / moist_step) # TODO use a solver for soil moisture calc
     ∑phase = zeros(Float64, numnodes_a)u"J"
@@ -473,7 +473,6 @@ function runmicro(;
                     pool += rainfall
                     if runmoist
                         infil_out, pctwet, pool, θ_soil0_b = get_soil_water_balance!(soil_water_balance_buffers;
-                                reference_height,
                                 roughness_height,
                                 zh,
                                 d0,
@@ -558,7 +557,6 @@ function runmicro(;
                     end
                     if runmoist
                         infil_out, pctwet, pool, θ_soil0_b = get_soil_water_balance!(soil_water_balance_buffers;
-                                reference_height,
                                 roughness_height,
                                 zh,
                                 d0,
@@ -637,14 +635,13 @@ function runmicro(;
             z0 = roughness_height,
             zh,
             d0,
-            TAREF=air_temperatures[i],
-            VREF=wind_speeds[i],
-            rh=humidities[i],
-            D0cm=u"°C"(T_soils[i][1]),  # top layer temp
-            ZEN=zenith_angles[i],
+            reference_temperature=air_temperatures[i],
+            reference_wind_speed=wind_speeds[i],
+            relative_humidity=humidities[i],
+            surface_temperature=u"°C"(T_soils[i][1]),  # top layer temp
+            zenith_angle=zenith_angles[i],
             heights,
             elevation,
-            warn=true
         )
     end
     flip2vectors(x) = (; (k => getfield.(x, k) for k in keys(x[1]))...)
