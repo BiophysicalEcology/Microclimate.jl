@@ -27,6 +27,7 @@ export MicroParams, MicroForcing
 
 export runmicro
 
+
 include("constants.jl")
 include("landscape.jl")   
 include("interpolation.jl")
@@ -35,5 +36,10 @@ include("radiation.jl")
 include("boundary_layer.jl")
 include("soil_balance.jl")
 include("simulation.jl")
+
+
+function __init__()
+    Unitful.register(Microclimate)
+end
 
 end
