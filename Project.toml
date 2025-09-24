@@ -22,6 +22,12 @@ UnitfulMoles = "999f2bd7-36bf-5ba7-9bc1-c9473aa75374"
 [sources]
 FluidProperties = {rev = "add-PhysicalConstants", url = "https://github.com/BiophysicalEcology/FluidProperties.jl"}
 
+[weakdeps]
+Makie = "ee78f7c6-11fb-53f2-987a-cfe4a2b5a57a"
+
+[extensions]
+MicroclimateMakieExt = "Makie"
+
 [compat]
 Aqua = "0.8"
 CSV = "0.10"
@@ -31,6 +37,7 @@ Dates = "1"
 DelimitedFiles = "1"
 FluidProperties = "0.1"
 Interpolations = "0.15.1"
+Makie = "0.20, 0.21, 0.22, 0.23, 0.24"
 ModelParameters = "0.4"
 OrdinaryDiffEqTsit5 = "1.5"
 PhysicalConstants = "0.2.4"
