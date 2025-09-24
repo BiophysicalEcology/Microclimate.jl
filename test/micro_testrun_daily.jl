@@ -1,5 +1,4 @@
 using Microclimate
-using Makie
 using Unitful
 using CSV, DataFrames
 using Test
@@ -112,7 +111,8 @@ keywords = (;
 # now try the simulation function
 @time micro_out = runmicro(; keywords...);
 
-plot(micro_out)
+# TODO test plotting again at some stage, but it slows down CI a lot
+# plot(micro_out)
 
 # TODO include 1st node (currently left out, i.e. just columns 2:10, because way off at times)
 @testset "runmicro comparisons" begin
