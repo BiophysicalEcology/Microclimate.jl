@@ -1,7 +1,23 @@
-#module SolarRadiation
+# Integer arrays
+const NC0 = reshape(Int[
+        3, 4, 1, 2,
+        2, 4, 1, 3,
+        2, 3, 1, 4,
+        1, 4, 2, 3,
+        1, 3, 2, 4,
+        1, 2, 3, 4,
+    ], 4, 6)
 
-#using Unitful
-#export solrad
+const NC1 = reshape(Int[
+        2, 3, 4, 1,
+        1, 3, 4, 2,
+        1, 2, 4, 3,
+        1, 2, 3, 4,
+        4, 1, 2, 3,
+        3, 1, 2, 4,
+        2, 1, 3, 4,
+        1, 2, 3, 4,
+    ], 4, 8)
 
 """
     hour_angle(t::Quantity, lonc::Quantity) -> Quantity
@@ -105,7 +121,7 @@ A named tuple with the following keys:
 - `ELEVFCT4` for Water vapor
 """
 function elev_corr(elevation)
-    elev_km = ustrip(u"km"(elevation) + 1.0u"km")
+    elev_km = ustrip(u"km", elevation + 1.0u"km")
 
     ELEVFCT1 = 0.00007277 * elev_km^3 +
                0.00507293 * elev_km^2 -
@@ -401,21 +417,29 @@ using the method of the X and Y functions.
 # end
 using StaticArrays
 
-function GAMMA(TAU1::Float64)
+function allocate_gamma()
+    (;
+        CHX  = zeros(101),
+        CHY  = zeros(101),
+        AMU  = zeros(101),
+        X1   = zeros(101),
+        Y1   = zeros(101),
+        X2   = zeros(101),
+        Y2   = zeros(101),
+        AIL  = zeros(101),
+        GAMR = zeros(101),
+        GAML = zeros(101),
+        dchxy_buffers = init_dchxy_buffers(),
+    )
+end
+
+GAMMA(TAU1::Float64) = GAMMA!(allocate_gamma(), TAU1)
+
+function GAMMA!(buffers, TAU1::Float64)
     # Large arrays (mutable, normal)
-    CHX  = zeros(101)
-    CHY  = zeros(101)
-    AMU  = zeros(101)
-    X1   = zeros(101)
-    Y1   = zeros(101)
-    X2   = zeros(101)
-    Y2   = zeros(101)
-    AIL  = zeros(101)
-    GAMR = zeros(101)
-    GAML = zeros(101)
+    (; CHX, CHY, AMU, X1, Y1, X2, Y2, AIL, GAMR, GAML, dchxy_buffers) = buffers
 
     # Small fixed-size arrays (use StaticArrays)
-    CFA = @MVector zeros(3)
     AI  = @MVector zeros(30)
 
     # Set up AMU array
@@ -426,23 +450,25 @@ function GAMMA(TAU1::Float64)
 
 
     # Compute X1, Y1 using dchxy
-    CFA .= (0.75, -0.75, 0.0)
-    CHX_, CHY_, _ = dchxy(TAU1, collect(CFA), 111)
+    CFA = SVector((0.75, -0.75, 0.0))
+    # CHX_, CHY_, _ = dchxy!(dchxy_buffers, TAU1, collect(CFA), 111)
+    CHX_, CHY_, _ = dchxy!(dchxy_buffers, TAU1, CFA, 111)
     X1 .= CHX_
     Y1 .= CHY_
 
     # Compute X2, Y2 using dchxy
-    CFA .= (0.375, -0.375, 0.0)
-    CHX_, CHY_, _ = dchxy(TAU1, collect(CFA), 0)
+    CFA = SVector((0.375, -0.375, 0.0))
+    # CHX_, CHY_, _ = dchxy!(dchxy_buffers, TAU1, collect(CFA), 0)
+    CHX_, CHY_, _ = dchxy!(dchxy_buffers, TAU1, CFA, 0)
     X2 .= CHX_
     Y2 .= CHY_
 
     # Compute AIL (quadrature weights)
     AIL[1] = 0.01 / 3.0
-    CNU1   = 4.0 * AIL[1]
-    CNU2   = 2.0 * AIL[1]
+    CNU1 = 4.0 * AIL[1]
+    CNU2 = 2.0 * AIL[1]
     @inbounds for I in 2:2:100
-        AIL[I]   = CNU1
+        AIL[I] = CNU1
         AIL[I+1] = CNU2
     end
     AIL[101] = AIL[1]
@@ -529,25 +555,25 @@ end
 
 function init_dchxy_buffers()
     arrays = (;
-        PSI = zeros(Float64, 101),
-        AMU = zeros(Float64, 101),
-        XA = zeros(Float64, 101),
-        XB = zeros(Float64, 101),
-        FNPP = zeros(Float64, 101),
-        FNPN = zeros(Float64, 101),
-        FNC0 = zeros(Float64, 101),
-        FNC1 = zeros(Float64, 101),
-        FNX = zeros(Float64, 101),
-        FNY = zeros(Float64, 101),
-        FNW = zeros(Float64, 101),
-        FMC0 = zeros(Float64, 101),
-        FMC1 = zeros(Float64, 101),
-        XD = zeros(Float64, 101),
-        XE = zeros(Float64, 101),
-        CHXA = zeros(Float64, 101),
-        CHYA = zeros(Float64, 101),
-        CHX = zeros(Float64, 101),
-        CHY = zeros(Float64, 101)
+        PSI = zeros(101),
+        AMU = zeros(101),
+        XA = zeros(101),
+        XB = zeros(101),
+        FNPP = zeros(101),
+        FNPN = zeros(101),
+        FNC0 = zeros(101),
+        FNC1 = zeros(101),
+        FNX = zeros(101),
+        FNY = zeros(101),
+        FNW = zeros(101),
+        FMC0 = zeros(101),
+        FMC1 = zeros(101),
+        XD = zeros(101),
+        XE = zeros(101),
+        CHXA = zeros(101),
+        CHYA = zeros(101),
+        CHX = zeros(101),
+        CHY = zeros(101),
     )
     return arrays
 end
@@ -605,8 +631,10 @@ spectra for the terrestrial ecological environment. Ecology, 52(6), 1008–1015.
      https://doi.org/10.2307/1933806
 
 """
-function dchxy(TAU1::Float64, CFA::Vector{Float64}, NCASE::Int)
-    buffers = init_dchxy_buffers()
+dchxy(TAU1::Float64, CFA::Vector{Float64}, NCASE::Int) =
+    dchxy!(init_dchxy_buffers(), TAU1, CFA, NCASE)
+
+function dchxy!(buffers, TAU1::Float64, CFA::AbstractVector{Float64}, NCASE::Int)
     PSI   = buffers.PSI
     AMU   = buffers.AMU
     XA    = buffers.XA
@@ -634,26 +662,6 @@ function dchxy(TAU1::Float64, CFA::Vector{Float64}, NCASE::Int)
     CHY   = buffers.CHY
     XA    = buffers.XA
     XB    = buffers.XB
-
-    # Integer arrays
-    NC0 = reshape(Int[
-            3, 4, 1, 2,
-            2, 4, 1, 3,
-            2, 3, 1, 4,
-            1, 4, 2, 3,
-            1, 3, 2, 4,
-            1, 2, 3, 4,
-        ], 4, 6)
-    NC1 = reshape(Int[
-            2, 3, 4, 1,
-            1, 3, 4, 2,
-            1, 2, 4, 3,
-            1, 2, 3, 4,
-            4, 1, 2, 3,
-            3, 1, 2, 4,
-            2, 1, 3, 4,
-            1, 2, 3, 4,
-        ], 4, 8)
 
     # Variables
     PERA = 0.0
@@ -991,10 +999,7 @@ function dchxy(TAU1::Float64, CFA::Vector{Float64}, NCASE::Int)
         println()
     end
     # COMPUTE THE FOURTH APPROXIMATION OF X AND Y FUNCTIONS
-    XB[1] = 0.0 # Fortran line 345
-    if TAU1 == 0.0
-        XB[1] = 1.0
-    end
+    XB[1] = TAU1 == 0.0 ? 1.0 : 0.0 # Fortran line 345
 
     @inbounds @simd for i in 2:101
         XB[i] = exp(-TAU1 / AMU[i])
@@ -1009,77 +1014,9 @@ function dchxy(TAU1::Float64, CFA::Vector{Float64}, NCASE::Int)
 
     CHXA[1] = 1.0
     CHYA[1] = XB[1]
-    nomitr = 1 # Fortran line 362
-    converged = false
-    TEMC = 0.0 # Initialize before convergence loop
-    while !converged
-        @inbounds for I in 2:101
-            # Compute XD and XE for this I
-            # The most performance intensive code of the package: loop inside loop, called from another loop
-            # We split the inner loop so there is not conditional check and it can SIMD
-            # Possibly there is a faster algorithm too.
-            # TODO: put the math in a function?
-            @inbounds for IC in 1:I-1
-                XD[IC] = PSI[IC] * (FNX[I] * FNX[IC] - FNY[I] * FNY[IC]) / (AMU[I] + AMU[IC])
-                XE[IC] = PSI[IC] * (FNY[I] * FNX[IC] - FNX[I] * FNY[IC]) / (AMU[I] - AMU[IC])
-            end
-            @inbounds XD[I] = PSI[I] * (FNX[I] * FNX[I] - FNY[I] * FNY[I]) / (AMU[I] + AMU[I])
-            @inbounds for IC in I+1:101
-                XD[IC] = PSI[IC] * (FNX[I] * FNX[IC] - FNY[I] * FNY[IC]) / (AMU[I] + AMU[IC])
-                XE[IC] = PSI[IC] * (FNY[I] * FNX[IC] - FNX[I] * FNY[IC]) / (AMU[I] - AMU[IC])
-            end
 
-            # Everett's formula / interpolation for XE[I]
-            if I <= 3
-                XE[I] = 0.5 * (XE[I+1] + XE[I-1])
-            elseif I <= 5
-                XE[I] = 0.0625 * (9.0*(XE[I+1] + XE[I-1]) - XE[I+3] - XE[I-3])
-            elseif I <= 96
-                XE[I] = (3.0*(XE[I+5] + XE[I-5]) + 150.0*(XE[I+1] + XE[I-1]) - 25.0*(XE[I+3] + XE[I-3])) / 256.0
-            else
-                XE[I] = 5.0*XE[I-1] + 10.0*XE[I-3] + XE[I-5] - 10.0*XE[I-2] - 5.0*XE[I-4]
-            end
+    converged, nomitr = _dchxy_converge!(FNX, FNY, AMU, PSI, XA, XB, XD, XE, CHX, CHY, CHXA, CHYA)
 
-            sxd = 0.0
-            sxe = 0.0
-            @inbounds @simd for ic in 1:101
-                sxd += XA[ic] * XD[ic]
-                sxe += XA[ic] * XE[ic]
-            end
-            CHXA[I] = 1.0 + AMU[I] * sxd
-            CHYA[I] = XB[I] + AMU[I] * sxe
-        end
-
-        # Correction to CHX and CHY
-        @inbounds @simd for i in 1:101
-            TEMD = TEMC * AMU[i] * (1.0 - XB[i])
-            CHX[i] = CHXA[i] + TEMD
-            CHY[i] = CHYA[i] + TEMD
-        end
-
-        # Check convergence (same as before)
-        if nomitr > 1
-            @inbounds for I in 2:101
-                rel_error = abs((CHY[I] - FNY[I]) / CHY[I])
-                # TODO this seems wrong? shouldnt it only break if errors are <= 2.0e-4 for all I ?
-                if rel_error <= 2.0e-4
-                    converged = true
-                    break
-                end
-            end
-        end
-
-        # Prepare for next iteration
-        @inbounds @simd for I in 1:101
-            FNX[I] = CHX[I]
-            FNY[I] = CHY[I]
-        end
-
-        nomitr += 1
-        if nomitr > 15
-            break
-        end
-    end
     # if NCASE ≠ 0, generate standard solution (Fortran 975…990)
     if NCASE != 0
         tsumx = 0.0
@@ -1333,18 +1270,19 @@ function solrad(;
     nsteps = ndays * ntimes # total time steps
 
     # arrays to hold every time step's radiation between 300 and 320 nm in 2 nm steps
-    GRλs = fill(0.0, nsteps, nmax)u"mW/nm/cm^2" # wavelength-specific global radiation
-    DRRλs = fill(0.0, nsteps, nmax)u"mW/nm/cm^2"# wavelength-specific direct Rayleigh radiation
-    DRλs = fill(0.0, nsteps, nmax)u"mW/nm/cm^2" # wavelength-specific direct radiation
-    SRλs = fill(0.0, nsteps, nmax)u"mW/nm/cm^2" # wavelength-specific scattered radiation
-    GRs = fill(0.0, nsteps)u"mW/cm^2"           # total global radiation
-    DRRs = fill(0.0, nsteps)u"mW/cm^2"          # total direct Rayleigh radiation
-    DRs = fill(0.0, nsteps)u"mW/cm^2"           # total direct radiation
-    SRs = fill(0.0, nsteps)u"mW/cm^2"           # total scattered radiation
+    GRλs = fill(0.0u"mW/nm/cm^2", nsteps, nmax) # wavelength-specific global radiation
+    DRRλs = fill(0.0u"mW/nm/cm^2", nsteps, nmax)# wavelength-specific direct Rayleigh radiation
+    DRλs = fill(0.0u"mW/nm/cm^2", nsteps, nmax) # wavelength-specific direct radiation
+    SRλs = fill(0.0u"mW/nm/cm^2", nsteps, nmax) # wavelength-specific scattered radiation
+    GRs = fill(0.0u"mW/cm^2", nsteps)           # total global radiation
+    DRRs = fill(0.0u"mW/cm^2", nsteps)          # total direct Rayleigh radiation
+    DRs = fill(0.0u"mW/cm^2", nsteps)           # total direct radiation
+    SRs = fill(0.0u"mW/cm^2", nsteps)           # total scattered radiation
+    gamma_buffers = allocate_gamma()
 
     # arrays to hold zenith and azimuth angles each step
-    Zs = fill(90.0, nsteps)u"°"                 # zenith angles
-    ZSLs = fill(90.0, nsteps)u"°"               # slope zenith angles
+    Zs = fill(90.0u"°", nsteps)                 # zenith angles
+    ZSLs = fill(90.0u"°", nsteps)               # slope zenith angles
     AZIs = Vector{Union{Missing,typeof(0.0u"°")}}(undef, nsteps)
     fill!(AZIs, 90.0u"°")   
     HHs = fill(0.0, ndays)                      # hour angles
@@ -1356,11 +1294,11 @@ function solrad(;
     tsn = 12.0 # initialise time of solar noon
     @inbounds for i in 1:ndays
         # arrays to hold radiation for a given hour between 300 and 320 nm in 2 nm steps
-        GRINT = fill(0.0, nmax)u"mW/cm^2"   # integrated global radiation component (direct + scattered)
-        DRRINT = fill(0.0, nmax)u"mW/cm^2"  # integrated direct Rayleigh radiation component
-        DRINT = fill(0.0, nmax)u"mW/cm^2"   # integrated direct radiation component
-        SRINT = fill(0.0, nmax)u"mW/cm^2"   # integrated scattered radiation component
-        AIλ = fill(0.0, nmax)u"nm"
+        GRINT = fill(0.0u"mW/cm^2", nmax)   # integrated global radiation component (direct + scattered)
+        DRRINT = fill(0.0u"mW/cm^2", nmax)  # integrated direct Rayleigh radiation component
+        DRINT = fill(0.0u"mW/cm^2", nmax)   # integrated direct radiation component
+        SRINT = fill(0.0u"mW/cm^2", nmax)   # integrated scattered radiation component
+        AIλ = fill(0.0u"nm", nmax)
         GRλ = GRINT * u"1/nm"               # wavelength-specific global radiation component (direct + scattered)
         DRRλ = GRINT * u"1/nm"              # wavelength-specific direct Rayleigh radiation component
         DRλ = GRINT * u"1/nm"               # wavelength-specific direct radiation component
@@ -1497,7 +1435,7 @@ function solrad(;
                 ozone = OZ[llat, mon]  # ozone thickness (cm) from lookup table
                 ELEVFCT1, ELEVFCT2, ELEVFCT3, ELEVFCT4 = elev_corr(elevation)
 
-                P = atmospheric_pressure(elevation) # pressure from elevation
+                P = get_pressure(elevation) # pressure from elevation
 
                 @inbounds for N in 1:nmax
                     τλ1 = (P / 101300u"Pa") * τR[N] * ELEVFCT1
@@ -1515,6 +1453,7 @@ function solrad(;
                     if part2 < 1.0e-24
                         DRλ[N] = 0.0u"mW / cm^2 / nm"
                     else
+                        # TODO: ustrip to what
                         DRλ[N] = ((ustrip(part1) * part2) / 1000.0) * u"mW / cm^2 / nm"
                     end
 
@@ -1535,7 +1474,7 @@ function solrad(;
                         SRλ[N] = 0.0u"mW / cm^2 / nm"
                     elseif iuv
                         if τλ1 >= 0.03
-                            GAMR, GAML, SBAR = GAMMA(τλ1)
+                            GAMR, GAML, SBAR = GAMMA!(gamma_buffers, τλ1)
                             SRλ[N] = (
                                          ((float(GAML[intcz]) + float(GAMR[intcz])) / (2.0 * (1.0 - albedo * float(SBAR))))
                                          -
@@ -1555,6 +1494,7 @@ function solrad(;
                             # as FD(N,I) and FDQ(N,I) where N is the wavelength index and I is
                             # (zenith angle + 5)/5 rounded off to the nearest integer value.
                             # The arrays FD and FDQ are for sea level (P = 1013 mb).
+                            # TODO: ustrip to what
                             B = ustrip(Z) / 5
                             IA = trunc(Int, B)
                             C = B - IA
@@ -1619,6 +1559,7 @@ function solrad(;
         hour_solar_noon = tsns,
         day_of_year = DOYs,
         hour = times,
+        # TODO why is this conversion needed, what is the 10 about
         rayleigh_total = DRRs .* (10u"W/m^2" / 1u"mW/cm^2"),
         direct_total = DRs .* (10u"W/m^2" / 1u"mW/cm^2"),
         diffuse_total = SRs .* (10u"W/m^2" / 1u"mW/cm^2"),
@@ -1646,8 +1587,9 @@ function get_longwave(;
     # Longwave radiation (handle both IR modes)
     # Constants
     #σ = u"W/m^2/K^4"(0.8126e-10u"cal/minute/cm^2/K^4") # value used in NicheMapR (sigp)
-    P_atmos = atmospheric_pressure(elevation)
-    wet_air_out = wet_air_properties(u"K"(tair); rh, P_atmos)
+    P_atmos = get_pressure(elevation)
+    # TODO this is expensive and probably calculated elsewhere
+    wet_air_out = wet_air(u"K"(tair); rh, P_atmos)
 
     # Atmospheric radiation
     if swinbank
@@ -1656,6 +1598,7 @@ function get_longwave(;
     else
         # Campbell and Norman 1998 eq. 10.10 to get emissivity of sky
         P_vap = wet_air_out.P_vap
+        # TODO: ustrip to what
         arad = u"W/m^2"(ustrip(1.72 * (ustrip(u"kPa"(P_vap)) / ustrip(u"K"(tair) + 0.01u"K"))^(1.0 / 7.0)) * σ * (u"K"(tair) + 0.01u"K")^4) 
     end
     # Cloud radiation temperature (shade approximation, TAIR - 2°C)
@@ -1754,4 +1697,90 @@ function cloud_adjust_radiation(cloud, D_cs, B_cs, zenith, doy; a=0.36, b=0.64, 
     # G[night] .= 0.0u"W/m^2"
 
     return G, D, B
+end
+
+
+# Separated out from dchxy for easier optimisation
+# This algorithm is very expensive
+@noinline function _dchxy_converge!(FNX, FNY, AMU, PSI, XA, XB, XD, XE, CHX, CHY, CHXA, CHYA)
+    nomitr = 1 # Fortran line 362
+    TEMC = 0.0 # Initialize before convergence loop
+    converged = false
+
+    while !converged
+        @inbounds for I in 2:101
+            fnx_i = FNX[I] 
+            fny_i = FNY[I] 
+            amu_i = AMU[I]
+
+            #######################################################################################################
+            # Compute XD and XE for this I
+            # The most performance-intensive code of the package: loop inside loop inside while, called from another loop
+            # Possibly there is a faster algorithm?
+            # @simd works marginally better when each line is separate
+            @inbounds @simd for IC in 1:101
+                XD[IC] = PSI[IC] * (fnx_i * FNX[IC] - fny_i * FNY[IC]) / (amu_i + AMU[IC])
+            end
+            @inbounds @simd for IC in 1:101
+                XE[IC] = PSI[IC] * (fny_i * FNX[IC] - fnx_i * FNY[IC]) / (amu_i - AMU[IC])
+            end
+            #######################################################################################################
+
+            # Everett's formula / interpolation for XE[I]
+            XE[I] = if I <= 3
+                0.5 * (XE[I+1] + XE[I-1])
+            elseif I <= 5
+                0.0625 * (9.0*(XE[I+1] + XE[I-1]) - XE[I+3] - XE[I-3])
+            elseif I <= 96
+                (3.0*(XE[I+5] + XE[I-5]) + 150.0*(XE[I+1] + XE[I-1]) - 25.0*(XE[I+3] + XE[I-3])) / 256.0
+            else
+                5.0*XE[I-1] + 10.0*XE[I-3] + XE[I-5] - 10.0*XE[I-2] - 5.0*XE[I-4]
+            end
+
+
+            #########################################################
+            # Second most expensive code in the package
+            # @simd is a huge performance gain
+            sxd = 0.0
+            sxe = 0.0
+            @inbounds @simd for ic in 1:101
+                sxd += XA[ic] * XD[ic]
+                sxe += XA[ic] * XE[ic]
+            end
+            #########################################################
+
+            @inbounds CHXA[I] = 1.0 + amu_i * sxd
+            @inbounds CHYA[I] = XB[I] + amu_i * sxe
+        end
+
+        # Correction to CHX and CHY
+        @inbounds @simd for i in 1:101
+            TEMD = TEMC * AMU[i] * (1.0 - XB[i])
+            CHX[i] = CHXA[i] + TEMD
+            CHY[i] = CHYA[i] + TEMD
+        end
+
+        # Check convergence (same as before)
+        if nomitr > 1
+            @inbounds for I in 2:101
+                rel_error = abs((CHY[I] - FNY[I]) / CHY[I])
+                # TODO this seems wrong? shouldnt it only break if errors are <= 2.0e-4 for all I ?
+                if rel_error <= 2.0e-4
+                    converged = true
+                    break
+                end
+            end
+        end
+
+        # Prepare for next iteration
+        @inbounds @simd for I in 1:101
+            FNX[I] = CHX[I]
+            FNY[I] = CHY[I]
+        end
+
+        nomitr += 1
+        nomitr > 15 && break
+    end 
+
+    return converged, nomitr
 end
