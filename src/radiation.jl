@@ -1647,7 +1647,7 @@ function get_longwave(;
     # Constants
     #σ = u"W/m^2/K^4"(0.8126e-10u"cal/minute/cm^2/K^4") # value used in NicheMapR (sigp)
     P_atmos = atmospheric_pressure(elevation)
-    wet_air_out = wet_air(u"K"(tair); rh, P_atmos)
+    wet_air_out = wet_air_properties(u"K"(tair); rh, P_atmos)
 
     # Atmospheric radiation
     if swinbank
