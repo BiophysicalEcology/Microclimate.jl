@@ -1497,7 +1497,7 @@ function solrad(;
                 ozone = OZ[llat, mon]  # ozone thickness (cm) from lookup table
                 ELEVFCT1, ELEVFCT2, ELEVFCT3, ELEVFCT4 = elev_corr(elevation)
 
-                P = get_pressure(elevation) # pressure from elevation
+                P = atmospheric_pressure(elevation) # pressure from elevation
 
                 @inbounds for N in 1:nmax
                     τλ1 = (P / 101300u"Pa") * τR[N] * ELEVFCT1
@@ -1646,8 +1646,8 @@ function get_longwave(;
     # Longwave radiation (handle both IR modes)
     # Constants
     #σ = u"W/m^2/K^4"(0.8126e-10u"cal/minute/cm^2/K^4") # value used in NicheMapR (sigp)
-    P_atmos = get_pressure(elevation)
-    wet_air_out = wet_air(u"K"(tair); rh, P_atmos)
+    P_atmos = atmospheric_pressure(elevation)
+    wet_air_out = wet_air_properties(u"K"(tair); rh, P_atmos)
 
     # Atmospheric radiation
     if swinbank
