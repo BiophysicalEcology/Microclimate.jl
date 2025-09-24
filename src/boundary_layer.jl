@@ -60,9 +60,9 @@ function get_profile(;
     T[1] = T1
 
     # compute rcptkg (was a constant in original Fortran version)
-    dry_air_out = dry_air(u"K"(TAREF), elevation=elevation)
-    wet_air_out = wet_air(u"K"(TAREF), rh=rh)
-    ρ = dry_air_out.ρ_air
+    dry_air_properties_out = dry_air_properties(u"K"(TAREF), elevation=elevation)
+    wet_air_out = wet_air_properties(u"K"(TAREF), rh=rh)
+    ρ = dry_air_properties_out.ρ_air
     c_p = wet_air_out.c_p
     TREF = u"K"(TAREF)
     rcptkg = u"cal*minute^2/cm^4"(ρ * c_p * TREF / (κ * g_n))
@@ -128,8 +128,8 @@ function get_profile(;
     VV = [0.0u"cm/minute"; reverse(VV)]
     T = [T3; reverse(T)]
 
-    e = wet_air(T1, rh=rh).P_vap
-    wet_air_out = wet_air.(T; rh=rh)
+    e = wet_air_properties(T1, rh=rh).P_vap
+    wet_air_out = wet_air_properties.(T; rh=rh)
     es = [x.P_vap_sat for x in wet_air_out]
     RHs = clamp.(e ./ es .* 100.0, 0.0, 100.0)
 
@@ -167,9 +167,9 @@ function RHOCP(TAVE)
 end
 
 function RHOCP(TAVE, elevation, rh)
-    dry_air_out = dry_air(u"K"(TAVE), elevation=elevation)
-    wet_air_out = wet_air(u"K"(TAVE), rh=rh)
-    ρ = dry_air_out.ρ_air
+    dry_air_properties_out = dry_air_properties(u"K"(TAVE), elevation=elevation)
+    wet_air_out = wet_air_properties(u"K"(TAVE), rh=rh)
+    ρ = dry_air_properties_out.ρ_air
     c_p = wet_air_out.c_p
     return u"(cal*g)/(g*cm^3*K)"(ρ * c_p)
 end

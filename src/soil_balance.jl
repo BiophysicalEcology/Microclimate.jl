@@ -98,7 +98,7 @@ function soil_energy_balance!(
     P_atmos = get_pressure(elevation)
     
     # Evaporation
-    wet_air_out = wet_air(u"K"(tair); rh=rh, P_atmos=P_atmos)
+    wet_air_out = wet_air_properties(u"K"(tair); rh=rh, P_atmos=P_atmos)
     c_p_air = wet_air_out.c_p
     ρ_air = wet_air_out.ρ_air
     hd = (hc / (c_p_air * ρ_air)) * (0.71 / 0.60)^0.666
@@ -132,8 +132,8 @@ function evap(;tsurf, tair, rh, rhsurf, hd, elevation, pctwet, sat)
     P_atmos = get_pressure(elevation)
 
     # surface and air vapor densities
-    ρ_vap_surf = wet_air(u"K"(tsurf); rh=rhsurf, P_atmos=P_atmos).ρ_vap
-    ρ_vap_air = wet_air(u"K"(tair); rh=rh, P_atmos=P_atmos).ρ_vap
+    ρ_vap_surf = wet_air_properties(u"K"(tsurf); rh=rhsurf, P_atmos=P_atmos).ρ_vap
+    ρ_vap_air = wet_air_properties(u"K"(tair); rh=rh, P_atmos=P_atmos).ρ_vap
 
     # Effective wet surface fraction
     effsur = sat ? 1.0 : pctwet / 100.0
@@ -142,7 +142,7 @@ function evap(;tsurf, tair, rh, rhsurf, hd, elevation, pctwet, sat)
     water = effsur * hd * (ρ_vap_surf - ρ_vap_air)
 
     # Latent heat of vaporization (J/kg)
-    λ_evap = get_λ_evap(tsurf) 
+    λ_evap = enthalpy_of_vaporisation(tsurf) 
 
     # Energy flux due to evaporation (W/m² or converted)
     qevap = water * λ_evap  # SI units for water budget calcs
@@ -356,7 +356,7 @@ function soil_water_balance(;
         DJ[1] = EP * MW * H[2] / (R * T[1] * (1.0 - rh_loc)) # derivative of vapour flux at soil surface, combination of EQ9.14 and EQ5.14
 
         @inbounds for i in 2:M
-            VP = wet_air(u"K"(T[i]); rh=100.0, P_atmos=P_atmos).ρ_vap # VP is vapour density = c'_v in EQ9.7
+            VP = wet_air_properties(u"K"(T[i]); rh=100.0, P_atmos=P_atmos).ρ_vap # VP is vapour density = c'_v in EQ9.7
             KV = 0.66 * DV * VP * (WS[i] - (WN[i] + WN[i+1]) / 2.0) / (Z[i+1] - Z[i]) # vapour conductivity, EQ9.7, assuming epsilon(psi_g) = b*psi_g^m (eq. 3.10) where b = 0.66 and m = 1 (p.99)
             JV[i] = KV * (H[i+1] - H[i]) # fluxes of vapour within soil, EQ9.14
             DJ[i] = MW * H[i] * KV / (R * T[i-1]) # derivatives of vapour fluxes within soil, combination of EQ9.14 and EQ5.14
@@ -486,12 +486,12 @@ function get_soil_water_balance(;
     P_atmos = get_pressure(elevation)
     rh_loc = min(0.99, profile_out.humidities[2] / 100)
     hc = max(abs(qconv / (T0[1] - u"K"(TAIRs[step]))), 0.5u"W/m^2/K")
-    wet_air_out = wet_air(u"K"(TAIRs[step]); rh=RHs[step], P_atmos=P_atmos)
+    wet_air_out = wet_air_properties(u"K"(TAIRs[step]); rh=RHs[step], P_atmos=P_atmos)
     c_p_air = wet_air_out.c_p
     ρ_air = wet_air_out.ρ_air
     hd = (hc / (c_p_air * ρ_air)) * (0.71 / 0.60)^0.666
     qevap, gwsurf = evap(tsurf=u"K"(T0[1]), tair=u"K"(TAIRs[step]), rh=RHs[step], rhsurf=100.0, hd=hd, elevation=elevation, pctwet=pctwet, sat=true)
-    λ_evap = get_λ_evap(T0[1])
+    λ_evap = enthalpy_of_vaporisation(T0[1])
     EP = max(1e-7u"kg/m^2/s", qevap / λ_evap) # evaporation potential, mm/s (kg/m2/s)
 
     if pool > 0.0u"kg/m^2" # surface is wet - saturate it for infiltration
