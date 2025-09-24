@@ -1,5 +1,5 @@
 using Microclimate
-using GLMakie
+using Makie
 using Unitful
 using CSV, DataFrames
 using Test
