@@ -1,22 +1,7 @@
 # Julia translation of FORTRAN code that calculates variable thermal conductivity and specific heat
 # for soil and snow layers, based on Campbell et al. (1994) and Campbell & Norman (1998)
 
-function allocate_soil_properties(nodes, soilprops)
-    (; ρ_dry, θ_sat, λ_m, cp_m, ρ_m) = soilprops
-    NON = length(nodes)
-
-    λ_b = fill(λ_m[1], NON)
-    cp_b = fill(cp_m[1], NON)
-    ρ_b = fill(ρ_m[1], NON)
-
-    return (; λ_b, cp_b, ρ_b)
-end
-
-
-soil_properties(T_soil, θ_soil, nodes::AbstractVector{<:Real}, soilprops, args...) = 
-    soil_properties!(allocate_soil_properties(nodes, soilprops), T_soil, θ_soil, nodes, soilprops, args...)
-function soil_properties!(
-    buffers::NamedTuple,                          
+function soil_properties(
     T_soil::AbstractVector{<:Quantity},
     θ_soil::AbstractVector{<:Real},
     nodes::AbstractVector{<:Real},
@@ -25,10 +10,12 @@ function soil_properties!(
     runmoist::Bool,
     runsnow::Bool,
 )
-    numtyps = findfirst(==(0.0), nodes) - 1
     NON = length(nodes)
-    (; λ_b, cp_b, ρ_b) = buffers
+    numtyps = findfirst(nodes .== 0.0) - 1
     (; ρ_dry, θ_sat, λ_m, cp_m, ρ_m) = soilprops
+    λ_b = fill(λ_m[1], NON)
+    cp_b = fill(cp_m[1], NON)
+    ρ_b = fill(ρ_m[1], NON)
 
     cp_water = 4184.0u"J/kg/K"
     ρ_water = 1000.0u"kg/m^3"
@@ -69,16 +56,9 @@ function soil_properties!(
         ρ_hat = ρ_hat0 * (p_a / p_a0) * (273.15 / T_K)
         λ_vap = (45144.0 - 48.0 * T_C)u"J/mol"
 
-        ################################################################
-        # TODO: wet_air is overkill for just P_vap. 
-        # Can the compiler figure out to skip the extra work?
-        # This is some of the most expensive code in the package
         e_a = wet_air(T_K; rh=99.0, P_atmos=p_a).P_vap
-        e_a1 = wet_air(T_K - 1u"K"; rh=99.0, P_atmos=p_a).P_vap
-        e_a2 = wet_air(T_K + 1u"K"; rh=99.0, P_atmos=p_a).P_vap
-        ################################################################
-
-
+        e_a1 = wet_air(T_K - 1u"K"; rh = 99.0, P_atmos = p_a).P_vap
+        e_a2 = wet_air(T_K + 1u"K"; rh = 99.0, P_atmos = p_a).P_vap
         ∇x = (e_a2 - e_a1) / 2.0
 
         ϕ_m = ρ_dry[j] / ρ_m[j]
