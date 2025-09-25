@@ -52,3 +52,64 @@ function init_soillayers(N)
     c = fill(1.0u"W/K/m^2", N)
     return SoilLayers(depp, wc, c)
 end
+
+function init_moistlayers(M)
+    MoistLayers(
+        P = zeros(M+1) .* u"J/kg",
+        Z = zeros(M+1) .* u"m",
+        V = zeros(M+1) .* u"kg/m^2",
+        W = zeros(M+1) .* u"m^3/m^3",
+        WN = zeros(M+1) .* u"m^3/m^3",
+        K = zeros(M+1) .* u"kg*s/m^3",
+        H = zeros(M+1),
+        T = zeros(M+1) .* u"K",
+        rh_soil = zeros(M),
+        ψ_soil = zeros(M) .* u"J/kg",
+        ψ_root = zeros(M) .* u"J/kg",
+        PR = zeros(M+1) .* u"J/kg",
+        PP = zeros(M+1) .* u"J/kg",
+        B1 = zeros(M+1),
+        N = zeros(M+1),
+        N1 = zeros(M+1),
+        WS = zeros(M+1),
+        RR = zeros(M+1) .* u"m^4/kg/s",
+        BZ = zeros(M+1) .* u"m",
+        JV = zeros(M+1) .* u"kg/m^2/s",
+        DJ = zeros(M+1) .* u"kg*s/m^4",
+        CP = zeros(M+1) .* u"kg*s/m^4",
+        A = zeros(M+1) .* u"kg*s/m^4",
+        B = zeros(M+1) .* u"kg*s/m^4",
+        C = zeros(M+1) .* u"kg*s/m^4",
+        C2 = zeros(M+1),
+        F = zeros(M+1) .* u"kg/m^2/s",
+        F2 = zeros(M+1) .* u"J/kg",
+        DP = zeros(M+1) .* u"J/kg"
+    )
+end
+
+abstract type AbstractEnvironment end
+
+@kwdef struct MicroResult{AT,WS,RH,CC,GS,DrS,DfS,ZA,SkT,SoT,SM,SWP,SH,STC,SPH,SBD,SW,SR,Pr} <: AbstractEnvironment
+    air_temperature::AT 
+    wind_speed::WS
+    relative_humidity::RH
+    cloud_cover::CC
+    global_solar::GS
+    direct_solar::DrS
+    diffuse_solar::DfS
+    zenith_angle::ZA 
+    sky_temperature::SkT
+    # TODO: should things like soil_temperature be sub-components? soil.temperature ?
+    soil_temperature::SoT
+    soil_moisture::SM
+    soil_water_potential::SWP
+    soil_humidity::SH 
+    soil_thermal_conductivity::STC
+    soil_specific_heat::SPH 
+    soil_bulk_density::SBD 
+    surface_water::SW
+    solrad::SR
+    profile::Pr
+end
+
+Base.show(io::IO, mr::MicroResult) = print(io, "MicroResult")

@@ -352,7 +352,7 @@ function runmicro(;
     soil_saturation_moisture = 1.0 .- soil_bulk_density2 ./ soil_mineral_density2
     ψ_soils[1, :] = air_entry_water_potential[sub] .* (soil_saturation_moisture[sub] ./ θ_soil0_a) .^ Campbells_b_parameter[sub]
     MW = 0.01801528u"kg/mol" # molar mass of water, kg/mol # TODO use UnitfulMoles
-    rh_soils[1, :] = clamp.(exp.(MW .* ψ_soils[1, :] ./ (Unitful.R .* T0)), 0, 1)
+    rh_soils[1, :] = clamp.(exp.(MW .* ψ_soils[1, :] ./ (R .* T0)), 0, 1)
     pools[1] = 0.0u"kg/m^2"
     
     # sky temperature given cloud cover, shade, hillshade (viewfactor)
@@ -653,10 +653,12 @@ function runmicro(;
     wind_speed = reduce(hcat, profiles.wind_speeds)'
     relative_humidity = reduce(hcat, profiles.humidities)'
 
-    return (;
+    return MicroResult(;
         air_temperature,
         wind_speed,
         relative_humidity,
+        # TODO just use the same names in the code above 
+        # all these name conversions are unnecesary
         cloud_cover=cloud_covers,
         global_solar,
         direct_solar,
@@ -671,7 +673,7 @@ function runmicro(;
         soil_specific_heat = c_p_bulk,
         soil_bulk_density = ρ_bulk,
         surface_water = pools,
-        solrad_out = solrad_out,
-        profile_out = profile_out,
+        solrad=solrad_out,
+        profile=profile_out,
     )
 end

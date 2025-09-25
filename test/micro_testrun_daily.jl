@@ -32,6 +32,7 @@ depths = ((DataFrame(CSV.File("$testdir/data/init_daily/DEP.csv"))[:, 2]) / 100.
 heights = [0.01]u"m" # air nodes for temperature, wind speed and humidity profile
 days2do = 30
 hours2do = days2do * 24
+# now try the simulation function
 keywords = (;
     # locations, times, depths and heights
     latitude = (microinput[:ALAT] + microinput[:AMINUT] / 60) * 1.0u"°", # latitude
@@ -109,8 +110,9 @@ keywords = (;
 
 # now try the simulation function
 @time micro_out = runmicro(; keywords...);
-using ProfileView
-@profview micro_out = runmicro(; keywords...)
+
+# TODO test plotting again at some stage, but it slows down CI a lot
+# plot(micro_out)
 
 # TODO include 1st node (currently left out, i.e. just columns 2:10, because way off at times)
 @testset "runmicro comparisons" begin

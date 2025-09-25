@@ -39,7 +39,7 @@ function soil_properties!(
     g_a = 0.1
     g_c = 1.0 - 2.0 * g_a
     p_a0 = 101325.0u"Pa"
-    p_a = get_pressure(elevation)
+    p_a = atmospheric_pressure(elevation)
 
     ϵ(λ_λ, λ_f) = 2.0 / (3.0 * (1.0 + g_a * (λ_λ / λ_f - 1.0))) + 1.0 / (3.0 * (1.0 + g_c * (λ_λ / λ_f - 1.0)))
 
@@ -73,11 +73,10 @@ function soil_properties!(
         # TODO: wet_air is overkill for just P_vap. 
         # Can the compiler figure out to skip the extra work?
         # This is some of the most expensive code in the package
-        e_a = wet_air(T_K; rh=99.0, P_atmos=p_a).P_vap
-        e_a1 = wet_air(T_K - 1u"K"; rh=99.0, P_atmos=p_a).P_vap
-        e_a2 = wet_air(T_K + 1u"K"; rh=99.0, P_atmos=p_a).P_vap
+        e_a = wet_air_properties(T_K; rh=99.0, P_atmos=p_a).P_vap
+        e_a1 = wet_air_properties(T_K - 1u"K"; rh=99.0, P_atmos=p_a).P_vap
+        e_a2 = wet_air_properties(T_K + 1u"K"; rh=99.0, P_atmos=p_a).P_vap
         ################################################################
-
 
         ∇x = (e_a2 - e_a1) / 2.0
 
@@ -105,7 +104,7 @@ function soil_properties!(
     #     end
 
     #     if cursnow >= minsnow
-    #         e_a = wet_air(T_L; rh=100, P_atmos = p_a).r_w
+    #         e_a = wet_air_properties(T_L; rh=100, P_atmos = p_a).r_w
     #         cpsnow = (2100.0 * snowdens + (1.005 + 1.82 * (RW / (1.0 + RW))) * 1000.0 * (1.0 - snowdens))
     #         snowcond2 = (0.00395 + 0.00084 * snowdens * 1000.0 - 0.0000017756 * (snowdens * 1000.0)^2 +
     #                      0.00000000380635 * (snowdens * 1000.0)^3) / 418.6 * 60.0
