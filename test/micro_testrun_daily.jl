@@ -30,7 +30,7 @@ microinput = (; zip(names, microinput_vec)...)
 days = collect(1:Int(length(soil_temperature_nmr[:, 1]) / 24)) # days of year to run (for solrad)
 depths = ((DataFrame(CSV.File("$testdir/data/init_daily/DEP.csv"))[:, 2]) / 100.0)u"m" # Soil nodes (cm) - keep spacing close near the surface, last value is where it is assumed that the soil temperature is at the annual mean air temperature
 heights = [0.01, microinput[:Refhyt]]u"m" # air nodes for temperature, wind speed and humidity profile
-days2do = 30
+days2do = 365
 hours2do = days2do * 24
 # now try the simulation function
 keywords = (;
@@ -105,6 +105,7 @@ keywords = (;
     runmoist = Bool(Int(microinput[:runmoist])), # run soil moisture algorithm?
     spinup = Bool(Int(microinput[:spinup])), # spin-up the first day by iterate_day iterations?
     iuv = Bool(Int(microinput[:IUV])), # this makes it take ages if true!
+    maximum_surface_temperature = u"K"(microinput[:maxsurf]u"°C")
 )
 
 # now try the simulation function

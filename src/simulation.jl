@@ -124,6 +124,7 @@ function runmicro(;
     roughness_height = 0.004u"m", # heat transfer roughness height
     zh = 0u"m", #  heat transfer roughness height
     d0 = 0u"m", # zero plane displacement correction factor
+    κ = 0.4, # Kármán constant 
     # soil thermal parameters 
     soil_mineral_conductivity = 1.25u"W/m/K", # soil minerals thermal conductivity
     soil_mineral_density = 2.560u"Mg/m^3", # soil minerals density
@@ -180,6 +181,7 @@ function runmicro(;
     initial_soil_moisture = [0.42, 0.42, 0.42, 0.43, 0.44, 0.44, 0.43, 0.42, 0.41, 0.42, 0.42, 0.43],
     leaf_area_index = fill(0.1, length(days)),
     iterate_day = 3, # number of iterations per day
+    maximum_surface_temperature = u"K"(85.0u"°C"),
     daily = false, # doing consecutive days?
     runmoist = false, # run soil moisture algorithm?
     spinup = false, # spin-up the first day by iterate_day iterations?
@@ -422,6 +424,7 @@ function runmicro(;
             roughness_height,
             d0,
             zh,
+            κ,
             slope,
             shade,
             viewfactor,
@@ -434,6 +437,7 @@ function runmicro(;
             tdeep,
             θ_soil=θ_soil0_a,
             runmoist,
+            maximum_surface_temperature,
         )
         forcing = MicroForcing(;
             SOLRt,
@@ -476,6 +480,7 @@ function runmicro(;
                                 roughness_height,
                                 zh,
                                 d0,
+                                κ,
                                 TAIRs = air_temperatures,
                                 VELs = wind_speeds,
                                 RHs = humidities,
@@ -506,6 +511,7 @@ function runmicro(;
                                 step,
                                 maxpool,
                                 M,
+                                maximum_surface_temperature,
                         )
                     end
                     pools[step] = pool
@@ -529,6 +535,7 @@ function runmicro(;
                         roughness_height,
                         d0,
                         zh,
+                        κ,
                         slope,
                         shade,
                         viewfactor,
@@ -540,7 +547,8 @@ function runmicro(;
                         nodes,
                         tdeep,
                         θ_soil=θ_soil0_a,
-                        runmoist
+                        runmoist,
+                        maximum_surface_temperature,
                     )
                     input = MicroInputs(params, forcing, soillayers, buffers)
                     tspan = ((0.0 + (i - 2) * 60)u"minute", (60.0 + (i - 2) * 60)u"minute")  # 1 hour
@@ -560,6 +568,7 @@ function runmicro(;
                                 roughness_height,
                                 zh,
                                 d0,
+                                κ,
                                 TAIRs = air_temperatures,
                                 VELs = wind_speeds,
                                 RHs = humidities,
@@ -590,6 +599,7 @@ function runmicro(;
                                 step,
                                 maxpool,
                                 M,
+                                maximum_surface_temperature
                         )
                     end
                     if i < length(hours)
@@ -635,6 +645,7 @@ function runmicro(;
             z0 = roughness_height,
             zh,
             d0,
+            κ,
             reference_temperature=air_temperatures[i],
             reference_wind_speed=wind_speeds[i],
             relative_humidity=humidities[i],
@@ -642,6 +653,7 @@ function runmicro(;
             zenith_angle=zenith_angles[i],
             heights,
             elevation,
+            maximum_surface_temperature,
         )
     end
     flip2vectors(x) = (; (k => getfield.(x, k) for k in keys(x[1]))...)

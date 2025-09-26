@@ -8,7 +8,7 @@ function soil_energy_balance(
     #dT_K = dT .* 60 .* u"K/minute"  # convert Float64 time back to unitful
     # extract prameters
     (; soillayers, params, buffers) = i
-    (; roughness_height, pctwet, sle, slep, albedo, viewfactor, elevation, slope, shade, depths, reference_height, d0, zh, tdeep, nodes, soilprops, θ_soil, runmoist) = params
+    (; roughness_height, pctwet, sle, slep, albedo, viewfactor, elevation, slope, shade, depths, reference_height, d0, zh, κ, tdeep, nodes, soilprops, θ_soil, runmoist, maximum_surface_temperature) = params
     (; depp, wc, c) = soillayers
     
     sabnew = 1.0 - albedo
@@ -81,14 +81,16 @@ function soil_energy_balance(
     profile_out = get_profile(;
         heights = [0.01u"m", reference_height], 
         z0 = roughness_height, 
-        d0 = d0, 
-        zh = zh, 
+        d0, 
+        zh,
+        κ, 
         surface_temperature = u"°C"(T2[1]), 
         reference_temperature = u"°C"(tair), 
         reference_wind_speed = vel, 
         zenith_angle = zenr, 
         relative_humidity = rh, 
-        elevation
+        elevation,
+        maximum_surface_temperature,
     )
  
     qconv = profile_out.qconv
@@ -444,6 +446,7 @@ function get_soil_water_balance!(buffers;
     roughness_height,
     zh,
     d0,
+    κ,
     TAIRs,
     VELs,
     RHs,
@@ -474,12 +477,14 @@ function get_soil_water_balance!(buffers;
     step,
     maxpool,
     M=18,
+    maximum_surface_temperature,
 )
     # compute scalar profiles
     profile_out = get_profile(;
-        z0=roughness_height,
+        z0 = roughness_height,
         zh,
         d0,
+        κ,
         reference_temperature = TAIRs[step],
         reference_wind_speed = VELs[step],
         relative_humidity = RHs[step],
@@ -487,6 +492,7 @@ function get_soil_water_balance!(buffers;
         zenith_angle = ZENRs[step],
         heights,
         elevation,
+        maximum_surface_temperature,
     )
 
     # convection

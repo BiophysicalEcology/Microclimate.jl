@@ -2,13 +2,13 @@ function get_profile(;
     z0=0.004u"m",
     zh=0.0u"m",
     d0=0.0u"m",
-    κ=0.4, # Kármán constant
+    κ=0.4,
     heights::Vector{typeof(1.0u"m")}=[0.01, 0.05, 0.1, 0.2, 0.3, 0.4, 0.5, 0.75, 1.0, 1.2] .* u"m",
     reference_temperature=27.77818u"°C",
     reference_wind_speed=2.749575u"m/s",
     relative_humidity=49.0415,
     surface_temperature=48.58942u"°C",
-    maximum_surface_temperature=95.0u"°C",
+    maximum_surface_temperature=40.0u"°C",
     zenith_angle=21.50564u"°",
     elevation=0.0u"m",
 )
@@ -52,12 +52,10 @@ function get_profile(;
     # TODO call rho_cp method specific to elevation and RH in final version but do it this way for NicheMapR comparison
     ρ_cp = rho_cp(T_mean)#, elevation, relative_humidity)
     amol = -30.0u"cm"
+    sublayer_stanton_number = 0.62 / (ustrip(u"cm", z0) * ustrip(u"cm/minute", u_star) / 12)^(9//20)
+    bulk_stanton_number = 0.64 / dum
+    Q_convection = ρ_cp * ΔT * u_star * bulk_stanton_number / (1.0 + bulk_stanton_number / sublayer_stanton_number)
     if zh > 0.0u"m"
-        # TODO ustrip to what
-        sublayer_stanton_number = 0.62 / (ustrip(u"cm", z0) * ustrip(u"cm/minute", u_star) / 12)^(9//20)
-        bulk_stanton_number = 0.64 / dum
-        Q_convection = ρ_cp * ΔT * u_star * bulk_stanton_number / (1.0 + bulk_stanton_number / sublayer_stanton_number)
-
         for i in 2:N_heights
             if T_ref_height ≥ T_surface || T_surface ≤ u"K"(maximum_surface_temperature) || zenith_angle ≥ 90°
                 wind_speeds[i] = (u_star / κ) * log(height_array[i] / z0 + 1)
@@ -67,17 +65,12 @@ function get_profile(;
                 adum = height_array[i] / z0 - y1
                 wind_speeds[i] = (u_star / κ) * log(adum)
             end
-
             A = (T_ref_height - T_surface) / (1 - log((z - d0_cm) / zh_cm))
             T0 = T_ref_height + A * log((z - d0_cm) / zh_cm)
             air_temperatures[i] = T0 - A * log((height_array[i] - d0_cm) / zh_cm)
         end
     else
         if T_ref_height ≥ T_surface || T_surface ≤ u"K"(maximum_surface_temperature) || zenith_angle ≥ 90°
-            sublayer_stanton_number = 0.62 / (ustrip(u"cm", z0) * ustrip(u"cm/minute", u_star) / 12.0)^(9//20)
-            bulk_stanton_number = 0.64 / dum
-            Q_convection = ρ_cp * ΔT * u_star * bulk_stanton_number / (1.0 + bulk_stanton_number / sublayer_stanton_number)
-
             for i in 2:N_heights
                 wind_speeds[i] = (u_star / κ) * log(height_array[i] / z0 + 1.0)
                 T_z0 = (T_ref_height * bulk_stanton_number + T_surface * sublayer_stanton_number) / (bulk_stanton_number + sublayer_stanton_number)
@@ -85,15 +78,16 @@ function get_profile(;
             end
         else
             for i in 2:N_heights
-                x1 = rho_cp(height_array[i], gam, amol)
+                x1 = phi(height_array[i], gam, amol)
                 y1 = psi1(x1)
-                yy2 = PSI2(x1)
+                yy2 = psi2(x1)
                 x = phi(z, gam, amol)
-                yy = PSI2(x)
+                yy = psi2(x)
                 adum = height_array[i] / z0 - y1
                 wind_speeds[i] = (u_star / κ) * log(adum)
                 Obukhov_out = get_Obukhov(T_ref_height, T_surface, refence_wind_cm_min, height_array[i], z0, rcptkg, κ)
                 T_z0 = (T_ref_height * Obukhov_out.bulk_stanton_number + T_surface * Obukhov_out.sublayer_stanton_number) / (Obukhov_out.bulk_stanton_number + Obukhov_out.sublayer_stanton_number)
+                Q_convection = ρ_cp * ΔT * u_star * Obukhov_out.bulk_stanton_number / (1.0 + Obukhov_out.bulk_stanton_number / Obukhov_out.sublayer_stanton_number)
                 air_temperatures[i] = T_z0 + (T_ref_height - T_z0) * log(height_array[i] / z0 - yy2) / log(z / z0 - yy)
             end
         end
@@ -115,8 +109,7 @@ function get_profile(;
 end
 
 function rho_cp(T_mean)
-    # TODO ustrip to what
-    return u"(cal*g)/(g*cm^3*K)" * (0.08472 / ustrip(T_mean))
+    return u"(cal*g)/(g*cm^3*K)" * (0.08472 / ustrip(u"K", T_mean))
 end
 function rho_cp(T_mean, elevation, relative_humidity)
     dry_air_out = dry_air_properties(u"K"(T_mean); elevation)
@@ -135,7 +128,7 @@ function psi1(x)
     return 2.0 * log((1.0 + x) / 2.0) + log((1.0 + x^2) / 2.0) - 2.0 * atan(x) + π / 2.0
 end
 
-function PSI2(x)
+function psi2(x)
     return 2.0 * log((1 + x^2.0) / 2.0)
 end
 
