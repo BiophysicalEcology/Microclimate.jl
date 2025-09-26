@@ -12,6 +12,8 @@ using Unitful: °, rad, °C#, K, Pa, kPa, MPa, J, kJ, W, L, g, kg, cm, m, s, hr,
 using Interpolations: AbstractInterpolation
 
 
+export MicroParams, MicroForcing, MicroInputs
+
 export sinec!, vsine, hourly_vars
 
 export hour_angle, solar_geometry, elev_corr, dchxy, solrad, cloud_adjust_radiation, get_longwave, init_dchxy_buffers
@@ -20,11 +22,7 @@ export get_profile
 
 export soil_properties
 
-export init_soillayers, init_moistlayers, MicroInputs
-
-export soil_energy_balance!, evap, soil_water_balance, phase_transition
-
-export MicroParams, MicroForcing
+export soil_energy_balance, evap, soil_water_balance!, phase_transition
 
 export runmicro
 

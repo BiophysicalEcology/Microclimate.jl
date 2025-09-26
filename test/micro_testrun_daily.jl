@@ -113,8 +113,6 @@ keywords = (;
 
 # TODO test plotting again at some stage, but it slows down CI a lot
 # plot(micro_out)
-using ProfileView
-@profview runmicro(; keywords...);
 
 # TODO include 1st node (currently left out, i.e. just columns 2:10, because way off at times)
 @testset "runmicro comparisons" begin
