@@ -533,7 +533,7 @@ function runmicro(;
                         θ_soil=θ_soil0_a,
                         runmoist
                     )
-                    input = MicroInputs(
+                    input = MicroInputs(;
                         params,
                         forcing,
                         soillayers
