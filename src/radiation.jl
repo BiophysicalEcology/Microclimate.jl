@@ -1586,7 +1586,6 @@ function get_longwave(;
 )
     # Longwave radiation (handle both IR modes)
     # Constants
-    #σ = u"W/m^2/K^4"(0.8126e-10u"cal/minute/cm^2/K^4") # value used in NicheMapR (sigp)
     P_atmos = atmospheric_pressure(elevation)
     wet_air_out = wet_air_properties(u"K"(tair); rh, P_atmos)
 
@@ -1598,7 +1597,7 @@ function get_longwave(;
         # Campbell and Norman 1998 eq. 10.10 to get emissivity of sky
         P_vap = wet_air_out.P_vap
         # TODO: ustrip to what
-        arad = u"W/m^2"(ustrip(1.72 * (ustrip(u"kPa"(P_vap)) / ustrip(u"K"(tair) + 0.01u"K"))^(1.0 / 7.0)) * σ * (u"K"(tair) + 0.01u"K")^4) 
+        arad = u"W/m^2"(ustrip(1.72 * (ustrip(u"kPa"(P_vap)) / ustrip(u"K"(tair) + 0.01u"K"))^(1//7)) * σ * (u"K"(tair) + 0.01u"K")^4) 
     end
     # Cloud radiation temperature (shade approximation, TAIR - 2°C)
     crad = σ * slep * (u"K"(tair) - 2.0u"K")^4
