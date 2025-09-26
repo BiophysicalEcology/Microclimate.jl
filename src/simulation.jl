@@ -94,9 +94,8 @@ function runmicro(;
     latitude = 43.07305u"°", # latitude
     days = [15, 46, 74, 105, 135, 166, 196, 227, 258, 288, 319, 349], # days of year to simulate - TODO leap years
     hours = collect(0.:1:24.), # hour of day for solrad
-    reference_height = 2u"m", # reference height of weather data (air temperature, wind speed, humidity)
     depths = [0.0, 2.5, 5.0, 10.0, 15.0, 20.0, 30.0, 40.0, 50.0, 100.0, 200.0]u"cm", # soil nodes - keep spacing close near the surface
-    heights = [0.01]u"m", # air nodes for temperature, wind speed and humidity profile
+    heights = [0.01, 2]u"m", # air nodes for temperature, wind speed and humidity profile, last height is reference height for weather data
     # solar radiation
     cmH2O = 1, # precipitable cm H2O in air column, 0.1 = very dry; 1 = moist air conditions; 2 = humid, tropical conditions (note this is for the whole atmospheric profile, not just near the ground)
     ϵ = 0.0167238, # orbital eccentricity of Earth
@@ -125,6 +124,7 @@ function runmicro(;
     roughness_height = 0.004u"m", # heat transfer roughness height
     zh = 0u"m", #  heat transfer roughness height
     d0 = 0u"m", # zero plane displacement correction factor
+    κ = 0.4, # Kármán constant 
     # soil thermal parameters 
     soil_mineral_conductivity = 1.25u"W/m/K", # soil minerals thermal conductivity
     soil_mineral_density = 2.560u"Mg/m^3", # soil minerals density
@@ -181,12 +181,14 @@ function runmicro(;
     initial_soil_moisture = [0.42, 0.42, 0.42, 0.43, 0.44, 0.44, 0.43, 0.42, 0.41, 0.42, 0.42, 0.43],
     leaf_area_index = fill(0.1, length(days)),
     iterate_day = 3, # number of iterations per day
+    maximum_surface_temperature = u"K"(85.0u"°C"),
     daily = false, # doing consecutive days?
     runmoist = false, # run soil moisture algorithm?
     spinup = false, # spin-up the first day by iterate_day iterations?
     __n::Val{N} = Val{length(depths)}() # This is a tiny hack so N is known to the compiler in function body
 ) where N
 
+    reference_height = last(heights)
     ndays = length(days)
     # defining view factor for sky radiation based on horizon angles
     viewfactor = 1 - sum(sin.(horizon_angles)) / length(horizon_angles) # convert horizon angles to radians and calc view factor(s)
@@ -372,8 +374,8 @@ function runmicro(;
 
     # simulate all days
     pool = 0.0u"kg/m^2" # initialise depth of pooling water TODO make this an init option
-    heights_water_balance = [0.01] .* u"m" # for evaporation calculation TODO how sensitive ot this height?
-    soil_water_balance_buffers = allocate_soil_water_balance(numnodes_b, heights_water_balance, reference_height)  # only once
+    heights_water_balance = [0.01u"m", reference_height] # for evaporation calculation TODO how sensitive to this height?
+    soil_water_balance_buffers = allocate_soil_water_balance(numnodes_b)  # only once
     niter_moist = ustrip(3600 / moist_step) # TODO use a solver for soil moisture calc
     ∑phase = zeros(Float64, numnodes_a)u"J"
     infil_out = nothing
@@ -422,6 +424,7 @@ function runmicro(;
             roughness_height,
             d0,
             zh,
+            κ,
             slope,
             shade,
             viewfactor,
@@ -434,6 +437,7 @@ function runmicro(;
             tdeep,
             θ_soil=θ_soil0_a,
             runmoist,
+            maximum_surface_temperature,
         )
         forcing = MicroForcing(;
             SOLRt,
@@ -473,95 +477,10 @@ function runmicro(;
                     pool += rainfall
                     if runmoist
                         infil_out, pctwet, pool, θ_soil0_b = get_soil_water_balance!(soil_water_balance_buffers;
-                                reference_height,
                                 roughness_height,
                                 zh,
                                 d0,
-                                TAIRs = air_temperatures,
-                                VELs = wind_speeds,
-                                RHs = humidities,
-                                ZENRs = zenith_angles,
-                                T0,
-                                heights=heights_water_balance,
-                                elevation,
-                                pool,
-                                θ_soil0_b,
-                                PE = air_entry_water_potential,
-                                KS = saturated_hydraulic_conductivity,
-                                BB = Campbells_b_parameter,
-                                BD = soil_bulk_density2,
-                                DD = soil_mineral_density2,
-                                depths,
-                                moist_step,
-                                L = root_density,
-                                rw = root_resistance,
-                                pc = stomatal_closure_potential,
-                                rl = leaf_resistance,
-                                sp = stomatal_stability_parameter,
-                                r1 = root_radius,
-                                lai,
-                                im = moist_error,
-                                moist_count,
-                                niter_moist,
-                                pctwet,
-                                step,
-                                maxpool,
-                                M,
-                        )
-                    end
-                    pools[step] = pool
-                    pool = clamp(pool, 0.0u"kg/m^2", maxpool)
-                    T_skys[step] = Tsky
-                    λ_b, c_p_b, ρ_b = soil_properties!(soil_properties_buffers, T0, θ_soil0_a, nodes, soilprops, elevation, runmoist, false)
-                    λ_bulk[step, :] = λ_b
-                    c_p_bulk[step, :] = c_p_b
-                    ρ_bulk[step, :] = ρ_b
-                    if runmoist && iday > 1
-                        θ_soils[step, :] = infil_out.θ_soil[sub]
-                        ψ_soils[step, :] = infil_out.ψ_soil[sub]
-                        rh_soils[step, :] = infil_out.rh_soil[sub]
-                    end
-                else
-                    # Parameters
-                    params = MicroParams(;
-                        soilprops,
-                        depths,
-                        reference_height,
-                        roughness_height,
-                        d0,
-                        zh,
-                        slope,
-                        shade,
-                        viewfactor,
-                        elevation,
-                        albedo,
-                        sle,
-                        slep,
-                        pctwet,
-                        nodes,
-                        tdeep,
-                        θ_soil=θ_soil0_a,
-                        runmoist
-                    )
-                    input = MicroInputs(params, forcing, soillayers, buffers)
-                    tspan = ((0.0 + (i - 2) * 60)u"minute", (60.0 + (i - 2) * 60)u"minute")  # 1 hour
-                    prob = ODEProblem{false}(soil_energy_balance, T0, tspan, input)
-                    sol = solve(prob, Tsit5(); saveat=60.0u"minute", reltol=1e-6u"K", abstol=1e-8u"K")
-                    soiltemps = sol.u
-                    # account for any phase transition of water in soil
-                    T0 = soiltemps[2]
-                    if iter == niter # this makes it the same as the R version but really this should happen every time
-                        ∑phase, qphase, T0 = phase_transition!(phase_transition_buffers; Ts=soiltemps[2], T_past=soiltemps[1], ∑phase, θ=θ_soil0_a, depths)
-                    end
-                    if i < length(hours)
-                        T_soils[step] = T0
-                    end
-                    if runmoist
-                        infil_out, pctwet, pool, θ_soil0_b = get_soil_water_balance!(soil_water_balance_buffers;
-                                reference_height,
-                                roughness_height,
-                                zh,
-                                d0,
+                                κ,
                                 TAIRs = air_temperatures,
                                 VELs = wind_speeds,
                                 RHs = humidities,
@@ -592,6 +511,95 @@ function runmicro(;
                                 step,
                                 maxpool,
                                 M,
+                                maximum_surface_temperature,
+                        )
+                    end
+                    pools[step] = pool
+                    pool = clamp(pool, 0.0u"kg/m^2", maxpool)
+                    T_skys[step] = Tsky
+                    λ_b, c_p_b, ρ_b = soil_properties!(soil_properties_buffers, T0, θ_soil0_a, nodes, soilprops, elevation, runmoist, false)
+                    λ_bulk[step, :] = λ_b
+                    c_p_bulk[step, :] = c_p_b
+                    ρ_bulk[step, :] = ρ_b
+                    if runmoist && iday > 1
+                        θ_soils[step, :] = infil_out.θ_soil[sub]
+                        ψ_soils[step, :] = infil_out.ψ_soil[sub]
+                        rh_soils[step, :] = infil_out.rh_soil[sub]
+                    end
+                else
+                    # Parameters
+                    params = MicroParams(;
+                        soilprops,
+                        depths,
+                        reference_height,
+                        roughness_height,
+                        d0,
+                        zh,
+                        κ,
+                        slope,
+                        shade,
+                        viewfactor,
+                        elevation,
+                        albedo,
+                        sle,
+                        slep,
+                        pctwet,
+                        nodes,
+                        tdeep,
+                        θ_soil=θ_soil0_a,
+                        runmoist,
+                        maximum_surface_temperature,
+                    )
+                    input = MicroInputs(params, forcing, soillayers, buffers)
+                    tspan = ((0.0 + (i - 2) * 60)u"minute", (60.0 + (i - 2) * 60)u"minute")  # 1 hour
+                    prob = ODEProblem{false}(soil_energy_balance, T0, tspan, input)
+                    sol = solve(prob, Tsit5(); saveat=60.0u"minute", reltol=1e-6u"K", abstol=1e-8u"K")
+                    soiltemps = sol.u
+                    # account for any phase transition of water in soil
+                    T0 = soiltemps[2]
+                    if iter == niter # this makes it the same as the R version but really this should happen every time
+                        ∑phase, qphase, T0 = phase_transition!(phase_transition_buffers; Ts=soiltemps[2], T_past=soiltemps[1], ∑phase, θ=θ_soil0_a, depths)
+                    end
+                    if i < length(hours)
+                        T_soils[step] = T0
+                    end
+                    if runmoist
+                        infil_out, pctwet, pool, θ_soil0_b = get_soil_water_balance!(soil_water_balance_buffers;
+                                roughness_height,
+                                zh,
+                                d0,
+                                κ,
+                                TAIRs = air_temperatures,
+                                VELs = wind_speeds,
+                                RHs = humidities,
+                                ZENRs = zenith_angles,
+                                T0,
+                                heights = heights_water_balance,
+                                elevation,
+                                pool,
+                                θ_soil0_b,
+                                PE = air_entry_water_potential,
+                                KS = saturated_hydraulic_conductivity,
+                                BB = Campbells_b_parameter,
+                                BD = soil_bulk_density2,
+                                DD = soil_mineral_density2,
+                                depths,
+                                moist_step,
+                                L = root_density,
+                                rw = root_resistance,
+                                pc = stomatal_closure_potential,
+                                rl = leaf_resistance,
+                                sp = stomatal_stability_parameter,
+                                r1 = root_radius,
+                                lai,
+                                im = moist_error,
+                                moist_count,
+                                niter_moist,
+                                pctwet,
+                                step,
+                                maxpool,
+                                M,
+                                maximum_surface_temperature
                         )
                     end
                     if i < length(hours)
@@ -634,18 +642,18 @@ function runmicro(;
     profile_out = map(1:length(air_temperatures)) do i
         # compute scalar profiles
         get_profile(;
-            reference_height,
             z0 = roughness_height,
             zh,
             d0,
-            TAREF=air_temperatures[i],
-            VREF=wind_speeds[i],
-            rh=humidities[i],
-            D0cm=u"°C"(T_soils[i][1]),  # top layer temp
-            ZEN=zenith_angles[i],
+            κ,
+            reference_temperature=air_temperatures[i],
+            reference_wind_speed=wind_speeds[i],
+            relative_humidity=humidities[i],
+            surface_temperature=u"°C"(T_soils[i][1]),  # top layer temp
+            zenith_angle=zenith_angles[i],
             heights,
             elevation,
-            warn=true
+            maximum_surface_temperature,
         )
     end
     flip2vectors(x) = (; (k => getfield.(x, k) for k in keys(x[1]))...)
@@ -660,13 +668,13 @@ function runmicro(;
         relative_humidity,
         # TODO just use the same names in the code above 
         # all these name conversions are unnecesary
-        cloud_cover=cloud_covers,
+        cloud_cover = cloud_covers,
         global_solar,
         direct_solar,
         diffuse_solar,
         zenith_angle = zenith_angles,
         sky_temperature = T_skys,
-        soil_temperature = T_soils,
+        soil_temperature = reduce(vcat, transpose.(T_soils)),
         soil_moisture = θ_soils,
         soil_water_potential = ψ_soils,
         soil_humidity = rh_soils,

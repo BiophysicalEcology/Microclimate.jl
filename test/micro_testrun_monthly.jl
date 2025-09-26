@@ -29,14 +29,13 @@ longlat = (DataFrame(CSV.File("$testdir/data/init_monthly/longlat.csv"))[:, 2] *
 days = [15, 46, 74, 105, 135, 166, 196, 227, 258, 288, 319, 349]
 LAIs = fill(0.1, length(days))
 depths = ((DataFrame(CSV.File("$testdir/data/init_monthly/DEP.csv"))[:, 2]) / 100.0)u"m"
-heights = [0.01]u"m" # air nodes for temperature, wind speed and humidity profile
+heights = [0.01, microinput[:Refhyt]]u"m" # air nodes for temperature, wind speed and humidity profile
 
 keywords = (;
     # locations, times, depths and heights
     latitude = longlat[2]*1.0u"°",
     days, # days of year for solrad
     hours = hours = collect(0.:1:24.), # hour of day for solrad
-    reference_height = microinput[:Refhyt] * 1.0u"m",
     depths,
     heights, # air nodes for temperature, wind speed and humidity profile
     # terrain
@@ -79,6 +78,7 @@ keywords = (;
     runmoist = Bool(Int(microinput[:runmoist])), # run soil moisture algorithm?
     spinup = Bool(Int(microinput[:spinup])), # spin-up the first day by iterate_day iterations?
     iuv = Bool(Int(microinput[:IUV])), # this makes it take ages if true!
+    maximum_surface_temperature = u"K"(microinput[:maxsurf]u"°C")
 );
 
 @time micro_out = runmicro(; keywords...);
@@ -97,12 +97,12 @@ tskyC_nmr = collect(metout_nmr[:, 15]) .* u"°C"
 # solvers and possibly to do with floating point error and issue with 
 # the way the phase transition is being calculated
 @testset "runmicro comparisons" begin
-    @test_broken micro_out.relative_humidity[:, 2] ≈ rh1cm_nmr atol=0.2 # TODO make this work
-    @test micro_out.relative_humidity[:, 3] ≈ rh2m_nmr atol=1e-5
-    @test micro_out.wind_speed[:, 2] ≈ vel1cm_nmr atol=1e-6u"m/s"
-    @test micro_out.wind_speed[:, 3] ≈ vel2m_nmr atol=1e-6u"m/s"
-    @test all(isapprox.(micro_out.wind_speed[:, 3], vel2m_nmr; atol=1e-6u"m/s"))
-    @test u"K".(micro_out.air_temperature[:, 3]) ≈ ta2m_nmr atol=1e-5u"K"
+    @test_broken micro_out.relative_humidity[:, 1] ≈ rh1cm_nmr atol=0.2 # TODO make this work
+    @test micro_out.relative_humidity[:, 2] ≈ rh2m_nmr atol=1e-5
+    @test micro_out.wind_speed[:, 1] ≈ vel1cm_nmr atol=1e-6u"m/s"
+    @test micro_out.wind_speed[:, 2] ≈ vel2m_nmr atol=1e-6u"m/s"
+    @test all(isapprox.(micro_out.wind_speed[:, 2], vel2m_nmr; atol=1e-6u"m/s"))
+    @test u"K".(micro_out.air_temperature[:, 2]) ≈ ta2m_nmr atol=1e-5u"K"
     @test micro_out.sky_temperature ≈ u"K".(tskyC_nmr) atol=1u"K" # TODO make this better
     # The last column is different for these
     soiltemps_mat = reinterpret(reshape, typeof(1.0u"K"), micro_out.soil_temperature)'
