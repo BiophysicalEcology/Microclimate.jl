@@ -79,7 +79,6 @@ function soil_energy_balance(
 
     # Convection
     profile_out = get_profile(;
-        reference_height,
         z0 = roughness_height, 
         d0 = d0, 
         zh = zh, 
@@ -87,7 +86,7 @@ function soil_energy_balance(
         TAREF = u"°C"(tair), 
         VREF = vel, 
         ZEN = zenr, 
-        heights = [0.01] .* u"m", 
+        heights = [0.01u"m", reference_height], 
         rh, 
         elevation
     )
@@ -158,7 +157,7 @@ function evap(; tsurf, tair, rh, rhsurf, hd, elevation, pctwet, sat)
     return qevap, gwsurf
 end
 
-function allocate_soil_water_balance(M, heights, reference_height)
+function allocate_soil_water_balance(M)
     (;
         P = zeros(M+1) .* u"J/kg",
         Z = zeros(M+1) .* u"m",
@@ -195,7 +194,6 @@ function allocate_soil_water_balance(M, heights, reference_height)
         P_out = Vector{typeof(1.0u"J/kg")}(undef, M),
         H_out = Vector{Float64}(undef, M),
         PR_out = Vector{typeof(1.0u"J/kg")}(undef, M),
-        # profile = allocate_profile(heights, reference_height),
     )  
 end
 
@@ -442,7 +440,6 @@ end
 get_soil_water_balance(; M=18, kw...) = get_soil_water_balance!(allocate_soil_water_balance(M); M, kw...)
 
 function get_soil_water_balance!(buffers;
-    reference_height,
     roughness_height,
     zh,
     d0,
@@ -479,7 +476,6 @@ function get_soil_water_balance!(buffers;
 )
     # compute scalar profiles
     profile_out = get_profile(;
-        reference_height,
         z0=roughness_height,
         zh,
         d0,

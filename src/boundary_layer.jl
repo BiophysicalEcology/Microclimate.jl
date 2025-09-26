@@ -1,5 +1,4 @@
 function get_profile(;
-    reference_height=1.2u"m",
     z0=0.004u"m",
     zh=0.0u"m",
     d0=0.0u"m",
@@ -11,31 +10,14 @@ function get_profile(;
     maxsurf=95.0u"°C",
     ZEN=21.50564u"°",
     a=0.15,
-    heights::Vector{typeof(1.0u"m")}=[0.01, 0.05, 0.1, 0.2, 0.3, 0.4, 0.5, 0.75, 1.0] .* u"m",
+    heights::Vector{typeof(1.0u"m")}=[0.01, 0.05, 0.1, 0.2, 0.3, 0.4, 0.5, 0.75, 1.0, 1.2] .* u"m",
     elevation=0.0u"m",
     warn=false
 )
-
+    reference_height = last(heights)
     if minimum(heights) < z0
         error("ERROR: the minimum height is not greater than the roughness height (z0).")
     end
-
-    addheight = false
-    heights_extra = nothing
-    if minimum(heights) > reference_height
-        addheight = true
-        newheights = Vector{eltype(heights)}(length(heights) + 1)
-        newheights[1] = 0.01u"m"
-        newheights[2:end] .= heights
-        heights = newheights
-    end
-
-    if maximum(heights) >= reference_height && warn
-        println("Warning: some heights are ≥ reference height. Using constant air temperature and adjusting wind speed.")
-    end
-
-    heights_orig = copy(heights)
-    heights = filter(h -> h < reference_height, heights_orig)::Vector{typeof(1.0u"m")}
 
     T1 = u"K"(TAREF)
     T3 = u"K"(D0cm)
@@ -48,11 +30,12 @@ function get_profile(;
     V = u"cm/minute"(VREF)
     # define air heights
     # TODO: move this further our the allocation is expensive
-    NAIR = length(heights) + 1
-    AIRDP = Vector{typeof(z)}(undef, NAIR)
-    AIRDP[1] = z
-    AIRDP[end:-1:2] .= u"cm".(heights)
-    ZZ = AIRDP
+    NAIR = length(heights)
+    #AIRDP = Vector{typeof(z)}(undef, NAIR)
+    #AIRDP[1] = z
+    #AIRDP[end:-1:2] .= u"cm".(heights)
+    #AIRDP = u"cm".(reverse(heights))
+    ZZ = u"cm".(reverse(heights))
     VV = zeros(Float64, NAIR) .* 1u"cm/minute" # output wind speeds
     T = Vector{typeof(0.0u"K")}(undef, NAIR) # output temperatures, need to do this otherwise get InexactError
     RHs = zeros(Float64, NAIR) # output relative humidities
@@ -124,35 +107,35 @@ function get_profile(;
     end
 
     # TODO why are we doing this and allocating another array
-    heights = [0.0u"m"; reverse(ZZ); u"m"(reference_height)]
-    VV = [0.0u"cm/minute"; reverse(VV)]
-    T = [T3; reverse(T)]
-
+    #heights = [0.0u"m"; reverse(ZZ); u"m"(reference_height)]
+    VV = reverse(VV)
+    T = reverse(T)
+    
     e = wet_air_properties(T1, rh=rh).P_vap
     wet_air_out = wet_air_properties.(T; rh=rh)
     es = [x.P_vap_sat for x in wet_air_out]
     RHs = clamp.(e ./ es .* 100.0, 0.0, 100.0)
 
-    if heights_extra !== nothing
-        VV_extra = V .* (heights_extra ./ reference_height) .^ a
-        T_extra = fill(TAREF, length(heights_extra))
-        RH_extra = fill(rh, length(heights_extra))
+    # if heights_extra !== nothing
+    #     VV_extra = V .* (heights_extra ./ reference_height) .^ a
+    #     T_extra = fill(TAREF, length(heights_extra))
+    #     RH_extra = fill(rh, length(heights_extra))
 
-        heights = vcat(heights, heights_extra)
-        VV = vcat(VV, VV_extra)
-        T = vcat(T, T_extra)
-        RHs = vcat(RHs, RH_extra)
-    end
+    #     heights = vcat(heights, heights_extra)
+    #     VV = vcat(VV, VV_extra)
+    #     T = vcat(T, T_extra)
+    #     RHs = vcat(RHs, RH_extra)
+    # end
 
-    if addheight
-        VV = deleteat!(VV, 2)
-        T = deleteat!(T, 2)
-        RHs = deleteat!(RHs, 2)
-        heights = deleteat!(heights, 2)
-    end
+    # if addheight
+    #     VV = deleteat!(VV, 2)
+    #     T = deleteat!(T, 2)
+    #     RHs = deleteat!(RHs, 2)
+    #     heights = deleteat!(heights, 2)
+    # end
 
     return (;
-        heights=unique(heights),
+        heights,
         wind_speeds=u"m/s".(VV),      # m/s
         air_temperatures=u"°C".(T),         # deg C
         humidities=RHs,               # %
