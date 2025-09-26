@@ -4,6 +4,7 @@ authors = ["m.kearney@unimelb.edu.au", "rafaelschouten@gmail.com"]
 version = "0.1.0"
 
 [deps]
+BiophysicalEcologyBase = "2ffd7b4c-1bc0-4ac6-9c6c-64838726cb7f"
 DataStructures = "864edb3b-99cc-5e75-8d2d-829cb0a9cfe8"
 Dates = "ade2ca70-3891-5945-98fb-dc099432e06a"
 DelimitedFiles = "8bb1440f-4735-579b-a4ab-409b98df4dab"
@@ -21,6 +22,7 @@ UnitfulMoles = "999f2bd7-36bf-5ba7-9bc1-c9473aa75374"
 
 [sources]
 FluidProperties = {rev = "main", url = "https://github.com/BiophysicalEcology/FluidProperties.jl"}
+BiophysicalEcologyBase = {url = "https://github.com/BiophysicalEcology/BiophysicalEcologyBase.jl", rev = "main"}
 
 [weakdeps]
 Makie = "ee78f7c6-11fb-53f2-987a-cfe4a2b5a57a"
@@ -30,6 +32,7 @@ MicroclimateMakieExt = "Makie"
 
 [compat]
 Aqua = "0.8"
+BiophysicalEcologyBase = "0.1"
 CSV = "0.10"
 DataFrames = "1"
 DataStructures = "0.18, 0.19"

@@ -123,8 +123,6 @@ function init_moistlayers(M)
     )
 end
 
-abstract type AbstractEnvironment end
-
 @kwdef struct MicroResult{AT,WS,RH,CC,GS,DrS,DfS,ZA,SkT,SoT,SM,SWP,SH,STC,SPH,SBD,SW,SR,Pr} <: AbstractEnvironment
     air_temperature::AT 
     wind_speed::WS

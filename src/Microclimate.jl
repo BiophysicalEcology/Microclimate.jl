@@ -1,5 +1,6 @@
 module Microclimate
 
+using BiophysicalEcologyBase
 using Interpolations, Statistics, Dates
 using SciMLBase, OrdinaryDiffEqTsit5
 using Unitful, UnitfulMoles
