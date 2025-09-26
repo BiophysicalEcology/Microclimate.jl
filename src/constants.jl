@@ -140,9 +140,3 @@ const DEFAULT_FDQ::Matrix{<:Real}=reshape([
         ], (11, 19))
 
 const DEFAULT_s̄::Vector{<:Real}=[0.2, 0.255, 0.315, 0.365, 0.394, 0.405, 0.405, 0.395, 0.37, 0.343, 0.32]
-
-# Convert PhysicalConstants.jl constants to simple Unitful.jl constants for performance
-const g_n = float(Float64, PhysicalConstants.CODATA2022.g_n)
-const σ = float(Float64, PhysicalConstants.CODATA2022.σ)
-const atm = float(Float64, PhysicalConstants.CODATA2022.atm)
-const R = float(Float64, PhysicalConstants.CODATA2022.R)
