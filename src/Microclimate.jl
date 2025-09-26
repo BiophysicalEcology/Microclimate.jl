@@ -1,9 +1,9 @@
 module Microclimate
 
+import PhysicalConstants
 using Interpolations, Statistics, Dates
 using SciMLBase, OrdinaryDiffEqTsit5
 using Unitful, UnitfulMoles
-using PhysicalConstants.CODATA2022: g_n, σ, atm, R
 using ModelParameters, DelimitedFiles
 using SpecialFunctions, StaticArrays
 
