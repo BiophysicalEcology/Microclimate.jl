@@ -18,7 +18,7 @@ export sine_exponential!, vsine, hourly_vars
 
 export hour_angle, solar_geometry, elev_corr, dchxy, solrad, cloud_adjust_radiation, get_longwave, init_dchxy_buffers
 
-export get_profile
+export get_profile, calc_u_star, calc_convection, calc_ρ_cp
 
 export soil_properties
 

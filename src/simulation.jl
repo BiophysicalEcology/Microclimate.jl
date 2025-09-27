@@ -188,7 +188,7 @@ function runmicro(;
     __n::Val{N} = Val{length(depths)}() # This is a tiny hack so N is known to the compiler in function body
 ) where N
 
-    reference_height = last(heights)
+    #reference_height = last(heights)
     ndays = length(days)
     # defining view factor for sky radiation based on horizon angles
     viewfactor = 1 - sum(sin.(horizon_angles)) / length(horizon_angles) # convert horizon angles to radians and calc view factor(s)
@@ -374,7 +374,7 @@ function runmicro(;
 
     # simulate all days
     pool = 0.0u"kg/m^2" # initialise depth of pooling water TODO make this an init option
-    heights_water_balance = [0.01u"m", reference_height] # for evaporation calculation TODO how sensitive to this height?
+    heights_water_balance = heights
     soil_water_balance_buffers = allocate_soil_water_balance(numnodes_b)  # only once
     niter_moist = ustrip(3600 / moist_step) # TODO use a solver for soil moisture calc
     ∑phase = zeros(Float64, numnodes_a)u"J"
@@ -418,12 +418,10 @@ function runmicro(;
 
         # Parameters
         params = MicroParams(;
+            roughness_height,
             soilprops,
             depths,
-            reference_height,
-            roughness_height,
-            d0,
-            zh,
+            heights,
             κ,
             slope,
             shade,
@@ -437,8 +435,8 @@ function runmicro(;
             tdeep,
             θ_soil=θ_soil0_a,
             runmoist,
-            maximum_surface_temperature,
         )
+
         forcing = MicroForcing(;
             SOLRt,
             ZENRt,
@@ -529,12 +527,10 @@ function runmicro(;
                 else
                     # Parameters
                     params = MicroParams(;
+                        roughness_height,
                         soilprops,
                         depths,
-                        reference_height,
-                        roughness_height,
-                        d0,
-                        zh,
+                        heights,
                         κ,
                         slope,
                         shade,
@@ -548,7 +544,6 @@ function runmicro(;
                         tdeep,
                         θ_soil=θ_soil0_a,
                         runmoist,
-                        maximum_surface_temperature,
                     )
                     input = MicroInputs(params, forcing, soillayers, buffers)
                     tspan = ((0.0 + (i - 2) * 60)u"minute", (60.0 + (i - 2) * 60)u"minute")  # 1 hour
@@ -652,7 +647,6 @@ function runmicro(;
             surface_temperature=u"°C"(T_soils[i][1]),  # top layer temp
             zenith_angle=zenith_angles[i],
             heights,
-            elevation,
             maximum_surface_temperature,
         )
     end

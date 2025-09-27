@@ -9,6 +9,7 @@ testdir = realpath(joinpath(dirname(pathof(Microclimate)), "../test"))
 soil_temperature_nmr = (DataFrame(CSV.File("$testdir/data/soil_FordDryLake.csv"))[:, 5:14]) .* u"°C"
 soil_moisture_nmr = (DataFrame(CSV.File("$testdir/data/soilmoist_FordDryLake.csv"))[:, 5:14])
 soil_conductivity_nmr = (DataFrame(CSV.File("$testdir/data/tcond_FordDryLake.csv"))[:, 5:14])
+metout_nmr = (DataFrame(CSV.File("$testdir/data/metout_FordDryLake.csv"))[:, 2:21])
 
 microinput_vec = DataFrame(CSV.File("$testdir/data/init_daily/microinput.csv"))[:, 2]
 
@@ -29,7 +30,7 @@ microinput = (; zip(names, microinput_vec)...)
 
 days = collect(1:Int(length(soil_temperature_nmr[:, 1]) / 24)) # days of year to run (for solrad)
 depths = ((DataFrame(CSV.File("$testdir/data/init_daily/DEP.csv"))[:, 2]) / 100.0)u"m" # Soil nodes (cm) - keep spacing close near the surface, last value is where it is assumed that the soil temperature is at the annual mean air temperature
-heights = [0.01, microinput[:Refhyt]]u"m" # air nodes for temperature, wind speed and humidity profile
+heights = [microinput[:Usrhyt], microinput[:Refhyt]]u"m" # air nodes for temperature, wind speed and humidity profile
 days2do = 190
 hours2do = days2do * 24
 # now try the simulation function
