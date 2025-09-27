@@ -52,11 +52,11 @@ function soil_energy_balance(
     end
 
     # Solar radiation
-    qsolar = sabnew * solr * ((100.0 - shade) / 100.0)
+    Q_solar = sabnew * solr * ((100.0 - shade) / 100.0)
     if slope > 0 && zenr < 90u"°"
         cz = cosd(zenr)
         czsl = cosd(zslr)
-        qsolar = (qsolar / cz) * czsl
+        Q_solar = (Q_solar / cz) * czsl
     end
 
     # Longwave radiation
@@ -71,41 +71,34 @@ function soil_energy_balance(
         viewfactor = viewfactor,
         shade = shade
     )
-    qrad = longwave_out.Qrad
+    Q_infrared = longwave_out.Qrad
 
     # Conduction
-    qcond = c[1] * (T2[2] - T2[1])
+    Q_conduction = c[1] * (T2[2] - T2[1])
 
     # Convection
-    profile_out = get_profile(;
-        heights, 
-        z0 = roughness_height, 
-        d0, 
-        zh,
-        κ, 
-        surface_temperature = u"°C"(T2[1]), 
-        reference_temperature = u"°C"(tair), 
-        reference_wind_speed = vel, 
-        zenith_angle = zenr, 
-        relative_humidity = rh, 
-        elevation,
-        maximum_surface_temperature,
-    )
- 
-    qconv = profile_out.qconv
-    hc = max(abs(qconv / (T2[1] - tair)), 0.5u"W/m^2/K")
-    P_atmos = atmospheric_pressure(elevation)
-    
+    log_z_ratio = log(z / z0 + 1)
+    T_ref_height = tair
+    T_surface = T2[1]
+    ΔT = T_ref_height - T_surface
+    T_mean = (T_surface + T_ref_height) / 2
+    # TODO call calc_ρ_cp method specific to elevation and RH in final version but do it this way for NicheMapR comparison
+    ρ_cp = calc_ρ_cp(T_mean)#, elevation, relative_humidity)
+    u_star = calc_u_star(; reference_wind_speed=vel, log_z_ratio, κ)
+    Q_convection = calc_convection(; u_star, log_z_ratio, ΔT, ρ_cp, z0)
+    hc = max(abs(Q_convection / (T2[1] - tair)), 0.5u"W/m^2/K")
+
     # Evaporation
+    P_atmos = atmospheric_pressure(elevation)
     wet_air_out = wet_air_properties(u"K"(tair); rh=rh, P_atmos=P_atmos)
     c_p_air = wet_air_out.c_p
     ρ_air = wet_air_out.ρ_air
     hd = (hc / (c_p_air * ρ_air)) * (0.71 / 0.60)^0.666
-    qevap, gwsurf = evap(tsurf=u"K"(T[1]), tair=u"K"(tair), rh=rh, rhsurf=100.0, hd=hd, elevation=elevation, pctwet=pctwet, sat=false)
+    Q_evaporation, gwsurf = evap(tsurf=u"K"(T[1]), tair=u"K"(tair), rh=rh, rhsurf=100.0, hd=hd, elevation=elevation, pctwet=pctwet, sat=false)
 
     # Construct static vector of change in soil temperature, to return
     # Energy balance at surface
-    surface = u"K/minute"((qsolar + qrad + qcond + qconv - qevap) / wc[1])
+    surface = u"K/minute"((Q_solar + Q_infrared + Q_conduction + Q_convection - Q_evaporation) / wc[1])
     # Soil conduction for internal nodes
     internal = ntuple(Val{N-2}()) do i
         u"K/minute".((c[i] * (T2[i] - T2[i+1]) + c[i+1] * (T2[i+2] - T2[i+1])) / wc[i+1])
@@ -124,7 +117,7 @@ function evap(; tsurf, tair, rh, rhsurf, hd, elevation, pctwet, sat)
     #global shayd, altt, maxshd, sabnew, ptwet, rainfall
 
     # Output variables
-    qevap = 0.0
+    Q_evaporation = 0.0
     gwsurf = 0.0
 
     tsurf = tsurf < u"K"(-81.0u"°C") ? u"K"(-81.0u"°C") : tsurf
@@ -146,7 +139,7 @@ function evap(; tsurf, tair, rh, rhsurf, hd, elevation, pctwet, sat)
     λ_evap = enthalpy_of_vaporisation(tsurf) 
 
     # Energy flux due to evaporation (W/m² or converted)
-    qevap = water * λ_evap  # SI units for water budget calcs
+    Q_evaporation = water * λ_evap  # SI units for water budget calcs
 
     # Mass flux (g/s)
     gwsurf = u"g/s/m^2"(water)
@@ -156,7 +149,7 @@ function evap(; tsurf, tair, rh, rhsurf, hd, elevation, pctwet, sat)
         gwsurf = 0.0u"g/s/m^2"
     end
 
-    return qevap, gwsurf
+    return Q_evaporation, gwsurf
 end
 
 function allocate_soil_water_balance(M)
@@ -490,24 +483,23 @@ function get_soil_water_balance!(buffers;
         surface_temperature = u"°C"(T0[1]),  # top layer temp
         zenith_angle = ZENRs[step],
         heights,
-        elevation,
         maximum_surface_temperature,
     )
 
     # convection
-    qconv = profile_out.qconv
+    Q_convection = profile_out.Q_convection
 
     # evaporation
     P_atmos = atmospheric_pressure(elevation)
     rh_loc = min(0.99, profile_out.humidities[2] / 100)
-    hc = max(abs(qconv / (T0[1] - u"K"(TAIRs[step]))), 0.5u"W/m^2/K")
+    hc = max(abs(Q_convection / (T0[1] - u"K"(TAIRs[step]))), 0.5u"W/m^2/K")
     wet_air_out = wet_air_properties(u"K"(TAIRs[step]); rh=RHs[step], P_atmos)
     c_p_air = wet_air_out.c_p
     ρ_air = wet_air_out.ρ_air
     hd = (hc / (c_p_air * ρ_air)) * (0.71 / 0.60)^0.666
-    qevap, gwsurf = evap(tsurf=u"K"(T0[1]), tair=u"K"(TAIRs[step]), rh=RHs[step], rhsurf=100.0, hd=hd, elevation=elevation, pctwet=pctwet, sat=true)
+    Q_evaporation, gwsurf = evap(tsurf=u"K"(T0[1]), tair=u"K"(TAIRs[step]), rh=RHs[step], rhsurf=100.0, hd=hd, elevation=elevation, pctwet=pctwet, sat=true)
     λ_evap = enthalpy_of_vaporisation(T0[1])
-    EP = max(1e-7u"kg/m^2/s", qevap / λ_evap) # evaporation potential, mm/s (kg/m2/s)
+    EP = max(1e-7u"kg/m^2/s", Q_evaporation / λ_evap) # evaporation potential, mm/s (kg/m2/s)
 
     if pool > 0.0u"kg/m^2" # surface is wet - saturate it for infiltration
         θ_soil0_b[1] = 1 - BD[1] / DD[1]

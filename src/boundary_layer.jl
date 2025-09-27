@@ -4,16 +4,18 @@
 Compute vertical profiles of wind speed, air temperature, and relative humidity 
 in the atmospheric surface layer, using Monin–Obukhov similarity theory (MOST).
 
-This function reproduces the `get_profile` routine from **NicheMapR**, ported to Julia.  
+This function reproduces the subroutine in `MICRO.f/get_profile.R` from **NicheMapR**, ported to Julia.  
 It calculates the microclimate profiles above the ground (or canopy) at specified heights,
-based on reference conditions and surface parameters.
+based on measured values at a reference height and computed or measured soil surface temperature, together
+with surface roughness parameters. Zenith angle and a maximum allowed surface temperature are used
+to assess whether conditions are stable or unstable.
 
 # Keyword Arguments
 - `z0::Quantity=0.004u"m"`: roughness length (surface aerodynamic roughness).
 - `zh::Quantity=0.0u"m"`: heat transfer roughness height
 - `d0::Quantity=0.0u"m"`: zero plane displacement correction factor.
 - `κ::Float64=0.4`: von Kármán constant.
-- `heights::Vector{Quantity}`: Measurement heights above the surface (default: 0.01–1.2 m).
+- `heights::Vector{Quantity}`: Requested heights above the surface, the last being the reference height.
 - `reference_temperature::Quantity=27.78u"°C"`: Air temperature at the reference height.
 - `reference_wind_speed::Quantity=2.75u"m/s"`: Wind speed at the reference height.
 - `relative_humidity::Float64=49.0`: Relative humidity at the reference height (%).
@@ -24,11 +26,10 @@ based on reference conditions and surface parameters.
 
 # Returns
 Named tuple with fields:
-- `heights`: Input heights (reversed to increasing order).
 - `wind_speeds`: Wind speed profile at each height (`cm/min` internally, returned in SI units).
 - `air_temperatures`: Air temperature profile at each height (`K`).
-- `humidities`: Relative humidity profile (%) at each height.
-- `qconv`: Convective heat flux (`W/m²`).
+- `humidities`: Relative humidity (%) at each height.
+- `Q_convection`: Convective heat flux (`W/m²`).
 - `ustar`: Friction velocity (`m/s`).
 
 # Notes
@@ -63,6 +64,7 @@ profile = get_profile(
     reference_wind_speed = 2.0u"m/s",
     relative_humidity = 60.0,
     surface_temperature = 35u"°C",
+    maximum_surface_temperature = 85u"°C",
     zenith_angle = 45u"°"
 )
 
@@ -74,14 +76,14 @@ function get_profile(;
     zh=0.0u"m",
     d0=0.0u"m",
     κ=0.4,
+    γ = 16.0, # coefficient from Dyer and Hicks for Φ_m (momentum), TODO make it available as a user param?
     heights::Vector{typeof(1.0u"m")}=[0.01, 0.05, 0.1, 0.2, 0.3, 0.4, 0.5, 0.75, 1.0, 1.2] .* u"m",
-    reference_temperature=27.77818u"°C",
-    reference_wind_speed=2.749575u"m/s",
-    relative_humidity=49.0415,
-    surface_temperature=48.58942u"°C",
-    maximum_surface_temperature=40.0u"°C",
-    zenith_angle=21.50564u"°",
-    elevation=0.0u"m", # to be used if getting ρ_cp based on humidity and pressure
+    reference_temperature,
+    reference_wind_speed,
+    relative_humidity,
+    surface_temperature,
+    maximum_surface_temperature,
+    zenith_angle,
 )
     # z0=0.004u"m"
     # zh=0.004u"m"
@@ -94,8 +96,8 @@ function get_profile(;
     # surface_temperature=48.58942u"°C"
     # maximum_surface_temperature=40.0u"°C"
     # zenith_angle=21.50564u"°"
-    # elevation=0.0u"m"
-    
+    # γ = 16.0
+
     reference_height = last(heights)
     if minimum(heights) < z0
         error("ERROR: the minimum height is not greater than the roughness height (z0).")
@@ -110,6 +112,7 @@ function get_profile(;
     zh_cm = u"cm"(zh)
     d0_cm = u"cm"(d0)
     Ū_ref_height = u"cm/minute"(reference_wind_speed)
+
     # define air heights
     N_heights = length(heights)
     height_array = u"cm".(reverse(heights))
@@ -127,17 +130,17 @@ function get_profile(;
     # TODO make this work with SI units
     #ρcpTκg = u"cal*minute^2/cm^4"(ρ * c_p * T_ref_height / (κ * g_n))
     ρcpTκg = 6.003e-8u"cal*minute^2/cm^4"
-    γ = 16.0 # coefficient from Dyer and Hicks for Φ_m (momentum), TODO make it available as a user param?
-    log_z_ratio = log(z / z0 + 1.0) # save compute time by precalculating, + 1.0 to avoid singularities
-    u_star = κ * Ū_ref_height / log_z_ratio
+    
+    log_z_ratio = log(z / z0 + 1)
+    T_ref_height = u"K"(reference_temperature)
+    T_surface = u"K"(surface_temperature)
     ΔT = T_ref_height - T_surface
     T_mean = (T_surface + T_ref_height) / 2
     # TODO call calc_ρ_cp method specific to elevation and RH in final version but do it this way for NicheMapR comparison
     ρ_cp = calc_ρ_cp(T_mean)#, elevation, relative_humidity)
-    L_Obukhov = -30.0u"cm" # initialise Obukhov length
-    sublayer_stanton_number = 0.62 / (ustrip(u"cm", z0) * ustrip(u"cm/minute", u_star) / 12)^(9//20)
-    bulk_stanton_number = 0.64 / log_z_ratio
-    Q_convection = ρ_cp * ΔT * u_star * bulk_stanton_number / (1.0 + bulk_stanton_number / sublayer_stanton_number)
+    u_star = calc_u_star(; reference_wind_speed, log_z_ratio, κ)
+    Q_convection = calc_convection(; u_star, log_z_ratio, ΔT, ρ_cp, z0)
+    
     if zh > 0.0u"m" # Campbell & Norman canopy displacement approach
         for i in 2:N_heights
             A = (T_ref_height - T_surface) / (1 - log((z - d0_cm) / zh_cm))
@@ -148,12 +151,13 @@ function get_profile(;
     if T_ref_height ≥ T_surface || T_surface ≤ u"K"(maximum_surface_temperature) || zenith_angle ≥ 90°
         for i in 2:N_heights
             wind_speeds[i] = calc_wind(height_array[i], z0, κ, u_star, 1.0)
-            T_z0 = (T_ref_height * bulk_stanton_number + T_surface * sublayer_stanton_number) / (bulk_stanton_number + sublayer_stanton_number)
+            T_z0 = (T_ref_height * bulk_stanton(log_z_ratio) + T_surface * sublayer_stanton(z0, u_star)) / (bulk_stanton(log_z_ratio) + sublayer_stanton(z0, u_star))
             if zh <= 0.0u"m"
                 air_temperatures[i] = T_z0 + (T_ref_height - T_z0) * log(height_array[i] / z0 + 1.0) / log_z_ratio
             end
         end
     else
+        L_Obukhov = -30.0u"cm" # initialise Obukhov length
         for i in 2:N_heights
             Obukhov_out = calc_Obukhov_length(T_ref_height, T_surface, Ū_ref_height, height_array[i], z0, ρcpTκg, κ, log_z_ratio, ΔT, ρ_cp)
             L_Obukhov = Obukhov_out.L_Obukhov
@@ -176,15 +180,84 @@ function get_profile(;
     humidities .= clamp.(e ./ vapour_pressure.(air_temperatures) .* 100.0, 0.0, 100.0)
 
     return (;
-        heights,
-        wind_speeds,
+        wind_speeds=u"m/s".(wind_speeds),
         air_temperatures,
         humidities,
-        qconv=u"W/m^2"(Q_convection),
+        Q_convection=u"W/m^2"(Q_convection),
         ustar=u"m/s"(u_star)
     )
 end
 
+
+"""
+    calc_convection(; u_star, log_z_ratio, ΔT, ρ_cp, z0)
+
+Calculate the convective heat flux (sensible heat exchange between surface and air).
+
+# Arguments
+- `u_star::Quantity{<:Real,𝐋/𝐓}`: Friction velocity (e.g. `m/s`, `cm/min`).
+- `log_z_ratio::Real`: Precomputed logarithmic height ratio, typically `log(z/z0 + 1.0)`.
+- `ΔT::Quantity{<:Real,Θ}`: Temperature difference between reference air and surface (Kelvin).
+- `ρ_cp::Quantity{<:Real,(𝐌*𝐋^-1*𝐓^-2)}`: Volumetric heat capacity of air (e.g. `J/m³/K`, `cal/cm³/K`).
+- `z0::Quantity{<:Real,𝐋}`: Surface roughness length (length).
+
+# Returns
+- Convective heat flux as `Quantity{<:Real,(𝐌*𝐓^-3)}` (e.g. `W/m²`, `cal/min/cm²`).
+
+Uses bulk and sublayer Stanton numbers to account for turbulence near the surface.
+
+# See also
+[`calc_u_star`](@ref), [`calc_wind`](@ref), [`sublayer_stanton`](@ref), [`bulk_stanton`](@ref), [`convective_flux`](@ref)
+"""
+function calc_convection(; u_star, log_z_ratio, ΔT, ρ_cp, z0)
+    sublayer_stanton_number = sublayer_stanton(u"cm"(z0), u"cm/minute"(u_star))
+    bulk_stanton_number = bulk_stanton(log_z_ratio)
+    return convective_flux(ρ_cp, ΔT, u_star, bulk_stanton_number, sublayer_stanton_number)
+end
+
+
+"""
+    calc_u_star(; reference_wind_speed, log_z_ratio, κ=0.4)
+
+Compute the friction velocity (u*) from a reference wind speed using the
+logarithmic wind profile.
+
+# Arguments
+- `reference_wind_speed::Quantity{<:Real,𝐋/𝐓}`: Wind speed at the reference height (e.g. `m/s`, `cm/min`).
+- `log_z_ratio::Real`: Precomputed log height ratio, typically `log(z/z0 + 1.0)`.
+- `κ::Real`: von Kármán constant (default = 0.4).
+
+# Returns
+- Friction velocity `u_star::Quantity{<:Real,𝐋/𝐓}`.
+
+# See also
+[`calc_convection`](@ref), [`calc_wind`](@ref)
+"""
+function calc_u_star(; reference_wind_speed, log_z_ratio, κ=0.4)
+    Ū_ref_height = reference_wind_speed
+    u_star = κ * Ū_ref_height / log_z_ratio
+    return u_star
+end
+
+
+"""
+    calc_wind(z, z0, κ, u_star, b)
+
+Calculate wind speed at height `z` using the logarithmic wind profile.
+
+# Arguments
+- `z::Quantity{<:Real,𝐋}`: Height above the surface (e.g. `m`, `cm`).
+- `z0::Quantity{<:Real,𝐋}`: Roughness length (e.g. `m`, `cm`).
+- `κ::Real`: von Kármán constant.
+- `u_star::Quantity{<:Real,𝐋/𝐓}`: Friction velocity.
+- `b::Real`: Offset term (e.g. `1.0` for neutral stability, or stability correction).
+
+# Returns
+- Wind speed at height `z::Quantity{<:Real,𝐋/𝐓}`.
+
+# See also
+[`calc_u_star`](@ref), [`calc_convection`](@ref)
+"""
 function calc_wind(z, z0, κ, u_star, b)
     return (u_star / κ) * log(z / z0 + b)
 end
@@ -323,16 +396,21 @@ function sublayer_stanton(z0, u_star)
 end
 
 """
+    bulk_stanton(log_z_ratio)
+
+Compute the bulk Stanton number for stable conditions.
+"""
+function bulk_stanton(log_z_ratio)
+    return 0.64 / log_z_ratio
+end
+
+"""
     bulk_stanton(log_z_ratio, z, L_Obukhov)
 
-Compute the bulk Stanton number depending on stability (Monin-Obukhov length).
+Compute the bulk Stanton number for unstable conditions.
 """
 function bulk_stanton(log_z_ratio, z, L_Obukhov)
-    if L_Obukhov > 0.0u"cm"  # stable
-        return 0.64 / log_z_ratio
-    else                 # unstable
-        return (0.64 / log_z_ratio) * (1 - 0.1 * z / L_Obukhov)
-    end
+    return (0.64 / log_z_ratio) * (1 - 0.1 * z / L_Obukhov)
 end
 
 """
@@ -346,14 +424,13 @@ end
 
 """
     calc_Obukhov_length(T_ref_height, T_surface, Ū_ref_height, z, z0, ρcpTκg, κ, log_z_ratio, ΔT, ρ_cp, 
-                         max_iter=500, tol=1e-2)
+                         γ=16.0, max_iter=500, tol=1e-2)
 
 Iteratively solve for Monin-Obukhov length and convective heat flux.
 """
 function calc_Obukhov_length(T_ref_height, T_surface, Ū_ref_height, z, z0, ρcpTκg, κ, 
-    log_z_ratio, ΔT, ρ_cp; max_iter=500, tol=1e-2)
+    log_z_ratio, ΔT, ρ_cp; γ=16.0, max_iter=500, tol=1e-2)
     L_Obukhov = -30.0u"cm" # initial Monin-Obukhov length cm
-    γ = 16.0 # -
 
     # conversions
     z = u"cm"(z)

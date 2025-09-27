@@ -652,7 +652,6 @@ function runmicro(;
             surface_temperature=u"°C"(T_soils[i][1]),  # top layer temp
             zenith_angle=zenith_angles[i],
             heights,
-            elevation,
             maximum_surface_temperature,
         )
     end
