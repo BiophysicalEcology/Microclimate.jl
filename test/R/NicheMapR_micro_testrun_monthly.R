@@ -28,7 +28,7 @@ ALREF <- ALONG # reference longitude for time zone
 EC <- 0.0167238 # Eccentricity of the earth's orbit (current value 0.0167238, ranges between 0.0034 to 0.058)
 RUF <- 0.004 # Roughness height (m), , e.g. sand is 0.05, grass may be 2.0, current allowed range: 0.001 (snow) - 2.0 cm.
 Refhyt <- 2 # Reference height (m), reference height at which air temperature, wind speed and relative humidity input data are measured
-canopy_height <- 0.2 # (m)
+canopy_height <- 0.01 # (m)
 ZH <- 0.02 * canopy_height # heat transfer roughness height (m) for Campbell and Norman air temperature/wind speed profile (invoked if greater than 1, 0.02 * canopy height in m if unknown)
 D0 <- 0.6 * canopy_height # zero plane displacement correction factor (m) for Campbell and Norman air temperature/wind speed profile (0.6 * canopy height in m if unknown)
 Usrhyt <- D0 + 0.01# local height (m) at which air temperature, relative humidity and wind speed calculations will be made

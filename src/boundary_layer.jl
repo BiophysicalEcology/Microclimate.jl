@@ -111,7 +111,7 @@ function get_profile(;
     z0 = u"cm"(z0) # roughness height
     zh_cm = u"cm"(zh)
     d0_cm = u"cm"(d0)
-    Ū_ref_height = u"cm/minute"(reference_wind_speed)
+    v_ref_height = u"cm/minute"(reference_wind_speed)
 
     # define air heights
     N_heights = length(heights)
@@ -119,7 +119,7 @@ function get_profile(;
     wind_speeds = zeros(Float64, N_heights) .* 1u"cm/minute" # output wind speeds
     air_temperatures = Vector{typeof(0.0u"K")}(undef, N_heights) # output temperatures, need to do this otherwise get InexactError
     humidities = zeros(Float64, N_heights) # output relative humidities
-    wind_speeds[1] = Ū_ref_height
+    wind_speeds[1] = v_ref_height
     air_temperatures[1] = T_ref_height
 
     # compute ρcpTκg (was a constant in original Fortran version)
@@ -148,7 +148,7 @@ function get_profile(;
             air_temperatures[i] = T0 - A * log((height_array[i] - d0_cm) / zh_cm)
         end
     end
-    if T_ref_height ≥ T_surface || T_surface ≤ u"K"(maximum_surface_temperature) || zenith_angle ≥ 90°
+    if T_ref_height ≥ T_surface || zenith_angle ≥ 90°
         for i in 2:N_heights
             wind_speeds[i] = calc_wind(height_array[i], z0, κ, u_star, 1.0)
             T_z0 = (T_ref_height * bulk_stanton(log_z_ratio) + T_surface * sublayer_stanton(z0, u_star)) / (bulk_stanton(log_z_ratio) + sublayer_stanton(z0, u_star))
@@ -159,7 +159,7 @@ function get_profile(;
     else
         L_Obukhov = -30.0u"cm" # initialise Obukhov length
         for i in 2:N_heights
-            Obukhov_out = calc_Obukhov_length(T_ref_height, T_surface, Ū_ref_height, height_array[i], z0, ρcpTκg, κ, log_z_ratio, ΔT, ρ_cp)
+            Obukhov_out = calc_Obukhov_length(T_ref_height, T_surface, v_ref_height, height_array[i], z0, ρcpTκg, κ, log_z_ratio, ΔT, ρ_cp)
             L_Obukhov = Obukhov_out.L_Obukhov
             T_z0 = Obukhov_out.T_z0
             Q_convection = Obukhov_out.Q_convection
@@ -167,7 +167,10 @@ function get_profile(;
             ψ_m1 = calc_ψ_m(φ_m1)
             ψ_h2 = calc_ψ_h(ψ_m1)
             φ_m = calc_φ_m(z, γ, L_Obukhov)
-            ψ_h = calc_ψ_h(φ_m)
+            ψ_m = calc_ψ_m(φ_m)
+            ψ_h = calc_ψ_h(ψ_m)
+            u_star = κ * v_ref_height / (log(z / z0) - ψ_m)
+            u_star = calc_u_star(; reference_wind_speed = v_ref_height, log_z_ratio = log(z / z0) - ψ_m, κ)
             wind_speeds[i] = calc_wind(height_array[i], z0, κ, u_star, -ψ_m1)
             if zh <= 0.0u"m"
                 air_temperatures[i] = T_z0 + (T_ref_height - T_z0) * log(height_array[i] / z0 - ψ_h2) / log(z / z0 - ψ_h)
@@ -250,8 +253,8 @@ logarithmic wind profile.
 [`calc_convection`](@ref), [`calc_wind`](@ref)
 """
 function calc_u_star(; reference_wind_speed, log_z_ratio, κ=0.4)
-    Ū_ref_height = reference_wind_speed
-    return κ * Ū_ref_height / log_z_ratio
+    v_ref_height = reference_wind_speed
+    return κ * v_ref_height / log_z_ratio
 end
 
 
@@ -422,12 +425,12 @@ end
 
 
 """
-    calc_Obukhov_length(T_ref_height, T_surface, Ū_ref_height, z, z0, ρcpTκg, κ, log_z_ratio, ΔT, ρ_cp, 
+    calc_Obukhov_length(T_ref_height, T_surface, v_ref_height, z, z0, ρcpTκg, κ, log_z_ratio, ΔT, ρ_cp, 
                          γ=16.0, max_iter=500, tol=1e-2)
 
 Iteratively solve for Monin-Obukhov length and convective heat flux.
 """
-function calc_Obukhov_length(T_ref_height, T_surface, Ū_ref_height, z, z0, ρcpTκg, κ, 
+function calc_Obukhov_length(T_ref_height, T_surface, v_ref_height, z, z0, ρcpTκg, κ, 
     log_z_ratio, ΔT, ρ_cp; γ=16.0, max_iter=500, tol=1e-2)
     L_Obukhov = -30.0u"cm" # initial Monin-Obukhov length cm
 
@@ -449,7 +452,7 @@ function calc_Obukhov_length(T_ref_height, T_surface, Ū_ref_height, z, z0, ρc
         count += 1
         φ_m = calc_φ_m(z, γ, L_Obukhov)
         ψ_m = calc_ψ_m(φ_m)
-        u_star = κ * Ū_ref_height / (log(z / z0) - ψ_m)
+        u_star = κ * v_ref_height / (log(z / z0) - ψ_m)
         sublayer_stanton_number = sublayer_stanton(z0, u_star)
         bulk_stanton_number = bulk_stanton(log_z_ratio, z, L_Obukhov)
         Q_convection = convective_flux(ρ_cp, ΔT, u_star, bulk_stanton_number, sublayer_stanton_number)
