@@ -8,9 +8,9 @@ function soil_energy_balance(
     #dT_K = dT .* 60 .* u"K/minute"  # convert Float64 time back to unitful
     # extract prameters
     (; soillayers, params, buffers) = i
-    (; roughness_height, pctwet, sle, slep, albedo, viewfactor, elevation, slope, shade, depths, heights, d0, zh, κ, tdeep, nodes, soilprops, θ_soil, runmoist, maximum_surface_temperature) = params
+    (; roughness_height, pctwet, sle, slep, albedo, viewfactor, elevation, slope, shade, depths, heights, κ, tdeep, nodes, soilprops, θ_soil, runmoist) = params
     (; depp, wc, c) = soillayers
-    
+    reference_height = last(heights)
     sabnew = 1.0 - albedo
 
     # check for unstable conditions of ground surface temperature
@@ -77,7 +77,7 @@ function soil_energy_balance(
     Q_conduction = c[1] * (T2[2] - T2[1])
 
     # Convection
-    log_z_ratio = log(z / z0 + 1)
+    log_z_ratio = log(reference_height / roughness_height + 1)
     T_ref_height = tair
     T_surface = T2[1]
     ΔT = T_ref_height - T_surface
@@ -85,7 +85,7 @@ function soil_energy_balance(
     # TODO call calc_ρ_cp method specific to elevation and RH in final version but do it this way for NicheMapR comparison
     ρ_cp = calc_ρ_cp(T_mean)#, elevation, relative_humidity)
     u_star = calc_u_star(; reference_wind_speed=vel, log_z_ratio, κ)
-    Q_convection = calc_convection(; u_star, log_z_ratio, ΔT, ρ_cp, z0)
+    Q_convection = calc_convection(; u_star, log_z_ratio, ΔT, ρ_cp, z0=roughness_height)
     hc = max(abs(Q_convection / (T2[1] - tair)), 0.5u"W/m^2/K")
 
     # Evaporation

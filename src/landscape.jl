@@ -37,13 +37,11 @@ Base.@kwdef struct MoistLayers
 end
 
 
-Base.@kwdef struct MicroParams{SP,D<:Vector{<:Number},H<:Vector{<:Number},RoH<:Number,D0,Z<:Number,Sl<:Number,E<:Number,TD,TM}
+Base.@kwdef struct MicroParams{SP,D<:Vector{<:Number},H<:Vector{<:Number},RoH,Sl<:Number,E<:Number,TD}
     soilprops::SP
     depths::D
     heights::H
     roughness_height::RoH
-    d0::D0
-    zh::Z
     κ::Float64
     slope::Sl
     shade::Float64
@@ -57,7 +55,6 @@ Base.@kwdef struct MicroParams{SP,D<:Vector{<:Number},H<:Vector{<:Number},RoH<:N
     tdeep::TD
     θ_soil::Vector{Float64}
     runmoist::Bool
-    maximum_surface_temperature::TM
 end
 
 Base.@kwdef struct MicroForcing{

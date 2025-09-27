@@ -418,12 +418,10 @@ function runmicro(;
 
         # Parameters
         params = MicroParams(;
+            roughness_height,
             soilprops,
             depths,
             heights,
-            roughness_height,
-            d0,
-            zh,
             κ,
             slope,
             shade,
@@ -437,8 +435,8 @@ function runmicro(;
             tdeep,
             θ_soil=θ_soil0_a,
             runmoist,
-            maximum_surface_temperature,
         )
+
         forcing = MicroForcing(;
             SOLRt,
             ZENRt,
@@ -529,12 +527,10 @@ function runmicro(;
                 else
                     # Parameters
                     params = MicroParams(;
+                        roughness_height,
                         soilprops,
                         depths,
                         heights,
-                        roughness_height,
-                        d0,
-                        zh,
                         κ,
                         slope,
                         shade,
@@ -548,7 +544,6 @@ function runmicro(;
                         tdeep,
                         θ_soil=θ_soil0_a,
                         runmoist,
-                        maximum_surface_temperature,
                     )
                     input = MicroInputs(params, forcing, soillayers, buffers)
                     tspan = ((0.0 + (i - 2) * 60)u"minute", (60.0 + (i - 2) * 60)u"minute")  # 1 hour
