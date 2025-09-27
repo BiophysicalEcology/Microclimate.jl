@@ -8,7 +8,7 @@ function soil_energy_balance(
     #dT_K = dT .* 60 .* u"K/minute"  # convert Float64 time back to unitful
     # extract prameters
     (; soillayers, params, buffers) = i
-    (; roughness_height, pctwet, sle, slep, albedo, viewfactor, elevation, slope, shade, depths, reference_height, d0, zh, κ, tdeep, nodes, soilprops, θ_soil, runmoist, maximum_surface_temperature) = params
+    (; roughness_height, pctwet, sle, slep, albedo, viewfactor, elevation, slope, shade, depths, heights, d0, zh, κ, tdeep, nodes, soilprops, θ_soil, runmoist, maximum_surface_temperature) = params
     (; depp, wc, c) = soillayers
     
     sabnew = 1.0 - albedo
@@ -79,7 +79,7 @@ function soil_energy_balance(
 
     # Convection
     profile_out = get_profile(;
-        heights = [0.01u"m", reference_height], 
+        heights, 
         z0 = roughness_height, 
         d0, 
         zh,

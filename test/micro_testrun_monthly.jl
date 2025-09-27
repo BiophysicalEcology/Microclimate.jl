@@ -29,7 +29,7 @@ longlat = (DataFrame(CSV.File("$testdir/data/init_monthly/longlat.csv"))[:, 2] *
 days = [15, 46, 74, 105, 135, 166, 196, 227, 258, 288, 319, 349]
 LAIs = fill(0.1, length(days))
 depths = ((DataFrame(CSV.File("$testdir/data/init_monthly/DEP.csv"))[:, 2]) / 100.0)u"m"
-heights = [0.01, microinput[:Refhyt]]u"m" # air nodes for temperature, wind speed and humidity profile
+heights = [microinput[:Usrhyt], microinput[:Refhyt]]u"m" # air nodes for temperature, wind speed and humidity profile
 
 keywords = (;
     # locations, times, depths and heights
@@ -81,6 +81,7 @@ keywords = (;
     maximum_surface_temperature = u"K"(microinput[:maxsurf]u"°C")
 );
 
+# TODO check why deep soil temp not being outputted
 @time micro_out = runmicro(; keywords...);
 
 # subset NicheMapR predictions
