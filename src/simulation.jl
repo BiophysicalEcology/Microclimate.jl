@@ -374,7 +374,7 @@ function runmicro(;
 
     # simulate all days
     pool = 0.0u"kg/m^2" # initialise depth of pooling water TODO make this an init option
-    heights_water_balance = [first(heights), last(heights)] # for evaporation calculation TODO how sensitive to this height?
+    heights_water_balance = heights
     soil_water_balance_buffers = allocate_soil_water_balance(numnodes_b)  # only once
     niter_moist = ustrip(3600 / moist_step) # TODO use a solver for soil moisture calc
     ∑phase = zeros(Float64, numnodes_a)u"J"

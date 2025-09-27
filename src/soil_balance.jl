@@ -21,8 +21,7 @@ function soil_energy_balance(
 
     # Get environmental data at time t
     f = i.forcing
-    # TODO: ustrip to what
-    tair = f.TAIRt(ustrip(t))
+    tair = f.TAIRt(ustrip(u"minute", t))
     vel = max(0.1u"m/s", f.VELt(ustrip(t)))
     zenr = min(90.0u"°", u"°"(round(f.ZENRt(ustrip(t)), digits=3)))
     solr = max(0.0u"W/m^2", f.SOLRt(ustrip(t)))
@@ -32,7 +31,7 @@ function soil_energy_balance(
 
     # TODO Why do we reset the last value
     T1m = MVector(T1)
-    T1m[N] = tdeep
+    T1m[N] = tdeep # boundary condition
     T2 = SVector(T1m)
 
     # set boundary condition of deep soil temperature
