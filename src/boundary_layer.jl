@@ -188,80 +188,6 @@ function get_profile(;
     )
 end
 
-
-"""
-    calc_convection(; u_star, log_z_ratio, ΔT, ρ_cp, z0)
-
-Calculate the convective heat flux (sensible heat exchange between surface and air).
-
-# Arguments
-- `u_star::Quantity{<:Real,𝐋/𝐓}`: Friction velocity (e.g. `m/s`, `cm/min`).
-- `log_z_ratio::Real`: Precomputed logarithmic height ratio, typically `log(z/z0 + 1.0)`.
-- `ΔT::Quantity{<:Real,Θ}`: Temperature difference between reference air and surface (Kelvin).
-- `ρ_cp::Quantity{<:Real,(𝐌*𝐋^-1*𝐓^-2)}`: Volumetric heat capacity of air (e.g. `J/m³/K`, `cal/cm³/K`).
-- `z0::Quantity{<:Real,𝐋}`: Surface roughness length (length).
-
-# Returns
-- Convective heat flux as `Quantity{<:Real,(𝐌*𝐓^-3)}` (e.g. `W/m²`, `cal/min/cm²`).
-
-Uses bulk and sublayer Stanton numbers to account for turbulence near the surface.
-
-# See also
-[`calc_u_star`](@ref), [`calc_wind`](@ref), [`sublayer_stanton`](@ref), [`bulk_stanton`](@ref), [`convective_flux`](@ref)
-"""
-function calc_convection(; u_star, log_z_ratio, ΔT, ρ_cp, z0)
-    sublayer_stanton_number = sublayer_stanton(u"cm"(z0), u"cm/minute"(u_star))
-    bulk_stanton_number = bulk_stanton(log_z_ratio)
-    return convective_flux(ρ_cp, ΔT, u_star, bulk_stanton_number, sublayer_stanton_number)
-end
-
-
-"""
-    calc_u_star(; reference_wind_speed, log_z_ratio, κ=0.4)
-
-Compute the friction velocity (u*) from a reference wind speed using the
-logarithmic wind profile.
-
-# Arguments
-- `reference_wind_speed::Quantity{<:Real,𝐋/𝐓}`: Wind speed at the reference height (e.g. `m/s`, `cm/min`).
-- `log_z_ratio::Real`: Precomputed log height ratio, typically `log(z/z0 + 1.0)`.
-- `κ::Real`: von Kármán constant (default = 0.4).
-
-# Returns
-- Friction velocity `u_star::Quantity{<:Real,𝐋/𝐓}`.
-
-# See also
-[`calc_convection`](@ref), [`calc_wind`](@ref)
-"""
-function calc_u_star(; reference_wind_speed, log_z_ratio, κ=0.4)
-    Ū_ref_height = reference_wind_speed
-    u_star = κ * Ū_ref_height / log_z_ratio
-    return u_star
-end
-
-
-"""
-    calc_wind(z, z0, κ, u_star, b)
-
-Calculate wind speed at height `z` using the logarithmic wind profile.
-
-# Arguments
-- `z::Quantity{<:Real,𝐋}`: Height above the surface (e.g. `m`, `cm`).
-- `z0::Quantity{<:Real,𝐋}`: Roughness length (e.g. `m`, `cm`).
-- `κ::Real`: von Kármán constant.
-- `u_star::Quantity{<:Real,𝐋/𝐓}`: Friction velocity.
-- `b::Real`: Offset term (e.g. `1.0` for neutral stability, or stability correction).
-
-# Returns
-- Wind speed at height `z::Quantity{<:Real,𝐋/𝐓}`.
-
-# See also
-[`calc_u_star`](@ref), [`calc_convection`](@ref)
-"""
-function calc_wind(z, z0, κ, u_star, b)
-    return (u_star / κ) * log(z / z0 + b)
-end
-
 """
     calc_ρ_cp(T_mean)
 
@@ -304,6 +230,115 @@ function calc_ρ_cp(T_mean, elevation, relative_humidity)
     ρ = dry_air_out.ρ_air
     c_p = wet_air_out.c_p
     return u"(cal*g)/(g*cm^3*K)"(ρ * c_p)
+end
+
+"""
+    calc_u_star(; reference_wind_speed, log_z_ratio, κ=0.4)
+
+Compute the friction velocity (u*) from a reference wind speed using the
+logarithmic wind profile.
+
+# Arguments
+- `reference_wind_speed::Quantity{<:Real,𝐋/𝐓}`: Wind speed at the reference height (e.g. `m/s`, `cm/min`).
+- `log_z_ratio::Real`: Precomputed log height ratio, typically `log(z/z0 + 1.0)`.
+- `κ::Real`: von Kármán constant (default = 0.4).
+
+# Returns
+- Friction velocity `u_star::Quantity{<:Real,𝐋/𝐓}`.
+
+# See also
+[`calc_convection`](@ref), [`calc_wind`](@ref)
+"""
+function calc_u_star(; reference_wind_speed, log_z_ratio, κ=0.4)
+    Ū_ref_height = reference_wind_speed
+    return κ * Ū_ref_height / log_z_ratio
+end
+
+
+"""
+    calc_wind(z, z0, κ, u_star, b)
+
+Calculate wind speed at height `z` using the logarithmic wind profile.
+
+# Arguments
+- `z::Quantity{<:Real,𝐋}`: Height above the surface (e.g. `m`, `cm`).
+- `z0::Quantity{<:Real,𝐋}`: Roughness length (e.g. `m`, `cm`).
+- `κ::Real`: von Kármán constant.
+- `u_star::Quantity{<:Real,𝐋/𝐓}`: Friction velocity.
+- `b::Real`: Offset term (e.g. `1.0` for neutral stability, or stability correction).
+
+# Returns
+- Wind speed at height `z::Quantity{<:Real,𝐋/𝐓}`.
+
+# See also
+[`calc_u_star`](@ref), [`calc_convection`](@ref)
+"""
+function calc_wind(z, z0, κ, u_star, b)
+    return (u_star / κ) * log(z / z0 + b)
+end
+
+
+"""
+    calc_convection(; u_star, log_z_ratio, ΔT, ρ_cp, z0)
+
+Calculate the convective heat flux (sensible heat exchange between surface and air).
+
+# Arguments
+- `u_star::Quantity{<:Real,𝐋/𝐓}`: Friction velocity (e.g. `m/s`, `cm/min`).
+- `log_z_ratio::Real`: Precomputed logarithmic height ratio, typically `log(z/z0 + 1.0)`.
+- `ΔT::Quantity{<:Real,Θ}`: Temperature difference between reference air and surface (Kelvin).
+- `ρ_cp::Quantity{<:Real,(𝐌*𝐋^-1*𝐓^-2)}`: Volumetric heat capacity of air (e.g. `J/m³/K`, `cal/cm³/K`).
+- `z0::Quantity{<:Real,𝐋}`: Surface roughness length (length).
+
+# Returns
+- Convective heat flux as `Quantity{<:Real,(𝐌*𝐓^-3)}` (e.g. `W/m²`, `cal/min/cm²`).
+
+Uses bulk and sublayer Stanton numbers to account for turbulence near the surface.
+
+# See also
+[`calc_u_star`](@ref), [`calc_wind`](@ref), [`sublayer_stanton`](@ref), [`bulk_stanton`](@ref), [`convective_flux`](@ref)
+"""
+function calc_convection(; u_star, log_z_ratio, ΔT, ρ_cp, z0)
+    sublayer_stanton_number = sublayer_stanton(u"cm"(z0), u"cm/minute"(u_star))
+    bulk_stanton_number = bulk_stanton(log_z_ratio)
+    return convective_flux(ρ_cp, ΔT, u_star, bulk_stanton_number, sublayer_stanton_number)
+end
+
+"""
+    convective_flux(ρ_cp, ΔT, u_star, St_bulk, St_sublayer)
+
+Compute convective heat flux given bulk and sublayer Stanton numbers.
+"""
+function convective_flux(ρ_cp, ΔT, u_star, bulk_stanton_number, sublayer_stanton_number)
+        return ρ_cp * ΔT * u_star * bulk_stanton_number / (1 + bulk_stanton_number / sublayer_stanton_number)
+end
+
+
+"""
+    sublayer_stanton(z0, u_star)
+
+Compute the Stanton number for the viscous sublayer.
+"""
+function sublayer_stanton(z0, u_star)
+    return 0.62 / (ustrip(u"cm", z0) * ustrip(u"cm/minute", u_star) / 12)^(9//20)
+end
+
+"""
+    bulk_stanton(log_z_ratio)
+
+Compute the bulk Stanton number for stable conditions.
+"""
+function bulk_stanton(log_z_ratio)
+    return 0.64 / log_z_ratio
+end
+
+"""
+    bulk_stanton(log_z_ratio, z, L_Obukhov)
+
+Compute the bulk Stanton number for unstable conditions.
+"""
+function bulk_stanton(log_z_ratio, z, L_Obukhov)
+    return (0.64 / log_z_ratio) * (1 - 0.1 * z / L_Obukhov)
 end
 
 
@@ -385,42 +420,6 @@ function calc_ψ_h(x)
     return 2.0 * log((1 + x^2.0) / 2.0)
 end
 
-
-"""
-    sublayer_stanton(z0, u_star)
-
-Compute the Stanton number for the viscous sublayer.
-"""
-function sublayer_stanton(z0, u_star)
-    return 0.62 / (ustrip(u"cm", z0) * ustrip(u"cm/minute", u_star) / 12)^(9//20)
-end
-
-"""
-    bulk_stanton(log_z_ratio)
-
-Compute the bulk Stanton number for stable conditions.
-"""
-function bulk_stanton(log_z_ratio)
-    return 0.64 / log_z_ratio
-end
-
-"""
-    bulk_stanton(log_z_ratio, z, L_Obukhov)
-
-Compute the bulk Stanton number for unstable conditions.
-"""
-function bulk_stanton(log_z_ratio, z, L_Obukhov)
-    return (0.64 / log_z_ratio) * (1 - 0.1 * z / L_Obukhov)
-end
-
-"""
-    convective_flux(ρ_cp, ΔT, u_star, St_bulk, St_sublayer)
-
-Compute convective heat flux given bulk and sublayer Stanton numbers.
-"""
-function convective_flux(ρ_cp, ΔT, u_star, bulk_stanton_number, sublayer_stanton_number)
-        return ρ_cp * ΔT * u_star * bulk_stanton_number / (1 + bulk_stanton_number / sublayer_stanton_number)
-end
 
 """
     calc_Obukhov_length(T_ref_height, T_surface, Ū_ref_height, z, z0, ρcpTκg, κ, log_z_ratio, ΔT, ρ_cp, 
