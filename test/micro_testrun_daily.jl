@@ -30,8 +30,8 @@ microinput = (; zip(names, microinput_vec)...)
 
 days = collect(1:Int(length(soil_temperature_nmr[:, 1]) / 24)) # days of year to run (for solrad)
 depths = ((DataFrame(CSV.File("$testdir/data/init_daily/DEP.csv"))[:, 2]) / 100.0)u"m" # Soil nodes (cm) - keep spacing close near the surface, last value is where it is assumed that the soil temperature is at the annual mean air temperature
-heights = [microinput[:Usrhyt], microinput[:Refhyt]]u"m" # air nodes for temperature, wind speed and humidity profile
-days2do = 190
+heights = [microinput[:Usrhyt]-0.001, microinput[:Usrhyt], microinput[:Refhyt]]u"m" # air nodes for temperature, wind speed and humidity profile
+days2do = 10
 hours2do = days2do * 24
 # now try the simulation function
 keywords = (;

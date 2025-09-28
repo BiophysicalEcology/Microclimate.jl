@@ -84,8 +84,23 @@ function soil_energy_balance(
     T_mean = (T_surface + T_ref_height) / 2
     # TODO call calc_ρ_cp method specific to elevation and RH in final version but do it this way for NicheMapR comparison
     ρ_cp = calc_ρ_cp(T_mean)#, elevation, relative_humidity)
-    u_star = calc_u_star(; reference_wind_speed=vel, log_z_ratio, κ)
-    Q_convection = calc_convection(; u_star, log_z_ratio, ΔT, ρ_cp, z0=roughness_height)
+    if T_ref_height ≥ T_surface || zenr ≥ 90°
+        u_star = calc_u_star(; reference_wind_speed=vel, log_z_ratio, κ)
+        Q_convection = calc_convection(; u_star, log_z_ratio, ΔT, ρ_cp, z0=roughness_height)
+    else
+            # compute ρcpTκg (was a constant in original Fortran version)
+        #dry_air_out = dry_air_properties(u"K"(reference_temperature), elevation=elevation)
+        #wet_air_out = wet_air_properties(u"K"(reference_temperature), rh = relative_humidity)
+        #ρ = dry_air_out.ρ_air
+        #c_p = wet_air_out.c_p
+        # TODO make this work with SI units
+        #ρcpTκg = u"cal*minute^2/cm^4"(ρ * c_p * T_ref_height / (κ * g_n))
+        ρcpTκg = 6.003e-8u"cal*minute^2/cm^4"
+        L_Obukhov = -30.0u"cm" # initialise Obukhov length
+        Obukhov_out = calc_Obukhov_length(T_ref_height, T_surface, vel, roughness_height, reference_height, ρcpTκg, κ, log_z_ratio, ΔT, ρ_cp)
+        L_Obukhov = Obukhov_out.L_Obukhov
+        Q_convection = Obukhov_out.Q_convection
+    end
     hc = max(abs(Q_convection / (T2[1] - tair)), 0.5u"W/m^2/K")
 
     # Evaporation

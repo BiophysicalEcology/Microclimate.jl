@@ -149,6 +149,7 @@ function get_profile(;
         end
     end
     if T_ref_height ≥ T_surface || zenith_angle ≥ 90°
+    #if T_ref_height ≥ T_surface || T_surface ≤ u"K"(maximum_surface_temperature) || zenith_angle ≥ 90°
         for i in 2:N_heights
             wind_speeds[i] = calc_wind(height_array[i], z0, κ, u_star, 1.0)
             T_z0 = (T_ref_height * bulk_stanton(log_z_ratio) + T_surface * sublayer_stanton(z0, u_star)) / (bulk_stanton(log_z_ratio) + sublayer_stanton(z0, u_star))
@@ -158,19 +159,20 @@ function get_profile(;
         end
     else
         L_Obukhov = -30.0u"cm" # initialise Obukhov length
+        Obukhov_out = calc_Obukhov_length(T_ref_height, T_surface, v_ref_height, z0, z, ρcpTκg, κ, log_z_ratio, ΔT, ρ_cp)
+        L_Obukhov = Obukhov_out.L_Obukhov
+        T_z0 = Obukhov_out.T_z0
+        Q_convection = Obukhov_out.Q_convection
+        u_star = Obukhov_out.u_star
+        @show T_ref_height, zenith_angle, v_ref_height
+        #@assert false "Forced stop after @show"
         for i in 2:N_heights
-            Obukhov_out = calc_Obukhov_length(T_ref_height, T_surface, v_ref_height, height_array[i], z0, ρcpTκg, κ, log_z_ratio, ΔT, ρ_cp)
-            L_Obukhov = Obukhov_out.L_Obukhov
-            T_z0 = Obukhov_out.T_z0
-            Q_convection = Obukhov_out.Q_convection
             φ_m1 = calc_φ_m(height_array[i], γ, L_Obukhov)
             ψ_m1 = calc_ψ_m(φ_m1)
             ψ_h2 = calc_ψ_h(ψ_m1)
             φ_m = calc_φ_m(z, γ, L_Obukhov)
             ψ_m = calc_ψ_m(φ_m)
             ψ_h = calc_ψ_h(ψ_m)
-            u_star = κ * v_ref_height / (log(z / z0) - ψ_m)
-            u_star = calc_u_star(; reference_wind_speed = v_ref_height, log_z_ratio = log(z / z0) - ψ_m, κ)
             wind_speeds[i] = calc_wind(height_array[i], z0, κ, u_star, -ψ_m1)
             if zh <= 0.0u"m"
                 air_temperatures[i] = T_z0 + (T_ref_height - T_z0) * log(height_array[i] / z0 - ψ_h2) / log(z / z0 - ψ_h)
@@ -370,7 +372,8 @@ This corresponds to the Businger–Dyer formulation for unstable stratification:
   *Boundary-Layer Meteorology*, 7(3), 363–372.
 """
 function calc_φ_m(z, γ, L_Obukhov)
-    return (1.0 - min(1.0, γ * (z / L_Obukhov)))^(1//4)
+    #return (1.0 - min(1.0, γ * (z / L_Obukhov)))^(1//4)
+    return (1.0 - γ * (z / L_Obukhov))^(1//4)
 end
 
 
@@ -430,7 +433,7 @@ end
 
 Iteratively solve for Monin-Obukhov length and convective heat flux.
 """
-function calc_Obukhov_length(T_ref_height, T_surface, v_ref_height, z, z0, ρcpTκg, κ, 
+function calc_Obukhov_length(T_ref_height, T_surface, v_ref_height, z0, z, ρcpTκg, κ, 
     log_z_ratio, ΔT, ρ_cp; γ=16.0, max_iter=500, tol=1e-2)
     L_Obukhov = -30.0u"cm" # initial Monin-Obukhov length cm
 

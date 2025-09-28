@@ -30,12 +30,12 @@ days = [15, 46, 74, 105, 135, 166, 196, 227, 258, 288, 319, 349]
 LAIs = fill(0.1, length(days))
 depths = ((DataFrame(CSV.File("$testdir/data/init_monthly/DEP.csv"))[:, 2]) / 100.0)u"m"
 heights = [microinput[:Usrhyt], microinput[:Refhyt]]u"m" # air nodes for temperature, wind speed and humidity profile
-
+days2do
 keywords = (;
     # locations, times, depths and heights
     latitude = longlat[2]*1.0u"°",
-    days, # days of year for solrad
-    hours = hours = collect(0.:1:24.), # hour of day for solrad
+    days = days[days2do], # days of year for solrad
+    hours = collect(0.:1:24.), # hour of day for solrad
     depths,
     heights, # air nodes for temperature, wind speed and humidity profile
     # terrain
@@ -53,22 +53,22 @@ keywords = (;
     soil_bulk_density = (CSV.File("$testdir/data/init_monthly/soilprop.csv")[1, 1][2]) * 1.0u"Mg/m^3", # dry soil bulk density (Mg/m3)
     soil_saturation_moisture = (CSV.File("$testdir/data/init_monthly/soilprop.csv")[1, 1][3]) * 1.0u"m^3/m^3", # volumetric water content at saturation (0.1 bar matric potential) (m3/m3)
     # daily environmental vectors
-    albedos = (DataFrame(CSV.File("$testdir/data/init_monthly/REFLS.csv"))[:, 2] * 1.0), # substrate albedo (decimal %)
-    shades = (DataFrame(CSV.File("$testdir/data/init_monthly/Minshades.csv"))[:, 2] * 1.0), # daily shade from vegetation (%)
-    pctwets = (DataFrame(CSV.File("$testdir/data/init_monthly/PCTWET.csv"))[:, 2] * 1.0),
-    sles = (DataFrame(CSV.File("$testdir/data/init_monthly/SLES.csv"))[:, 2] * 1.0), # - surface emissivity
-    daily_rainfall = ((DataFrame(CSV.File("$testdir/data/init_monthly/rain.csv"))[:, 2] * 1.0) / 1000)u"kg/m^2", # monthly total rainfall
-    air_temperature_min = (DataFrame(CSV.File("$testdir/data/init_monthly/TMINN.csv"))[:, 2] * 1.0)u"°C", # minimum air temperatures
-    air_temperature_max = (DataFrame(CSV.File("$testdir/data/init_monthly/TMAXX.csv"))[:, 2] * 1.0)u"°C", # maximum air temperatures
-    wind_min = (DataFrame(CSV.File("$testdir/data/init_monthly/WNMINN.csv"))[:, 2] * 1.0)u"m/s", # min wind speed (m/s)
-    wind_max = (DataFrame(CSV.File("$testdir/data/init_monthly/WNMAXX.csv"))[:, 2] * 1.0)u"m/s", # max wind speed (m/s)
-    humidity_min = (DataFrame(CSV.File("$testdir/data/init_monthly/RHMINN.csv"))[:, 2] * 1.0), # min relative humidity (%)
-    humidity_max = (DataFrame(CSV.File("$testdir/data/init_monthly/RHMAXX.csv"))[:, 2] * 1.0), # max relative humidity (%)
-    cloud_min = (DataFrame(CSV.File("$testdir/data/init_monthly/CCMINN.csv"))[:, 2] * 1.0), # min cloud cover (%)
-    cloud_max = (DataFrame(CSV.File("$testdir/data/init_monthly/CCMAXX.csv"))[:, 2] * 1.0), # max cloud cover (%)
+    albedos = (DataFrame(CSV.File("$testdir/data/init_monthly/REFLS.csv"))[days2do, 2] * 1.0), # substrate albedo (decimal %)
+    shades = (DataFrame(CSV.File("$testdir/data/init_monthly/Minshades.csv"))[days2do, 2] * 1.0), # daily shade from vegetation (%)
+    pctwets = (DataFrame(CSV.File("$testdir/data/init_monthly/PCTWET.csv"))[days2do, 2] * 1.0),
+    sles = (DataFrame(CSV.File("$testdir/data/init_monthly/SLES.csv"))[days2do, 2] * 1.0), # - surface emissivity
+    daily_rainfall = ((DataFrame(CSV.File("$testdir/data/init_monthly/rain.csv"))[days2do, 2] * 1.0) / 1000)u"kg/m^2", # monthly total rainfall
+    air_temperature_min = (DataFrame(CSV.File("$testdir/data/init_monthly/TMINN.csv"))[days2do, 2] * 1.0)u"°C", # minimum air temperatures
+    air_temperature_max = (DataFrame(CSV.File("$testdir/data/init_monthly/TMAXX.csv"))[days2do, 2] * 1.0)u"°C", # maximum air temperatures
+    wind_min = (DataFrame(CSV.File("$testdir/data/init_monthly/WNMINN.csv"))[days2do, 2] * 1.0)u"m/s", # min wind speed (m/s)
+    wind_max = (DataFrame(CSV.File("$testdir/data/init_monthly/WNMAXX.csv"))[days2do, 2] * 1.0)u"m/s", # max wind speed (m/s)
+    humidity_min = (DataFrame(CSV.File("$testdir/data/init_monthly/RHMINN.csv"))[days2do, 2] * 1.0), # min relative humidity (%)
+    humidity_max = (DataFrame(CSV.File("$testdir/data/init_monthly/RHMAXX.csv"))[days2do, 2] * 1.0), # max relative humidity (%)
+    cloud_min = (DataFrame(CSV.File("$testdir/data/init_monthly/CCMINN.csv"))[days2do, 2] * 1.0), # min cloud cover (%)
+    cloud_max = (DataFrame(CSV.File("$testdir/data/init_monthly/CCMAXX.csv"))[days2do, 2] * 1.0), # max cloud cover (%)
     minima_times = [microinput[:TIMINS1], microinput[:TIMINS2], microinput[:TIMINS3], microinput[:TIMINS4]], # time of minima for air temp, wind, humidity and cloud cover (h), air & wind mins relative to sunrise, humidity and cloud cover mins relative to solar noon
     maxima_times = [microinput[:TIMAXS1], microinput[:TIMAXS2], microinput[:TIMAXS3], microinput[:TIMAXS4]], # time of maxima for air temp, wind, humidity and cloud cover (h), air temp & wind maxs relative to solar noon, humidity and cloud cover maxs relative to sunrise
-    deep_soil_temperatures = (DataFrame(CSV.File("$testdir/data/init_monthly/tannulrun.csv"))[:, 2] * 1.0)u"°C", # daily deep soil temperatures
+    deep_soil_temperatures = (DataFrame(CSV.File("$testdir/data/init_monthly/tannulrun.csv"))[days2do, 2] * 1.0)u"°C", # daily deep soil temperatures
     # intial conditions
     initial_soil_temperature = u"K".((DataFrame(CSV.File("$testdir/data/init_monthly/soilinit.csv"))[1:length(depths), 2] * 1.0)u"°C"), # initial soil temperature
     initial_soil_moisture = (Array(DataFrame(CSV.File("$testdir/data/init_monthly/moists.csv"))[1, 2:13]) .* 1.0), # initial soil moisture
