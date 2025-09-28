@@ -1241,6 +1241,7 @@ function solrad(;
     latitude::Quantity=43.1379u"°",
     lonc::Real=0.0, # longitude correction, hours
     elevation::Quantity=276.0u"m", # elevation, m
+    P_atmos=atmospheric_pressure(elevation),
     slope::Quantity=0u"°",
     aspect::Quantity=0u"°",
     horizon_angles::Vector{typeof(0.0u"°")}=fill(0.0, 24) .* u"°",
@@ -1435,7 +1436,7 @@ function solrad(;
                 ozone = OZ[llat, mon]  # ozone thickness (cm) from lookup table
                 ELEVFCT1, ELEVFCT2, ELEVFCT3, ELEVFCT4 = elev_corr(elevation)
 
-                P = atmospheric_pressure(elevation) # pressure from elevation
+                P = P_atmos
 
                 @inbounds for N in 1:nmax
                     τλ1 = (P / 101300u"Pa") * τR[N] * ELEVFCT1
@@ -1574,6 +1575,7 @@ end
 
 function get_longwave(;
     elevation::Quantity,
+    P_atmos=atmospheric_pressure(elevation),
     rh::Real,
     tair::Quantity,
     tsurf::Quantity,
