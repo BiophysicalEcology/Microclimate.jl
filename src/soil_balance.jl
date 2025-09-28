@@ -8,7 +8,7 @@ function soil_energy_balance(
     #dT_K = dT .* 60 .* u"K/minute"  # convert Float64 time back to unitful
     # extract prameters
     (; soillayers, params, buffers) = i
-    (; roughness_height, pctwet, sle, slep, albedo, viewfactor, elevation, slope, shade, depths, reference_height, d0, zh, κ, tdeep, nodes, soilprops, θ_soil, runmoist, maximum_surface_temperature) = params
+    (; roughness_height, pctwet, sle, slep, albedo, viewfactor, elevation, P_atmos, slope, shade, depths, reference_height, d0, zh, κ, tdeep, nodes, soilprops, θ_soil, runmoist, maximum_surface_temperature) = params
     (; depp, wc, c) = soillayers
     
     sabnew = 1.0 - albedo
@@ -90,15 +90,15 @@ function soil_energy_balance(
         zenith_angle = zenr, 
         relative_humidity = rh, 
         elevation,
+        P_atmos,
         maximum_surface_temperature,
     )
  
     qconv = profile_out.qconv
     hc = max(abs(qconv / (T2[1] - tair)), 0.5u"W/m^2/K")
-    P_atmos = atmospheric_pressure(elevation)
     
     # Evaporation
-    wet_air_out = wet_air_properties(u"K"(tair); rh=rh, P_atmos=P_atmos)
+    wet_air_out = wet_air_properties(u"K"(tair); rh=rh, P_atmos)
     c_p_air = wet_air_out.c_p
     ρ_air = wet_air_out.ρ_air
     hd = (hc / (c_p_air * ρ_air)) * (0.71 / 0.60)^0.666
@@ -129,9 +129,6 @@ function evap(; tsurf, tair, rh, rhsurf, hd, elevation, pctwet, sat)
     gwsurf = 0.0
 
     tsurf = tsurf < u"K"(-81.0u"°C") ? u"K"(-81.0u"°C") : tsurf
-
-    # Atmospheric pressure from elevation
-    P_atmos = atmospheric_pressure(elevation)
 
     # surface and air vapor densities
     ρ_vap_surf = wet_air_properties(u"K"(tsurf); rh=rhsurf, P_atmos).ρ_vap

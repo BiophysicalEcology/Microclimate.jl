@@ -11,6 +11,7 @@ function get_profile(;
     maximum_surface_temperature=40.0u"°C",
     zenith_angle=21.50564u"°",
     elevation=0.0u"m",
+    P_atmos=atmospheric_pressure(elevation),
 )
     reference_height = last(heights)
     if minimum(heights) < z0
@@ -36,8 +37,9 @@ function get_profile(;
     air_temperatures[1] = T_ref_height
 
     # compute rcptkg (was a constant in original Fortran version)
-    dry_air_out = dry_air_properties(u"K"(reference_temperature), elevation=elevation)
-    wet_air_out = wet_air_properties(u"K"(reference_temperature), rh = relative_humidity)
+    dry_air_out = dry_air_properties(u"K"(reference_temperature); elevation, P_atmos)
+    # TODO: why do we not pass P_atmos here
+    wet_air_out = wet_air_properties(u"K"(reference_temperature); rh=relative_humidity)
     ρ = dry_air_out.ρ_air
     c_p = wet_air_out.c_p
     # TODO make this work with SI units
@@ -111,9 +113,10 @@ end
 function rho_cp(T_mean)
     return u"(cal*g)/(g*cm^3*K)" * (0.08472 / ustrip(u"K", T_mean))
 end
-function rho_cp(T_mean, elevation, relative_humidity)
-    dry_air_out = dry_air_properties(u"K"(T_mean); elevation)
-    wet_air_out = wet_air_properties(u"K"(T_mean); rh = relative_humidity)
+function rho_cp(T_mean, elevation, relative_humidity, P_atmos)
+    dry_air_out = dry_air_properties(u"K"(T_mean); elevation, P_atmos)
+    # TODO: why do we not pass P_atmos here
+    wet_air_out = wet_air_properties(u"K"(T_mean); rh=relative_humidity)
     ρ = dry_air_out.ρ_air
     c_p = wet_air_out.c_p
     return u"(cal*g)/(g*cm^3*K)"(ρ * c_p)

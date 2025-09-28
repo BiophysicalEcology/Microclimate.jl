@@ -49,6 +49,7 @@ Base.@kwdef struct MicroParams{SP,D<:Vector{<:Number},ReH<:Number,RoH<:Number,D0
     shade::Float64
     viewfactor::Float64
     elevation::E
+    P_atmos::P
     albedo::Float64
     sle::Float64
     slep::Float64
