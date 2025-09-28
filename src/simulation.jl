@@ -323,7 +323,7 @@ function runmicro(;
     soil_properties_buffers = allocate_soil_properties(nodes, soilprops)
     phase_transition_buffers = allocate_phase_transition(length(depths))
     λ_b, c_p_b, ρ_b = soil_properties!(soil_properties_buffers; 
-        T_soil=T0, θ_soil=θ_soil0_a, nodes, soilprops, elevation, P_atmos, runmoist, runsnow
+        T_soil=T0, θ_soil=θ_soil0_a, nodes, soilprops, elevation, P_atmos, runmoist, runsnow=false
     )
     λ_bulk[1, :] = λ_b
     c_p_bulk[1, :] = c_p_b
@@ -398,36 +398,11 @@ function runmicro(;
 
         # Parameters
         params = MicroParams(;
-            soilprops,
-            depths,
-            reference_height,
-            roughness_height,
-            d0,
-            zh,
-            κ,
-            slope,
-            shade,
-            viewfactor,
-            elevation,
-            albedo,
-            sle,
-            slep, # check if this is what it should be - sle vs. slep (set as 1 in PAR in Fortran but then changed to user SLE later)
-            pctwet,
-            nodes,
-            tdeep,
-            θ_soil=θ_soil0_a,
-            runmoist,
-            maximum_surface_temperature,
+            soilprops, depths, reference_height, roughness_height, d0, zh, κ, slope, shade, viewfactor, elevation, P_atmos,
+            albedo, sle, slep, # check if this is what it should be - sle vs. slep (set as 1 in PAR in Fortran but then changed to user SLE later)
+            pctwet, nodes, tdeep, θ_soil=θ_soil0_a, runmoist, maximum_surface_temperature,
         )
-        forcing = MicroForcing(;
-            SOLRt,
-            ZENRt,
-            ZSLt,
-            TAIRt,
-            VELt,
-            RHt,
-            CLDt,
-        )
+        forcing = MicroForcing(; SOLRt, ZENRt, ZSLt, TAIRt, VELt, RHt, CLDt)
         buffers = (; soil_properties=soil_properties_buffers)
         input = MicroInputs(; params, forcing, soillayers, buffers)
         step = 1
@@ -499,10 +474,10 @@ function runmicro(;
                     pool = clamp(pool, 0.0u"kg/m^2", maxpool)
                     T_skys[step] = Tsky
                     (; λ_b, cp_b, ρ_b) = soil_properties!(soil_properties_buffers; 
-                        T_soil=T0, θ_soil=θ_soil0_a, nodes, soilprops, elevation, P_atmos, runmoist, runsnow
+                        T_soil=T0, θ_soil=θ_soil0_a, nodes, soilprops, elevation, P_atmos, runmoist, runsnow=false
                     )
                     λ_bulk[step, :] = λ_b
-                    c_p_bulk[step, :] = c_p_b
+                    c_p_bulk[step, :] = cp_b
                     ρ_bulk[step, :] = ρ_b
                     if runmoist && iday > 1
                         θ_soils[step, :] = infil_out.θ_soil[sub]
@@ -592,9 +567,11 @@ function runmicro(;
                     # TODO: why use every second step what is this
                     sub = vcat(findall(isodd, 1:numnodes_b), numnodes_b)
                     θ_soil0_a = θ_soil0_b[sub]
-                    λ_b, c_p_b, ρ_b = soil_properties!(soil_properties_buffers, T0, θ_soil0_a, nodes, soilprops, elevation, P_atmos, runmoist, false)
+                    (; λ_b, cp_b, ρ_b) = soil_properties!(soil_properties_buffers;
+                        T_soil=T0, θ_soil=θ_soil0_a, nodes, soilprops, elevation, P_atmos, runmoist, runsnow=false,
+                    )
                     λ_bulk[step, :] = λ_b
-                    c_p_bulk[step, :] = c_p_b
+                    c_p_bulk[step, :] = cp_b
                     ρ_bulk[step, :] = ρ_b
                     if runmoist
                         if i < length(hours)

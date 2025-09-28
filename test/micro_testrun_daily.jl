@@ -111,6 +111,9 @@ keywords = (;
 # now try the simulation function
 @time micro_out = runmicro(; keywords...);
 
+using ProfileView
+@profview runmicro(; keywords...);
+
 # TODO test plotting again at some stage, but it slows down CI a lot
 # plot(micro_out)
 

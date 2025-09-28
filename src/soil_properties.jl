@@ -13,18 +13,17 @@ function allocate_soil_properties(nodes, soilprops)
 end
 
 
-soil_properties(T_soil, θ_soil, nodes::AbstractVector{<:Real}, soilprops, args...) = 
-    soil_properties!(allocate_soil_properties(nodes, soilprops), T_soil, θ_soil, nodes, soilprops, args...)
-function soil_properties!(
-    buffers::NamedTuple,                          
+soil_properties(; T_soil, θ_soil, nodes::AbstractVector{<:Real}, soilprops, kw...) = 
+    soil_properties!(allocate_soil_properties(nodes, soilprops); T_soil, θ_soil, nodes, soilprops, kw...)
+function soil_properties!(buffers::NamedTuple;
     T_soil::AbstractVector{<:Quantity},
     θ_soil::AbstractVector{<:Real},
     nodes::AbstractVector{<:Real},
     soilprops::NamedTuple,
     elevation::Quantity,
+    P_atmos = atmospheric_pressure(elevation),
     runmoist::Bool,
     runsnow::Bool,
-    P_atmos = atmospheric_pressure(elevation),
 )
     numtyps = findfirst(==(0.0), nodes) - 1
     NON = length(nodes)
@@ -123,5 +122,5 @@ function soil_properties!(
     #     end
     # end
 
-    return λ_b, cp_b, ρ_b
+    return (; λ_b, cp_b, ρ_b)
 end
