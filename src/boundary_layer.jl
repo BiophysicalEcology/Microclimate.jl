@@ -140,7 +140,7 @@ function get_profile(;
     ρ_cp = calc_ρ_cp(T_mean)#, elevation, relative_humidity)
     u_star = calc_u_star(; reference_wind_speed, log_z_ratio, κ)
     Q_convection = calc_convection(; u_star, log_z_ratio, ΔT, ρ_cp, z0)
-    
+
     if zh > 0.0u"m" # Campbell & Norman canopy displacement approach
         for i in 2:N_heights
             A = (T_ref_height - T_surface) / (1 - log((z - d0_cm) / zh_cm))
@@ -159,20 +159,16 @@ function get_profile(;
         end
     else
         L_Obukhov = -30.0u"cm" # initialise Obukhov length
-        Obukhov_out = calc_Obukhov_length(T_ref_height, T_surface, v_ref_height, z0, z, ρcpTκg, κ, log_z_ratio, ΔT, ρ_cp)
-        L_Obukhov = Obukhov_out.L_Obukhov
+        Obukhov_out = calc_Obukhov_length(T_ref_height, T_surface, v_ref_height, z0, z, ρcpTκg, κ, log_z_ratio, ΔT, ρ_cp; max_iter=30, tol=1e-2)
+        L_Obukhov = u"cm"(Obukhov_out.L_Obukhov)
         T_z0 = Obukhov_out.T_z0
         Q_convection = Obukhov_out.Q_convection
         u_star = Obukhov_out.u_star
-        @show T_ref_height, zenith_angle, v_ref_height
-        #@assert false "Forced stop after @show"
+        ψ_h = Obukhov_out.ψ_h
         for i in 2:N_heights
             φ_m1 = calc_φ_m(height_array[i], γ, L_Obukhov)
             ψ_m1 = calc_ψ_m(φ_m1)
-            ψ_h2 = calc_ψ_h(ψ_m1)
-            φ_m = calc_φ_m(z, γ, L_Obukhov)
-            ψ_m = calc_ψ_m(φ_m)
-            ψ_h = calc_ψ_h(ψ_m)
+            ψ_h2 = calc_ψ_h(φ_m1)
             wind_speeds[i] = calc_wind(height_array[i], z0, κ, u_star, -ψ_m1)
             if zh <= 0.0u"m"
                 air_temperatures[i] = T_z0 + (T_ref_height - T_z0) * log(height_array[i] / z0 - ψ_h2) / log(z / z0 - ψ_h)
@@ -373,7 +369,7 @@ This corresponds to the Businger–Dyer formulation for unstable stratification:
 """
 function calc_φ_m(z, γ, L_Obukhov)
     #return (1.0 - min(1.0, γ * (z / L_Obukhov)))^(1//4)
-    return (1.0 - γ * (z / L_Obukhov))^(1//4)
+    return (1.0 - γ * z / L_Obukhov)^(1//4)
 end
 
 
@@ -423,7 +419,7 @@ This is the Businger–Dyer form for scalars:
 - Dyer (1974).
 """
 function calc_ψ_h(x)
-    return 2.0 * log((1 + x^2.0) / 2.0)
+    return 2.0 * log((1.0 + x^2.0) / 2.0)
 end
 
 
@@ -434,7 +430,7 @@ end
 Iteratively solve for Monin-Obukhov length and convective heat flux.
 """
 function calc_Obukhov_length(T_ref_height, T_surface, v_ref_height, z0, z, ρcpTκg, κ, 
-    log_z_ratio, ΔT, ρ_cp; γ=16.0, max_iter=500, tol=1e-2)
+    log_z_ratio, ΔT, ρ_cp; γ=16.0, max_iter=30, tol=1e-2)
     L_Obukhov = -30.0u"cm" # initial Monin-Obukhov length cm
 
     # conversions
@@ -442,19 +438,24 @@ function calc_Obukhov_length(T_ref_height, T_surface, v_ref_height, z0, z, ρcpT
     z0 = u"cm"(z0)
     T_ref_height = u"K"(T_ref_height)
     T_surface = u"K"(T_surface)
-
+    v_ref_height = u"cm/minute"(v_ref_height)
     # initialise
     Q_convection = nothing
     effective_stanton_number = nothing
     bulk_stanton_number = nothing
     sublayer_stanton_number = nothing
     u_star = nothing
+    ψ_h = nothing
     δ = 1.0
     count = 0
+    φ_m = nothing
+    L_Obukhov_new = nothing
+
     while δ > tol && count < max_iter
         count += 1
         φ_m = calc_φ_m(z, γ, L_Obukhov)
         ψ_m = calc_ψ_m(φ_m)
+        ψ_h = calc_ψ_h(φ_m)
         u_star = κ * v_ref_height / (log(z / z0) - ψ_m)
         sublayer_stanton_number = sublayer_stanton(z0, u_star)
         bulk_stanton_number = bulk_stanton(log_z_ratio, z, L_Obukhov)
@@ -464,6 +465,6 @@ function calc_Obukhov_length(T_ref_height, T_surface, v_ref_height, z0, z, ρcpT
         L_Obukhov = L_Obukhov_new
     end
     T_z0 = (T_ref_height * bulk_stanton_number + T_surface * sublayer_stanton_number) / (bulk_stanton_number + sublayer_stanton_number)
-    return (; L_Obukhov=u"m"(L_Obukhov), sublayer_stanton_number, effective_stanton_number, bulk_stanton_number, u_star, Q_convection, T_z0)
+    return (; L_Obukhov=u"m"(L_Obukhov), sublayer_stanton_number, effective_stanton_number, bulk_stanton_number, u_star, ψ_h, Q_convection, T_z0)
 end
 
