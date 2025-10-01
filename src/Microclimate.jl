@@ -6,9 +6,10 @@ using Unitful, UnitfulMoles
 using ModelParameters, DelimitedFiles
 using SpecialFunctions, StaticArrays
 
-using FluidProperties: wet_air_properties, dry_air_properties, vapour_pressure, enthalpy_of_vaporisation, water_properties, atmospheric_pressure
+using FluidProperties: atmospheric_pressure, wet_air_properties, dry_air_properties, vapour_pressure 
+using FluidProperties: enthalpy_of_vaporisation, molar_enthalpy_of_vaporisation, water_properties
 using FluidProperties: g_n, σ, atm, R
-using Unitful: °, rad, °C#, K, Pa, kPa, MPa, J, kJ, W, L, g, kg, cm, m, s, hr, d, mol, mmol, μmol, σ, R
+using Unitful: °, rad, °C
 using Interpolations: AbstractInterpolation
 
 
@@ -16,9 +17,10 @@ export MicroParams, MicroForcing, MicroInputs
 
 export sine_exponential!, vsine, hourly_vars
 
-export hour_angle, solar_geometry, elev_corr, dchxy, solrad, cloud_adjust_radiation, get_longwave, init_dchxy_buffers
+export hour_angle, solar_geometry, elev_corr, dchxy, solrad, cloud_adjust_radiation
+export get_longwave, init_dchxy_buffers
 
-export get_profile
+export get_profile, calc_u_star, calc_convection, calc_ρ_cp
 
 export soil_properties
 

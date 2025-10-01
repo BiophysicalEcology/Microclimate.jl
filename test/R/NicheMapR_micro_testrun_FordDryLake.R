@@ -209,7 +209,7 @@ moists[1:10,] <- SoilMoist_Init # insert initial soil moisture
 spinup <- 0 # repeat first day 3 times for steady state
 dewrain <- 0 # don't feed dew back into soil as rain
 moiststep <- 360 # how many steps within the hour is soil moisture solved over
-maxsurf <- 85 # what is the maximum allowable soil surface temp (for stability purposes), deg C
+maxsurf <- 75 # what is the maximum allowable soil surface temp (for stability purposes), deg C
 
 snowtemp <- 1.5 # temperature at which precipitation falls as snow (used for snow model)
 snowdens <- 0.375 # snow density (Mg/m3)

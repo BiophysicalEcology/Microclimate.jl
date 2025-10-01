@@ -2,12 +2,12 @@
 # for soil and snow layers, based on Campbell et al. (1994) and Campbell & Norman (1998)
 
 function allocate_soil_properties(nodes, soilprops)
-    (; ρ_dry, θ_sat, λ_m, cp_m, ρ_m) = soilprops
+    (; ρ_dry, θ_sat, λ_mineral, cp_mineral, ρ_mineral) = soilprops
     NON = length(nodes)
 
-    λ_b = fill(λ_m[1], NON)
-    cp_b = fill(cp_m[1], NON)
-    ρ_b = fill(ρ_m[1], NON)
+    λ_b = fill(λ_mineral[1], NON)
+    cp_b = fill(cp_mineral[1], NON)
+    ρ_b = fill(ρ_mineral[1], NON)
 
     return (; λ_b, cp_b, ρ_b)
 end
@@ -28,20 +28,16 @@ function soil_properties!(buffers::NamedTuple;
     numtyps = findfirst(==(0.0), nodes) - 1
     NON = length(nodes)
     (; λ_b, cp_b, ρ_b) = buffers
-    (; ρ_dry, θ_sat, λ_m, cp_m, ρ_m) = soilprops
+    (; ρ_dry, θ_sat, λ_mineral, cp_mineral, ρ_mineral) = soilprops
 
-    cp_water = 4184.0u"J/kg/K"
-    ρ_water = 1000.0u"kg/m^3"
-    ρ_hat0 = 44.65u"mol/m^3"
-    D_v0 = 2.12e-5u"m^2/s"
-    q = 4.0
-    θ_0 = 0.162
-    g_a = 0.1
+    p_a0 = Unitful.atm
+    q = 4.0 # make a parameter with default, or q_0 * (T_soil / 303) ^ 2, q_0 = ~2 to 6 (power for recirculation function)
+    θ_0 = 0.162 # m3/m3 return-flow cutoff water content (~0.05 for coarse sand to 0.25 for heavy clay), p. 121 Campbell & Norman 1991 TODO make a parameter with default
+    g_a = 0.1 # make a parameter (~0.07 to 1.1), de Vries shape factor, 0.33 for organic soils, 0.1 for mineral
     g_c = 1.0 - 2.0 * g_a
-    p_a0 = 101325.0u"Pa"
-    p_a = P_atmos
 
-    ϵ(λ_λ, λ_f) = 2.0 / (3.0 * (1.0 + g_a * (λ_λ / λ_f - 1.0))) + 1.0 / (3.0 * (1.0 + g_c * (λ_λ / λ_f - 1.0)))
+
+    ϵ(λ_λ, λ_fluid) = 2.0 / (3.0 * (1.0 + g_a * (λ_λ / λ_fluid - 1.0))) + 1.0 / (3.0 * (1.0 + g_c * (λ_λ / λ_fluid - 1.0)))
 
     ii, ij = runsnow ? (9, 8) : (1, 0)
     for i in ii:NON
@@ -55,19 +51,19 @@ function soil_properties!(buffers::NamedTuple;
         θj = θ_soil[j]
 
         if runmoist
-            cp_b[i] = ρ_dry[j] / ρ_m[j] * cp_m[j] + m * cp_water
+            cp_b[i] = ρ_dry[j] / ρ_mineral[j] * cp_mineral[j] + m * cp_water
             ρ_b[i] = m * ρ_water + ρ_dry[j]
         else
-            cp_b[i] = ρ_dry[j] / ρ_m[j] * cp_m[j] + θ_sat[j] * θj * cp_water
+            cp_b[i] = ρ_dry[j] / ρ_mineral[j] * cp_mineral[j] + θ_sat[j] * θj * cp_water
             ρ_b[i] = θ_sat[j] * θj * ρ_water + ρ_dry[j]
         end
 
-        λ_a = (0.024 + 7.73e-5 * T_C - 2.6e-8 * T_C^2)u"W/m/K"
-        λ_w = (0.554 + 2.24e-3 * T_C - 9.87e-6 * T_C^2)u"W/m/K"
+        λ_water = (0.554 + 2.24e-3 * T_C - 9.87e-6 * T_C^2)u"W/m/K" # eq. 8 Campbell et al. 1994
+        λ_dry_air = (0.024 + 7.73e-5 * T_C - 2.6e-8 * T_C^2)u"W/m/K" # eq. 9 Campbell et al. 1994
 
-        D_v = D_v0 * (p_a0 / p_a) * (T_K / 273.15u"K")^1.75
-        ρ_hat = ρ_hat0 * (p_a / p_a0) * (273.15 / T_K)
-        λ_vap = (45144.0 - 48.0 * T_C)u"J/mol"
+        D_v = D_v0 * (p_a0 / P_atmos) * (T_K / 273.15u"K")^1.75 # p. 309 Campbell et al. 1994
+        ρ_hat = ρ_hat0 * (P_atmos / p_a0) * (273.15 / T_K) # p. 309 Campbell et al. 1994
+        λ_vapor = molar_enthalpy_of_vaporisation(T_K)
 
         ################################################################
         # This is some of the most expensive code in the package
@@ -79,16 +75,16 @@ function soil_properties!(buffers::NamedTuple;
 
         ∇x = (e_a2 - e_a1) / 2.0
 
-        ϕ_m = ρ_dry[j] / ρ_m[j]
+        ϕ_mineral = ρ_dry[j] / ρ_mineral[j]
         θ = runmoist ? m : θj * θ_sat[j]
-        ϕ_g = max(0.0, 1.0 - θ - ϕ_m)
-        f_w = 1.0 / (1.0 + (θ / θ_0)^(-q))
+        ϕ_gas = max(0.0, 1.0 - θ - ϕ_mineral)
+        f_water = 1.0 / (1.0 + (θ / θ_0)^(-q)) # eq. 3, Campbell et al. 1994
 
-        λ_g = λ_a + λ_vap * ∇x * f_w * ρ_hat * D_v / (p_a - e_a)
-        λ_f = λ_g + f_w * (λ_w - λ_g)
+        λ_gas = λ_dry_air + λ_vapor * ∇x * f_water * ρ_hat * D_v / (P_atmos - e_a)
+        λ_fluid = λ_gas + f_water * (λ_water - λ_gas) 
 
-        λ_b[i] = (θ * ϵ(λ_w, λ_f) * λ_w + ϕ_m * ϵ(λ_m[j], λ_f) * λ_m[j] + ϕ_g * ϵ(λ_g, λ_f) * λ_g) /
-                 (θ * ϵ(λ_w, λ_f) + ϕ_m * ϵ(λ_m[j], λ_f) + ϕ_g * ϵ(λ_g, λ_f))
+        λ_b[i] = (θ * ϵ(λ_water, λ_fluid) * λ_water + ϕ_mineral * ϵ(λ_mineral[j], λ_fluid) * λ_mineral[j] + ϕ_gas * ϵ(λ_gas, λ_fluid) * λ_gas) /
+                 (θ * ϵ(λ_water, λ_fluid) + ϕ_mineral * ϵ(λ_mineral[j], λ_fluid) + ϕ_gas * ϵ(λ_gas, λ_fluid))
     end
 
     #HTOFN = 333500.0  # J/kg
@@ -103,7 +99,7 @@ function soil_properties!(buffers::NamedTuple;
     #     end
 
     #     if cursnow >= minsnow
-    #         e_a = wet_air_properties(T_L; rh=100, P_atmos = p_a).r_w
+    #         e_a = wet_air_properties(T_L; rh=100, P_atmos = P_atmos).r_w
     #         cpsnow = (2100.0 * snowdens + (1.005 + 1.82 * (RW / (1.0 + RW))) * 1000.0 * (1.0 - snowdens))
     #         snowcond2 = (0.00395 + 0.00084 * snowdens * 1000.0 - 0.0000017756 * (snowdens * 1000.0)^2 +
     #                      0.00000000380635 * (snowdens * 1000.0)^3) / 418.6 * 60.0
