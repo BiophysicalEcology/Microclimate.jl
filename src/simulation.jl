@@ -321,11 +321,13 @@ function runmicro(;
     θ_soils[1, :] = θ_soil0_a
     nodes = nodes_day[:, 1]
     M = 18 # soil_water_balance default
-    soil_properties_buffers = allocate_soil_properties(nodes, soilprops)
     phase_transition_buffers = allocate_phase_transition(length(depths))
-    λ_b, c_p_b, ρ_b = soil_properties!(soil_properties_buffers; 
-        T_soil=T0, θ_soil=θ_soil0_a, nodes, soilprops, elevation, P_atmos, runmoist, runsnow=false
-    )
+    soil_properties_out = map((T,θ) -> soil_properties(;
+        T_soil=T, θ_soil=θ, soilprops, elevation, P_atmos
+    ), T0, θ_soil0_a)
+    λ_b  = getindex.(soil_properties_out, 1)
+    c_p_b = getindex.(soil_properties_out, 2)
+    ρ_b   = getindex.(soil_properties_out, 3)    
     λ_bulk[1, :] = λ_b
     c_p_bulk[1, :] = c_p_b
     ρ_bulk[1, :] = ρ_b
@@ -404,7 +406,6 @@ function runmicro(;
             pctwet, nodes, tdeep, θ_soil=θ_soil0_a, runmoist,
         )
         forcing = MicroForcing(; SOLRt, ZENRt, ZSLt, TAIRt, VELt, RHt, CLDt)
-        buffers = (; soil_properties=soil_properties_buffers)
         input = MicroInputs(; params, forcing, soillayers, buffers)
         step = 1
         # loop through hours of day
@@ -473,9 +474,12 @@ function runmicro(;
                     pools[step] = pool
                     pool = clamp(pool, 0.0u"kg/m^2", maxpool)
                     T_skys[step] = Tsky
-                    (; λ_b, cp_b, ρ_b) = soil_properties!(soil_properties_buffers; 
-                        T_soil=T0, θ_soil=θ_soil0_a, nodes, soilprops, elevation, P_atmos, runmoist, runsnow=false
-                    )
+                    soil_properties_out = map((T,θ) -> soil_properties(;
+                        T_soil=T, θ_soil=θ, soilprops, elevation, P_atmos
+                    ), T0, θ_soil0_a)
+                    λ_b  = getindex.(soil_properties_out, 1)
+                    c_p_b = getindex.(soil_properties_out, 2)
+                    ρ_b   = getindex.(soil_properties_out, 3)
                     λ_bulk[step, :] = λ_b
                     c_p_bulk[step, :] = cp_b
                     ρ_bulk[step, :] = ρ_b
@@ -565,9 +569,12 @@ function runmicro(;
                     # TODO: why use every second step what is this
                     sub = vcat(findall(isodd, 1:numnodes_b), numnodes_b)
                     θ_soil0_a = θ_soil0_b[sub]
-                    (; λ_b, cp_b, ρ_b) = soil_properties!(soil_properties_buffers;
-                        T_soil=T0, θ_soil=θ_soil0_a, nodes, soilprops, elevation, P_atmos, runmoist, runsnow=false,
-                    )
+                    soil_properties_out = map((T,θ) -> soil_properties(;
+                        T_soil=T, θ_soil=θ, soilprops, elevation, P_atmos
+                    ), T0, θ_soil0_a)
+                    λ_b  = getindex.(soil_properties_out, 1)
+                    c_p_b = getindex.(soil_properties_out, 2)
+                    ρ_b   = getindex.(soil_properties_out, 3)
                     λ_bulk[step, :] = λ_b
                     c_p_bulk[step, :] = cp_b
                     ρ_bulk[step, :] = ρ_b
