@@ -205,9 +205,9 @@ function runmicro(;
     soilprops = (; 
         ρ_dry =  fill(soil_bulk_density, numnodes_a),
         θ_sat = fill(soil_saturation_moisture, numnodes_a),
-        λ_m = fill(soil_mineral_conductivity, numnodes_a),
-        cp_m = fill(soil_mineral_heat_capacity, numnodes_a),
-        ρ_m = fill(soil_mineral_density, numnodes_a),
+        λ_mineral = fill(soil_mineral_conductivity, numnodes_a),
+        cp_mineral = fill(soil_mineral_heat_capacity, numnodes_a),
+        ρ_mineral = fill(soil_mineral_density, numnodes_a),
     )
     ∑phase = zeros(Float64, numnodes_a)u"J" # zero phase transition for liquid water in soil
 
