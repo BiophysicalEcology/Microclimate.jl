@@ -174,22 +174,22 @@ function soil_properties(;
     return (; λ_b, cp_b, ρ_b)
 end
 
-function soil_properties.(; T_soil, θ_soil, soilprops, elevation, P_atmos)
-    n = length(T_soil)
-    map(1:n) do i
-        soilprops_i = (;
-            ρ_dry     = soilprops.ρ_dry[i],
-            θ_sat     = soilprops.θ_sat[i],
-            λ_mineral = soilprops.λ_mineral[i],
-            cp_mineral = soilprops.cp_mineral[i],
-            ρ_mineral = soilprops.ρ_mineral[i],
-        )
-        soil_properties(
-            T_soil=T_soil[i],
-            θ_soil=θ_soil[i],
-            soilprops=soilprops_i,
-            elevation=elevation,
-            P_atmos=P_atmos,
-        )
-    end
-end
+# function soil_properties.(; T_soil, θ_soil, soilprops, elevation, P_atmos)
+#     n = length(T_soil)
+#     map(1:n) do i
+#         soilprops_i = (;
+#             ρ_dry     = soilprops.ρ_dry[i],
+#             θ_sat     = soilprops.θ_sat[i],
+#             λ_mineral = soilprops.λ_mineral[i],
+#             cp_mineral = soilprops.cp_mineral[i],
+#             ρ_mineral = soilprops.ρ_mineral[i],
+#         )
+#         soil_properties(
+#             T_soil=T_soil[i],
+#             θ_soil=θ_soil[i],
+#             soilprops=soilprops_i,
+#             elevation=elevation,
+#             P_atmos=P_atmos,
+#         )
+#     end
+# end
