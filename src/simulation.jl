@@ -181,14 +181,14 @@ function runmicro(;
     initial_soil_moisture = [0.42, 0.42, 0.42, 0.43, 0.44, 0.44, 0.43, 0.42, 0.41, 0.42, 0.42, 0.43],
     leaf_area_index = fill(0.1, length(days)),
     iterate_day = 3, # number of iterations per day
-    maximum_surface_temperature = u"K"(85.0u"°C"),
+    #maximum_surface_temperature = u"K"(85.0u"°C"),
     daily = false, # doing consecutive days?
     runmoist = false, # run soil moisture algorithm?
     spinup = false, # spin-up the first day by iterate_day iterations?
     __n::Val{N} = Val{length(depths)}() # This is a tiny hack so N is known to the compiler in function body
 ) where N
 
-    #reference_height = last(heights)
+    reference_height = last(heights)
     P_atmos = atmospheric_pressure(elevation)
 
     ndays = length(days)
@@ -399,9 +399,9 @@ function runmicro(;
 
         # Parameters
         params = MicroParams(;
-            soilprops, depths, heights, reference_height, roughness_height, d0, zh, κ, slope, shade, viewfactor, elevation, P_atmos,
+            soilprops, depths, heights, reference_height, roughness_height, κ, slope, shade, viewfactor, elevation, P_atmos,
             albedo, sle, slep, # check if this is what it should be - sle vs. slep (set as 1 in PAR in Fortran but then changed to user SLE later)
-            pctwet, nodes, tdeep, θ_soil=θ_soil0_a, runmoist, maximum_surface_temperature,
+            pctwet, nodes, tdeep, θ_soil=θ_soil0_a, runmoist,
         )
         forcing = MicroForcing(; SOLRt, ZENRt, ZSLt, TAIRt, VELt, RHt, CLDt)
         buffers = (; soil_properties=soil_properties_buffers)
@@ -468,7 +468,6 @@ function runmicro(;
                                 step,
                                 maxpool,
                                 M,
-                                maximum_surface_temperature,
                         )
                     end
                     pools[step] = pool
@@ -488,7 +487,7 @@ function runmicro(;
                 else
                     # Parameters
                     params = MicroParams(;
-                        soilprops, depths, heights, reference_height, roughness_height, d0, zh, κ, slope, shade,
+                        soilprops, depths, heights, reference_height, roughness_height, κ, slope, shade,
                         viewfactor, elevation, P_atmos, albedo, sle, slep, pctwet, nodes, tdeep, θ_soil=θ_soil0_a,
                         runmoist,
                     )
@@ -542,7 +541,6 @@ function runmicro(;
                                 step,
                                 maxpool,
                                 M,
-                                maximum_surface_temperature
                         )
                     end
                     if i < length(hours)
@@ -600,7 +598,6 @@ function runmicro(;
             heights,
             elevation,
             P_atmos,
-            maximum_surface_temperature,
         )
     end
     flip2vectors(x) = (; (k => getfield.(x, k) for k in keys(x[1]))...)

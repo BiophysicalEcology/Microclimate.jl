@@ -20,7 +20,6 @@ to assess whether conditions are stable or unstable.
 - `reference_wind_speed::Quantity=2.75u"m/s"`: Wind speed at the reference height.
 - `relative_humidity::Float64=49.0`: Relative humidity at the reference height (%).
 - `surface_temperature::Quantity=48.59u"°C"`: Soil or surface temperature.
-- `maximum_surface_temperature::Quantity=40.0u"°C"`: Maximum allowed surface temperature.
 - `zenith_angle::Quantity=21.5u"°"`: Solar zenith angle.
 - `elevation::Quantity=0.0u"m"`: Elevation above sea level.
 
@@ -64,7 +63,6 @@ profile = get_profile(
     reference_wind_speed = 2.0u"m/s",
     relative_humidity = 60.0,
     surface_temperature = 35u"°C",
-    maximum_surface_temperature = 85u"°C",
     zenith_angle = 45u"°"
 )
 
@@ -82,7 +80,6 @@ function get_profile(;
     reference_wind_speed,
     relative_humidity,
     surface_temperature,
-    maximum_surface_temperature,
     zenith_angle,
     elevation=0.0u"m",
     P_atmos=atmospheric_pressure(elevation),
@@ -139,7 +136,6 @@ function get_profile(;
         end
     end
     if T_ref_height ≥ T_surface || zenith_angle ≥ 90°
-    #if T_ref_height ≥ T_surface || T_surface ≤ u"K"(maximum_surface_temperature) || zenith_angle ≥ 90°
         for i in 2:N_heights
             wind_speeds[i] = calc_wind(height_array[i], z0, κ, u_star, 1.0)
             T_z0 = (T_ref_height * bulk_stanton(log_z_ratio) + T_surface * sublayer_stanton(z0, u_star)) / (bulk_stanton(log_z_ratio) + sublayer_stanton(z0, u_star))

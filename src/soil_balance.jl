@@ -9,7 +9,7 @@ function soil_energy_balance(
     # extract prameters
     (; soillayers, params, buffers) = i
     (; roughness_height, pctwet, sle, slep, albedo, viewfactor, elevation, P_atmos, 
-        slope, shade, depths, reference_height, κ, tdeep, nodes, 
+        slope, shade, heights, depths, reference_height, κ, tdeep, nodes, 
         soilprops, θ_soil, runmoist) = params
     (; depp, wc, c) = soillayers
     reference_height = last(heights)
@@ -476,7 +476,6 @@ function get_soil_water_balance!(buffers;
     step,
     maxpool,
     M=18,
-    maximum_surface_temperature,
 )
     # compute scalar profiles
     profile_out = get_profile(;
