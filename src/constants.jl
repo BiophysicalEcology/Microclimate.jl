@@ -140,3 +140,8 @@ const DEFAULT_FDQ::Matrix{<:Real}=reshape([
         ], (11, 19))
 
 const DEFAULT_s̄::Vector{<:Real}=[0.2, 0.255, 0.315, 0.365, 0.394, 0.405, 0.405, 0.395, 0.37, 0.343, 0.32]
+
+const cp_water = 4184.0u"J/kg/K" # heat capacity of pure water
+const ρ_water = 1000.0u"kg/m^3" # density of pure water
+const ρ_hat0 = 44.65u"mol/m^3" # density of water vapour at STP, p. 309 Campbell et al 1994
+const D_v0 = 2.12e-5u"m^2/s" # diffusivity of water vapour at STP, p. 309 Campbell et al 1994
