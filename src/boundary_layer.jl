@@ -1,81 +1,23 @@
-"""
-    get_profile(; kwargs...)
+const DEFAULT_HEIGHTS = [0.01, 0.05, 0.1, 0.2, 0.3, 0.4, 0.5, 0.75, 1.0, 1.2] .* u"m"
 
-Compute vertical profiles of wind speed, air temperature, and relative humidity 
-in the atmospheric surface layer, using Monin–Obukhov similarity theory (MOST).
+function allocate_profile(heights)
+    N_heights = length(heights)
+    wind_speeds = similar(heights, typeof(0.0u"cm/minute")) # output wind speeds
+    height_array = similar(heights, typeof(0.0u"cm"))
+    height_array[end:-1:begin] .= heights 
+    air_temperatures = similar(heights, typeof(0.0u"K")) # output temperatures, need to do this otherwise get InexactError
+    humidities = similar(heights, Float64) # output relative humidities
+    return (; heights, height_array, air_temperatures, wind_speeds, humidities)
+end
 
-This function reproduces the subroutine in `MICRO.f/get_profile.R` from **NicheMapR**, ported to Julia.  
-It calculates the microclimate profiles above the ground (or canopy) at specified heights,
-based on measured values at a reference height and computed or measured soil surface temperature, together
-with surface roughness parameters. Zenith angle and a maximum allowed surface temperature are used
-to assess whether conditions are stable or unstable.
-
-# Keyword Arguments
-- `z0::Quantity=0.004u"m"`: roughness length (surface aerodynamic roughness).
-- `zh::Quantity=0.0u"m"`: heat transfer roughness height
-- `d0::Quantity=0.0u"m"`: zero plane displacement correction factor.
-- `κ::Float64=0.4`: von Kármán constant.
-- `heights::Vector{Quantity}`: Requested heights above the surface, the last being the reference height.
-- `reference_temperature::Quantity=27.78u"°C"`: Air temperature at the reference height.
-- `reference_wind_speed::Quantity=2.75u"m/s"`: Wind speed at the reference height.
-- `relative_humidity::Float64=49.0`: Relative humidity at the reference height (%).
-- `surface_temperature::Quantity=48.59u"°C"`: Soil or surface temperature.
-- `zenith_angle::Quantity=21.5u"°"`: Solar zenith angle.
-- `elevation::Quantity=0.0u"m"`: Elevation above sea level.
-
-# Returns
-Named tuple with fields:
-- `wind_speeds`: Wind speed profile at each height (`cm/min` internally, returned in SI units).
-- `air_temperatures`: Air temperature profile at each height (`K`).
-- `humidities`: Relative humidity (%) at each height.
-- `Q_convection`: Convective heat flux (`W/m²`).
-- `ustar`: Friction velocity (`m/s`).
-
-# Notes
-- Stability corrections use the **Businger–Dyer** formulations for unstable conditions.
-- The Monin–Obukhov length is estimated iteratively through `calc_Obukhov_length`.
-- Two broad options for aerodynamic roughness calculations are available: Campbell & Norman's (1998) approach
-that handles canopy displacement, invoked if `zh > 0` and otherwise  
-- When `zh > 0`, canopy displacement is considered in the profile calculation.
-- zh and d0 for Campbell and Norman air temperature/wind speed profile (0.6 * canopy height in m if unknown
-| Condition                   | Wind profile                   | Temperature profile                          |
-| --------------------------- | ------------------------------ | -------------------------------------------- |
-| `zh > 0` + neutral/hot      | log-law                        | log between `z` and `zh`                     |
-| `zh > 0` + unstable/stable  | log-law with `calc_ψ_m` correction | log with displacement/`zh`                   |
-| `zh == 0` + neutral/hot     | log-law                        | weighted by bulk/sublayer Stanton numbers    |
-| `zh == 0` + unstable/stable | log-law with `calc_ψ_m` correction | full Monin–Obukhov profile via `calc_Obukhov_length` |
-
-- Relative humidity profiles are estimated from vapor pressure at each height.
-
-# References
-- Businger, J. A., Wyngaard, J. C., Izumi, Y., & Bradley, E. F. (1971).
-  Flux–profile relationships in the atmospheric surface layer.
-  *Journal of the Atmospheric Sciences*, 28(2), 181–189.
-- Dyer, A. J. (1974). A review of flux–profile relationships.
-  *Boundary-Layer Meteorology*, 7(3), 363–372.
-- Kearney, M. R., et al. (2020). NicheMapR: an R package for microclimate and 
-  biophysical modeling. *Ecography*, 43, 1–14.
-
-# Example
-```julia
-profile = get_profile(
-    reference_temperature = 25u"°C",
-    reference_wind_speed = 2.0u"m/s",
-    relative_humidity = 60.0,
-    surface_temperature = 35u"°C",
-    zenith_angle = 45u"°"
-)
-
-profile.air_temperatures  # vertical profile of air temperatures
-profile.wind_speeds       # vertical profile of wind speeds
-"""
-function get_profile(;
-    z0=0.004u"m",
+get_profile(; heights=DEFAULT_HEIGHTS, kw...) =
+    get_profile!(allocate_profile(heights); kw...)
+function get_profile!(buffers;
+    roughness_height=0.004u"m",
     zh=0.0u"m",
     d0=0.0u"m",
     κ=0.4,
     γ = 16.0, # coefficient from Dyer and Hicks for Φ_m (momentum), TODO make it available as a user param?
-    heights::Vector{typeof(1.0u"m")}=[0.01, 0.05, 0.1, 0.2, 0.3, 0.4, 0.5, 0.75, 1.0, 1.2] .* u"m",
     reference_temperature,
     reference_wind_speed,
     relative_humidity,
@@ -85,17 +27,19 @@ function get_profile(;
     P_atmos=atmospheric_pressure(elevation),
 )
 
-    reference_height = last(heights)
-    if minimum(heights) < z0
-        error("ERROR: the minimum height is not greater than the roughness height (z0).")
+    (; heights, height_array, air_temperatures, wind_speeds, humidities) = buffers
+    N_heights = length(heights)
+    if minimum(heights) < roughness_height
+        throw(ArgumentError("The minimum height is not greater than the roughness height."))
     end
+    reference_height = last(heights)
 
     T_ref_height = u"K"(reference_temperature)
     T_surface = u"K"(surface_temperature)
 
     # Units: m to cm
     z = u"cm"(reference_height)
-    z0 = u"cm"(z0) # roughness height
+    z0 = u"cm"(roughness_height)
     zh_cm = u"cm"(zh)
     d0_cm = u"cm"(d0)
     v_ref_height = u"cm/minute"(reference_wind_speed)
