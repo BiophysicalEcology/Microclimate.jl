@@ -84,19 +84,9 @@ function get_profile(;
     surface_temperature,
     maximum_surface_temperature,
     zenith_angle,
+    elevation=0.0u"m",
+    P_atmos=atmospheric_pressure(elevation),
 )
-    # z0=0.004u"m"
-    # zh=0.004u"m"
-    # d0=0.12u"m"
-    # κ=0.4
-    # heights=[0.33, 2] .* u"m"
-    # reference_temperature=27.77818u"°C"
-    # reference_wind_speed=2.749575u"m/s"
-    # relative_humidity=49.0415
-    # surface_temperature=48.58942u"°C"
-    # maximum_surface_temperature=40.0u"°C"
-    # zenith_angle=21.50564u"°"
-    # γ = 16.0
 
     reference_height = last(heights)
     if minimum(heights) < z0
@@ -122,11 +112,11 @@ function get_profile(;
     wind_speeds[1] = v_ref_height
     air_temperatures[1] = T_ref_height
 
-    # compute ρcpTκg (was a constant in original Fortran version)
-    #dry_air_out = dry_air_properties(u"K"(reference_temperature), elevation=elevation)
-    #wet_air_out = wet_air_properties(u"K"(reference_temperature), rh = relative_humidity)
-    #ρ = dry_air_out.ρ_air
-    #c_p = wet_air_out.c_p
+    # compute rcptkg (was a constant in original Fortran version)
+    # dry_air_out = dry_air_properties(u"K"(reference_temperature); elevation, P_atmos)
+    # wet_air_out = wet_air_properties(u"K"(reference_temperature); rh=relative_humidity, P_atmos)
+    # ρ = dry_air_out.ρ_air
+    # c_p = wet_air_out.c_p
     # TODO make this work with SI units
     #ρcpTκg = u"cal*minute^2/cm^4"(ρ * c_p * T_ref_height / (κ * g_n))
     ρcpTκg = 6.003e-8u"cal*minute^2/cm^4"
@@ -207,7 +197,6 @@ function calc_ρ_cp(T_mean)
     return u"(cal*g)/(g*cm^3*K)" * (0.08472 / ustrip(u"K", T_mean))
 end
 
-
 """
     calc_ρ_cp(T_mean, elevation, relative_humidity)
 
@@ -225,9 +214,9 @@ elevation, and relative humidity.
 Uses `dry_air_properties` to compute air density (ρ) and 
 `wet_air_properties` to compute specific heat capacity (cₚ).
 """
-function calc_ρ_cp(T_mean, elevation, relative_humidity)
-    dry_air_out = dry_air_properties(u"K"(T_mean); elevation)
-    wet_air_out = wet_air_properties(u"K"(T_mean); rh = relative_humidity)
+function calc_ρ_cp(T_mean, elevation, relative_humidity, P_atmos)
+    dry_air_out = dry_air_properties(u"K"(T_mean); elevation, P_atmos)
+    wet_air_out = wet_air_properties(u"K"(T_mean); rh=relative_humidity, P_atmos)
     ρ = dry_air_out.ρ_air
     c_p = wet_air_out.c_p
     return u"(cal*g)/(g*cm^3*K)"(ρ * c_p)

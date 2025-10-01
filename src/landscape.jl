@@ -37,7 +37,7 @@ Base.@kwdef struct MoistLayers
 end
 
 
-Base.@kwdef struct MicroParams{SP,D<:Vector{<:Number},H<:Vector{<:Number},RoH,Sl<:Number,E<:Number,TD}
+Base.@kwdef struct MicroParams{SP,D<:Vector{<:Number},RoH<:Number,Sl<:Number,E<:Number,P<:Number,TD}
     soilprops::SP
     depths::D
     heights::H
@@ -47,6 +47,7 @@ Base.@kwdef struct MicroParams{SP,D<:Vector{<:Number},H<:Vector{<:Number},RoH,Sl
     shade::Float64
     viewfactor::Float64
     elevation::E
+    P_atmos::P
     albedo::Float64
     sle::Float64
     slep::Float64

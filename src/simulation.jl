@@ -189,6 +189,8 @@ function runmicro(;
 ) where N
 
     #reference_height = last(heights)
+    P_atmos = atmospheric_pressure(elevation)
+
     ndays = length(days)
     # defining view factor for sky radiation based on horizon angles
     viewfactor = 1 - sum(sin.(horizon_angles)) / length(horizon_angles) # convert horizon angles to radians and calc view factor(s)
@@ -211,33 +213,9 @@ function runmicro(;
 
     # compute clear sky solar radiation
     solrad_out = solrad(;
-        days,
-        hours,
-        latitude,
-        elevation,
-        slope,
-        aspect,
-        horizon_angles,
-        albedos,
-        cmH2O,
-        ϵ,
-        ω,
-        se,
-        d0 = d0_solrad, #TODO better name for this
-        iuv,
-        scattered,
-        amr,
-        nmax,
-        Iλ,
-        OZ,
-        τR,
-        τO,
-        τA,
-        τW,
-        Sλ, 
-        FD,
-        FDQ,
-        s̄,
+        days, hours, latitude, elevation, P_atmos, slope, aspect, horizon_angles, albedos, cmH2O,
+        ϵ, ω, se, d0 = d0_solrad, #TODO better name for this
+        iuv, scattered, amr, nmax, Iλ, OZ, τR, τO, τA, τW, Sλ, FD, FDQ, s̄,
     )
     # limit max zenith angles to 90°
     solrad_out.zenith_angle[solrad_out.zenith_angle.>90u"°"] .= 90u"°"
@@ -345,7 +323,9 @@ function runmicro(;
     M = 18 # soil_water_balance default
     soil_properties_buffers = allocate_soil_properties(nodes, soilprops)
     phase_transition_buffers = allocate_phase_transition(length(depths))
-    λ_b, c_p_b, ρ_b = soil_properties!(soil_properties_buffers, T0, θ_soil0_a, nodes, soilprops, elevation, runmoist, false)
+    λ_b, c_p_b, ρ_b = soil_properties!(soil_properties_buffers; 
+        T_soil=T0, θ_soil=θ_soil0_a, nodes, soilprops, elevation, P_atmos, runmoist, runsnow=false
+    )
     λ_bulk[1, :] = λ_b
     c_p_bulk[1, :] = c_p_b
     ρ_bulk[1, :] = ρ_b
@@ -360,6 +340,7 @@ function runmicro(;
     # air temperature and humidity TODO have two options, Swinbank and Campbell
     longwave_out = get_longwave(;
         elevation,
+        P_atmos,
         rh=humidities[1],
         tair=air_temperatures[1],
         tsurf=T0[1],
@@ -418,34 +399,11 @@ function runmicro(;
 
         # Parameters
         params = MicroParams(;
-            roughness_height,
-            soilprops,
-            depths,
-            heights,
-            κ,
-            slope,
-            shade,
-            viewfactor,
-            elevation,
-            albedo,
-            sle,
-            slep, # check if this is what it should be - sle vs. slep (set as 1 in PAR in Fortran but then changed to user SLE later)
-            pctwet,
-            nodes,
-            tdeep,
-            θ_soil=θ_soil0_a,
-            runmoist,
+            soilprops, depths, heights, reference_height, roughness_height, d0, zh, κ, slope, shade, viewfactor, elevation, P_atmos,
+            albedo, sle, slep, # check if this is what it should be - sle vs. slep (set as 1 in PAR in Fortran but then changed to user SLE later)
+            pctwet, nodes, tdeep, θ_soil=θ_soil0_a, runmoist, maximum_surface_temperature,
         )
-
-        forcing = MicroForcing(;
-            SOLRt,
-            ZENRt,
-            ZSLt,
-            TAIRt,
-            VELt,
-            RHt,
-            CLDt,
-        )
+        forcing = MicroForcing(; SOLRt, ZENRt, ZSLt, TAIRt, VELt, RHt, CLDt)
         buffers = (; soil_properties=soil_properties_buffers)
         input = MicroInputs(; params, forcing, soillayers, buffers)
         step = 1
@@ -486,6 +444,7 @@ function runmicro(;
                                 T0,
                                 heights = heights_water_balance,
                                 elevation,
+                                P_atmos,
                                 pool,
                                 θ_soil0_b,
                                 PE = air_entry_water_potential,
@@ -515,9 +474,11 @@ function runmicro(;
                     pools[step] = pool
                     pool = clamp(pool, 0.0u"kg/m^2", maxpool)
                     T_skys[step] = Tsky
-                    λ_b, c_p_b, ρ_b = soil_properties!(soil_properties_buffers, T0, θ_soil0_a, nodes, soilprops, elevation, runmoist, false)
+                    (; λ_b, cp_b, ρ_b) = soil_properties!(soil_properties_buffers; 
+                        T_soil=T0, θ_soil=θ_soil0_a, nodes, soilprops, elevation, P_atmos, runmoist, runsnow=false
+                    )
                     λ_bulk[step, :] = λ_b
-                    c_p_bulk[step, :] = c_p_b
+                    c_p_bulk[step, :] = cp_b
                     ρ_bulk[step, :] = ρ_b
                     if runmoist && iday > 1
                         θ_soils[step, :] = infil_out.θ_soil[sub]
@@ -527,22 +488,8 @@ function runmicro(;
                 else
                     # Parameters
                     params = MicroParams(;
-                        roughness_height,
-                        soilprops,
-                        depths,
-                        heights,
-                        κ,
-                        slope,
-                        shade,
-                        viewfactor,
-                        elevation,
-                        albedo,
-                        sle,
-                        slep,
-                        pctwet,
-                        nodes,
-                        tdeep,
-                        θ_soil=θ_soil0_a,
+                        soilprops, depths, heights, reference_height, roughness_height, d0, zh, κ, slope, shade,
+                        viewfactor, elevation, P_atmos, albedo, sle, slep, pctwet, nodes, tdeep, θ_soil=θ_soil0_a,
                         runmoist,
                     )
                     input = MicroInputs(params, forcing, soillayers, buffers)
@@ -571,6 +518,7 @@ function runmicro(;
                                 T0,
                                 heights = heights_water_balance,
                                 elevation,
+                                P_atmos,
                                 pool,
                                 θ_soil0_b,
                                 PE = air_entry_water_potential,
@@ -602,6 +550,7 @@ function runmicro(;
                     end
                     longwave_out = get_longwave(;
                         elevation,
+                        P_atmos,
                         rh=humidities[step],
                         tair=air_temperatures[step],
                         tsurf=T0[1],
@@ -618,9 +567,11 @@ function runmicro(;
                     # TODO: why use every second step what is this
                     sub = vcat(findall(isodd, 1:numnodes_b), numnodes_b)
                     θ_soil0_a = θ_soil0_b[sub]
-                    λ_b, c_p_b, ρ_b = soil_properties!(soil_properties_buffers, T0, θ_soil0_a, nodes, soilprops, elevation, runmoist, false)
+                    (; λ_b, cp_b, ρ_b) = soil_properties!(soil_properties_buffers;
+                        T_soil=T0, θ_soil=θ_soil0_a, nodes, soilprops, elevation, P_atmos, runmoist, runsnow=false,
+                    )
                     λ_bulk[step, :] = λ_b
-                    c_p_bulk[step, :] = c_p_b
+                    c_p_bulk[step, :] = cp_b
                     ρ_bulk[step, :] = ρ_b
                     if runmoist
                         if i < length(hours)
@@ -647,6 +598,8 @@ function runmicro(;
             surface_temperature=u"°C"(T_soils[i][1]),  # top layer temp
             zenith_angle=zenith_angles[i],
             heights,
+            elevation,
+            P_atmos,
             maximum_surface_temperature,
         )
     end

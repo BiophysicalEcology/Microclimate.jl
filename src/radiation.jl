@@ -1241,6 +1241,7 @@ function solrad(;
     latitude::Quantity=43.1379u"°",
     lonc::Real=0.0, # longitude correction, hours
     elevation::Quantity=276.0u"m", # elevation, m
+    P_atmos=atmospheric_pressure(elevation),
     slope::Quantity=0u"°",
     aspect::Quantity=0u"°",
     horizon_angles::Vector{typeof(0.0u"°")}=fill(0.0, 24) .* u"°",
@@ -1435,7 +1436,7 @@ function solrad(;
                 ozone = OZ[llat, mon]  # ozone thickness (cm) from lookup table
                 ELEVFCT1, ELEVFCT2, ELEVFCT3, ELEVFCT4 = elev_corr(elevation)
 
-                P = atmospheric_pressure(elevation) # pressure from elevation
+                P = P_atmos
 
                 @inbounds for N in 1:nmax
                     τλ1 = (P / 101300u"Pa") * τR[N] * ELEVFCT1
@@ -1574,6 +1575,7 @@ end
 
 function get_longwave(;
     elevation::Quantity,
+    P_atmos=atmospheric_pressure(elevation),
     rh::Real,
     tair::Quantity,
     tsurf::Quantity,
@@ -1592,13 +1594,14 @@ function get_longwave(;
     # Atmospheric radiation
     if swinbank
         # Swinbank, Eq. 10.11 in Campbell and Norman 1998
-        arad = ((9.2e-6 * (u"K"(tair))^2) * σ * (u"K"(tair))^4) / 1u"K^2" 
+        arad = uconvert(u"W*m^-2", ((9.2e-6 * (u"K"(tair))^2) * σ * (u"K"(tair))^4) / 1u"K^2")
     else
         # Campbell and Norman 1998 eq. 10.10 to get emissivity of sky
         P_vap = wet_air_out.P_vap
         # TODO: ustrip to what
-        arad = u"W/m^2"(ustrip(1.72 * (ustrip(u"kPa"(P_vap)) / ustrip(u"K"(tair) + 0.01u"K"))^(1//7)) * σ * (u"K"(tair) + 0.01u"K")^4) 
+        arad = u"W/m^2"((1.72 * (ustrip(u"kPa", P_vap) / ustrip(u"K", tair + 0.01u"K"))^(1//7)) * σ * (u"K"(tair) + 0.01u"K")^4) 
     end
+
     # Cloud radiation temperature (shade approximation, TAIR - 2°C)
     crad = σ * slep * (u"K"(tair) - 2.0u"K")^4
 

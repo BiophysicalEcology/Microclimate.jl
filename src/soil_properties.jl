@@ -13,15 +13,15 @@ function allocate_soil_properties(nodes, soilprops)
 end
 
 
-soil_properties(T_soil, θ_soil, nodes::AbstractVector{<:Real}, soilprops, args...) = 
-    soil_properties!(allocate_soil_properties(nodes, soilprops), T_soil, θ_soil, nodes, soilprops, args...)
-function soil_properties!(
-    buffers::NamedTuple,                          
+soil_properties(; T_soil, θ_soil, nodes::AbstractVector{<:Real}, soilprops, kw...) = 
+    soil_properties!(allocate_soil_properties(nodes, soilprops); T_soil, θ_soil, nodes, soilprops, kw...)
+function soil_properties!(buffers::NamedTuple;
     T_soil::AbstractVector{<:Quantity},
     θ_soil::AbstractVector{<:Real},
     nodes::AbstractVector{<:Real},
     soilprops::NamedTuple,
     elevation::Quantity,
+    P_atmos = atmospheric_pressure(elevation),
     runmoist::Bool,
     runsnow::Bool,
 )
@@ -39,7 +39,7 @@ function soil_properties!(
     g_a = 0.1
     g_c = 1.0 - 2.0 * g_a
     p_a0 = 101325.0u"Pa"
-    p_a = atmospheric_pressure(elevation)
+    p_a = P_atmos
 
     ϵ(λ_λ, λ_f) = 2.0 / (3.0 * (1.0 + g_a * (λ_λ / λ_f - 1.0))) + 1.0 / (3.0 * (1.0 + g_c * (λ_λ / λ_f - 1.0)))
 
@@ -70,12 +70,11 @@ function soil_properties!(
         λ_vap = (45144.0 - 48.0 * T_C)u"J/mol"
 
         ################################################################
-        # TODO: wet_air is overkill for just P_vap. 
-        # Can the compiler figure out to skip the extra work?
         # This is some of the most expensive code in the package
-        e_a = wet_air_properties(T_K; rh=99.0, P_atmos=p_a).P_vap
-        e_a1 = wet_air_properties(T_K - 1u"K"; rh=99.0, P_atmos=p_a).P_vap
-        e_a2 = wet_air_properties(T_K + 1u"K"; rh=99.0, P_atmos=p_a).P_vap
+        # its inlined so most of the work in wet_air_properties is ignored
+        e_a = wet_air_properties(T_K; rh=99.0, P_atmos).P_vap
+        e_a1 = wet_air_properties(T_K - 1u"K"; rh=99.0, P_atmos).P_vap
+        e_a2 = wet_air_properties(T_K + 1u"K"; rh=99.0, P_atmos).P_vap
         ################################################################
 
         ∇x = (e_a2 - e_a1) / 2.0
@@ -123,5 +122,5 @@ function soil_properties!(
     #     end
     # end
 
-    return λ_b, cp_b, ρ_b
+    return (; λ_b, cp_b, ρ_b)
 end
