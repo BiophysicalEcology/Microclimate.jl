@@ -78,7 +78,7 @@ keywords = (;
     runmoist = Bool(Int(microinput[:runmoist])), # run soil moisture algorithm?
     spinup = Bool(Int(microinput[:spinup])), # spin-up the first day by iterate_day iterations?
     iuv = Bool(Int(microinput[:IUV])), # this makes it take ages if true!
-    maximum_surface_temperature = u"K"(microinput[:maxsurf]u"°C")
+    #maximum_surface_temperature = u"K"(microinput[:maxsurf]u"°C")
 );
 
 # TODO check why deep soil temp not being outputted
