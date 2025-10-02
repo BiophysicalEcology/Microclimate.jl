@@ -30,6 +30,7 @@ days = [15, 46, 74, 105, 135, 166, 196, 227, 258, 288, 319, 349]
 LAIs = fill(0.1, length(days))
 depths = ((DataFrame(CSV.File("$testdir/data/init_monthly/DEP.csv"))[:, 2]) / 100.0)u"m"
 heights = [microinput[:Usrhyt], microinput[:Refhyt]]u"m" # air nodes for temperature, wind speed and humidity profile
+soil_saturation_moisture = (CSV.File("$testdir/data/init_monthly/soilprop.csv")[1, 1][3]) * 1.0u"m^3/m^3" # volumetric water content at saturation (0.1 bar matric potential) (m3/m3)
 days2do = 1:12
 keywords = (;
     # locations, times, depths and heights
@@ -51,7 +52,6 @@ keywords = (;
     soil_mineral_density = (CSV.File("$testdir/data/init_monthly/soilprop.csv")[1, 1][6]) * 1.0u"Mg/m^3", # soil minerals density (Mg/m3)
     soil_mineral_heat_capacity = c_p_m = (CSV.File("$testdir/data/init_monthly/soilprop.csv")[1, 1][5]) * 1.0u"J/kg/K", # soil minerals specific heat (J/kg-K)
     soil_bulk_density = (CSV.File("$testdir/data/init_monthly/soilprop.csv")[1, 1][2]) * 1.0u"Mg/m^3", # dry soil bulk density (Mg/m3)
-    soil_saturation_moisture = (CSV.File("$testdir/data/init_monthly/soilprop.csv")[1, 1][3]) * 1.0u"m^3/m^3", # volumetric water content at saturation (0.1 bar matric potential) (m3/m3)
     # daily environmental vectors
     albedos = (DataFrame(CSV.File("$testdir/data/init_monthly/REFLS.csv"))[days2do, 2] * 1.0), # substrate albedo (decimal %)
     shades = (DataFrame(CSV.File("$testdir/data/init_monthly/Minshades.csv"))[days2do, 2] * 1.0), # daily shade from vegetation (%)
@@ -71,7 +71,7 @@ keywords = (;
     deep_soil_temperatures = (DataFrame(CSV.File("$testdir/data/init_monthly/tannulrun.csv"))[days2do, 2] * 1.0)u"°C", # daily deep soil temperatures
     # intial conditions
     initial_soil_temperature = u"K".((DataFrame(CSV.File("$testdir/data/init_monthly/soilinit.csv"))[1:length(depths), 2] * 1.0)u"°C"), # initial soil temperature
-    initial_soil_moisture = (Array(DataFrame(CSV.File("$testdir/data/init_monthly/moists.csv"))[1, 2:13]) .* 1.0), # initial soil moisture
+    initial_soil_moisture = (Array(DataFrame(CSV.File("$testdir/data/init_monthly/moists.csv"))[1, 2:13]) .* soil_saturation_moisture), # initial soil moisture
     leaf_area_index = fill(0.1, length(days)),
     iterate_day = microinput[:ndmax], # number of iterations per day
     daily = Bool(Int(microinput[:microdaily])), # doing consecutive days?

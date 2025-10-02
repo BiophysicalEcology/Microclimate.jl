@@ -70,6 +70,7 @@ that handles canopy displacement, invoked if `zh > 0` and otherwise
 
 # Example
 
+
 ```julia
 profile = get_profile(
     reference_temperature = 25u"°C",
@@ -256,7 +257,6 @@ function calc_u_star(; reference_wind_speed, log_z_ratio, κ=0.4)
     v_ref_height = reference_wind_speed
     return κ * v_ref_height / log_z_ratio
 end
-
 
 """
     calc_wind(z, z0, κ, u_star, b)
