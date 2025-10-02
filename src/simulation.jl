@@ -322,12 +322,7 @@ function runmicro(;
     nodes = nodes_day[:, 1]
     M = 18 # soil_water_balance default
     phase_transition_buffers = allocate_phase_transition(length(depths))
-    soil_properties_out = map((T,θ) -> soil_properties(;
-        T_soil=T, θ_soil=θ, soilprops, elevation, P_atmos
-    ), T0, θ_soil0_a)
-    λ_b  = getindex.(soil_properties_out, 1)
-    c_p_b = getindex.(soil_properties_out, 2)
-    ρ_b   = getindex.(soil_properties_out, 3)    
+    λ_b, c_p_b, ρ_b = soil_props_vector(T0, θ_soil0_a, soilprops, elevation, P_atmos)   
     λ_bulk[1, :] = λ_b
     c_p_bulk[1, :] = c_p_b
     ρ_bulk[1, :] = ρ_b
@@ -406,7 +401,7 @@ function runmicro(;
             pctwet, nodes, tdeep, θ_soil=θ_soil0_a, runmoist,
         )
         forcing = MicroForcing(; SOLRt, ZENRt, ZSLt, TAIRt, VELt, RHt, CLDt)
-        input = MicroInputs(; params, forcing, soillayers, buffers)
+        input = MicroInputs(; params, forcing, soillayers)
         step = 1
         # loop through hours of day
         if spinup && j == 1 && i == 1 || daily == false
@@ -474,12 +469,7 @@ function runmicro(;
                     pools[step] = pool
                     pool = clamp(pool, 0.0u"kg/m^2", maxpool)
                     T_skys[step] = Tsky
-                    soil_properties_out = map((T,θ) -> soil_properties(;
-                        T_soil=T, θ_soil=θ, soilprops, elevation, P_atmos
-                    ), T0, θ_soil0_a)
-                    λ_b  = getindex.(soil_properties_out, 1)
-                    c_p_b = getindex.(soil_properties_out, 2)
-                    ρ_b   = getindex.(soil_properties_out, 3)
+                    λ_b, cp_b, ρ_b = soil_props_vector(T0, θ_soil0_a, soilprops, elevation, P_atmos)   
                     λ_bulk[step, :] = λ_b
                     c_p_bulk[step, :] = cp_b
                     ρ_bulk[step, :] = ρ_b
@@ -495,7 +485,7 @@ function runmicro(;
                         viewfactor, elevation, P_atmos, albedo, sle, slep, pctwet, nodes, tdeep, θ_soil=θ_soil0_a,
                         runmoist,
                     )
-                    input = MicroInputs(params, forcing, soillayers, buffers)
+                    input = MicroInputs(params, forcing, soillayers)
                     tspan = ((0.0 + (i - 2) * 60)u"minute", (60.0 + (i - 2) * 60)u"minute")  # 1 hour
                     prob = ODEProblem{false}(soil_energy_balance, T0, tspan, input)
                     sol = solve(prob, Tsit5(); saveat=60.0u"minute", reltol=1e-6u"K", abstol=1e-8u"K")
@@ -569,12 +559,7 @@ function runmicro(;
                     # TODO: why use every second step what is this
                     sub = vcat(findall(isodd, 1:numnodes_b), numnodes_b)
                     θ_soil0_a = θ_soil0_b[sub]
-                    soil_properties_out = map((T,θ) -> soil_properties(;
-                        T_soil=T, θ_soil=θ, soilprops, elevation, P_atmos
-                    ), T0, θ_soil0_a)
-                    λ_b  = getindex.(soil_properties_out, 1)
-                    c_p_b = getindex.(soil_properties_out, 2)
-                    ρ_b   = getindex.(soil_properties_out, 3)
+                    λ_b, cp_b, ρ_b = soil_props_vector(T0, θ_soil0_a, soilprops, elevation, P_atmos)   
                     λ_bulk[step, :] = λ_b
                     c_p_bulk[step, :] = cp_b
                     ρ_bulk[step, :] = ρ_b

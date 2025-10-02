@@ -72,11 +72,10 @@ Base.@kwdef struct MicroForcing{
     CLDt::CL
 end
 
-Base.@kwdef struct MicroInputs{MP<:MicroParams,MF<:MicroForcing,SL<:SoilLayers,B}
+Base.@kwdef struct MicroInputs{MP<:MicroParams,MF<:MicroForcing,SL<:SoilLayers}
     params::MP
     forcing::MF
     soillayers::SL
-    buffers::B = (;)
 end
 
 #Base.@kwdef struct MicroInputs{MP::MicroParams,MF<:MicroForcing,SL<:SoilLayers}
