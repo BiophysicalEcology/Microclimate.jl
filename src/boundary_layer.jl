@@ -10,6 +10,79 @@ function allocate_profile(heights)
     return (; heights, height_array, air_temperatures, wind_speeds, humidities)
 end
 
+"""
+    get_profile(; kwargs...)
+
+Compute vertical profiles of wind speed, air temperature, and relative humidity 
+in the atmospheric surface layer, using Monin–Obukhov similarity theory (MOST).
+
+This function reproduces the subroutine in `MICRO.f/get_profile.R` from **NicheMapR**, ported to Julia.  
+It calculates the microclimate profiles above the ground (or canopy) at specified heights,
+based on measured values at a reference height and computed or measured soil surface temperature, together
+with surface roughness parameters. Zenith angle and a maximum allowed surface temperature are used
+to assess whether conditions are stable or unstable.
+
+# Keyword Arguments
+- `z0::Quantity=0.004u"m"`: roughness length (surface aerodynamic roughness).
+- `zh::Quantity=0.0u"m"`: heat transfer roughness height
+- `d0::Quantity=0.0u"m"`: zero plane displacement correction factor.
+- `κ::Float64=0.4`: von Kármán constant.
+- `heights::Vector{Quantity}`: Requested heights above the surface, the last being the reference height.
+- `reference_temperature::Quantity=27.78u"°C"`: Air temperature at the reference height.
+- `reference_wind_speed::Quantity=2.75u"m/s"`: Wind speed at the reference height.
+- `relative_humidity::Float64=49.0`: Relative humidity at the reference height (%).
+- `surface_temperature::Quantity=48.59u"°C"`: Soil or surface temperature.
+- `zenith_angle::Quantity=21.5u"°"`: Solar zenith angle.
+- `elevation::Quantity=0.0u"m"`: Elevation above sea level.
+
+# Returns
+Named tuple with fields:
+- `wind_speeds`: Wind speed profile at each height (`cm/min` internally, returned in SI units).
+- `air_temperatures`: Air temperature profile at each height (`K`).
+- `humidities`: Relative humidity (%) at each height.
+- `Q_convection`: Convective heat flux (`W/m²`).
+- `ustar`: Friction velocity (`m/s`).
+
+# Notes
+- Stability corrections use the **Businger–Dyer** formulations for unstable conditions.
+- The Monin–Obukhov length is estimated iteratively through `calc_Obukhov_length`.
+- Two broad options for aerodynamic roughness calculations are available: Campbell & Norman's (1998) approach
+that handles canopy displacement, invoked if `zh > 0` and otherwise  
+- When `zh > 0`, canopy displacement is considered in the profile calculation.
+- zh and d0 for Campbell and Norman air temperature/wind speed profile (0.6 * canopy height in m if unknown
+| Condition                   | Wind profile                   | Temperature profile                          |
+| --------------------------- | ------------------------------ | -------------------------------------------- |
+| `zh > 0` + neutral/hot      | log-law                        | log between `z` and `zh`                     |
+| `zh > 0` + unstable/stable  | log-law with `calc_ψ_m` correction | log with displacement/`zh`                   |
+| `zh == 0` + neutral/hot     | log-law                        | weighted by bulk/sublayer Stanton numbers    |
+| `zh == 0` + unstable/stable | log-law with `calc_ψ_m` correction | full Monin–Obukhov profile via `calc_Obukhov_length` |
+
+- Relative humidity profiles are estimated from vapor pressure at each height.
+
+# References
+- Businger, J. A., Wyngaard, J. C., Izumi, Y., & Bradley, E. F. (1971).
+  Flux–profile relationships in the atmospheric surface layer.
+  *Journal of the Atmospheric Sciences*, 28(2), 181–189.
+- Dyer, A. J. (1974). A review of flux–profile relationships.
+  *Boundary-Layer Meteorology*, 7(3), 363–372.
+- Kearney, M. R., et al. (2020). NicheMapR: an R package for microclimate and 
+  biophysical modeling. *Ecography*, 43, 1–14.
+
+# Example
+
+```julia
+profile = get_profile(
+    reference_temperature = 25u"°C",
+    reference_wind_speed = 2.0u"m/s",
+    relative_humidity = 60.0,
+    surface_temperature = 35u"°C",
+    zenith_angle = 45u"°"
+)
+
+profile.air_temperatures  # vertical profile of air temperatures
+profile.wind_speeds       # vertical profile of wind speeds
+```
+"""
 get_profile(; heights=DEFAULT_HEIGHTS, kw...) =
     get_profile!(allocate_profile(heights); kw...)
 function get_profile!(buffers;
@@ -368,6 +441,7 @@ function calc_Obukhov_length(T_ref_height, T_surface, v_ref_height, z0, z, ρcpT
     T_ref_height = u"K"(T_ref_height)
     T_surface = u"K"(T_surface)
     v_ref_height = u"cm/minute"(v_ref_height)
+
     # initialise
     Q_convection = nothing
     effective_stanton_number = nothing
@@ -375,10 +449,9 @@ function calc_Obukhov_length(T_ref_height, T_surface, v_ref_height, z0, z, ρcpT
     sublayer_stanton_number = nothing
     u_star = nothing
     ψ_h = nothing
+    φ_m = nothing
     δ = 1.0
     count = 0
-    φ_m = nothing
-    L_Obukhov_new = nothing
 
     while δ > tol && count < max_iter
         count += 1
@@ -393,7 +466,19 @@ function calc_Obukhov_length(T_ref_height, T_surface, v_ref_height, z0, z, ρcpT
         δ = abs((L_Obukhov_new - L_Obukhov) / L_Obukhov)
         L_Obukhov = L_Obukhov_new
     end
+
+    # TODO comment this or make it a function
     T_z0 = (T_ref_height * bulk_stanton_number + T_surface * sublayer_stanton_number) / (bulk_stanton_number + sublayer_stanton_number)
-    return (; L_Obukhov=u"m"(L_Obukhov), sublayer_stanton_number, effective_stanton_number, bulk_stanton_number, u_star, ψ_h, Q_convection, T_z0)
+
+    return (; 
+        L_Obukhov=u"m"(L_Obukhov), 
+        sublayer_stanton_number, 
+        effective_stanton_number, 
+        bulk_stanton_number, 
+        u_star, 
+        ψ_h, 
+        Q_convection, 
+        T_z0,
+    )
 end
 
