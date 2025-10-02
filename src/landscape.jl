@@ -85,6 +85,7 @@ end
 #    soillayers::SL
 #end
 
+# TODO: these are really buffers
 function init_soillayers(N)
     depp = fill(0.0u"cm", N + 1)
     wc = fill(1.0u"J/K/m^2", N)

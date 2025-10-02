@@ -179,20 +179,9 @@ function vsine(VMIN, VMAX, time_sunrise, time_sunset, TIMIN, TIMAX, daily, iday,
     return YA
 end
 
-# this version does all variables
-function hourly_vars(
-    air_temperature_min::Vector,
-    air_temperature_max::Vector,
-    wind_min::Vector,
-    wind_max::Vector,
-    humidity_min::Vector,
-    humidity_max::Vector,
-    cloud_min::Vector,
-    cloud_max::Vector,
-    solrad_out::Any,
-    minima_times::Vector=[0, 0, 1, 1],
-    maxima_times::Vector=[1, 1, 0, 0],
-    daily::Bool = false)
+function hourly_vars(minmax, solrad_out, daily::Bool=false)
+    (; air_temperature_min, air_temperature_max, wind_min, wind_max, humidity_min, 
+        humidity_max, cloud_min, cloud_max, minima_times, maxima_times) = minmax
 
     ndays = length(air_temperature_min)
     air_temperatures = fill(air_temperature_min[1], 25 * ndays)
@@ -304,57 +293,6 @@ function hourly_vars(
         humidities[(iday*25-24):(iday*25)] = humids[1:25]
         cloud_covers[(iday*25-24):(iday*25)] = clouds[1:25]
     end
-    return air_temperatures, wind_speeds, humidities, cloud_covers
-end
 
-# TODO this does just cloud_covers but should generalise first version better down the track
-function hourly_vars(
-    cloud_min::Vector,
-    cloud_max::Vector,
-    solrad_out::Any,
-    minima_times::Vector=[0, 0, 1, 1],
-    maxima_times::Vector=[1, 1, 0, 0],
-    daily::Bool=false)
-
-    ndays = length(cloud_min)
-    cloud_covers = fill(cloud_min[1], 25 * ndays)
-
-    for iday in 1:ndays
-        initial_cloud = cloud_min[iday]
-        times = fill(0.0, 25)
-        clouds = fill(initial_cloud, 25)
-
-        HH = solrad_out.hour_angle_sunrise[iday]
-        tsn = solrad_out.hour_solar_noon[iday]
-
-        #     Air temperature calculations
-        #     SUNSET IN MILITARY TIME
-        HHINT = trunc(HH)
-        FRACT = (HH - HHINT) * 60.0
-        HSINT = trunc(tsn)
-        FRACTS = (tsn - HSINT) * 60.0
-        time_sunset = (HSINT * 100.0 + FRACTS) + (HHINT * 100.0 + FRACT)
-        #     SUNRISE IN MILITARY TIME
-        DELT = tsn - HH
-        HRINT = trunc(DELT)
-        FRACTR = (DELT - HRINT) * 60.0
-
-        # cloud_covers cover
-        VMIN = cloud_min[iday]
-        VMAX = cloud_max[iday]
-        #      SETTING MAX & MIN TIMES RELATIVE TO SUNRISE & SOLAR NOON
-        #     TIME OF MINIMUM
-        TSRHR = minima_times[4]
-        time_sunrise = (HRINT * 100.0 + FRACTR) + (TSRHR * 100.0)
-        #      TIME OF MAXIMUM at sunrise for relative humidities
-        TSNHR = maxima_times[4] #+ TIMCOR
-        time_maximum_temperature = (HSINT * 100.0 + FRACTS) + (TSNHR * 100.0)
-        TIMIN = time_sunrise
-        TIMAX = time_maximum_temperature
-        IVAR = initial_cloud
-        clouds = vsine(VMIN, VMAX, time_sunrise, time_sunset, TIMIN, TIMAX, daily, iday, IVAR)
-
-        cloud_covers[(iday*25-24):(iday*25)] = clouds[1:25]
-    end
-    return cloud_covers
+    return (; air_temperatures, wind_speeds, humidities, cloud_covers)
 end

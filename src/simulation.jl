@@ -89,34 +89,42 @@ Returns a named tuple containing:
 # TODO 9. Make it work on GPUs for rapid computation of grids, with intelligent initialisation based on near
 # neighbours.
 
-function runmicro(;
-    # locations, times, depths and heights
-    latitude = 43.07305u"°", # latitude
-    days = [15, 46, 74, 105, 135, 166, 196, 227, 258, 288, 319, 349], # days of year to simulate - TODO leap years
-    hours = collect(0.:1:24.), # hour of day for solrad
-    depths = [0.0, 2.5, 5.0, 10.0, 15.0, 20.0, 30.0, 40.0, 50.0, 100.0, 200.0]u"cm", # soil nodes - keep spacing close near the surface
-    heights = [0.01, 2]u"m", # air nodes for temperature, wind speed and humidity profile, last height is reference height for weather data
+@kwdef struct SolarRadiation
     # solar radiation
-    cmH2O = 1, # precipitable cm H2O in air column, 0.1 = very dry; 1 = moist air conditions; 2 = humid, tropical conditions (note this is for the whole atmospheric profile, not just near the ground)
-    ϵ = 0.0167238, # orbital eccentricity of Earth
-    ω = 2π / 365, # mean angular orbital velocity of Earth (radians/day)
-    se = 0.39784993, # precomputed solar elevation constant
-    d0_solrad = 80.0, # reference day for declination calculations
-    iuv = false, # if `true`, uses the full gamma-function model for diffuse radiation (expensive)
-    scattered = true, # if `false`, disables scattered light computations (faster)
-    amr = 25.0u"km", # mixing ratio height of the atmosphere
-    nmax = 111, # Maximum number of wavelength intervals
-    Iλ = DEFAULT_Iλ, # cector of wavelength bins (e.g. in `nm`)
-    OZ = DEFAULT_OZ, # ozone column depth table indexed by latitude band and month (size 19×12)
-    τR = DEFAULT_τR, # vector of optical depths per wavelength for Rayleigh scattering
-    τO = DEFAULT_τO, # vector of optical depths per wavelength for ozone
-    τA = DEFAULT_τA, # vector of optical depths per wavelength for aerosols
-    τW = DEFAULT_τW, # vector of optical depths per wavelength for water vapor
-    Sλ = DEFAULT_Sλ, # solar spectral irradiance per wavelength bin (e.g. in `mW * cm^-2 * nm^-1`)
-    FD = DEFAULT_FD, # interpolated functino of radiation scattered from the direct solar beam
-    FDQ = DEFAULT_FDQ, # interpolated function of radiation scattered from ground-reflected radiation
-    s̄ = DEFAULT_s̄, # a function of τR linked to molecular scattering in the UV range (< 360 nm)
-    # terrain
+    cmH2O = 1 # precipitable cm H2O in air column 0.1 = very dry; 1 = moist air conditions; 2 = humid tropical conditions (note this is for the whole atmospheric profile not just near the ground)
+    ϵ = 0.0167238 # orbital eccentricity of Earth
+    ω = 2π / 365 # mean angular orbital velocity of Earth (radians/day)
+    se = 0.39784993 # precomputed solar elevation constant
+    d0_solrad = 80.0 # reference day for declination calculations
+    iuv = false # if `true` uses the full gamma-function model for diffuse radiation (expensive)
+    scattered = true # if `false` disables scattered light computations (faster)
+    amr = 25.0u"km" # mixing ratio height of the atmosphere
+    nmax = 111 # Maximum number of wavelength intervals
+    # TODO better field names
+    Iλ = DEFAULT_Iλ # cector of wavelength bins (e.g. in `nm`)
+    OZ = DEFAULT_OZ # ozone column depth table indexed by latitude band and month (size 19×12)
+    τR = DEFAULT_τR # vector of optical depths per wavelength for Rayleigh scattering
+    τO = DEFAULT_τO # vector of optical depths per wavelength for ozone
+    τA = DEFAULT_τA # vector of optical depths per wavelength for aerosols
+    τW = DEFAULT_τW # vector of optical depths per wavelength for water vapor
+    Sλ = DEFAULT_Sλ # solar spectral irradiance per wavelength bin (e.g. in `mW * cm^-2 * nm^-1`)
+    FD = DEFAULT_FD # interpolated functino of radiation scattered from the direct solar beam
+    FDQ = DEFAULT_FDQ # interpolated function of radiation scattered from ground-reflected radiation
+    s̄ = DEFAULT_s̄ # a function of τR linked to molecular scattering in the UV range (< 360 nm)
+end
+
+@kwdef struct Terrain
+    elevation
+    horizon_angles
+    slope
+    aspect
+    roughness_height
+    zh
+    d0
+    κ
+end
+
+function default_terrain(;
     elevation = 226.0u"m", # elevation (m)
     horizon_angles = fill(0.0u"°", 24), # enter the horizon angles (degrees) so that they go from 0 degrees azimuth (north) clockwise in 15 degree intervals
     slope = 0.0u"°", # slope (degrees, range 0-90)
@@ -125,12 +133,75 @@ function runmicro(;
     zh = 0u"m", #  heat transfer roughness height
     d0 = 0u"m", # zero plane displacement correction factor
     κ = 0.4, # Kármán constant 
-    # soil thermal parameters 
+)
+    Terrain(elevation, horizon_angles, slope, aspect, roughness_height, zh, d0, κ)
+end
+
+@kwdef struct MonthlyMinMaxWeather{AT,W,H,C,M}
+    air_temperature_min::AT
+    air_temperature_max::AT
+    wind_min::W
+    wind_max::W
+    humidity_min::H
+    humidity_max::H
+    cloud_min::C
+    cloud_max::C
+    minima_times::M
+    maxima_times::M
+end
+
+function default_monthly_weather(;
+    air_temperature_min = [-14.3, -12.1, -5.1, 1.2, 6.9, 12.3, 15.2, 13.6, 8.9, 3, -3.2, -10.6]u"°C",
+    air_temperature_max = [-3.2, 0.1, 6.8, 14.6, 21.3, 26.4, 29, 27.7, 23.3, 16.6, 7.8, -0.4]u"°C",
+    wind_min = [4.9, 4.8, 5.2, 5.3, 4.6, 4.3, 3.8, 3.7, 4, 4.6, 4.9, 4.8] * 0.1u"m/s",
+    wind_max = [4.9, 4.8, 5.2, 5.3, 4.6, 4.3, 3.8, 3.7, 4, 4.6, 4.9, 4.8]u"m/s",
+    humidity_min = [50.2, 48.4, 48.7, 40.8, 40, 42.1, 45.5, 47.3, 47.6, 45, 51.3, 52.8],
+    humidity_max = [100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100],
+    cloud_min = [50.3, 47, 48.2, 47.5, 40.9, 35.7, 34.1, 36.6, 42.6, 48.4, 61.1, 60.1],
+    cloud_max = [50.3, 47, 48.2, 47.5, 40.9, 35.7, 34.1, 36.6, 42.6, 48.4, 61.1, 60.1],
+    minima_times = [0, 0, 1, 1], # time of minima for air temp, wind, humidity and cloud cover (h), air & wind mins relative to sunrise, humidity and cloud cover mins relative to solar noon
+    maxima_times = [1, 1, 0, 0], # time of maxima for air temp, wind, humidity and cloud cover (h), air temp & wind maxs relative to solar noon, humidity and cloud cover maxs relative to sunrise
+)
+    MonthlyMinMaxWeather(air_temperature_min, air_temperature_max, wind_min, wind_max, humidity_min, humidity_max, cloud_min, cloud_max, minima_times, maxima_times)
+end
+
+@kwdef struct SoilThermalParameters 
+    soil_mineral_conductivity
+    soil_mineral_density
+    soil_mineral_heat_capacity
+    soil_bulk_density
+    soil_saturation_moisture
+end
+
+function default_soil_thermal_parameters(;
     soil_mineral_conductivity = 1.25u"W/m/K", # soil minerals thermal conductivity
     soil_mineral_density = 2.560u"Mg/m^3", # soil minerals density
     soil_mineral_heat_capacity = 870.0u"J/kg/K", # soil minerals specific heat
     soil_bulk_density = 2.56u"Mg/m^3", # dry soil bulk density
     soil_saturation_moisture = 0.26u"m^3/m^3", # volumetric water content at saturation (0.1 bar matric potential)
+)
+    SoilThermalParameters(soil_mineral_conductivity, soil_mineral_density, soil_mineral_heat_capacity, soil_bulk_density, soil_saturation_moisture)
+end
+
+@kwdef struct SoilMoistureModel
+    air_entry_water_potential
+    saturated_hydraulic_conductivity
+    Campbells_b_parameter
+    soil_bulk_density2
+    soil_mineral_density2
+    root_density
+    root_resistance
+    stomatal_closure_potential
+    leaf_resistance
+    stomatal_stability_parameter
+    root_radius
+    moist_error
+    moist_count
+    moist_step
+    maxpool
+end
+
+function default_soil_moisture_model(;
     # soil moisture model soil parameters
     air_entry_water_potential = fill(0.7, length(depths) * 2 - 2)u"J/kg", #air entry potential
     saturated_hydraulic_conductivity = fill(0.0058, length(depths) * 2 - 2)u"kg*s/m^3", #saturated conductivity
@@ -149,35 +220,35 @@ function runmicro(;
     moist_count = 500, # maximum iterations of soil moisture algorithm
     moist_step = 360.0u"s", # time step over which to simulate soil moisture (< =  1 hour)
     maxpool = 1.0e4u"kg/m^2", # maximum depth of pooling water
+)
+    SoilMoistureModel(
+        air_entry_water_potential, saturated_hydraulic_conductivity, Campbells_b_parameter, soil_bulk_density2,
+        soil_mineral_density2, root_density, root_resistance, stomatal_closure_potential, leaf_resistance, stomatal_stability_parameter,
+        root_radius, moist_error, moist_count, moist_step, maxpool
+    )
+end
+
+function runmicro(;
+    # locations, times, depths and heights
+    latitude = 43.07305u"°", # latitude
+    days = [15, 46, 74, 105, 135, 166, 196, 227, 258, 288, 319, 349], # days of year to simulate - TODO leap years
+    hours = collect(0.:1:24.), # hour of day for solrad
+    depths = [0.0, 2.5, 5.0, 10.0, 15.0, 20.0, 30.0, 40.0, 50.0, 100.0, 200.0]u"cm", # soil nodes - keep spacing close near the surface
+    heights = [0.01, 2]u"m", # air nodes for temperature, wind speed and humidity profile, last height is reference height for weather data
+
+    solar_defaults=default_solar(),
+    terrain=default_terrain(),
+    soil_moisture=default_soil_moisture_model(),
     # daily environmental vectors
     albedos = fill(0.1, length(days)), # substrate albedo (decimal %)
     shades = fill(0.0, length(days)), # % shade cast by vegetation
     pctwets = fill(0.0, length(days)), # % surface wetness
     sles = fill(0.96, length(days)), # - surface emissivity
-    # TODO its dangerous having these as defaults.
     daily_rainfall = ([28, 28.2, 54.6, 79.7, 81.3, 100.1, 101.3, 102.5, 89.7, 62.4, 54.9, 41.2])u"kg/m^2",
-    air_temperature_min = ([-14.3, -12.1, -5.1, 1.2, 6.9, 12.3, 15.2, 13.6, 8.9, 3, -3.2, -10.6] * 1.0)u"°C",
-    air_temperature_max = ([-3.2, 0.1, 6.8, 14.6, 21.3, 26.4, 29, 27.7, 23.3, 16.6, 7.8, -0.4] * 1.0)u"°C",
-    wind_min = ([4.9, 4.8, 5.2, 5.3, 4.6, 4.3, 3.8, 3.7, 4, 4.6, 4.9, 4.8] * 0.1)u"m/s",
-    wind_max = ([4.9, 4.8, 5.2, 5.3, 4.6, 4.3, 3.8, 3.7, 4, 4.6, 4.9, 4.8] * 1.0)u"m/s",
-    humidity_min = [50.2, 48.4, 48.7, 40.8, 40, 42.1, 45.5, 47.3, 47.6, 45, 51.3, 52.8],
-    humidity_max = [100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100],
-    cloud_min = [50.3, 47, 48.2, 47.5, 40.9, 35.7, 34.1, 36.6, 42.6, 48.4, 61.1, 60.1],
-    cloud_max = [50.3, 47, 48.2, 47.5, 40.9, 35.7, 34.1, 36.6, 42.6, 48.4, 61.1, 60.1],
-    minima_times = [0, 0, 1, 1], # time of minima for air temp, wind, humidity and cloud cover (h), air & wind mins relative to sunrise, humidity and cloud cover mins relative to solar noon
-    maxima_times = [1, 1, 0, 0], # time of maxima for air temp, wind, humidity and cloud cover (h), air temp & wind maxs relative to solar noon, humidity and cloud cover maxs relative to sunrise
+    environment_minmax=DEFAULT_MINMAX,
     deep_soil_temperatures = fill(7.741666u"°C", length(days)),
-    # hourly weather vectors
-    air_temperatures = nothing,
-    humidities = nothing,
-    wind_speeds = nothing,
-    solar_radiation = nothing,
-    cloud_covers = nothing,
-    RAINs = nothing,
-    zenith_angles = nothing,
-    longwave_radiation = nothing,
     # intial conditions
-    initial_soil_temperature = fill(u"K"(7.741667u"°C"), length(depths)),
+    initial_soil_temperature = fill(u"K"(7.741667u"tC"), length(depths)),
     initial_soil_moisture = [0.42, 0.42, 0.42, 0.43, 0.44, 0.44, 0.43, 0.42, 0.41, 0.42, 0.42, 0.43],
     leaf_area_index = fill(0.1, length(days)),
     iterate_day = 3, # number of iterations per day
@@ -188,6 +259,7 @@ function runmicro(;
     __n::Val{N} = Val{length(depths)}() # This is a tiny hack so N is known to the compiler in function body
 ) where N
 
+    (; elevation, horizon_angles, slope, aspect, roughness_height, zh, d0, κ) = terrain
     reference_height = last(heights)
     P_atmos = atmospheric_pressure(elevation)
 
@@ -213,9 +285,8 @@ function runmicro(;
 
     # compute clear sky solar radiation
     solrad_out = solrad(;
-        days, hours, latitude, elevation, P_atmos, slope, aspect, horizon_angles, albedos, cmH2O,
-        ϵ, ω, se, d0 = d0_solrad, #TODO better name for this
-        iuv, scattered, amr, nmax, Iλ, OZ, τR, τO, τA, τW, Sλ, FD, FDQ, s̄,
+        days, hours, latitude, elevation, P_atmos, slope, aspect, horizon_angles, albedos, d0=d0_solrad, #TODO better name for this
+        solar_defaults...
     )
     # limit max zenith angles to 90°
     solrad_out.zenith_angle[solrad_out.zenith_angle.>90u"°"] .= 90u"°"
@@ -230,20 +301,7 @@ function runmicro(;
     if any(not_present)
         all(not_present) || throw(ArgumentError("missing optional component $(optional_names[collect(not_present)])"))
         # interpolate daily min/max forcing variables to hourly
-        TAIRs25, VELs25, RHs25, CLDs25 = hourly_vars(
-            air_temperature_min,
-            air_temperature_max,
-            wind_min,
-            wind_max,
-            humidity_min,
-            humidity_max,
-            cloud_min,
-            cloud_max,
-            solrad_out,
-            minima_times,
-            maxima_times,
-            daily,
-        )
+        TAIRs25, VELs25, RHs25, CLDs25 = hourly_vars(environment_minmax, solrad_out, daily)
         RHs25[RHs25.>100] .= 100
         CLDs25[CLDs25.>100] .= 100
         air_temperatures = TAIRs25[skip25] # remove every 25th output
@@ -427,6 +485,25 @@ function runmicro(;
             θ_soil0_a = collect(fill(initial_soil_moisture[iday], numnodes_a)) # initial soil moisture
         end
 
+        # These are passed right through to soil_water_balance
+        # TODO make this an object
+        soil_water_balance_kw = (; 
+            PE = air_entry_water_potential,
+            KS = saturated_hydraulic_conductivity,
+            BB = Campbells_b_parameter,
+            BD = soil_bulk_density2,
+            DD = soil_mineral_density2,
+            depth = depths,
+            L = root_density,
+            rw = root_resistance,
+            pc = stomatal_closure_potential,
+            rl = leaf_resistance,
+            sp = stomatal_stability_parameter,
+            r1 = root_radius,
+            lai,
+            im = moist_error,
+        )
+
         @inbounds for iter = 1:niter
             for i in 1:length(hours)
                 if i < length(hours)
@@ -452,27 +529,14 @@ function runmicro(;
                                 P_atmos,
                                 pool,
                                 θ_soil0_b,
-                                PE = air_entry_water_potential,
-                                KS = saturated_hydraulic_conductivity,
-                                BB = Campbells_b_parameter,
-                                BD = soil_bulk_density2,
-                                DD = soil_mineral_density2,
-                                depths,
                                 moist_step,
-                                L = root_density,
-                                rw = root_resistance,
-                                pc = stomatal_closure_potential,
-                                rl = leaf_resistance,
-                                sp = stomatal_stability_parameter,
-                                r1 = root_radius,
-                                lai,
-                                im = moist_error,
                                 moist_count,
                                 niter_moist,
                                 pctwet,
                                 step,
                                 maxpool,
                                 M,
+                                soil_water_balance_kw...
                         )
                     end
                     pools[step] = pool
@@ -525,27 +589,13 @@ function runmicro(;
                                 P_atmos,
                                 pool,
                                 θ_soil0_b,
-                                PE = air_entry_water_potential,
-                                KS = saturated_hydraulic_conductivity,
-                                BB = Campbells_b_parameter,
-                                BD = soil_bulk_density2,
-                                DD = soil_mineral_density2,
-                                depths,
                                 moist_step,
-                                L = root_density,
-                                rw = root_resistance,
-                                pc = stomatal_closure_potential,
-                                rl = leaf_resistance,
-                                sp = stomatal_stability_parameter,
-                                r1 = root_radius,
-                                lai,
-                                im = moist_error,
                                 moist_count,
                                 niter_moist,
                                 pctwet,
                                 step,
                                 maxpool,
-                                M,
+                                soil_water_balance_kw...
                         )
                     end
                     if i < length(hours)

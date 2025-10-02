@@ -14,7 +14,7 @@ metout_nmr = (DataFrame(CSV.File("$testdir/data/metout_FordDryLake.csv"))[:, 2:2
 microinput_vec = DataFrame(CSV.File("$testdir/data/init_daily/microinput.csv"))[:, 2]
 
 names = [
-    :doynum, :RUF, :ERR, :Usrhyt, :Refhyt, :Numtyps, :Z01, :Z02, :ZH1, :ZH2,
+    :doynum, :RUF, :ERR, :Usrhyt, :Refhyt, :Numtyps, :Z01, :kZ02, :ZH1, :ZH2,
     :idayst, :ida, :HEMIS, :ALAT, :AMINUT, :ALONG, :ALMINT, :ALREF, :slope,
     :azmuth, :ALTT, :CMH2O, :microdaily, :tannul, :EC, :VIEWF, :snowtemp,
     :snowdens, :snowmelt, :undercatch, :rainmult, :runshade, :runmoist,
@@ -33,15 +33,8 @@ depths = ((DataFrame(CSV.File("$testdir/data/init_daily/DEP.csv"))[:, 2]) / 100.
 heights = [microinput[:Usrhyt], microinput[:Refhyt]]u"m" # air nodes for temperature, wind speed and humidity profile
 days2do = 30
 hours2do = days2do * 24
-# now try the simulation function
-keywords = (;
-    # locations, times, depths and heights
-    latitude = (microinput[:ALAT] + microinput[:AMINUT] / 60) * 1.0u"°", # latitude
-    days = days[1:days2do], # days of year to simulate - TODO leap years
-    hours = collect(0.:1:24.), # hour of day for solrad
-    depths = depths, # soil nodes - keep spacing close near the surface
-    heights = heights, # air nodes for temperature, wind speed and humidity profile
-    # terrain
+
+terrain = (;
     elevation = microinput[:ALTT] * 1.0u"m", # elevation (m)
     horizon_angles = (DataFrame(CSV.File("$testdir/data/init_daily/hori.csv"))[:, 2]) * 1.0u"°", # enter the horizon angles (degrees) so that they go from 0 degrees azimuth (north) clockwise in 15 degree intervals
     slope = microinput[:slope] * 1.0u"°",
@@ -49,12 +42,39 @@ keywords = (;
     roughness_height = microinput[:RUF] * 1.0u"m", # roughness height for standard mode TODO dispatch based on roughness pars
     zh = microinput[:ZH] * 1.0u"m", # heat transfer roughness height for Campbell and Norman mode
     d0 = microinput[:D0] * 1.0u"m", # zero plane displacement correction factor
-    # soil thermal parameters 
+)
+
+soil_thermal = SoilThermalParameters(;
     soil_mineral_conductivity = (CSV.File("$testdir/data/init_daily/soilprop.csv")[1, 1][4]) * 1.0u"W/m/K", # soil minerals thermal conductivity (W/mC)
     soil_mineral_density = (CSV.File("$testdir/data/init_daily/soilprop.csv")[1, 1][6]) * 1.0u"Mg/m^3", # soil minerals density (Mg/m3)
     soil_mineral_heat_capacity = (CSV.File("$testdir/data/init_daily/soilprop.csv")[1, 1][5]) * 1.0u"J/kg/K", # soil minerals specific heat (J/kg-K)
     soil_bulk_density = (CSV.File("$testdir/data/init_daily/soilprop.csv")[1, 1][2]) * 1.0u"Mg/m^3", # dry soil bulk density (Mg/m3)
     soil_saturation_moisture = (CSV.File("$testdir/data/init_daily/soilprop.csv")[1, 1][3]) * 1.0u"m^3/m^3", # volumetric water content at saturation (0.1 bar matric potential) (m3/m3)
+)
+
+environment_minmax = (;
+    air_temperature_min = (DataFrame(CSV.File("$testdir/data/init_daily/TMINN.csv"))[1:days2do, 2] * 1.0)u"°C", # minimum air temperatures (°C)
+    air_temperature_max = (DataFrame(CSV.File("$testdir/data/init_daily/TMAXX.csv"))[1:days2do, 2] * 1.0)u"°C", # maximum air temperatures (°C)
+    wind_min = nothing,
+    wind_max = nothing,
+    humidity_min = nothing,
+    humidity_max = nothing,
+    cloud_min = nothing,
+    cloud_max = nothing,
+)
+
+# now try the simulation function
+keywords = (;
+    # locations, times, depths and heights
+    latitude = (microinput[:ALAT] + microinput[:AMINUT] / 60) * 1.0u"°", # latitude
+    days = days[1:days2do], # days of year to simulate - TODO leap years
+    hours = collect(0.:1:24.), # hour of day for solrad
+    depths, # soil nodes - keep spacing close near the surface
+    heights, # air nodes for temperature, wind speed and humidity profile
+    terrain,
+    soil_thermal,
+    environment_minmax,
+    # soil thermal parameters 
     # soil moisture model soil parameters
     air_entry_water_potential = (DataFrame(CSV.File("$testdir/data/init_daily/PE.csv"))[:, 2] * 1.0u"J/kg"), # set up vector of ground emissivities for each day
     saturated_hydraulic_conductivity = (DataFrame(CSV.File("$testdir/data/init_daily/KS.csv"))[:, 2] * 1.0u"kg*s/m^3"), # set up vector of ground emissivities for each day
@@ -79,14 +99,6 @@ keywords = (;
     pctwets = (DataFrame(CSV.File("$testdir/data/init_daily/PCTWET.csv"))[1:days2do, 2] * 1.0),
     sles = (DataFrame(CSV.File("$testdir/data/init_daily/SLES.csv"))[1:days2do, 2] * 1.0), # - surface emissivity
     daily_rainfall=((DataFrame(CSV.File("$testdir/data/init_daily/rain.csv"))[1:days2do, 2] * 1.0))u"kg/m^2",
-    air_temperature_min = (DataFrame(CSV.File("$testdir/data/init_daily/TMINN.csv"))[1:days2do, 2] * 1.0)u"°C", # minimum air temperatures (°C)
-    air_temperature_max = (DataFrame(CSV.File("$testdir/data/init_daily/TMAXX.csv"))[1:days2do, 2] * 1.0)u"°C", # maximum air temperatures (°C)
-    wind_min = nothing,
-    wind_max = nothing,
-    humidity_min = nothing,
-    humidity_max = nothing,
-    cloud_min = nothing,
-    cloud_max = nothing,
     deep_soil_temperatures = (DataFrame(CSV.File("$testdir/data/init_daily/tannulrun.csv"))[1:days2do, 2] * 1.0)u"°C", # daily deep soil temperatures
     # hourly weather vectors
     air_temperatures = Float64.(CSV.File("$testdir/data/init_daily/TAIRhr.csv").x[1:hours2do])u"°C",
@@ -111,6 +123,9 @@ keywords = (;
 
 # now try the simulation function
 @time micro_out = runmicro(; keywords...);
+
+using ProfileView
+@profview runmicro(; keywords...);
 
 # TODO test plotting again at some stage, but it slows down CI a lot
 # plot(micro_out)

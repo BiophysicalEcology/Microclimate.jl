@@ -7,7 +7,7 @@ function soil_energy_balance(
     #T_K = T .* u"K"  # convert Float64 time back to unitful
     #dT_K = dT .* 60 .* u"K/minute"  # convert Float64 time back to unitful
     # extract prameters
-    (; soillayers, params, buffers) = i
+    (; params, buffers) = i
     (; roughness_height, pctwet, sle, slep, albedo, viewfactor, elevation, P_atmos, 
         slope, shade, heights, depths, reference_height, κ, tdeep, nodes, 
         soilprops, θ_soil, runmoist) = params
@@ -84,9 +84,9 @@ function soil_energy_balance(
         u_star = calc_u_star(; reference_wind_speed=vel, log_z_ratio, κ)
         Q_convection = calc_convection(; u_star, log_z_ratio, ΔT, ρ_cp, z0=roughness_height)
     else
-            # compute ρcpTκg (was a constant in original Fortran version)
-        #dry_air_out = dry_air_properties(u"K"(reference_temperature), elevation=elevation)
-        #wet_air_out = wet_air_properties(u"K"(reference_temperature), rh = relative_humidity)
+        # compute ρcpTκg (was a constant in original Fortran version)
+        # dry_air_out = dry_air_properties(u"K"(reference_temperature), elevation=elevation)
+        # wet_air_out = wet_air_properties(u"K"(reference_temperature), rh = relative_humidity)
         #ρ = dry_air_out.ρ_air
         #c_p = wet_air_out.c_p
         # TODO make this work with SI units
@@ -199,8 +199,22 @@ function allocate_soil_water_balance(M)
     )  
 end
 
+# TODO rename these
+# PE = air_entry_water_potential,
+# KS = saturated_hydraulic_conductivity,
+# BB = Campbells_b_parameter,
+# BD = soil_bulk_density2,
+# DD = soil_mineral_density2,
+# depth = depths,
+# L = root_density,
+# rw = root_resistance,
+# pc = stomatal_closure_potential,
+# rl = leaf_resistance,
+# sp = stomatal_stability_parameter,
+# r1 = root_radius,
+# lai,
+# im = moist_error,
 function soil_water_balance!(ml;
-    M = 18,
     PE = fill(1.1u"J/kg", M+1), # Air entry potential (J/kg) (M+1 values descending through soil for specified soil nodes in parameter DEP and points half way between)
     KS = fill(0.0037u"kg*s/m^3", M+1), # Saturated conductivity, (kg s/m3) (M+1 values descending through soil for specified soil nodes in parameter DEP and points half way between)
     BB = fill(4.5, M+1), # Campbell's soil 'b' parameter (-) (M+1 values descending through soil for specified soil nodes in parameter DEP and points half way between)
@@ -223,10 +237,12 @@ function soil_water_balance!(ml;
     lai = 0.1,
     im = 1e-6u"kg/m^2/s", # maximum overall mass balance error allowed, kg m-2 s-1
     moist_count=500,
+
 )
     # TODO: some of these are actually buffers, and some user data??
     (; P, Z, V, W, WN, K, H, T, rh_soil, ψ_soil, ψ_root, PR, PP, B1, N, N1, WS,
        RR, BZ, JV, DJ, CP, A, B, C, C2, F, F2, DP, RS, E) = ml
+    M = length(P)
 
     # Constants
     MW = 0.01801528u"kg/mol" # molar mass of water, kg/mol
@@ -438,7 +454,7 @@ function soil_water_balance!(ml;
 end
 
 
-get_soil_water_balance(; M=18, kw...) = get_soil_water_balance!(allocate_soil_water_balance(M); M, kw...)
+get_soil_water_balance(; M=18, kw...) = get_soil_water_balance!(allocate_soil_water_balance(M); kw...)
 
 function get_soil_water_balance!(buffers;
     roughness_height,
@@ -455,27 +471,13 @@ function get_soil_water_balance!(buffers;
     P_atmos=atmospheric_pressure(elevation),
     pool,
     θ_soil0_b,
-    PE,
-    KS,
-    BB,
-    BD,
-    DD,
     depths,
     moist_step,
-    L,
-    rw,
-    pc,
-    rl,
-    sp,
-    r1,
-    lai,
-    im,
-    moist_count,
     niter_moist,
     pctwet,
     step,
     maxpool,
-    M=18,
+    kw...
 )
     # compute scalar profiles
     profile_out = get_profile!(buffers.profile;
@@ -511,12 +513,13 @@ function get_soil_water_balance!(buffers;
     end
     # run infiltration algorithm
     infil_out = soil_water_balance!(buffers.soil_water_balance;
-        PE, KS, BB, BD, DD, rh_loc, elevation, P_atmos, L, rw, pc, rl, sp, r1, lai, im, moist_count, M, 
+        rh_loc, elevation, P_atmos,
         θ_soil=θ_soil0_b,
         ET=EP,
         T10=T0,
         depth=depths,
         dt=moist_step,
+        kw...
     )
     θ_soil0_b = infil_out.θ_soil
     surf_evap = max(0.0u"kg/m^2", infil_out.evap)
@@ -527,12 +530,13 @@ function get_soil_water_balance!(buffers;
     end
     for _ in 1:(niter_moist-1)
         infil_out = soil_water_balance!(buffers.soil_water_balance;
-            PE, KS, BB, BD, DD, elevation, P_atmos, L, rw, pc, rl, sp, r1, lai, im, moist_count, rh_loc,
+            elevation, P_atmos, rh_loc,
             θ_soil=θ_soil0_b,
             ET=EP,
             T10=T0,
             depth=depths,
             dt=moist_step,
+            kw...
         )
         θ_soil0_b = infil_out.θ_soil
         surf_evap = max(0.0u"kg/m^2", infil_out.evap)
