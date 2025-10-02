@@ -475,8 +475,8 @@ function get_soil_water_balance!(buffers;
     M=18,
 )
     # compute scalar profiles
-    profile_out = get_profile(;
-        z0 = roughness_height,
+    profile_out = get_profile!(buffers.profile;
+        roughness_height,
         zh,
         d0,
         κ,
@@ -485,7 +485,6 @@ function get_soil_water_balance!(buffers;
         relative_humidity = RHs[step],
         surface_temperature = u"°C"(T0[1]),  # top layer temp
         zenith_angle = ZENRs[step],
-        heights,
         elevation,
         P_atmos,
     )
@@ -508,7 +507,7 @@ function get_soil_water_balance!(buffers;
         θ_soil0_b[1] = 1 - BD[1] / DD[1]
     end
     # run infiltration algorithm
-    infil_out = soil_water_balance!(buffers;
+    infil_out = soil_water_balance!(buffers.soil_water_balance;
         PE, KS, BB, BD, DD, rh_loc, elevation, P_atmos, L, rw, pc, rl, sp, r1, lai, im, moist_count, M, 
         θ_soil=θ_soil0_b,
         ET=EP,
@@ -524,7 +523,7 @@ function get_soil_water_balance!(buffers;
         θ_soil0_b[1] = 1 - BD[1] / DD[1]
     end
     for _ in 1:(niter_moist-1)
-        infil_out = soil_water_balance!(buffers;
+        infil_out = soil_water_balance!(buffers.soil_water_balance;
             PE, KS, BB, BD, DD, elevation, P_atmos, L, rw, pc, rl, sp, r1, lai, im, moist_count, rh_loc,
             θ_soil=θ_soil0_b,
             ET=EP,

@@ -57,6 +57,8 @@ that handles canopy displacement, invoked if `zh > 0` and otherwise
   biophysical modeling. *Ecography*, 43, 1–14.
 
 # Example
+
+
 ```julia
 profile = get_profile(
     reference_temperature = 25u"°C",
@@ -68,14 +70,16 @@ profile = get_profile(
 
 profile.air_temperatures  # vertical profile of air temperatures
 profile.wind_speeds       # vertical profile of wind speeds
+```
 """
-function get_profile(;
-    z0=0.004u"m",
+get_profile(; heights=DEFAULT_HEIGHTS, kw...) =
+    get_profile!(allocate_profile(heights); kw...)
+function get_profile!(buffers;
+    roughness_height=0.004u"m",
     zh=0.0u"m",
     d0=0.0u"m",
     κ=0.4,
     γ = 16.0, # coefficient from Dyer and Hicks for Φ_m (momentum), TODO make it available as a user param?
-    heights::Vector{typeof(1.0u"m")}=[0.01, 0.05, 0.1, 0.2, 0.3, 0.4, 0.5, 0.75, 1.0, 1.2] .* u"m",
     reference_temperature,
     reference_wind_speed,
     relative_humidity,
@@ -85,17 +89,19 @@ function get_profile(;
     P_atmos=atmospheric_pressure(elevation),
 )
 
-    reference_height = last(heights)
-    if minimum(heights) < z0
-        error("ERROR: the minimum height is not greater than the roughness height (z0).")
+    (; heights, height_array, air_temperatures, wind_speeds, humidities) = buffers
+    N_heights = length(heights)
+    if minimum(heights) < roughness_height
+        throw(ArgumentError("The minimum height is not greater than the roughness height."))
     end
+    reference_height = last(heights)
 
     T_ref_height = u"K"(reference_temperature)
     T_surface = u"K"(surface_temperature)
 
     # Units: m to cm
     z = u"cm"(reference_height)
-    z0 = u"cm"(z0) # roughness height
+    z0 = u"cm"(roughness_height)
     zh_cm = u"cm"(zh)
     d0_cm = u"cm"(d0)
     v_ref_height = u"cm/minute"(reference_wind_speed)
@@ -238,29 +244,6 @@ logarithmic wind profile.
 function calc_u_star(; reference_wind_speed, log_z_ratio, κ=0.4)
     v_ref_height = reference_wind_speed
     return κ * v_ref_height / log_z_ratio
-end
-
-
-"""
-    calc_wind(z, z0, κ, u_star, b)
-
-Calculate wind speed at height `z` using the logarithmic wind profile.
-
-# Arguments
-- `z::Quantity{<:Real,𝐋}`: Height above the surface (e.g. `m`, `cm`).
-- `z0::Quantity{<:Real,𝐋}`: Roughness length (e.g. `m`, `cm`).
-- `κ::Real`: von Kármán constant.
-- `u_star::Quantity{<:Real,𝐋/𝐓}`: Friction velocity.
-- `b::Real`: Offset term (e.g. `1.0` for neutral stability, or stability correction).
-
-# Returns
-- Wind speed at height `z::Quantity{<:Real,𝐋/𝐓}`.
-
-# See also
-[`calc_u_star`](@ref), [`calc_convection`](@ref)
-"""
-function calc_wind(z, z0, κ, u_star, b)
-    return (u_star / κ) * log(z / z0 + b)
 end
 
 

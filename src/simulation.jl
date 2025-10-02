@@ -242,7 +242,7 @@ function runmicro(;
             solrad_out,
             minima_times,
             maxima_times,
-            daily
+            daily,
         )
         RHs25[RHs25.>100] .= 100
         CLDs25[CLDs25.>100] .= 100
@@ -353,7 +353,12 @@ function runmicro(;
     # simulate all days
     pool = 0.0u"kg/m^2" # initialise depth of pooling water TODO make this an init option
     heights_water_balance = heights
+    profile_buffers = allocate_profile(heights)
     soil_water_balance_buffers = allocate_soil_water_balance(numnodes_b)  # only once
+    buffers = (; 
+        profile=profile_buffers, 
+        soil_water_balance=soil_water_balance_buffers,
+    )
     niter_moist = ustrip(3600 / moist_step) # TODO use a solver for soil moisture calc
     ∑phase = zeros(Float64, numnodes_a)u"J"
     infil_out = nothing
@@ -428,7 +433,7 @@ function runmicro(;
                     step = (j - 1) * (length(hours) - 1) + i
                     pool += rainfall
                     if runmoist
-                        infil_out, pctwet, pool, θ_soil0_b = get_soil_water_balance!(soil_water_balance_buffers;
+                        infil_out, pctwet, pool, θ_soil0_b = get_soil_water_balance!(buffers;
                                 roughness_height,
                                 zh,
                                 d0,
@@ -499,7 +504,7 @@ function runmicro(;
                         T_soils[step] = T0
                     end
                     if runmoist
-                        infil_out, pctwet, pool, θ_soil0_b = get_soil_water_balance!(soil_water_balance_buffers;
+                        infil_out, pctwet, pool, θ_soil0_b = get_soil_water_balance!(buffers;
                                 roughness_height,
                                 zh,
                                 d0,
@@ -577,8 +582,8 @@ function runmicro(;
     # compute air temperature, wind speed and relative humidity profiles
     profile_out = map(1:length(air_temperatures)) do i
         # compute scalar profiles
-        get_profile(;
-            z0 = roughness_height,
+        get_profile!(profile_buffers;
+            roughness_height,
             zh,
             d0,
             κ,
@@ -587,7 +592,6 @@ function runmicro(;
             relative_humidity=humidities[i],
             surface_temperature=u"°C"(T_soils[i][1]),  # top layer temp
             zenith_angle=zenith_angles[i],
-            heights,
             elevation,
             P_atmos,
         )
