@@ -366,6 +366,8 @@ function runmicro(;
     niter_moist = ustrip(3600 / moist_step) # TODO use a solver for soil moisture calc
     ∑phase = zeros(Float64, numnodes_a)u"J"
     infil_out = nothing
+    # TODO make an object for this
+    environment = (; solar_radiation, zenith_angles, zenith_slope_angle, air_temperatures, wind_speeds, humidities, cloud_covers)
     for j in 1:ndays
         #j = 1
         iday = j
@@ -378,30 +380,7 @@ function runmicro(;
         tdeep = u"K"(deep_soil_temperatures[iday]) # daily deep soil temperature (°C)
         nodes .= nodes_day[:, iday]
         rainfall = daily_rainfall[iday]
-        # get today's weather
-        sub1 = (iday*24-24+1):(iday*24)
-        SOLR = solar_radiation[sub1]
-        ZENR = zenith_angles[sub1]
-        ZSL = zenith_slope_angle[sub1]
-        TAIR = air_temperatures[sub1]
-        VEL = wind_speeds[sub1]
-        RH = humidities[sub1]
-        CLD = cloud_covers[sub1]
-        tspan = 0.0:60:(60*24)
-        interpSOLR = interpolate([SOLR; SOLR[end]], BSpline(Linear()))
-        interpZENR = interpolate([ZENR; ZENR[end]], BSpline(Linear()))
-        interpZSL = interpolate([ZSL; ZSL[end]], BSpline(Linear()))
-        interpTAIR = interpolate(u"K".([TAIR; TAIR[end]]), BSpline(Linear()))
-        interpVEL = interpolate([VEL; VEL[end]], BSpline(Linear()))
-        interpRH = interpolate([RH; RH[end]], BSpline(Linear()))
-        interpCLD = interpolate([CLD; CLD[end]], BSpline(Linear()))
-        SOLRt = scale(interpSOLR, tspan)
-        ZENRt = scale(interpZENR, tspan)
-        ZSLt = scale(interpZSL, tspan)
-        TAIRt = scale(interpTAIR, tspan)
-        VELt = scale(interpVEL, tspan)
-        RHt = scale(interpRH, tspan)
-        CLDt = scale(interpCLD, tspan)
+        forcing = forcing_day(environment, iday)
 
         # Parameters
         params = MicroParams(;
@@ -409,7 +388,6 @@ function runmicro(;
             albedo, sle, slep, # check if this is what it should be - sle vs. slep (set as 1 in PAR in Fortran but then changed to user SLE later)
             pctwet, nodes, tdeep, θ_soil=θ_soil0_a, runmoist,
         )
-        forcing = MicroForcing(; SOLRt, ZENRt, ZSLt, TAIRt, VELt, RHt, CLDt)
         input = MicroInputs(; params, forcing, soillayers, buffers)
         step = 1
         # loop through hours of day
@@ -633,4 +611,40 @@ function runmicro(;
         solrad=solrad_out,
         profile=profile_out,
     )
+end
+
+# TODO eventually make environment a type, 
+# and this can just be `getindex` on that type.
+function forcing_day(environment, iday::Int)
+    (; solar_radiation, zenith_angles, zenith_slope_angle, air_temperatures, wind_speeds, humidities, cloud_covers) = environment
+
+    sub1 = (iday*24-24+1):(iday*24)
+    tspan = 0.0:60:(60*24)
+
+    # get today's weather
+    SOLR = solar_radiation[sub1]
+    ZENR = zenith_angles[sub1]
+    ZSL = zenith_slope_angle[sub1]
+    TAIR = air_temperatures[sub1]
+    VEL = wind_speeds[sub1]
+    RH = humidities[sub1]
+    CLD = cloud_covers[sub1]
+
+    interpSOLR = interpolate([SOLR; SOLR[end]], BSpline(Linear()))
+    interpZENR = interpolate([ZENR; ZENR[end]], BSpline(Linear()))
+    interpZSL = interpolate([ZSL; ZSL[end]], BSpline(Linear()))
+    interpTAIR = interpolate(u"K".([TAIR; TAIR[end]]), BSpline(Linear()))
+    interpVEL = interpolate([VEL; VEL[end]], BSpline(Linear()))
+    interpRH = interpolate([RH; RH[end]], BSpline(Linear()))
+    interpCLD = interpolate([CLD; CLD[end]], BSpline(Linear()))
+
+    SOLRt = scale(interpSOLR, tspan)
+    ZENRt = scale(interpZENR, tspan)
+    ZSLt = scale(interpZSL, tspan)
+    TAIRt = scale(interpTAIR, tspan)
+    VELt = scale(interpVEL, tspan)
+    RHt = scale(interpRH, tspan)
+    CLDt = scale(interpCLD, tspan)
+
+    return MicroForcing(; SOLRt, ZENRt, ZSLt, TAIRt, VELt, RHt, CLDt)
 end
