@@ -441,7 +441,6 @@ function calc_Obukhov_length(T_ref_height, T_surface, v_ref_height, z0, z, ρcpT
     T_ref_height = u"K"(T_ref_height)
     T_surface = u"K"(T_surface)
     v_ref_height = u"cm/minute"(v_ref_height)
-
     # initialise
     Q_convection = nothing
     effective_stanton_number = nothing
@@ -449,9 +448,10 @@ function calc_Obukhov_length(T_ref_height, T_surface, v_ref_height, z0, z, ρcpT
     sublayer_stanton_number = nothing
     u_star = nothing
     ψ_h = nothing
-    φ_m = nothing
     δ = 1.0
     count = 0
+    φ_m = nothing
+    L_Obukhov_new = nothing
 
     while δ > tol && count < max_iter
         count += 1
@@ -466,19 +466,7 @@ function calc_Obukhov_length(T_ref_height, T_surface, v_ref_height, z0, z, ρcpT
         δ = abs((L_Obukhov_new - L_Obukhov) / L_Obukhov)
         L_Obukhov = L_Obukhov_new
     end
-
-    # TODO comment this or make it a function
     T_z0 = (T_ref_height * bulk_stanton_number + T_surface * sublayer_stanton_number) / (bulk_stanton_number + sublayer_stanton_number)
-
-    return (; 
-        L_Obukhov=u"m"(L_Obukhov), 
-        sublayer_stanton_number, 
-        effective_stanton_number, 
-        bulk_stanton_number, 
-        u_star, 
-        ψ_h, 
-        Q_convection, 
-        T_z0,
-    )
+    return (; L_Obukhov=u"m"(L_Obukhov), sublayer_stanton_number, effective_stanton_number, bulk_stanton_number, u_star, ψ_h, Q_convection, T_z0)
 end
 
