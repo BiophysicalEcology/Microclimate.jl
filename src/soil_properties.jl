@@ -1,5 +1,5 @@
 function allocate_soil_properties(nodes, soilprops)
-    (; ρ_dry, λ_mineral, cp_mineral, ρ_mineral) = soilprops
+    (; λ_mineral, cp_mineral, ρ_mineral) = soilprops
     NON = length(nodes)
 
     λ_b = fill(λ_mineral[1], NON)
@@ -23,14 +23,17 @@ and bulk density (`ρ_b`) — for a given soil layer.
     - `λ_mineral`: Thermal conductivity of mineral fraction (W/m/K)
     - `cp_mineral`: Heat capacity of mineral fraction (J/kg/K)
     - `ρ_mineral`: Density of mineral fraction (kg/m³)
-    - `q`: Empirical parameter for water recirculation (dimensionless)
-    - `θ_0`: Reference water content for recirculation (m³/m³)
+    - `q`: Empirical parameter for water recirculation (dimensionless), values between
+       ~2 and 6, typically lower for coarser particles
+    - `θ_0`: Reference water content for recirculation (m³/m³), ~0.05 for coarse sand 
+       to 0.25 for heavy clay
+    - `g_a`: de Vries shape factor, 0.33 for organic soils, 0.1 for mineral
 - `elevation::Quantity`: Elevation above sea level.
 - `P_atmos::Quantity` (optional): Atmospheric pressure; defaults to `atmospheric_pressure(elevation)`.
 
 # Returns
 A named tuple `(λ_b, cp_b, ρ_b)`:
-- `λ_b::Quantity`: Bulk thermal conductivity of soil layer (W/m/K)
+- `λ_b::Quantity`: Bulk thermal conductivity (W/m/K)
 - `cp_b::Quantity`: Bulk volumetric heat capacity (J/kg/K)
 - `ρ_b::Quantity`: Bulk density (kg/m³)
 
@@ -55,6 +58,14 @@ approach, which accounts for:
 
 This method provides an accurate representation of heat transfer in variably wet soils 
 for land surface or microclimate modeling.
+
+# References
+
+Campbell, G. S., Jungbauer, J. D. Jr., Bidlake, W. R., & Hungerford, R. D. (1994). Predicting 
+ the effect of temperature on soil thermal conductivity. Soil Science, 158(5), 307–313.
+
+Campbell, G. S., & Norman, J. M. (1998). Environmental Biophysics. Springer.
+
 """
 function soil_props(; 
     T_soil::T, # vector of soil temperatures, K
@@ -65,19 +76,9 @@ function soil_props(;
 ) where {T<:Quantity, R<:Real, S<:NamedTuple, E<:Quantity}
 
     # ρ = density, λ = thermal conductivity, cp = specific heat capacity
-    (; ρ_dry, λ_mineral, cp_mineral, ρ_mineral, q, θ_0) = soilprops
+    (; ρ_dry, λ_mineral, cp_mineral, ρ_mineral, q, θ_0, g_a) = soilprops
 
     p_a0 = Unitful.atm
-    # TODO make a parameter with default, 
-    # or q_0 * (T_soil / 303) ^ 2, q_0 = ~2 to 6 (power for recirculation function)
-    #q = 4.0
-    #TODO make a parameter with default
-    # m3/m3 return-flow cutoff water content (~0.05 for coarse sand to 0.25 for heavy clay),
-    # p. 121 Campbell & Norman 1991 
-    #θ_0 = 0.162
-    # TODO make a parameter (~0.07 to 1.1), 
-    # de Vries shape factor, 0.33 for organic soils, 0.1 for mineral
-    g_a = 0.1
     g_c = 1.0 - 2.0 * g_a
 
     # generalisation of eq. 8.20, Campbell and Norman (1991)
@@ -152,6 +153,7 @@ function soil_props_vector(buffers::NamedTuple; T_soil::AbstractVector, θ_soil:
             ρ_mineral = soilprops.ρ_mineral[i],
             q = soilprops.q[i],
             θ_0 = soilprops.θ_0[i],
+            g_a = soilprops.g_a[i],
         ),
         elevation = elevation,
         P_atmos = P_atmos

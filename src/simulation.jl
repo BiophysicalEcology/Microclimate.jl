@@ -133,6 +133,7 @@ function runmicro(;
     soil_bulk_density = 2.56u"Mg/m^3", # dry soil bulk density
     recirculation_power = 4.0, # power for recirculation function
     return_flow_threshold = 0.162, # return-flow cutoff soil moisture, m^3/m^3
+    deVries_shape_factor = 0.1, # de Vries shape factor, 0.33 for organic soils, 0.1 for mineral
     # soil moisture model soil parameters
     air_entry_water_potential = fill(0.7, length(depths) * 2 - 2)u"J/kg", #air entry potential
     saturated_hydraulic_conductivity = fill(0.0058, length(depths) * 2 - 2)u"kg*s/m^3", #saturated conductivity
@@ -211,6 +212,7 @@ function runmicro(;
         ρ_mineral = fill(soil_mineral_density, numnodes_a),
         q = fill(recirculation_power, numnodes_a),
         θ_0 = fill(return_flow_threshold, numnodes_a),
+        g_a = fill(deVries_shape_factor, numnodes_a)
     )
     ∑phase = zeros(Float64, numnodes_a)u"J" # zero phase transition for liquid water in soil
 
