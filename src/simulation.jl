@@ -409,7 +409,7 @@ function runmicro(;
             pctwet, nodes, tdeep, θ_soil=θ_soil0_a, runmoist,
         )
         forcing = MicroForcing(; SOLRt, ZENRt, ZSLt, TAIRt, VELt, RHt, CLDt)
-        input = MicroInputs(; params, forcing, soillayers)
+        input = MicroInputs(; params, forcing, soillayers, buffers)
         step = 1
         # loop through hours of day
         if spinup && j == 1 && i == 1 || daily == false
@@ -493,7 +493,7 @@ function runmicro(;
                         viewfactor, elevation, P_atmos, albedo, sle, slep, pctwet, nodes, tdeep, θ_soil=θ_soil0_a,
                         runmoist,
                     )
-                    input = MicroInputs(params, forcing, soillayers)
+                    input = MicroInputs(params, forcing, soillayers, buffers)
                     tspan = ((0.0 + (i - 2) * 60)u"minute", (60.0 + (i - 2) * 60)u"minute")  # 1 hour
                     prob = ODEProblem{false}(soil_energy_balance, T0, tspan, input)
                     sol = solve(prob, Tsit5(); saveat=60.0u"minute", reltol=1e-6u"K", abstol=1e-8u"K")
