@@ -387,7 +387,7 @@ function runmicro(;
         params = MicroParams(;
             soilprops, depths, heights, reference_height, roughness_height, κ, slope, shade, viewfactor, elevation, P_atmos,
             albedo, sle, slep, # check if this is what it should be - sle vs. slep (set as 1 in PAR in Fortran but then changed to user SLE later)
-            pctwet, nodes, tdeep, θ_soil=θ_soil0_a, runmoist,
+            pctwet, nodes, θ_soil=θ_soil0_a, runmoist,
         )
         input = MicroInputs(; params, forcing, soillayers, buffers)
         step = 1
@@ -402,10 +402,10 @@ function runmicro(;
             sub2 = (iday*25-25+1):(iday*25) # for getting mean monthly over the 25 hrs as in fortran version
             t = u"K"(mean(ustrip(TAIRs25[sub2]))u"°C") # make initial soil temps equal to mean monthly temperature
             T0 = SVector(ntuple(_ -> t, numnodes_a))
-            T0 = setindex(T0, tdeep, numnodes_a) # set deepest node to boundary condition
             #T_soils[step, :] = T0
             θ_soil0_a = collect(fill(initial_soil_moisture[iday], numnodes_a)) # initial soil moisture
         end
+        T0 = setindex(T0, tdeep, numnodes_a) # set deepest node to boundary condition
 
         @inbounds for iter = 1:niter
             for i in 1:length(hours)
@@ -471,7 +471,7 @@ function runmicro(;
                     # Parameters
                     params = MicroParams(;
                         soilprops, depths, heights, reference_height, roughness_height, κ, slope, shade,
-                        viewfactor, elevation, P_atmos, albedo, sle, slep, pctwet, nodes, tdeep, θ_soil=θ_soil0_a,
+                        viewfactor, elevation, P_atmos, albedo, sle, slep, pctwet, nodes, θ_soil=θ_soil0_a,
                         runmoist,
                     )
                     input = MicroInputs(params, forcing, soillayers, buffers)

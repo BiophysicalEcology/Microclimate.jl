@@ -9,7 +9,7 @@ function soil_energy_balance(
     # extract prameters
     (; soillayers, params, buffers) = i
     (; roughness_height, pctwet, sle, slep, albedo, viewfactor, elevation, P_atmos, 
-        slope, shade, heights, depths, reference_height, κ, tdeep, nodes, 
+        slope, shade, heights, depths, reference_height, κ, nodes, 
         soilprops, θ_soil, runmoist) = params
     (; depp, wc, c) = soillayers
     reference_height = last(heights)
@@ -30,9 +30,7 @@ function soil_energy_balance(
     rh = clamp(f.RHt(ustrip(t)), 0.0, 100.0)
     zslr = min(90.0u"°", f.ZSLt(ustrip(t)))
 
-    # TODO Why do we reset the last value
     T1m = MVector(T1)
-    T1m[N] = tdeep # boundary condition
     T2 = SVector(T1m)
 
     # set boundary condition of deep soil temperature
