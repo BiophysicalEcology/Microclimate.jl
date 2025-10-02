@@ -130,7 +130,6 @@ function runmicro(;
     soil_mineral_density = 2.560u"Mg/m^3", # soil minerals density
     soil_mineral_heat_capacity = 870.0u"J/kg/K", # soil minerals specific heat
     soil_bulk_density = 2.56u"Mg/m^3", # dry soil bulk density
-    soil_saturation_moisture = 0.26u"m^3/m^3", # volumetric water content at saturation (0.1 bar matric potential)
     # soil moisture model soil parameters
     air_entry_water_potential = fill(0.7, length(depths) * 2 - 2)u"J/kg", #air entry potential
     saturated_hydraulic_conductivity = fill(0.0058, length(depths) * 2 - 2)u"kg*s/m^3", #saturated conductivity
@@ -204,7 +203,6 @@ function runmicro(;
     # Create vectors of soil properties
     soilprops = (; 
         ρ_dry =  fill(soil_bulk_density, numnodes_a),
-        θ_sat = fill(soil_saturation_moisture, numnodes_a),
         λ_mineral = fill(soil_mineral_conductivity, numnodes_a),
         cp_mineral = fill(soil_mineral_heat_capacity, numnodes_a),
         ρ_mineral = fill(soil_mineral_density, numnodes_a),

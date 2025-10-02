@@ -9,9 +9,9 @@ function soil_props(;
     P_atmos = atmospheric_pressure(elevation),
 ) where {Q<:Quantity, R<:Real, S<:NamedTuple, E<:Quantity}
 
-    (; ρ_dry, θ_sat, λ_mineral, cp_mineral, ρ_mineral) = soilprops
+    (; ρ_dry, λ_mineral, cp_mineral, ρ_mineral) = soilprops
 
-    p_a0 = 101325u"Pa"
+    p_a0 = Unitful.atm
     q = 4.0
     θ_0 = 0.162
     g_a = 0.1
@@ -72,7 +72,6 @@ function soil_props_vector(T_soil::AbstractVector, θ_soil::AbstractVector, soil
         θ_soil = θ_soil[i],
         soilprops = (
             ρ_dry     = soilprops.ρ_dry[i],
-            θ_sat     = soilprops.θ_sat[i],
             λ_mineral = soilprops.λ_mineral[i],
             cp_mineral = soilprops.cp_mineral[i],
             ρ_mineral = soilprops.ρ_mineral[i],
