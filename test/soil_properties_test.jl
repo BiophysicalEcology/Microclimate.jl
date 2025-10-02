@@ -34,14 +34,8 @@ soilprops = (;
 
 (; ρ_dry, θ_sat, λ_mineral, cp_mineral, ρ_mineral) = soilprops
 
-λ_b, c_p_b, ρ_b = soil_properties(;
-    T_soil=T_soil[1], θ_soil=θ_soil[1], soilprops[1], elevation, P_atmos
+λ_b, c_p_b, ρ_b = soil_props(;
+    T_soil=T_soil[1], θ_soil=θ_soil[1], soilprops=soilprops, elevation, P_atmos
 )
 
-soil_properties_out = map((T,θ) -> soil_properties(;
-    T_soil=T, θ_soil=θ, soilprops, elevation, P_atmos
-), T_soil, θ_soil)
-
-λ_b  = getindex.(soil_properties_out, 1)
-c_p_b = getindex.(soil_properties_out, 2)
-ρ_b   = getindex.(soil_properties_out, 3)
+λ_b, cp_b, ρ_b = soil_props_vector(T_soil, θ_soil, soilprops, elevation, P_atmos)

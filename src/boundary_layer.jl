@@ -1,3 +1,15 @@
+const DEFAULT_HEIGHTS = [0.01, 0.05, 0.1, 0.2, 0.3, 0.4, 0.5, 0.75, 1.0, 1.2] .* u"m"
+
+function allocate_profile(heights)
+    N_heights = length(heights)
+    wind_speeds = similar(heights, typeof(0.0u"cm/minute")) # output wind speeds
+    height_array = similar(heights, typeof(0.0u"cm"))
+    height_array[end:-1:begin] .= heights 
+    air_temperatures = similar(heights, typeof(0.0u"K")) # output temperatures, need to do this otherwise get InexactError
+    humidities = similar(heights, Float64) # output relative humidities
+    return (; heights, height_array, air_temperatures, wind_speeds, humidities)
+end
+
 """
     get_profile(; kwargs...)
 
@@ -244,6 +256,28 @@ logarithmic wind profile.
 function calc_u_star(; reference_wind_speed, log_z_ratio, κ=0.4)
     v_ref_height = reference_wind_speed
     return κ * v_ref_height / log_z_ratio
+end
+
+"""
+    calc_wind(z, z0, κ, u_star, b)
+
+Calculate wind speed at height `z` using the logarithmic wind profile.
+
+# Arguments
+- `z::Quantity{<:Real,𝐋}`: Height above the surface (e.g. `m`, `cm`).
+- `z0::Quantity{<:Real,𝐋}`: Roughness length (e.g. `m`, `cm`).
+- `κ::Real`: von Kármán constant.
+- `u_star::Quantity{<:Real,𝐋/𝐓}`: Friction velocity.
+- `b::Real`: Offset term (e.g. `1.0` for neutral stability, or stability correction).
+
+# Returns
+- Wind speed at height `z::Quantity{<:Real,𝐋/𝐓}`.
+
+# See also
+[`calc_u_star`](@ref), [`calc_convection`](@ref)
+"""
+function calc_wind(z, z0, κ, u_star, b)
+    return (u_star / κ) * log(z / z0 + b)
 end
 
 
