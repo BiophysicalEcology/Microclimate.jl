@@ -81,7 +81,7 @@ keywords = (;
     #maximum_surface_temperature = u"K"(microinput[:maxsurf]u"°C")
 );
 
-# TODO check why deep soil temp not being outputted
+# TODO allow vector of pre-calculated soil moisture to be provided as input
 @time micro_out = runmicro(; keywords...);
 
 # subset NicheMapR predictions

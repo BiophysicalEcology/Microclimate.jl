@@ -400,8 +400,9 @@ function runmicro(;
         if daily == false
             ∑phase = zeros(Float64, numnodes_a)u"J"
             sub2 = (iday*25-25+1):(iday*25) # for getting mean monthly over the 25 hrs as in fortran version
-            t = u"K"(mean(ustrip(TAIRs25[sub2]))u"°C") # make initial soil temps equal to mean annual temperature
+            t = u"K"(mean(ustrip(TAIRs25[sub2]))u"°C") # make initial soil temps equal to mean monthly temperature
             T0 = SVector(ntuple(_ -> t, numnodes_a))
+            T0 = setindex(T0, tdeep, numnodes_a) # set deepest node to boundary condition
             #T_soils[step, :] = T0
             θ_soil0_a = collect(fill(initial_soil_moisture[iday], numnodes_a)) # initial soil moisture
         end
