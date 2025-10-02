@@ -90,13 +90,13 @@ Returns a named tuple containing:
 # neighbours.
 
 function runmicro(;
-    # locations, times, depths and heights
-    latitude = 43.07305u"°", # latitude
+    # times, depths and heights
     days = [15, 46, 74, 105, 135, 166, 196, 227, 258, 288, 319, 349], # days of year to simulate - TODO leap years
     hours = collect(0.:1:24.), # hour of day for solrad
     depths = [0.0, 2.5, 5.0, 10.0, 15.0, 20.0, 30.0, 40.0, 50.0, 100.0, 200.0]u"cm", # soil nodes - keep spacing close near the surface
     heights = [0.01, 2]u"m", # air nodes for temperature, wind speed and humidity profile, last height is reference height for weather data
     # solar radiation
+    latitude = 43.07305u"°", # latitude
     cmH2O = 1, # precipitable cm H2O in air column, 0.1 = very dry; 1 = moist air conditions; 2 = humid, tropical conditions (note this is for the whole atmospheric profile, not just near the ground)
     ϵ = 0.0167238, # orbital eccentricity of Earth
     ω = 2π / 365, # mean angular orbital velocity of Earth (radians/day)
@@ -121,6 +121,7 @@ function runmicro(;
     horizon_angles = fill(0.0u"°", 24), # enter the horizon angles (degrees) so that they go from 0 degrees azimuth (north) clockwise in 15 degree intervals
     slope = 0.0u"°", # slope (degrees, range 0-90)
     aspect = 0.0u"°", # aspect (degrees, 0 = North, range 0-360)
+    # boundary layer parameters
     roughness_height = 0.004u"m", # heat transfer roughness height
     zh = 0u"m", #  heat transfer roughness height
     d0 = 0u"m", # zero plane displacement correction factor
@@ -130,6 +131,8 @@ function runmicro(;
     soil_mineral_density = 2.560u"Mg/m^3", # soil minerals density
     soil_mineral_heat_capacity = 870.0u"J/kg/K", # soil minerals specific heat
     soil_bulk_density = 2.56u"Mg/m^3", # dry soil bulk density
+    recirculation_power = 4.0, # power for recirculation function
+    return_flow_threshold = 0.162, # return-flow cutoff soil moisture, m^3/m^3
     # soil moisture model soil parameters
     air_entry_water_potential = fill(0.7, length(depths) * 2 - 2)u"J/kg", #air entry potential
     saturated_hydraulic_conductivity = fill(0.0058, length(depths) * 2 - 2)u"kg*s/m^3", #saturated conductivity
@@ -206,6 +209,8 @@ function runmicro(;
         λ_mineral = fill(soil_mineral_conductivity, numnodes_a),
         cp_mineral = fill(soil_mineral_heat_capacity, numnodes_a),
         ρ_mineral = fill(soil_mineral_density, numnodes_a),
+        q = fill(recirculation_power, numnodes_a),
+        θ_0 = fill(return_flow_threshold, numnodes_a),
     )
     ∑phase = zeros(Float64, numnodes_a)u"J" # zero phase transition for liquid water in soil
 
