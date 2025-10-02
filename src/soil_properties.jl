@@ -1,3 +1,14 @@
+function allocate_soil_properties(nodes, soilprops)
+    (; ρ_dry, λ_mineral, cp_mineral, ρ_mineral) = soilprops
+    NON = length(nodes)
+
+    λ_b = fill(λ_mineral[1], NON)
+    cp_b = fill(cp_mineral[1], NON)
+    ρ_b = fill(ρ_mineral[1], NON)
+
+    return (; λ_b, cp_b, ρ_b)
+end
+
 """
     soil_props(; T_soil, θ_soil, soilprops, elevation, P_atmos=atmospheric_pressure(elevation))
 
@@ -127,10 +138,10 @@ end
 Compute soil properties for vectors of soil temperature and moisture using broadcasting.
 Returns three arrays: `λ_b`, `cp_b`, `ρ_b`.
 """
-function soil_props_vector(T_soil::AbstractVector, θ_soil::AbstractVector, soilprops::NamedTuple, elevation, P_atmos)
+function soil_props_vector(buffers::NamedTuple; T_soil::AbstractVector, θ_soil::AbstractVector, soilprops::NamedTuple, elevation, P_atmos)
     N = length(T_soil)
     @assert length(θ_soil) == N
-
+    (; λ_b, cp_b, ρ_b) = buffers
     soil_props_i(i) = soil_props(
         T_soil = T_soil[i],
         θ_soil = θ_soil[i],

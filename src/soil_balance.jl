@@ -7,7 +7,7 @@ function soil_energy_balance(
     #T_K = T .* u"K"  # convert Float64 time back to unitful
     #dT_K = dT .* 60 .* u"K/minute"  # convert Float64 time back to unitful
     # extract prameters
-    (; soillayers, params) = i
+    (; soillayers, params, buffers) = i
     (; roughness_height, pctwet, sle, slep, albedo, viewfactor, elevation, P_atmos, 
         slope, shade, heights, depths, reference_height, κ, tdeep, nodes, 
         soilprops, θ_soil, runmoist) = params
@@ -19,7 +19,7 @@ function soil_energy_balance(
     T1 = map(t -> clamp(t, (-81.0+273.15)u"K", (85.0+273.15)u"K"), T)::U
 
     # get soil properties
-    λ_b, cp_b, ρ_b = soil_props_vector(T1, θ_soil, soilprops, elevation, P_atmos)   
+    λ_b, cp_b, ρ_b = soil_props_vector(buffers.soil_properties; T_soil=T1, θ_soil=θ_soil, soilprops, elevation, P_atmos)   
     # Get environmental data at time t
     f = i.forcing
     tair = f.TAIRt(ustrip(u"minute", t))

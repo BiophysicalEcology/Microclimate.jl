@@ -324,8 +324,9 @@ function runmicro(;
     θ_soils[1, :] = θ_soil0_a
     nodes = nodes_day[:, 1]
     M = 18 # soil_water_balance default
+    soil_properties_buffers = allocate_soil_properties(nodes, soilprops)
     phase_transition_buffers = allocate_phase_transition(length(depths))
-    λ_b, c_p_b, ρ_b = soil_props_vector(T0, θ_soil0_a, soilprops, elevation, P_atmos)   
+    λ_b, c_p_b, ρ_b = soil_props_vector(soil_properties_buffers; T_soil=T0, θ_soil=θ_soil0_a, soilprops, elevation, P_atmos)   
     λ_bulk[1, :] = λ_b
     c_p_bulk[1, :] = c_p_b
     ρ_bulk[1, :] = ρ_b
@@ -360,6 +361,7 @@ function runmicro(;
     soil_water_balance_buffers = allocate_soil_water_balance(numnodes_b)  # only once
     buffers = (; 
         profile=profile_buffers, 
+        soil_properties=soil_properties_buffers, 
         soil_water_balance=soil_water_balance_buffers,
     )
     niter_moist = ustrip(3600 / moist_step) # TODO use a solver for soil moisture calc
@@ -477,7 +479,7 @@ function runmicro(;
                     pools[step] = pool
                     pool = clamp(pool, 0.0u"kg/m^2", maxpool)
                     T_skys[step] = Tsky
-                    λ_b, cp_b, ρ_b = soil_props_vector(T0, θ_soil0_a, soilprops, elevation, P_atmos)   
+                    λ_b, cp_b, ρ_b = soil_props_vector(soil_properties_buffers; T_soil=T0, θ_soil=θ_soil0_a, soilprops, elevation, P_atmos)   
                     λ_bulk[step, :] = λ_b
                     c_p_bulk[step, :] = cp_b
                     ρ_bulk[step, :] = ρ_b
@@ -567,7 +569,7 @@ function runmicro(;
                     # TODO: why use every second step what is this
                     sub = vcat(findall(isodd, 1:numnodes_b), numnodes_b)
                     θ_soil0_a = θ_soil0_b[sub]
-                    λ_b, cp_b, ρ_b = soil_props_vector(T0, θ_soil0_a, soilprops, elevation, P_atmos)   
+                    λ_b, cp_b, ρ_b = soil_props_vector(soil_properties_buffers; T_soil=T0, θ_soil=θ_soil0_a, soilprops, elevation, P_atmos)   
                     λ_bulk[step, :] = λ_b
                     c_p_bulk[step, :] = cp_b
                     ρ_bulk[step, :] = ρ_b
