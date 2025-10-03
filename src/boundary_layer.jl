@@ -2,6 +2,7 @@ const DEFAULT_HEIGHTS = [0.01, 0.05, 0.1, 0.2, 0.3, 0.4, 0.5, 0.75, 1.0, 1.2] .*
 
 function allocate_profile(heights)
     N_heights = length(heights)
+    # TODO why cm/minute here and m/s in the output?
     wind_speeds = similar(heights, typeof(0.0u"cm/minute")) # output wind speeds
     height_array = similar(heights, typeof(0.0u"cm"))
     height_array[end:-1:begin] .= heights 
@@ -23,6 +24,7 @@ with surface roughness parameters. Zenith angle and a maximum allowed surface te
 to assess whether conditions are stable or unstable.
 
 # Keyword Arguments
+
 - `z0::Quantity=0.004u"m"`: roughness length (surface aerodynamic roughness).
 - `zh::Quantity=0.0u"m"`: heat transfer roughness height
 - `d0::Quantity=0.0u"m"`: zero plane displacement correction factor.
@@ -36,6 +38,7 @@ to assess whether conditions are stable or unstable.
 - `elevation::Quantity=0.0u"m"`: Elevation above sea level.
 
 # Returns
+
 Named tuple with fields:
 - `wind_speeds`: Wind speed profile at each height (`cm/min` internally, returned in SI units).
 - `air_temperatures`: Air temperature profile at each height (`K`).
@@ -44,6 +47,7 @@ Named tuple with fields:
 - `ustar`: Friction velocity (`m/s`).
 
 # Notes
+
 - Stability corrections use the **Businger–Dyer** formulations for unstable conditions.
 - The Monin–Obukhov length is estimated iteratively through `calc_Obukhov_length`.
 - Two broad options for aerodynamic roughness calculations are available: Campbell & Norman's (1998) approach
@@ -54,12 +58,13 @@ that handles canopy displacement, invoked if `zh > 0` and otherwise
 | --------------------------- | ------------------------------ | -------------------------------------------- |
 | `zh > 0` + neutral/hot      | log-law                        | log between `z` and `zh`                     |
 | `zh > 0` + unstable/stable  | log-law with `calc_ψ_m` correction | log with displacement/`zh`                   |
-| `zh == 0` + neutral/hot     | log-law                        | weighted by bulk/sublayer Stanton numbers    |
+| `zh == 0` + neutral/hot     | log-law        j               | weighted by bulk/sublayer Stanton numbers    |
 | `zh == 0` + unstable/stable | log-law with `calc_ψ_m` correction | full Monin–Obukhov profile via `calc_Obukhov_length` |
 
 - Relative humidity profiles are estimated from vapor pressure at each height.
 
 # References
+
 - Businger, J. A., Wyngaard, J. C., Izumi, Y., & Bradley, E. F. (1971).
   Flux–profile relationships in the atmospheric surface layer.
   *Journal of the Atmospheric Sciences*, 28(2), 181–189.
@@ -69,7 +74,6 @@ that handles canopy displacement, invoked if `zh > 0` and otherwise
   biophysical modeling. *Ecography*, 43, 1–14.
 
 # Example
-
 
 ```julia
 profile = get_profile(
@@ -94,10 +98,12 @@ function get_profile!(buffers;
     (; reference_temperature, reference_wind_speed, relative_humidity, surface_temperature, zenith_angle) = environment_instant
     (; elevation, roughness_height, zh, d0, κ, P_atmos) = terrain
     (; heights, height_array, air_temperatures, wind_speeds, humidities) = buffers
-    N_heights = length(heights)
+
     if minimum(heights) < roughness_height
         throw(ArgumentError("The minimum height is not greater than the roughness height."))
     end
+
+    N_heights = length(heights)
     reference_height = last(heights)
 
     T_ref_height = u"K"(reference_temperature)

@@ -45,7 +45,7 @@ Simulates soil and microclimate dynamics over multiple days.
 
 # Return Values
 Returns a named tuple containing:
-- Air/wind/RH profiles
+-jkkkkkkk Air/wind/RH profiles
 - Cloud cover and solar radiation
 - Soil temperature, moisture, water potential, RH
 - Soil thermal properties and bulk density
@@ -109,11 +109,10 @@ end
 # TODO 7. Add an general function for computing cloud cover from solar radiation data (I have code for this in
 # the different micro_ functions in NicheMapR - computes clear sky solar with SOLRAD and then compares the ratio
 # of this with observed solar, e.g. daily integrated values as in AGCD/AWAP or hourly values as in ERA5)
-# TODO 8. Need to build in things currently done by Ilya's microclima package, e.g. downscaling NCEP/ERA5, 
+# TODO 8. NeeLd to build in things currently done by Ilya's microclima package, e.g. downscaling NCEP/ERA5, 
 # computing diffuse and direct radiation
 # TODO 9. Make it work on GPUs for rapid computation of grids, with intelligent initialisation based on near
 # neighbours.
-
 abstract type AbstractSolarRadiation end
 
 """
@@ -322,83 +321,99 @@ function default_daily_environmental(;
 end
 
 function solve(mp::MicroProblem)
+    (; days, hours, depths) = mp
+    ndays = length(days)
+    nsteps = ndays * (length(hours) - 1)
+    numnodes_a = length(depths) # number of soil nodes for temperature calcs and final output
+
     # Solar
-    (; solrad_out, global_solar, diffuse_solar, direct_solar) = solve_solar(mp)
-    # TODO its weird to define output in solve_soil, refactor this
-    output = solve_soil(mp, solrad_out)
+    solrad_out = solve_solar(mp)
+    # Define the output
+    output = MicroResult(nsteps, numodes_a)
+    # Interpolate minmax weather
+    interpolate_minmax!(output, mp, solrad_out)
+    # Adjust solrad given cloud cover
+    adjust_for_cloud_cover!(output, days)
+    # Solve soil temperature and moisture
+    solve_soil!(output, mp, solrad_out)
+    # Solve air temperatures, windspeed and humidity
     solve_air!(output, mp) 
-    # TODO remove these transformations, what is the reason to have them?
+
+    # TODO what is all this wrangling for
     # flip2vectors(x) = (; (k => getfield.(x, k) for k in keys(x[1]))...)
     # profiles = flip2vectors(profile_out); # pull out each output as a vector
-    # air_temperature = reduce(hcat, profiles.air_temperatures)'
-    # wind_speed = reduce(hcat, profiles.wind_speeds)'
-    # relative_humidity = reduce(hcat, profiles.humidities)'
+    # output.air_temperature .= reduce(hcat, profiles.air_temperatures)'
+    # output.wind_speed .= reduce(hcat, profiles.wind_speeds)'
+    # output.relative_humidity .= reduce(hcat, profiles.humidities)'
 
-    # TODO make sure all of these are in output
-    # return MicroResult(;
-    #     air_temperatures,
-    #     wind_speeds,
-    #     relative_humidity,
-    #     # TODO just use the same names in the code above 
-    #     # all these name conversions are unnecesary
-    #     cloud_cover = cloud_covers,
-    #     global_solar,
-    #     direct_solar,
-    #     diffuse_solar,
-    #     zenith_angles,
-    #     sky_temperature = T_skys,
-    #     soil_temperature = reduce(vcat, transpose.(T_soils)),
-    #     soil_moisture = θ_soils,
-    #     soil_water_potential = ψ_soils,
-    #     soil_humidity = rh_soils,
-    #     soil_thermal_conductivity = λ_bulk,
-    #     soil_specific_heat = c_p_bulk,
-    #     soil_bulk_density = ρ_bulk,
-    #     surface_water = pools,
-    #     solrad=solrad_out,
-    #     profile=profile_out,
-    # )
     return output
 end
 
-function solve_solar(mp)
+function solve_solar(mp::MicroProblem)
     (; solar_model, days, hours, latitude, terrain, albedos) = mp
     # compute clear sky solar radiation
     solrad_out = solrad(solar_model; days, hours, latitude, terrain, albedos)
-    # TODO this all feels hacky, should be a function 
     # limit max zenith angles to 90°
+    # TODO: why doesn't this just happen in solrad?
     solrad_out.zenith_angle[solrad_out.zenith_angle.>90u"°"] .= 90u"°"
     solrad_out.zenith_slope_angle[solrad_out.zenith_slope_angle.>90u"°"] .= 90u"°"
-    # vector for removing extra interpolated hour
-    skip25 = setdiff(1:length(solrad_out.zenith_angle), 25:25:length(solrad_out.zenith_angle))
 
-    # if any(not_present)
-    #     # interpolate daily min/max forcing variables to hourly
-    #     TAIRs25, VELs25, RHs25, CLDs25 = hourly_vars(environment_minmax, solrad_out, daily)
-    #     RHs25[RHs25.>100] .= 100
-    #     CLDs25[CLDs25.>100] .= 100
-    #     output.air_temperatures = TAIRs25[skip25] # remove every 25th output
-    #     output.wind_speeds = VELs25[skip25] # remove every 25th output
-    #     output.humidities .= RHs25[skip25] # remove every 25th output
-    #     output.cloud_covers .= CLDs25[skip25] # remove every 25th output
-    # end
-    zenith_angles = solrad_out.zenith_angle[skip25] # remove every 25th output
+    return solrad_out
+end
+
+# TODO: this function is pretty weird
+# Why do we get 25 hour days from hourly_vars and then 
+# throw them away to just use the 24 hour days?
+function interpolate_minmax!(output, weather, mp, solrad_out)
+    (; environment_minmax, daily) = mp
+    skip25 = setdiff(1:length(solrad_out.zenith_angle), 25:25:length(solrad_out.zenith_angle))
+    # interpolate daily min/max forcing variables to hourly
+    TAIRs25, VELs25, RHs25, CLDs25 = hourly_vars(environment_minmax, solrad_out, daily)
+    # TODO just use loops for these this allocates
+    RHs25[RHs25 .> 100] .= 100
+    CLDs25[CLDs25 .> 100] .= 100
+
+    weather.air_temperature .= TAIRs25[skip25] # remove every 25th output
+    weather.wind_speed .= VELs25[skip25] # remove every 25th output
+    weather.relative_humidity .= RHs25[skip25] # remove every 25th output
+    output.cloud_cover .= CLDs25[skip25] # remove every 25th output
+
+    return output
+end
+
+function adjust_for_cloud_cover!(output, days)
+    # vector for removing extra interpolated hour TODO: this feels like a hack, there must be a better way
+    skip25 = setdiff(1:length(solrad_out.zenith_angle), 25:25:length(solrad_out.zenith_angle))
+    zenith_angle = solrad_out.zenith_angle[skip25] # remove every 25th output
     zenith_slope_angle = solrad_out.zenith_slope_angle[skip25] # remove every 25th output
     # adjust for cloud using Angstrom formula (formula 5.33 on P. 177 of "Climate Data and Resources" by Edward Linacre 1992
-    day_of_year  = repeat(days, inner=length(hours))[skip25]
+    day_of_year = repeat(days, inner=length(hours))[skip25]
     direct_total = solrad_out.direct_total[skip25] # remove every 25th output
     diffuse_total = solrad_out.diffuse_total[skip25] # remove every 25th output
-    (; global_solar, diffuse_solar, direct_solar) = cloud_adjust_radiation(cloud_covers / 100.0, diffuse_total, direct_total, zenith_angles, day_of_year)
+    cloud_adjust_radiation!(output, cloud_cover ./ 100.0, diffuse_total, direct_total, zenith_angle, day_of_year)
+
+    return output
 end
 
 # Solves soil temperature and moisture
-function solve_soil(mp, solrad_out)
-    # Soil properties
-    # set up a profile of soil properites with depth for each day to be run
+function solve_soil!(output::MicroResult, mp::MicroProblem, solrad_out)
+    (; environment_minmax, daily, initial_soil_temperature, initial_soil_moisture) = mp
+
     ndays = length(days)
     nsteps = ndays * (length(hours) - 1)
     numnodes_a = length(depths) # number of soil nodes for temperature calcs and final output
     numnodes_b = numnodes_a * 2 - 2 # number of soil nodes for soil moisture calcs
+
+    # initial conditions
+    if !daily && !isnothing(initial_soil_temperature)
+        # TODO: why is this the mean over 25 hours not 24
+        t = mean(u"K", view(TAIRs25, 1:25))
+        initial_soil_temperature = SVector(ntuple(_ -> t, numnodes_a))
+    end
+    T0 = SVector{N}(initial_soil_temperature)
+
+    # Soil properties
+    # set up a profile of soil properites with depth for each day to be run
     nodes_day = zeros(numnodes_a, ndays) # array of all possible soil nodes
     nodes_day[1, 1:ndays] .= numnodes_a # deepest node for first substrate type
     # These could also be vectors if we let users specify them
@@ -423,12 +438,6 @@ function solve_soil(mp, solrad_out)
     #     end
     #     L2 = spline_to_depths(expanded_depths, root_density, expanded_depths)
     # end
-
-    # initial conditions
-    if !daily && !isnothing(initial_soil_temperature)
-        t = mean(u"K", view(TAIRs25, 1:25))
-        initial_soil_temperature = SVector(ntuple(_ -> t, numnodes_a))
-    end
     soillayers = init_soillayers(numnodes_b)  # only once
     θ_soil0_a = collect(fill(initial_soil_moisture[1], numnodes_a)) # initial soil moisture
     θ_soil0_b = similar(θ_soil0_a, numnodes_b)  # preallocate vector of length numnodes_b
@@ -441,46 +450,26 @@ function solve_soil(mp, solrad_out)
             θ_soil0_b[ii] = θ_soil0_b[ii-1]
         end
     end
-    # initialise outputs
-    T0 = SVector{N}(initial_soil_temperature)
 
-    # output arrays
-    output = MicroResult(T0, nsteps, numodes_a)
-
-    T_soils[1] = T0
-    θ_soils[1, :] = θ_soil0_a
     nodes = nodes_day[:, 1]
     M = 18 # soil_water_balance default
     soil_properties_buffers = allocate_soil_properties(nodes, soil_thermal_model)
     phase_transition_buffers = allocate_phase_transition(length(depths))
-    soilprops_out = (; λ_bulk, c_p_bulk, ρ_bulk)
-    update_soil_props!(soilprops_out, soil_properties_buffers; T_soil=T0, θ_soil=θ_soil0_a, soilprops, terrain, step=1)   
+    update_soil_props!(output, soil_properties_buffers; T_soil=T0, θ_soil=θ_soil0_a, soilprops, terrain, step=1)   
     sub = vcat(findall(isodd, 1:numnodes_b), numnodes_b)
 
     soil_saturation_moisture = 1.0 .- soil_bulk_density2 ./ soil_mineral_density2
-    ψ_soils[1, :] = air_entry_water_potential[sub] .* (soil_saturation_moisture[sub] ./ θ_soil0_a) .^ Campbells_b_parameter[sub]
-    MW = 0.01801528u"kg/mol" # molar mass of water, kg/mol # TODO use UnitfulMoles
+    output.soil_water_potential[1, :] .= air_entry_water_potential[sub] .* (soil_saturation_moisture[sub] ./ θ_soil0_a) .^ Campbells_b_parameter[sub]
+    output.soil_temperature[1, :] .= T0
+    output.soil_moisture[1, :] = θ_soil0_a
 
     if runmoist
-        rh_soils[1, :] = clamp.(exp.(MW .* ψ_soils[1, :] ./ (R .* T0)), 0, 1)
+        MW = 0.01801528u"kg/mol" # molar mass of water, kg/mol # TODO use UnitfulMoles
+        output.soil_humidity[1, :] = clamp.(exp.(MW .* output.soils_water_potential[1, :] ./ (R .* T0)), 0, 1)
     end
     
-    # TODO: standardise all these names
-    environment_instant = (; 
-        lai = daily.leaf_area_index[1],
-        albedo = daily.albedos[1],
-        shade = daily.shades[1], # daily shade (%)
-        sle = daily.sles[1], # set up vector of ground emissivities for each day
-        slep = daily.sles[1], # - cloud emissivity
-        pctwet = daily.pctwets[1], # set up vector of soil wetness for each day
-        tdeep = u"K"(daily.deep_soil_temperatures[1]), # daily deep soil temperature (°C)
-        rainfall = daily.rainfall[1],
-        air_temperature = output.air_temperatures[1],
-        wind_speed = output.wind_speeds[1],
-        humidity = output.humidities[1],
-        zenith_angle = zenith_angles[1],
-        θ_soil=θ_soil0_a,
-    )
+    environment_day = get_day(environment_daily, 1)
+    environment_instant = get_instant(environment_day, output, θ_soilθ_a, 1)
     longwave_out = get_longwave(; terrain, tsurf=T0[1], environment_instant)
 
     # simulate all days
@@ -496,24 +485,15 @@ function solve_soil(mp, solrad_out)
     ∑phase = zeros(Float64, numnodes_a)u"J"
     infil_out = nothing
     # TODO make an object for this
-    forcing_timeseries = (; solar_radiation, zenith_angles, zenith_slope_angle, air_temperatures, wind_speeds, humidities, cloud_covers)
+    # forcing_timeseries = (; solar_radiation, zenith_angles, zenith_slope_angle, air_temperature, wind_speeds, humidities, cloud_cover)
     for j in 1:ndays
         iday = j
         nodes .= nodes_day[:, iday]
-
-        environment_day = (;
-            lai = daily.leaf_area_index[iday],
-            albedo = daily.albedos[iday],
-            shade = daily.shades[iday], # daily shade (%)
-            sle = daily.sles[iday], # set up vector of ground emissivities for each day
-            slep = daily.sles[iday], # - cloud emissivity
-            pctwet = daily.pctwets[iday], # set up vector of soil wetness for each day
-            tdeep = u"K"(daily.deep_soil_temperatures[iday]), # daily deep soil temperature (°C)
-            rainfall = daily.rainfall[iday],
-        )
-        forcing = forcing_day(forcing_timeseries, iday)
+        environment_day = get_day(environment_daily, iday)
+        forcing = forcing_day(output, iday)
 
         # Parameters
+        # Only θ_soil and envoronment_instant actually change here?
         params = MicroParams(;
             depths, heights, nodes, terrain, soilprops, runmoist, environment_instant, θ_soil=θ_soil0_a, 
         )
@@ -525,8 +505,8 @@ function solve_soil(mp, solrad_out)
         else
             niter = 1
         end
-        if daily == false
-            ∑phase = zeros(Float64, numnodes_a)u"J"
+        if !daily
+            ∑phase .= 0.0u"J"
             sub2 = (iday*25-25+1):(iday*25) # for getting mean monthly over the 25 hrs as in fortran version
             t = u"K"(mean(ustrip(TAIRs25[sub2]))u"°C") # make initial soil temps equal to mean annual temperature
             T0 = SVector(ntuple(_ -> t, numnodes_a))
@@ -549,13 +529,7 @@ function solve_soil(mp, solrad_out)
                     end
                     pool = clamp(pool, 0.0u"kg/m^2", maxpool)
                 else
-                    environment_instant = (; environment_day...,
-                        air_temperature = output.air_temperatures[step],
-                        wind_speed = output.wind_speeds[step],
-                        humidity = output.humidities[step],
-                        zenith_angle = zenith_angles[step],
-                        θ_soil=θ_soil0_a,
-                    )
+                    environment_instant = get_instant(environment_day, output, θ_soilθ_a, step)
                     # Parameters
                     params = MicroParams(; depths, heights, soilprops, terrain, runmoist, nodes, environment_instant)
                     input = MicroInputs(params, forcing, soillayers, buffers)
@@ -576,29 +550,31 @@ function solve_soil(mp, solrad_out)
                     θ_soil0_a = θ_soil0_b[sub]
                     longwave_out = get_longwave(; terrain, tsurf=T0[1], environment_instant)
                 end
+                # Write to output
                 if i < length(hours)
-                    output.pools[step] = pool
-                    output.T_soils[step] = T0
-                    output.T_skys[step] = longwave_out.Tsky
+                    output.surface_water[step] = pool
+                    output.soil_temperature[step, :] .= T0
+                    output.sky_temperature[step] = longwave_out.Tsky
                 end
                 update_soil_props!(output, soil_properties_buffers; T_soil=T0, θ_soil=θ_soil0_a, soilprops, terrain, step)   
             end
         end
     end
+
     return output
 end
 
 # compute air temperature, wind speed and relative humidity profiles
-function solve_air!(output::MicroResult, mp::MicroProblem)
+function solve_air!(output::MicroResult, weather, mp::MicroProblem)
     (; heights, terrain) = mp
     profile_buffers = allocate_profile(heights)
-    for i in 1:length(air_temperatures)
+    for i in 1:length(output.air_temperature)
         # TODO standardise these names
         environment_instant = (; 
-            reference_temperature=output.air_temperatures[i],
-            reference_wind_speed=output.wind_speeds[i],
-            relative_humidity=output.humidities[i],
-            surface_temperature=u"°C"(output.T_soils[i][1]),  # top layer temp
+            reference_temperature=weather.air_temperatur[i],
+            reference_wind_speed=weather.wind_speed[i],
+            relative_humidity=weather.relative_humidity[i],
+            surface_temperature=u"°C"(output.soil_temperature[i, 1]),  # top layer temp
             zenith_angle=output.zenith_angles[i],
         )
         # compute scalar profiles
@@ -614,37 +590,39 @@ function get_soil_temp_timeline(soil_energy_balance, T0, input, i)
 end
 
 function update_soil_props!(output, soil_properties_buffers; step, kw...)   
-    (; λ_bulk, c_p_bulk, ρ_bulk) = output  
     (; λ_b, cp_b, ρ_b) = soil_props_vector!(buffers.soil_properties; kw...)
-    λ_bulk[step, :] .= λ_b
-    c_p_bulk[step, :] .= cp_b
-    ρ_bulk[step, :] .= ρ_b
+
+    output.soil_thermal_conductivity[step, :] .= λ_b
+    output.soil_specific_heat[step, :] .= cp_b
+    output.soil_bulk_density[step, :] .= ρ_b
+
     return output
 end
 
 function update_soil_water!(output, infil_out, sub)
-    θ_soils[step, :] = infil_out.θ_soil[sub]
-    ψ_soils[step, :] = infil_out.ψ_soil[sub]
-    rh_soils[step, :] = infil_out.rh_soil[sub]
+    output.soil_moisture[step, :] .= infil_out.θ_soil[sub]
+    output.soil_water_potential[step, :] .= infil_out.ψ_soil[sub]
+    output.soil_humidity[step, :] .= infil_out.rh_soil[sub]
+
     return output
 end
 
 # TODO eventually make environment a type, 
 # and this can just be `getindex` on that type.
 function forcing_day(environment, iday::Int)
-    (; solar_radiation, zenith_angles, zenith_slope_angle, air_temperatures, wind_speeds, humidities, cloud_covers) = environment
+    (; solar_radiation, zenith_angle, zenith_slope_angle, air_temperature, wind_speed, relative_humidity, cloud_cover) = environment
 
     sub1 = (iday*24-24+1):(iday*24)
     tspan = 0.0:60:(60*24)
 
     # get today's weather
     SOLR = solar_radiation[sub1]
-    ZENR = zenith_angles[sub1]
+    ZENR = zenith_angle[sub1]
     ZSL = zenith_slope_angle[sub1]
-    TAIR = air_temperatures[sub1]
-    VEL = wind_speeds[sub1]
-    RH = humidities[sub1]
-    CLD = cloud_covers[sub1]
+    TAIR = air_temperature[sub1]
+    VEL = wind_speed[sub1]
+    RH = relative_huidity[sub1]
+    CLD = cloud_cover[sub1]
 
     interpSOLR = interpolate([SOLR; SOLR[end]], BSpline(Linear()))
     interpZENR = interpolate([ZENR; ZENR[end]], BSpline(Linear()))
@@ -665,6 +643,30 @@ function forcing_day(environment, iday::Int)
     return MicroForcing(; SOLRt, ZENRt, ZSLt, TAIRt, VELt, RHt, CLDt)
 end
 
+# TODO these functions are a bit silly
+function get_day(environment_daily, iday)
+    # TODO: standardise all these names
+    environment_day = (;
+        lai = environment_daily.leaf_area_index[iday],
+        albedo = environment_daily.albedos[iday],
+        shade = environment_daily.shades[iday], # daily shade (%)
+        sle = environment_daily.sles[iday], # set up vector of ground emissivities for each day
+        slep = environment_daily.sles[iday], # - cloud emissivity
+        pctwet = environment_daily.pctwets[iday], # set up vector of soil wetness for each day
+        tdeep = u"K"(environment_daily.deep_soil_temperatures[iday]), # daily deep soil temperature (°C)
+        rainfall = environment_daily.rainfall[iday],
+    )
+end
+function get_instant(environment_day, output, weather, θ_soilθ_a, 1)
+    return (; 
+        environment_day...,
+        air_temperature = weather.air_temperature[1],
+        wind_speed = weather.wind_speed[1],
+        humidity = weather.relative_humidity[1],
+        zenith_angle = output.zenith_angle[1],
+        θ_soil=θ_soil0_a,
+    )
+end
 
 # This handles getting values from a Number or array of numbers, or objects of these
 maybegetindex(obj::SoilThermalParams, i::Int) = SoilThermalParams(; maybegetindex(ConstructionBase.getproperties(obj), i)...)

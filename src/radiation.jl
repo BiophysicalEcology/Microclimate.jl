@@ -1613,7 +1613,8 @@ Maxwell, E. L., "A Quasi-Physical Model for Converting Hourly
            Report No. SERI/TR-215-3087, Golden, CO: Solar Energy Research
            Institute, 1987.
 """
-function cloud_adjust_radiation(cloud, D_cs, B_cs, zenith, doy; a=0.36, b=0.64, gamma=1.0)
+function cloud_adjust_radiation!(output, cloud, D_cs, B_cs, zenith, doy; a=0.36, b=0.64, gamma=1.0)
+    G, D, B = output[(:global_solar, :diffuse_solar, :direct_solar)]
     # Solar geometry
     cosz     = cos.(zenith)
     cosz_pos = max.(cosz, 0.0)
@@ -1630,7 +1631,7 @@ function cloud_adjust_radiation(cloud, D_cs, B_cs, zenith, doy; a=0.36, b=0.64, 
     S     = (1 .- cloud).^gamma                 # approx. sunshine fraction
     T     = a .+ b .* S                         # transmittance
     G_cs  = D_cs .+ B_cs                        # clear-sky global
-    G     = max.(T .* G_cs, 0.0u"W/m^2") #.* (cosz_pos .> 0)  # zero at night
+    G     .= max.(T .* G_cs, 0.0u"W/m^2") #.* (cosz_pos .> 0)  # zero at night
 
     # 3) Split G into diffuse/direct using Erbs diffuse fraction vs clearness index K_t
     ϵ     = 1e-9u"W/m^2"
@@ -1647,10 +1648,11 @@ function cloud_adjust_radiation(cloud, D_cs, B_cs, zenith, doy; a=0.36, b=0.64, 
             Fd[i] = 0.165
         end
     end
+    # TODO this allocates
     Fd = clamp.(Fd, 0.0, 1.0)
 
-    D = Fd .* G
-    B = G .- D
+    D .= Fd .* G
+    B .= G .- D
 
     # Zero everything at night
     # night = (cosz_pos .== 0)
@@ -1658,7 +1660,7 @@ function cloud_adjust_radiation(cloud, D_cs, B_cs, zenith, doy; a=0.36, b=0.64, 
     # B[night] .= 0.0u"W/m^2"
     # G[night] .= 0.0u"W/m^2"
 
-    return G, D, B
+    return output
 end
 
 

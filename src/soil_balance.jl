@@ -7,11 +7,11 @@ function soil_energy_balance(
     #T_K = T .* u"K"  # convert Float64 time back to unitful
     #dT_K = dT .* 60 .* u"K/minute"  # convert Float64 time back to unitful
     # extract prameters
-    (; soillayers, params, buffers) = i
+    (; soillayers, params, forcings, buffers) = i
     (; heights, depths, nodes, soilprops, environment_instant, terrain, runmoist) = params
     (; depp, wc, c) = soillayers
     # Get environmental data at time t
-    (; tair, vel, zenr, solr, cloud, rh, zslr) = interpolate_forcings(i.forcing, t)
+    (; tair, vel, zenr, solr, cloud, rh, zslr) = interpolate_forcings(forcings, t)
 
     reference_height = last(heights)
     sabnew = 1.0 - environment_instant.albedo
@@ -20,7 +20,7 @@ function soil_energy_balance(
     T1 = map(t -> clamp(t, (-81.0+273.15)u"K", (85.0+273.15)u"K"), T)::U
 
     # get soil properties
-    (; λ_b, cp_b, ρ_b) = soil_props_vector(buffers.soil_properties; T_soil=T1, θ_soil=θ_soil, soilprops, terrain)
+    (; λ_b, cp_b, ρ_b) = soil_props_vector!(buffers.soil_properties; T_soil=T1, θ_soil=θ_soil, soilprops, terrain)
     # TODO Why do we reset the last value
     T1m = MVector(T1)
     T1m[N] = tdeep # boundary condition
@@ -198,21 +198,6 @@ function allocate_soil_water_balance(M)
     )  
 end
 
-# TODO rename these
-# PE = air_entry_water_potential,
-# KS = saturated_hydraulic_conductivity,
-# BB = Campbells_b_parameter,
-# BD = soil_bulk_density2,
-# DD = soil_mineral_density2,
-# depth = depths,
-# L = root_density,
-# rw = root_resistance,
-# pc = stomatal_closure_potential,
-# rl = leaf_resistance,
-# sp = stomatal_stability_parameter,
-# r1 = root_radius,
-# lai,
-# im = moist_error,
 function soil_water_balance!(ml;
     depth = [0.0, 0.025, 0.05, 0.1, 0.15, 0.2, 0.3, 0.5, 1.0, 2.0]u"m",
     terrain,
@@ -443,7 +428,7 @@ function soil_water_balance!(ml;
         trans = TR,
         θ_soil,
         ψ_leaf = PL,
-        # These need the first value remove. Why?
+        # These need the first value removed. Why?
         ψ_soil = (ml.P_out .= view(P, 2:(M+1))),
         ψ_root = (ml.PR_out .= view(PR, 2:(M+1))),
         rh_soil = (ml.H_out .= view(H, 2:(M+1))),
@@ -453,7 +438,8 @@ function soil_water_balance!(ml;
 end
 
 
-get_soil_water_balance(; M=18, kw...) = get_soil_water_balance!(allocate_soil_water_balance(M); kw...)
+get_soil_water_balance(; M=18, kw...) = 
+    get_soil_water_balance!(allocate_soil_water_balance(M); kw...)
 
 function get_soil_water_balance!(buffers, soil_moisture_model::SoilMoistureModel;
     heights,
