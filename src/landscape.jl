@@ -151,5 +151,16 @@ abstract type AbstractEnvironment end
     solrad::SR
     profile::Pr
 end
+function MicroResult(nsteps::Int, numodes_a::Int)
+    T_soils = Array{typeof(1.0u"K")}(undef, nsteps)
+    θ_soils = Array{Float64}(undef, nsteps, numnodes_a)
+    ψ_soils = Array{typeof(1.0u"J/kg")}(undef, nsteps, numnodes_a)
+    rh_soils = Array{Float64}(undef, nsteps, numnodes_a)
+    λ_bulk = Array{typeof(1.0u"W/m/K")}(undef, nsteps, numnodes_a)
+    c_p_bulk = Array{typeof(1.0u"J/kg/K")}(undef, nsteps, numnodes_a)
+    ρ_bulk = Array{typeof(1.0u"kg/m^3")}(undef, nsteps, numnodes_a)
+    pools = Array{typeof(1.0u"kg/m^2")}(undef, nsteps)
+    T_skys = Array{typeof(1.0u"K")}(undef, nsteps)
+end
 
 Base.show(io::IO, mr::MicroResult) = print(io, "MicroResult")

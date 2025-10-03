@@ -88,14 +88,10 @@ get_profile(; heights=DEFAULT_HEIGHTS, kw...) =
     get_profile!(allocate_profile(heights); kw...)
 function get_profile!(buffers;
     terrain=default_terrain()
+    environment_instant,
     γ = 16.0, # coefficient from Dyer and Hicks for Φ_m (momentum), TODO make it available as a user param?
-    reference_temperature,
-    reference_wind_speed,
-    relative_humidity,
-    surface_temperature,
-    zenith_angle,
 )
-
+    (; reference_temperature, reference_wind_speed, relative_humidity, surface_temperature, zenith_angle) = environment_instant
     (; elevation, roughness_height, zh, d0, κ, P_atmos) = terrain
     (; heights, height_array, air_temperatures, wind_speeds, humidities) = buffers
     N_heights = length(heights)
