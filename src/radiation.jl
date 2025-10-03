@@ -1234,38 +1234,17 @@ Dave, J. V., & Furukawa, P. M. (1966). Scattered radiation in the ozone
  Americal Meteorological Society.
 
 """
-function solrad(;
+function solrad(solar_model::SolarRadiation;
     days::Vector{<:Real}=[15, 46, 74, 105, 135, 166, 196, 227, 258, 288, 319, 349],
     hours::Vector{<:Real}=collect(0.0:24.0),
     year::Real=2001.0, # needed to determine if a leap year
     latitude::Quantity=43.1379u"°",
     lonc::Real=0.0, # longitude correction, hours
-    elevation::Quantity=276.0u"m", # elevation, m
-    P_atmos=atmospheric_pressure(elevation),
-    slope::Quantity=0u"°",
-    aspect::Quantity=0u"°",
-    horizon_angles::Vector{typeof(0.0u"°")}=fill(0.0, 24) .* u"°",
+    terrain,
     albedos::Vector{<:Real}=fill(0.15, length(days)), # substrate albedo (decimal %)
-    cmH2O::Real=1, # precipitable cm H2O in air column, 0.1 = VERY DRY; 1 = MOIST AIR CONDITIONS; 2 = HUMID, TROPICAL CONDITIONS (note this is for the whole atmospheric profile, not just near the ground)
-    ϵ::Real=0.0167238,
-    ω::Real=2π / 365,
-    se::Real=0.39784993, #0.39779,
-    d0::Real=80.0,
-    iuv::Bool=false, # Use gamma function for scattered solar radiation? (computationally intensive)
-    scattered::Bool=true,
-    amr::Quantity=25.0u"km",
-    nmax::Integer=111, # maximum number of wavelengths
-    Iλ::AbstractVector = DEFAULT_Iλ,
-    OZ::Matrix{<:Real} = DEFAULT_OZ,
-    τR::Vector{<:Real} = DEFAULT_τR,
-    τO::Vector{<:Real} = DEFAULT_τO,
-    τA::Vector{<:Real} = DEFAULT_τA,
-    τW::Vector{<:Real} = DEFAULT_τW,
-    Sλ::AbstractVector = DEFAULT_Sλ, 
-    FD::Matrix{<:Real} = DEFAULT_FD,
-    FDQ::Matrix{<:Real} = DEFAULT_FDQ,
-    s̄::Vector{<:Real} = DEFAULT_s̄
 )
+    (; d0, cmH2O, ϵ, ω, se, iuv, scattered, amr, nmax, Iλ, OZ, τR, τO, τA, τW, Sλ, FD, FDQ, s̄) = solar_model
+
     ndays = length(days)    # number of days
     ntimes = length(hours)  # number of times
     nsteps = ndays * ntimes # total time steps
@@ -1293,6 +1272,7 @@ function solrad(;
     step = 1
     HH = 0.0 # initialise sunrise hour angle
     tsn = 12.0 # initialise time of solar noon
+
     @inbounds for i in 1:ndays
         # arrays to hold radiation for a given hour between 300 and 320 nm in 2 nm steps
         GRINT = fill(0.0u"mW/cm^2", nmax)   # integrated global radiation component (direct + scattered)
@@ -1574,8 +1554,7 @@ function solrad(;
 end
 
 function get_longwave(;
-    elevation::Quantity,
-    P_atmos=atmospheric_pressure(elevation),
+    terrain,
     rh::Real,
     tair::Quantity,
     tsurf::Quantity,
@@ -1586,9 +1565,8 @@ function get_longwave(;
     shade::Real,
     swinbank::Bool=false
 )
+    (; elevation, P_atmos) = terrain
     # Longwave radiation (handle both IR modes)
-    # Constants
-    P_atmos = atmospheric_pressure(elevation)
     wet_air_out = wet_air_properties(u"K"(tair); rh, P_atmos)
 
     # Atmospheric radiation

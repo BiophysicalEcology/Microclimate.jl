@@ -19,10 +19,7 @@ function soil_energy_balance(
     T1 = map(t -> clamp(t, (-81.0+273.15)u"K", (85.0+273.15)u"K"), T)::U
 
     # get soil properties
-    (; λ_b, cp_b, ρ_b) = soil_properties!(buffers.soil_properties; 
-        T_soil=T1, θ_soil, nodes, soilprops, elevation, P_atmos, runmoist, runsnow=false
-    )
-
+    λ_b, cp_b, ρ_b = soil_props_vector(buffers.soil_properties; T_soil=T1, θ_soil=θ_soil, soilprops, elevation, P_atmos)   
     # Get environmental data at time t
     f = i.forcing
     tair = f.TAIRt(ustrip(u"minute", t))
@@ -215,30 +212,30 @@ end
 # lai,
 # im = moist_error,
 function soil_water_balance!(ml;
-    PE = fill(1.1u"J/kg", M+1), # Air entry potential (J/kg) (M+1 values descending through soil for specified soil nodes in parameter DEP and points half way between)
-    KS = fill(0.0037u"kg*s/m^3", M+1), # Saturated conductivity, (kg s/m3) (M+1 values descending through soil for specified soil nodes in parameter DEP and points half way between)
-    BB = fill(4.5, M+1), # Campbell's soil 'b' parameter (-) (M+1 values descending through soil for specified soil nodes in parameter DEP and points half way between)
-    BD = fill(1.3u"Mg/m^3", M+1), # Soil bulk density (Mg/m3)  (M+1 values descending through soil for specified soil nodes in parameter DEP and points half way between)
-    DD = fill(2.56u"Mg/m^3", M+1), # Soil density (Mg/m3)  (M+1 values descending through soil for specified soil nodes in parameter DEP and points half way between)
+    depth = [0.0, 0.025, 0.05, 0.1, 0.15, 0.2, 0.3, 0.5, 1.0, 2.0]u"m",
+    terrain,
+    soilmoisture,
     rh_loc = 0.2,
     θ_soil = fill(0.2, M),
     ET = 1.3e-5u"kg/m^2/s",
-    depth = [0.0, 0.025, 0.05, 0.1, 0.15, 0.2, 0.3, 0.5, 1.0, 2.0]u"m",
     T10 = fill(293.15u"K", div(M+2,2)),
-    dt = 360u"s",
-    elevation = 0.0u"m",
-    P_atmos=atmospheric_pressure(elevation),
-    L = SVector((0, 0, 8.2, 8.0, 7.8, 7.4, 7.1, 6.4, 5.8, 4.8, 4.0, 1.8, 0.9, 0.6, 0.8, 0.4 ,0.4, 0, 0)) .* 1e4u"m/m^3", # root density, m m-3
-    rw = 2.5e+10u"m^3/kg/s", # resistance per unit length of root, m3 kg-1 s-1
-    pc = -1500.0u"J/kg", # critical leaf water potential for stomatal closure, J kg-1
-    rl = 2.0e6u"m^4/kg/s", # leaf resistance, m4 kg-1 s-1
-    sp = 10.0, # stability parameter, -
-    r1 = 0.001u"m", # root radius, m
     lai = 0.1,
-    im = 1e-6u"kg/m^2/s", # maximum overall mass balance error allowed, kg m-2 s-1
-    moist_count=500,
-
 )
+    dt = soilmoisture.moist_step
+    PE = soilmoisture.air_entry_water_potential
+    KS = soilmoisture.saturated_hydraulic_conductivity
+    BB = soilmoisture.Campbells_b_parameter
+    BD = soilmoisture.soil_bulk_density2
+    DD = soilmoisture.soil_mineral_density2
+    L = soilmoisture.root_density
+    rw = soilmoisture.root_resistance
+    pc = soilmoisture.stomatal_closure_potential
+    rl = soilmoisture.leaf_resistance
+    sp = soilmoisture.stomatal_stability_parameter
+    r1 = soilmoisture.root_radius
+    im = soilmoisture.moist_error
+    moist_count = soilmoisture.moist_count
+
     # TODO: some of these are actually buffers, and some user data??
     (; P, Z, V, W, WN, K, H, T, rh_soil, ψ_soil, ψ_root, PR, PP, B1, N, N1, WS,
        RR, BZ, JV, DJ, CP, A, B, C, C2, F, F2, DP, RS, E) = ml
@@ -457,21 +454,16 @@ end
 get_soil_water_balance(; M=18, kw...) = get_soil_water_balance!(allocate_soil_water_balance(M); kw...)
 
 function get_soil_water_balance!(buffers;
-    roughness_height,
-    zh,
-    d0,
-    κ,
+    heights,
+    depths,
+    terrain,
     TAIRs,
     VELs,
     RHs,
     ZENRs,
     T0,
-    heights,
-    elevation,
-    P_atmos=atmospheric_pressure(elevation),
     pool,
     θ_soil0_b,
-    depths,
     moist_step,
     niter_moist,
     pctwet,
@@ -481,17 +473,12 @@ function get_soil_water_balance!(buffers;
 )
     # compute scalar profiles
     profile_out = get_profile!(buffers.profile;
-        roughness_height,
-        zh,
-        d0,
-        κ,
+        terrain,
         reference_temperature = TAIRs[step],
         reference_wind_speed = VELs[step],
         relative_humidity = RHs[step],
         surface_temperature = u"°C"(T0[1]),  # top layer temp
         zenith_angle = ZENRs[step],
-        elevation,
-        P_atmos,
     )
 
     # convection
@@ -513,7 +500,8 @@ function get_soil_water_balance!(buffers;
     end
     # run infiltration algorithm
     infil_out = soil_water_balance!(buffers.soil_water_balance;
-        rh_loc, elevation, P_atmos,
+        terrain,
+        rh_loc, 
         θ_soil=θ_soil0_b,
         ET=EP,
         T10=T0,

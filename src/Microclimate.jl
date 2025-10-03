@@ -22,7 +22,7 @@ export get_longwave, init_dchxy_buffers
 
 export get_profile, calc_u_star, calc_convection, calc_ρ_cp
 
-export soil_properties
+export soil_props, soil_props_vector, allocate_soil_properties
 
 export soil_energy_balance, evap, soil_water_balance!, phase_transition
 

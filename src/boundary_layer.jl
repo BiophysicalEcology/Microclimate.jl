@@ -70,6 +70,7 @@ that handles canopy displacement, invoked if `zh > 0` and otherwise
 
 # Example
 
+
 ```julia
 profile = get_profile(
     reference_temperature = 25u"°C",
@@ -86,20 +87,16 @@ profile.wind_speeds       # vertical profile of wind speeds
 get_profile(; heights=DEFAULT_HEIGHTS, kw...) =
     get_profile!(allocate_profile(heights); kw...)
 function get_profile!(buffers;
-    roughness_height=0.004u"m",
-    zh=0.0u"m",
-    d0=0.0u"m",
-    κ=0.4,
+    terrain=default_terrain()
     γ = 16.0, # coefficient from Dyer and Hicks for Φ_m (momentum), TODO make it available as a user param?
     reference_temperature,
     reference_wind_speed,
     relative_humidity,
     surface_temperature,
     zenith_angle,
-    elevation=0.0u"m",
-    P_atmos=atmospheric_pressure(elevation),
 )
 
+    (; elevation, roughness_height, zh, d0, κ, P_atmos) = terrain
     (; heights, height_array, air_temperatures, wind_speeds, humidities) = buffers
     N_heights = length(heights)
     if minimum(heights) < roughness_height
@@ -256,7 +253,6 @@ function calc_u_star(; reference_wind_speed, log_z_ratio, κ=0.4)
     v_ref_height = reference_wind_speed
     return κ * v_ref_height / log_z_ratio
 end
-
 
 """
     calc_wind(z, z0, κ, u_star, b)
@@ -441,17 +437,18 @@ function calc_Obukhov_length(T_ref_height, T_surface, v_ref_height, z0, z, ρcpT
     T_ref_height = u"K"(T_ref_height)
     T_surface = u"K"(T_surface)
     v_ref_height = u"cm/minute"(v_ref_height)
-    # initialise
-    Q_convection = nothing
-    effective_stanton_number = nothing
-    bulk_stanton_number = nothing
-    sublayer_stanton_number = nothing
-    u_star = nothing
-    ψ_h = nothing
+
+    # initialise with zeros
+    Q_convection = 0.0u"cal*cm^-2*minute^-1"
+    bulk_stanton_number = 0.0
+    sublayer_stanton_number = 0.0 
+    ψ_h = 0.0
+    φ_m = 0.0
+    u_star = 0.0u"cm*minute^-1"
+    L_Obukhov_new = 0.0u"cm"
+
     δ = 1.0
     count = 0
-    φ_m = nothing
-    L_Obukhov_new = nothing
 
     while δ > tol && count < max_iter
         count += 1
@@ -466,7 +463,17 @@ function calc_Obukhov_length(T_ref_height, T_surface, v_ref_height, z0, z, ρcpT
         δ = abs((L_Obukhov_new - L_Obukhov) / L_Obukhov)
         L_Obukhov = L_Obukhov_new
     end
+
     T_z0 = (T_ref_height * bulk_stanton_number + T_surface * sublayer_stanton_number) / (bulk_stanton_number + sublayer_stanton_number)
-    return (; L_Obukhov=u"m"(L_Obukhov), sublayer_stanton_number, effective_stanton_number, bulk_stanton_number, u_star, ψ_h, Q_convection, T_z0)
+
+    return (; 
+        L_Obukhov=u"m"(L_Obukhov), 
+        sublayer_stanton_number, 
+        bulk_stanton_number, 
+        u_star, 
+        ψ_h, 
+        Q_convection, 
+        T_z0,
+    )
 end
 

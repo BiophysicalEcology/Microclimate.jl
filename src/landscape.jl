@@ -92,6 +92,7 @@ function init_soillayers(N)
     c = fill(1.0u"W/K/m^2", N)
     return SoilLayers(depp, wc, c)
 end
+
 function init_moistlayers(M)
     MoistLayers(
         P = zeros(M+1) .* u"J/kg",
