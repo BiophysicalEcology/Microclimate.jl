@@ -51,7 +51,7 @@ function soil_energy_balance(
     end
 
     # Solar radiation
-    Q_solar = sabnew * solr * ((100.0 - shade) / 100.0)
+    Q_solar = u"cal/minute/cm^2"(sabnew * solr * ((100.0 - shade) / 100.0))
     if slope > 0 && zenr < 90u"°"
         cz = cosd(zenr)
         czsl = cosd(zslr)
@@ -60,12 +60,12 @@ function soil_energy_balance(
 
     # Longwave radiation
     longwave_out = get_longwave(;
-        elevation, P_atmos, rh, tair, tsurf=T2[1], slep, sle, cloud, viewfactor, shade
+        P_atmos, rh, tair, tsurf=T2[1], slep, sle, cloud, viewfactor, shade
     )
-    Q_infrared = longwave_out.Qrad
+    Q_infrared = u"cal/minute/cm^2"(longwave_out.Qrad)
 
     # Conduction
-    Q_conduction = c[1] * (T2[2] - T2[1])
+    Q_conduction = u"cal/minute/cm^2"(c[1] * (T2[2] - T2[1]))
 
     # Convection
     log_z_ratio = log(reference_height / roughness_height + 1)
@@ -77,7 +77,7 @@ function soil_energy_balance(
     ρ_cp = calc_ρ_cp(T_mean)#, elevation, relative_humidity)
     if T_ref_height ≥ T_surface || zenr ≥ 90°
         u_star = calc_u_star(; reference_wind_speed=vel, log_z_ratio, κ)
-        Q_convection = calc_convection(; u_star, log_z_ratio, ΔT, ρ_cp, z0=roughness_height)
+        Q_convection = u"cal/minute/cm^2"(calc_convection(; u_star, log_z_ratio, ΔT, ρ_cp, z0=roughness_height))
     else
             # compute ρcpTκg (was a constant in original Fortran version)
         #dry_air_out = dry_air_properties(u"K"(reference_temperature), elevation=elevation)
@@ -90,7 +90,7 @@ function soil_energy_balance(
         L_Obukhov = -30.0u"cm" # initialise Obukhov length
         Obukhov_out = calc_Obukhov_length(T_ref_height, T_surface, vel, roughness_height, reference_height, ρcpTκg, κ, log_z_ratio, ΔT, ρ_cp)
         L_Obukhov = Obukhov_out.L_Obukhov
-        Q_convection = Obukhov_out.Q_convection
+        Q_convection = u"cal/minute/cm^2"(Obukhov_out.Q_convection)
     end
     hc = max(abs(Q_convection / (T2[1] - tair)), 0.5u"W/m^2/K")
 
@@ -100,6 +100,7 @@ function soil_energy_balance(
     ρ_air = wet_air_out.ρ_air
     hd = (hc / (c_p_air * ρ_air)) * (0.71 / 0.60)^0.666
     Q_evaporation, gwsurf = evap(; tsurf=u"K"(T[1]), tair=u"K"(tair), rh, rhsurf=100.0, hd, elevation, P_atmos, pctwet, sat=false)
+    Q_evaporation = u"cal/minute/cm^2"(Q_evaporation)
 
     # Construct static vector of change in soil temperature, to return
     # Energy balance at surface
@@ -108,10 +109,16 @@ function soil_energy_balance(
     internal = ntuple(Val{N-2}()) do i
         u"K/minute".((c[i] * (T2[i] - T2[i+1]) + c[i+1] * (T2[i+2] - T2[i+1])) / wc[i+1])
     end
+
     # Lower boundary condition
     lower_boundary = 0.0u"K/minute"  # or set T[N] = T_surface from data
     dT = SVector{N}((surface, internal..., lower_boundary))
-
+    #@show Q_solar
+    #@show Q_infrared
+    #@show longwave_out, T2[1]
+    # @show Q_conduction
+    # @show Q_convection
+    # @show Q_evaporation
     return dT
 end
 
@@ -553,14 +560,18 @@ phase_transition(; depths, kw...) =
 
 function phase_transition!(buffers::NamedTuple; 
     Ts::AbstractVector,       # current temps at nodes
-    T_past::AbstractVector,  # temps at previous step
-    ∑phase::AbstractVector,  # accumulated latent heat
-    θ::AbstractVector,       # soil moisture by layer
-    depths::AbstractVector   # soil depth boundaries (cm)
+    T_past::AbstractVector,   # temps at previous step
+    ∑phase::AbstractVector,   # accumulated latent heat (J/m² column)
+    θ::AbstractVector,        # soil moisture by layer (vol frac)
+    depths::AbstractVector    # soil depth boundaries (cm)
 )
     (; layermass, qphase) = buffers
-    HTOFN = 333500.0u"J/kg" # latent heat of fusion of waterper unit mass
-    c_p = 4186.0u"J/kg/K" # specific heat of water
+
+    HTOFN = 333500.0u"J/kg"     # latent heat of fusion
+    c_p   = 4186.0u"J/kg/K"     # specific heat of water
+    Tf    = 273.15u"K"          # freeze point reference
+    ϵ     = 1e-4u"K"            # tolerance band
+
     nodes = length(depths)
     meanT = similar(Ts)
     meanTpast = similar(Ts)
@@ -569,40 +580,57 @@ function phase_transition!(buffers::NamedTuple;
     for j in 1:nodes
         if θ[j] > 0.0
             if j < nodes
-                meanT[j] = (T[j] + T[j+1]) / 2.0
-                meanTpast[j] = (T_past[j] + T_past[j+1]) / 2.0
+                meanT[j]     = (T[j] + T[j+1]) / 2
+                meanTpast[j] = (T_past[j] + T_past[j+1]) / 2
             else
-                meanT[j] = T[j]
+                meanT[j]     = T[j]
                 meanTpast[j] = T_past[j]
             end
 
-            if meanTpast[j] > 273.15u"K" && meanT[j] <= 273.15u"K"
-                if j < nodes
-                    layermass[j] = u"m"(depths[j+1] - depths[j]) * 1000.0u"kg/m" * θ[j]
-                else
-                    layermass[j] = u"m"(depths[j] + 100.0u"cm" - depths[j]) * 1000.0u"kg/m" * θ[j]
-                end
-
-                qphase[j] = (meanTpast[j] - meanT[j]) * layermass[j] * c_p
-                ∑phase[j] += qphase[j]
-
-                if ∑phase[j] > HTOFN * layermass[j]
-                    # Fully frozen
-                    T[j] = 273.14u"K"
-                    if j < nodes
-                        T[j+1] = 273.14u"K"
-                    end
-                    ∑phase[j] = 0.0u"J"
-                else
-                    # In the process of freezing
-                    T[j] = 273.16u"K"
-                    if j < nodes
-                        T[j+1] = 273.16u"K"
-                    end
-                end
+            # layer water mass (kg/m² column)
+            if j < nodes
+                layermass[j] = u"m"(depths[j+1] - depths[j]) *
+                               1.0u"m^2" * 1000.0u"kg/m^3" * θ[j]
+            else
+                layermass[j] = u"m"(100.0u"cm") *
+                               1.0u"m^2" * 1000.0u"kg/m^3" * θ[j]
             end
+            maxlatent = HTOFN * layermass[j]
+
+            # --- Freezing (cooling across 0 °C) ---
+            if meanTpast[j] > Tf + ϵ && meanT[j] <= Tf - ϵ
+                qphase[j] = (meanTpast[j] - meanT[j]) * layermass[j] * c_p
+                ∑phase[j] = min(∑phase[j] + qphase[j], maxlatent)
+
+                # keep node temps at Tf while phase change occurs
+                T[j] = Tf
+                if j < nodes
+                    T[j+1] = Tf
+                end
+
+            # --- Thawing (warming across 0 °C) ---
+            elseif meanTpast[j] < Tf - ϵ && meanT[j] >= Tf + ϵ
+                qphase[j] = (meanT[j] - meanTpast[j]) * layermass[j] * c_p
+                ∑phase[j] = max(∑phase[j] - qphase[j], 0.0u"J")
+
+                # hold at freeze point until reservoir is exhausted
+                if ∑phase[j] > 0u"J"
+                    T[j] = Tf
+                    if j < nodes
+                        T[j+1] = Tf
+                    end
+                end
+
+            else
+                qphase[j] = 0.0u"J"
+            end
+        else
+            qphase[j] = 0.0u"J"
+            ∑phase[j] = 0.0u"J"
         end
     end
 
     return (; ∑phase, qphase, T=SVector(T))
 end
+
+

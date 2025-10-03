@@ -31,6 +31,7 @@ microinput = (; zip(names, microinput_vec)...)
 days = collect(1:Int(length(soil_temperature_nmr[:, 1]) / 24)) # days of year to run (for solrad)
 depths = ((DataFrame(CSV.File("$testdir/data/init_daily/DEP.csv"))[:, 2]) / 100.0)u"m" # Soil nodes (cm) - keep spacing close near the surface, last value is where it is assumed that the soil temperature is at the annual mean air temperature
 heights = [microinput[:Usrhyt], microinput[:Refhyt]]u"m" # air nodes for temperature, wind speed and humidity profile
+soil_saturation_moisture = (CSV.File("$testdir/data/init_daily/soilprop.csv")[1, 1][3]) * 1.0u"m^3/m^3" # volumetric water content at saturation (0.1 bar matric potential) (m3/m3)
 days2do = 30
 hours2do = days2do * 24
 # now try the simulation function
@@ -98,7 +99,7 @@ keywords = (;
     longwave_radiation=nothing,
     # intial conditions
     initial_soil_temperature = u"K".((DataFrame(CSV.File("$testdir/data/init_daily/soilinit.csv"))[1:length(depths), 2] * 1.0)u"°C"), # initial soil temperature
-    initial_soil_moisture = (Array(DataFrame(CSV.File("$testdir/data/init_daily/moists.csv"))[1, 2:13]) .* 1.0), # initial soil moisture
+    initial_soil_moisture = (Array(DataFrame(CSV.File("$testdir/data/init_daily/moists.csv"))[1, 2:13]) .* 1.0), # * soil_saturation_moisture, # initial soil moisture
     leaf_area_index = (DataFrame(CSV.File("$testdir/data/init_daily/LAI.csv"))[:, 2] * 1.0u"Mg/m^3"), # leaf area indices per day
     iterate_day = (microinput[:ndmax]), # number of iterations per day
     daily = Bool(Int(microinput[:microdaily])), # doing consecutive days?
@@ -116,8 +117,7 @@ keywords = (;
 
 # TODO include 1st node (currently left out, i.e. just columns 2:10, because way off at times)
 @testset "runmicro comparisons" begin
-    soiltemps_mat = reinterpret(reshape, typeof(1.0u"K"), micro_out.soil_temperature)'[:, 2:10]
-    @test all(isapprox.(micro_out.soil_temperature[:, 2:10], u"K".(Matrix(soil_temperature_nmr[1:hours2do, 2:10])); atol=10u"K")) # TODO make better!
-    @test all(isapprox.(micro_out.soil_moisture[:, 2:10], Matrix(soil_moisture_nmr[1:hours2do, 2:10]); atol=0.3)) # TODO make better!
-    @test all(isapprox.(micro_out.soil_thermal_conductivity[:, 2:10], Matrix(soil_conductivity_nmr[1:hours2do, 2:10])u"W * m^-1 * K^-1"; atol=1u"W * m^-1 * K^-1")) # TODO make better!
+    @test all(isapprox.(micro_out.soil_temperature[:, 1:10], u"K".(Matrix(soil_temperature_nmr[1:hours2do, 1:10])); atol=1.0u"K")) # TODO make better!
+    @test all(isapprox.(micro_out.soil_moisture[:, 1:10], Matrix(soil_moisture_nmr[1:hours2do, 1:10]); atol=1e-2))
+    @test all(isapprox.(micro_out.soil_thermal_conductivity[:, 1:10], Matrix(soil_conductivity_nmr[1:hours2do, 1:10])u"W * m^-1 * K^-1"; atol=0.2u"W * m^-1 * K^-1"))
 end 

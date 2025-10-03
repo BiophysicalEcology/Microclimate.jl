@@ -1574,8 +1574,7 @@ function solrad(;
 end
 
 function get_longwave(;
-    elevation::Quantity,
-    P_atmos=atmospheric_pressure(elevation),
+    P_atmos::Quantity,
     rh::Real,
     tair::Quantity,
     tsurf::Quantity,
@@ -1588,20 +1587,19 @@ function get_longwave(;
 )
     # Longwave radiation (handle both IR modes)
     # Constants
-    P_atmos = atmospheric_pressure(elevation)
-    wet_air_out = wet_air_properties(u"K"(tair); rh, P_atmos)
+    σ = u"W/m^2/K^4"(Unitful.σ)
 
     # Atmospheric radiation
     if swinbank
         # Swinbank, Eq. 10.11 in Campbell and Norman 1998
-        arad = uconvert(u"W*m^-2", ((9.2e-6 * (u"K"(tair))^2) * σ * (u"K"(tair))^4) / 1u"K^2")
+        arad = ((9.2e-6 * (u"K"(tair))^2) * σ * (u"K"(tair))^4) / 1u"K^2"
     else
         # Campbell and Norman 1998 eq. 10.10 to get emissivity of sky
+        wet_air_out = wet_air_properties(u"K"(tair); rh, P_atmos)
         P_vap = wet_air_out.P_vap
-        # TODO: ustrip to what
-        arad = u"W/m^2"((1.72 * (ustrip(u"kPa", P_vap) / ustrip(u"K", tair + 0.01u"K"))^(1//7)) * σ * (u"K"(tair) + 0.01u"K")^4) 
+        arad = (1.72 * (ustrip(u"kPa", P_vap) / ustrip(u"K", tair + 0.01u"K"))^(1//7)) * σ * (u"K"(tair) + 0.01u"K")^4
     end
-
+    
     # Cloud radiation temperature (shade approximation, TAIR - 2°C)
     crad = σ * slep * (u"K"(tair) - 2.0u"K")^4
 

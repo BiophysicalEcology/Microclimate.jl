@@ -339,23 +339,6 @@ function runmicro(;
     rh_soils[1, :] = clamp.(exp.(MW .* ψ_soils[1, :] ./ (R .* T0)), 0, 1)
     pools[1] = 0.0u"kg/m^2"
     
-    # sky temperature given cloud cover, shade, hillshade (viewfactor)
-    # air temperature and humidity TODO have two options, Swinbank and Campbell
-    longwave_out = get_longwave(;
-        elevation,
-        P_atmos,
-        rh=humidities[1],
-        tair=air_temperatures[1],
-        tsurf=T0[1],
-        slep=sles[1],
-        sle=sles[1],
-        cloud=cloud_covers[1],
-        viewfactor=viewfactor,
-        shade=shades[1]
-    )
-    Tsky = longwave_out.Tsky
-    T_skys[1] = Tsky
-
     # simulate all days
     pool = 0.0u"kg/m^2" # initialise depth of pooling water TODO make this an init option
     heights_water_balance = heights
@@ -416,6 +399,21 @@ function runmicro(;
                 end
                 if i == 1 # make first hour of day equal last hour of previous iteration
                     T_soils[step] = T0
+                        # sky temperature given cloud cover, shade, hillshade (viewfactor)
+    # air temperature and humidity TODO have two options, Swinbank and Campbell
+                    longwave_out = get_longwave(;
+                        P_atmos,
+                        rh=humidities[step],
+                        tair=air_temperatures[step],
+                        tsurf=T0[1],
+                        slep,
+                        sle,
+                        cloud=cloud_covers[step],
+                        viewfactor,
+                        shade,
+                    )
+                    Tsky = longwave_out.Tsky
+                    T_skys[step] = Tsky
                     step = (j - 1) * (length(hours) - 1) + i
                     pool += rainfall
                     if runmoist
@@ -464,13 +462,13 @@ function runmicro(;
                     λ_bulk[step, :] = λ_b
                     c_p_bulk[step, :] = cp_b
                     ρ_bulk[step, :] = ρ_b
-                    if runmoist && iday > 1
+                    if runmoist
                         θ_soils[step, :] = infil_out.θ_soil[sub]
                         ψ_soils[step, :] = infil_out.ψ_soil[sub]
                         rh_soils[step, :] = infil_out.rh_soil[sub]
+                        θ_soil0_a = θ_soils[step, :]
                     end
                 else
-                    # Parameters
                     params = MicroParams(;
                         soilprops, depths, heights, reference_height, roughness_height, κ, slope, shade,
                         viewfactor, elevation, P_atmos, albedo, sle, slep, pctwet, nodes, θ_soil=θ_soil0_a,
@@ -481,6 +479,7 @@ function runmicro(;
                     prob = ODEProblem{false}(soil_energy_balance, T0, tspan, input)
                     sol = solve(prob, Tsit5(); saveat=60.0u"minute", reltol=1e-6u"K", abstol=1e-8u"K")
                     soiltemps = sol.u
+                    #@assert false
                     # account for any phase transition of water in soil
                     T0 = soiltemps[2]
                     if iter == niter # this makes it the same as the R version but really this should happen every time
@@ -532,7 +531,6 @@ function runmicro(;
                         pools[step] = pool
                     end
                     longwave_out = get_longwave(;
-                        elevation,
                         P_atmos,
                         rh=humidities[step],
                         tair=air_temperatures[step],
