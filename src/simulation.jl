@@ -11,9 +11,8 @@ Simulates soil and microclimate dynamics over multiple days.
 - Returns detailed outputs for soil, air, radiation, and water balance.
 
 # Hourly Weather Interpolation
-- Daily min/max values are interpolated to 25-hour vectors 
-  (e.g. `TAIRs25`).
-- Every 25th value is removed (`skip25`) → 24 hours per day.
+- Daily min/max values are interpolated to 24-hour vectors 
+  (e.g. `TAIRs`).
 - Matches the Fortran/R approach where an extra hour smooths 
   interpolation.
 
@@ -226,9 +225,6 @@ function runmicro(;
     solrad_out.zenith_angle[solrad_out.zenith_angle.>90u"°"] .= 90u"°"
     solrad_out.zenith_slope_angle[solrad_out.zenith_slope_angle.>90u"°"] .= 90u"°"
 
-    # vector for removing extra interpolated hour
-    skip25 = setdiff(1:length(solrad_out.zenith_angle), 25:25:length(solrad_out.zenith_angle))
-
     optional = (air_temperatures, humidities, wind_speeds, cloud_covers)
     optional_names = (:air_temperatures, :humidities, :wind_speeds, :solar_radiation, :cloud_covers, :RAINs)
     not_present = map(isnothing, optional)
@@ -256,12 +252,12 @@ function runmicro(;
         humidities = RHs25[skip25] # remove every 25th output
         cloud_covers = CLDs25[skip25] # remove every 25th output
     end
-    zenith_angles = solrad_out.zenith_angle[skip25] # remove every 25th output
-    zenith_slope_angle = solrad_out.zenith_slope_angle[skip25] # remove every 25th output
+    zenith_angles = solrad_out.zenith_angle
+    zenith_slope_angle = solrad_out.zenith_slope_angle
     # adjust for cloud using Angstrom formula (formula 5.33 on P. 177 of "Climate Data and Resources" by Edward Linacre 1992
-    day_of_year  = repeat(days, inner=length(hours))[skip25]
-    direct_total = solrad_out.direct_total[skip25] # remove every 25th output
-    diffuse_total = solrad_out.diffuse_total[skip25] # remove every 25th output
+    day_of_year  = repeat(days, inner=length(hours))
+    direct_total = solrad_out.direct_total
+    diffuse_total = solrad_out.diffuse_total
     global_solar, diffuse_solar, direct_solar = cloud_adjust_radiation(cloud_covers / 100., diffuse_total, direct_total, zenith_angles, day_of_year)
     if isnothing(solar_radiation)
         solar_radiation = global_solar
@@ -291,7 +287,7 @@ function runmicro(;
 
     # initial conditions
     if !daily && !isnothing(initial_soil_temperature)
-        t = mean(u"K", view(TAIRs25, 1:25))
+        t = mean(u"K", view(TAIRs, 1:24))
         initial_soil_temperature = SVector(ntuple(_ -> t, numnodes_a))
     end
     soillayers = init_soillayers(numnodes_b)  # only once
@@ -311,7 +307,7 @@ function runmicro(;
     T0 = SVector{N}(initial_soil_temperature)
 
     # output arrays
-    nsteps = ndays * (length(hours) - 1)
+    nsteps = ndays * length(hours)
     T_soils = Array{typeof(T0)}(undef, nsteps)
     θ_soils = Array{Float64}(undef, nsteps, numnodes_a)
     ψ_soils = Array{Float64}(undef, nsteps, numnodes_a)u"J/kg"
@@ -402,7 +398,7 @@ function runmicro(;
         if daily == false
             ∑phase = zeros(Float64, numnodes_a)u"J"
             sub2 = (iday*25-25+1):(iday*25) # for getting mean monthly over the 25 hrs as in fortran version
-            t = u"K"(mean(ustrip(TAIRs25[sub2]))u"°C") # make initial soil temps equal to mean monthly temperature
+            t = u"K"(mean(ustrip(TAIRs25[sub2]))u"°C") # make initial soil temps equal to mean annual temperature
             T0 = SVector(ntuple(_ -> t, numnodes_a))
             #T_soils[step, :] = T0
             θ_soil0_a = collect(fill(initial_soil_moisture[iday], numnodes_a)) # initial soil moisture
@@ -411,12 +407,10 @@ function runmicro(;
 
         for iter = 1:niter
             for i in 1:length(hours)
-                if i < length(hours)
-                    step = (j - 1) * (length(hours) - 1) + i
-                end
+                step = (j - 1) * length(hours) + i
                 if i == 1 # make first hour of day equal last hour of previous iteration
                     T_soils[step] = T0
-                    step = (j - 1) * (length(hours) - 1) + i
+                    step = (j - 1) * length(hours) + i
                     pool += rainfall
                     if runmoist
                         infil_out, pctwet, pool, θ_soil0_b = get_soil_water_balance!(buffers;
@@ -486,9 +480,7 @@ function runmicro(;
                     if iter == niter # this makes it the same as the R version but really this should happen every time
                         ∑phase, qphase, T0 = phase_transition!(phase_transition_buffers; Ts=soiltemps[2], T_past=soiltemps[1], ∑phase, θ=θ_soil0_a, depths)
                     end
-                    if i < length(hours)
-                        T_soils[step] = T0
-                    end
+                    T_soils[step] = T0
                     if runmoist
                         infil_out, pctwet, pool, θ_soil0_b = get_soil_water_balance!(buffers;
                                 roughness_height,
@@ -528,9 +520,7 @@ function runmicro(;
                                 M,
                         )
                     end
-                    if i < length(hours)
-                        pools[step] = pool
-                    end
+                    pools[step] = pool
                     longwave_out = get_longwave(;
                         elevation,
                         P_atmos,
@@ -544,9 +534,7 @@ function runmicro(;
                         shade,
                     )
                     Tsky = longwave_out.Tsky
-                    if i < length(hours)
-                        T_skys[step] = Tsky
-                    end
+                    T_skys[step] = Tsky
                     # TODO: why use every second step what is this
                     sub = vcat(findall(isodd, 1:numnodes_b), numnodes_b)
                     θ_soil0_a = θ_soil0_b[sub]
@@ -555,11 +543,9 @@ function runmicro(;
                     c_p_bulk[step, :] = cp_b
                     ρ_bulk[step, :] = ρ_b
                     if runmoist
-                        if i < length(hours)
-                            θ_soils[step, :] = infil_out.θ_soil[sub]
-                            ψ_soils[step, :] = infil_out.ψ_soil[sub]
-                            rh_soils[step, :] = infil_out.rh_soil[sub]
-                        end
+                        θ_soils[step, :] = infil_out.θ_soil[sub]
+                        ψ_soils[step, :] = infil_out.ψ_soil[sub]
+                        rh_soils[step, :] = infil_out.rh_soil[sub]
                     end
                 end
             end
