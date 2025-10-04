@@ -1173,7 +1173,7 @@ Compute clear sky solar radiation at a given place and time using a detailed atm
 
 # Arguments
 - `days::Vector{Float64}`: Days of the year (1–365/366) to evaluate.
-- `hours::Vector{Float64}`: Decimal hours of the day (0.0–24.0).
+- `hours::Vector{Float64}`: Decimal hours of the day (0.0–23.0).
 - `latitude::Quantity`: Latitude in degrees, e.g. `43.0u"°"`.
 
 # Keyword Arguments
@@ -1236,7 +1236,7 @@ Dave, J. V., & Furukawa, P. M. (1966). Scattered radiation in the ozone
 """
 function solrad(;
     days::Vector{<:Real}=[15, 46, 74, 105, 135, 166, 196, 227, 258, 288, 319, 349],
-    hours::Vector{<:Real}=collect(0.0:24.0),
+    hours::Vector{<:Real}=collect(0.0:23.0),
     year::Real=2001.0, # needed to determine if a leap year
     latitude::Quantity=43.1379u"°",
     lonc::Real=0.0, # longitude correction, hours
