@@ -88,18 +88,12 @@ day_of_year = repeat(days, inner=length(hours))
 global_cloud, diffuse_cloud, direct_cloud = cloud_adjust_radiation(cloud_covers / 100., diffuse_total, direct_total, zenith_angle, day_of_year)
 #global_cloud = global_total .* (0.36 .+ 0.64 * (1.0 .- (cloud_covers ./ 100.0))) # Angstrom formula (formula 5.33 on P. 177 of "Climate Data and Resources" by Edward Linacre 1992
 
-wavelength = solrad_out.wavelength
-global_spectra = solrad_out.global_spectra
-diffuse_spectra = solrad_out.diffuse_spectra
-direct_spectra = solrad_out.direct_spectra
-rayleigh_spectra = solrad_out.rayleigh_spectra
-
 # diffuse spectra test needs to be 1e-2 to pass with iuv=true
 # global_cloud out by a tiny amount, < 0.5 W/nm/m2
 @testset "solar radiation comparisons" begin
     @test ustrip.(u"°", zenith_angle) ≈ metout_nmr.ZEN atol=1e-4
     @test all(isapprox.(ustrip.(u"W/m^2", global_cloud), metout_nmr.SOLR; atol=0.5))
-    @test direct_spectra ≈ direct_spectra_nmr_units atol=1e-4u"W/nm/m^2"
-    @test diffuse_spectra ≈ diffuse_spectra_nmr_units atol=1e-2u"W/nm/m^2"
-    @test rayleigh_spectra ≈ rayleigh_spectra_nmr_units atol=1e-4u"W/nm/m^2"
+    @test solrad_out.direct_spectra ≈ direct_spectra_nmr_units atol=1e-4u"W/nm/m^2"
+    @test solrad_out.diffuse_spectra ≈ diffuse_spectra_nmr_units atol=1e-2u"W/nm/m^2"
+    @test solrad_out.rayleigh_spectra ≈ rayleigh_spectra_nmr_units atol=1e-4u"W/nm/m^2"
 end  
