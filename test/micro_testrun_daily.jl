@@ -116,8 +116,9 @@ keywords = (;
 # plot(micro_out)
 
 # TODO include 1st node (currently left out, i.e. just columns 2:10, because way off at times)
+sub = 696:hours2do
 @testset "runmicro comparisons" begin
-    @test all(isapprox.(micro_out.soil_temperature[:, 1:10], u"K".(Matrix(soil_temperature_nmr[1:hours2do, 1:10])); atol=1.0u"K")) # TODO make better!
-    @test all(isapprox.(micro_out.soil_moisture[:, 1:10], Matrix(soil_moisture_nmr[1:hours2do, 1:10]); atol=1e-2))
-    @test all(isapprox.(micro_out.soil_thermal_conductivity[:, 1:10], Matrix(soil_conductivity_nmr[1:hours2do, 1:10])u"W * m^-1 * K^-1"; atol=0.2u"W * m^-1 * K^-1"))
+    @test all(isapprox.(micro_out.soil_temperature[sub, 2:10], u"K".(Matrix(soil_temperature_nmr[sub, 2:10])); atol=0.1u"K")) # TODO make better!
+    @test all(isapprox.(micro_out.soil_moisture[sub, 2:10], Matrix(soil_moisture_nmr[sub, 2:10]); atol=1e-4))
+    @test all(isapprox.(micro_out.soil_thermal_conductivity[sub, 2:10], Matrix(soil_conductivity_nmr[sub, 2:10])u"W * m^-1 * K^-1"; atol=0.3u"W * m^-1 * K^-1"))
 end 

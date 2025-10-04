@@ -343,11 +343,14 @@ points(dates, tcond$TC5cm, type='l',xlim = c(tstart, tfinish), col = 3, xaxt = "
 # par(mgp = c(2, 1, 0) ) # margin spacing stuff
 #
 # # plot the soil temperatures
-# plot(dates, soil$D5cm, type='l',ylim = c(-10, 70),xlim = c(tstart, tfinish),xaxt = "n",ylab = expression("soil temperature (" * degree * C *")"),xlab="")
-# points(weather$datetime, weather$STO.I_2, type='l',col="red")
-# axis.POSIXct(side = 1, x = micro$dates, at = seq(tstart, tfinish, "weeks"), format = "%d-%m",  las = 2)
-# text(tstart, 10,"5cm",col="black",pos = 4, cex = 1.5)
-# abline(0, 0, lty = 2, col='light blue')
+tstart <- as.POSIXct("2015-12-01",format="%Y-%m-%d")
+tfinish <- as.POSIXct("2015-12-31",format="%Y-%m-%d")
+
+plot(dates, soil$D5cm, type='l',ylim = c(-10, 70),xlim = c(tstart, tfinish),xaxt = "n",ylab = expression("soil temperature (" * degree * C *")"),xlab="")
+points(weather$datetime, weather$STO.I_2, type='l',col="red")
+axis.POSIXct(side = 1, x = micro$dates, at = seq(tstart, tfinish, "weeks"), format = "%d-%m",  las = 2)
+#text(tstart, 10,"5cm",col="black",pos = 4, cex = 1.5)
+abline(0, 0, lty = 2, col='light blue')
 # #points(dates, metout$SNOWDEP, type='h',col='light blue')
 # plot(dates, soil$D10cm, type='l',ylim = c(-10, 70),xlim = c(tstart, tfinish),xaxt = "n",ylab = expression("soil temperature (" * degree * C *")"),xlab="")
 # points(weather$datetime, weather$STO.I_4, type='l',col="red")
