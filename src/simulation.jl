@@ -329,6 +329,8 @@ function runmicro(;
     soil_properties_buffers = allocate_soil_properties(nodes, soilprops)
     phase_transition_buffers = allocate_phase_transition(length(depths))
     λ_b, c_p_b, ρ_b = soil_props_vector(soil_properties_buffers; T_soil=T0, θ_soil=θ_soil0_a, soilprops, elevation, P_atmos)   
+    # test = round.(ustrip.(u"kg*m/K/s^3", λ_b)/4.184/100*60, digits=5)
+    # @show 1, test
     λ_bulk[1, :] = λ_b
     c_p_bulk[1, :] = c_p_b
     ρ_bulk[1, :] = ρ_b
@@ -399,8 +401,18 @@ function runmicro(;
                 end
                 if i == 1 # make first hour of day equal last hour of previous iteration
                     T_soils[step] = T0
-                        # sky temperature given cloud cover, shade, hillshade (viewfactor)
-    # air temperature and humidity TODO have two options, Swinbank and Campbell
+                    λ_b, cp_b, ρ_b = soil_props_vector(soil_properties_buffers; T_soil=T0, θ_soil=θ_soil0_a, soilprops, elevation, P_atmos)   
+                    # test = round.(ustrip.(u"kg*m/K/s^3", λ_b)/4.184/100*60, digits=5)
+                    # @show i, test
+                    # test = round.(θ_soil0_a, digits=5)
+                    # @show test
+                    # test = round.(ustrip.(u"°C", u"°C".(T0)), digits=5)
+                    # @show test
+                    λ_bulk[step, :] = λ_b
+                    c_p_bulk[step, :] = cp_b
+                    ρ_bulk[step, :] = ρ_b
+                    # sky temperature given cloud cover, shade, hillshade (viewfactor)
+                    # air temperature and humidity TODO have two options, Swinbank and Campbell
                     longwave_out = get_longwave(;
                         P_atmos,
                         rh=humidities[step],
@@ -414,7 +426,7 @@ function runmicro(;
                     )
                     Tsky = longwave_out.Tsky
                     T_skys[step] = Tsky
-                    step = (j - 1) * (length(hours) - 1) + i
+                    #step = (j - 1) * (length(hours) - 1) + i
                     pool += rainfall
                     if runmoist
                         infil_out, pctwet, pool, θ_soil0_b = get_soil_water_balance!(buffers;
@@ -458,10 +470,8 @@ function runmicro(;
                     pools[step] = pool
                     pool = clamp(pool, 0.0u"kg/m^2", maxpool)
                     T_skys[step] = Tsky
-                    λ_b, cp_b, ρ_b = soil_props_vector(soil_properties_buffers; T_soil=T0, θ_soil=θ_soil0_a, soilprops, elevation, P_atmos)   
-                    λ_bulk[step, :] = λ_b
-                    c_p_bulk[step, :] = cp_b
-                    ρ_bulk[step, :] = ρ_b
+                    sub = vcat(findall(isodd, 1:numnodes_b), numnodes_b)
+                    θ_soil0_a = θ_soil0_b[sub]
                     if runmoist
                         θ_soils[step, :] = infil_out.θ_soil[sub]
                         ψ_soils[step, :] = infil_out.ψ_soil[sub]
@@ -488,6 +498,16 @@ function runmicro(;
                     if i < length(hours)
                         T_soils[step] = T0
                     end
+                    λ_b, cp_b, ρ_b = soil_props_vector(soil_properties_buffers; T_soil=T0, θ_soil=θ_soil0_a, soilprops, elevation, P_atmos)   
+                    #test = round.(ustrip.(u"kg*m/K/s^3", λ_b)/4.184/100*60, digits=5)
+                    # @show i, test
+                    # test = round.(θ_soil0_a, digits=5)
+                    # @show test
+                    # test = round.(ustrip.(u"°C", u"°C".(T0)), digits=5)
+                    # @show test
+                    λ_bulk[step, :] = λ_b
+                    c_p_bulk[step, :] = cp_b
+                    ρ_bulk[step, :] = ρ_b
                     if runmoist
                         infil_out, pctwet, pool, θ_soil0_b = get_soil_water_balance!(buffers;
                                 roughness_height,
@@ -548,10 +568,6 @@ function runmicro(;
                     # TODO: why use every second step what is this
                     sub = vcat(findall(isodd, 1:numnodes_b), numnodes_b)
                     θ_soil0_a = θ_soil0_b[sub]
-                    λ_b, cp_b, ρ_b = soil_props_vector(soil_properties_buffers; T_soil=T0, θ_soil=θ_soil0_a, soilprops, elevation, P_atmos)   
-                    λ_bulk[step, :] = λ_b
-                    c_p_bulk[step, :] = cp_b
-                    ρ_bulk[step, :] = ρ_b
                     if runmoist
                         if i < length(hours)
                             θ_soils[step, :] = infil_out.θ_soil[sub]

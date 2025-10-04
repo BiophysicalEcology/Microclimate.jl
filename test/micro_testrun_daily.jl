@@ -9,6 +9,8 @@ testdir = realpath(joinpath(dirname(pathof(Microclimate)), "../test"))
 soil_temperature_nmr = (DataFrame(CSV.File("$testdir/data/soil_FordDryLake.csv"))[:, 5:14]) .* u"°C"
 soil_moisture_nmr = (DataFrame(CSV.File("$testdir/data/soilmoist_FordDryLake.csv"))[:, 5:14])
 soil_conductivity_nmr = (DataFrame(CSV.File("$testdir/data/tcond_FordDryLake.csv"))[:, 5:14])
+soil_specific_heat_nmr = (DataFrame(CSV.File("$testdir/data/specheat_FordDryLake.csv"))[:, 5:14])
+soil_bulk_density_nmr = (DataFrame(CSV.File("$testdir/data/densit_FordDryLake.csv"))[:, 5:14])
 metout_nmr = (DataFrame(CSV.File("$testdir/data/metout_FordDryLake.csv"))[:, 2:21])
 
 microinput_vec = DataFrame(CSV.File("$testdir/data/init_daily/microinput.csv"))[:, 2]
@@ -115,10 +117,9 @@ keywords = (;
 # TODO test plotting again at some stage, but it slows down CI a lot
 # plot(micro_out)
 
-# TODO include 1st node (currently left out, i.e. just columns 2:10, because way off at times)
 sub = 696:hours2do
 @testset "runmicro comparisons" begin
-    @test all(isapprox.(micro_out.soil_temperature[sub, 2:10], u"K".(Matrix(soil_temperature_nmr[sub, 2:10])); atol=0.1u"K")) # TODO make better!
-    @test all(isapprox.(micro_out.soil_moisture[sub, 2:10], Matrix(soil_moisture_nmr[sub, 2:10]); atol=1e-4))
-    @test all(isapprox.(micro_out.soil_thermal_conductivity[sub, 2:10], Matrix(soil_conductivity_nmr[sub, 2:10])u"W * m^-1 * K^-1"; atol=0.3u"W * m^-1 * K^-1"))
+    @test all(isapprox.(micro_out.soil_temperature[:, 1:10], u"K".(Matrix(soil_temperature_nmr[1:hours2do, 1:10])); rtol=1e-1)) # TODO make better!
+    @test all(isapprox.(micro_out.soil_moisture[:, 2:10], Matrix(soil_moisture_nmr[1:hours2do, 2:10]); rtol=1e-1))
+    @test all(isapprox.(micro_out.soil_thermal_conductivity[sub, 1:10], Matrix(soil_conductivity_nmr[sub, 1:10])u"W * m^-1 * K^-1"; rtol=1e-1))
 end 

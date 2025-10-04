@@ -97,14 +97,14 @@ tskyC_nmr = collect(metout_nmr[:, 15]) .* u"°C"
 # not all tests passing, some commented out, possibly due to different
 # solvers and possibly to do with floating point error and issue with 
 # the way the phase transition is being calculated
-sub = 121:144 # June
+sub = 70:288 # June
 @testset "runmicro comparisons" begin
-    @test micro_out.relative_humidity[sub, 1] ≈ rh1cm_nmr[sub] atol=2# TODO make this work
-    @test micro_out.relative_humidity[:, 2] ≈ rh2m_nmr atol=1e-5
-    @test micro_out.wind_speed[sub, 1] ≈ vel1cm_nmr[sub] atol=1e-2u"m/s" # now failing because of first day due to soil temps not being the same
-    @test micro_out.wind_speed[:, 2] ≈ vel2m_nmr atol=1e-6u"m/s" 
-    @test u"K".(micro_out.air_temperature[sub, 1]) ≈ ta1cm_nmr[sub] atol=1u"K" # TODO make better!
-    @test u"K".(micro_out.air_temperature[:, 2]) ≈ ta2m_nmr atol=1e-5u"K"
-    @test micro_out.sky_temperature ≈ u"K".(tskyC_nmr) atol=1e-4u"K"
-    @test micro_out.soil_temperature[sub, 2:10] ≈ u"K".(Matrix(soiltemps_nmr[sub, 2:10])) atol=0.5u"K" # TODO make better!
+    @test micro_out.relative_humidity[sub, 1] ≈ rh1cm_nmr[sub] rtol=1e-2# TODO make this work
+    @test micro_out.relative_humidity[:, 2] ≈ rh2m_nmr rtol=1e-8
+    @test micro_out.wind_speed[sub, 1] ≈ vel1cm_nmr[sub] rtol=1e-2 # now failing because of first day due to soil temps not being the same
+    @test micro_out.wind_speed[:, 2] ≈ vel2m_nmr rtol=1e-8 
+    @test u"K".(micro_out.air_temperature[sub, 1]) ≈ ta1cm_nmr[sub] rtol=1e-3 # TODO make better!
+    @test u"K".(micro_out.air_temperature[:, 2]) ≈ ta2m_nmr rtol=1e-9
+    @test micro_out.sky_temperature ≈ u"K".(tskyC_nmr) rtol=1e-7
+    @test micro_out.soil_temperature[sub, 1:10] ≈ u"K".(Matrix(soiltemps_nmr[sub, 1:10])) rtol=1e-3 # TODO make better!
 end  
