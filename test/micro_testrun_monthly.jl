@@ -36,7 +36,7 @@ keywords = (;
     # locations, times, depths and heights
     latitude = longlat[2]*1.0u"°",
     days = days[days2do], # days of year for solrad
-    hours = collect(0.:1:24.), # hour of day for solrad
+    hours = collect(0.0:1:23.0), # hour of day for solrad
     depths,
     heights, # air nodes for temperature, wind speed and humidity profile
     # terrain

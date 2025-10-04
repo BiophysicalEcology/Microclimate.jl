@@ -91,7 +91,7 @@ Returns a named tuple containing:
 function runmicro(;
     # times, depths and heights
     days = [15, 46, 74, 105, 135, 166, 196, 227, 258, 288, 319, 349], # days of year to simulate - TODO leap years
-    hours = collect(0.:1:24.), # hour of day for solrad
+    hours = collect(0.0:1:23.0), # hour of day for solrad
     depths = [0.0, 2.5, 5.0, 10.0, 15.0, 20.0, 30.0, 40.0, 50.0, 100.0, 200.0]u"cm", # soil nodes - keep spacing close near the surface
     heights = [0.01, 2]u"m", # air nodes for temperature, wind speed and humidity profile, last height is reference height for weather data
     # solar radiation
@@ -231,7 +231,7 @@ function runmicro(;
     if any(not_present)
         all(not_present) || throw(ArgumentError("missing optional component $(optional_names[collect(not_present)])"))
         # interpolate daily min/max forcing variables to hourly
-        TAIRs25, VELs25, RHs25, CLDs25 = hourly_vars(
+        TAIRs, VELs, RHs, CLDs = hourly_vars(
             air_temperature_min,
             air_temperature_max,
             wind_min,
@@ -245,12 +245,12 @@ function runmicro(;
             maxima_times,
             daily,
         )
-        RHs25[RHs25.>100] .= 100
-        CLDs25[CLDs25.>100] .= 100
-        air_temperatures = TAIRs25[skip25] # remove every 25th output
-        wind_speeds = VELs25[skip25] # remove every 25th output
-        humidities = RHs25[skip25] # remove every 25th output
-        cloud_covers = CLDs25[skip25] # remove every 25th output
+        RHs[RHs.>100] .= 100
+        CLDs[CLDs.>100] .= 100
+        air_temperatures = TAIRs
+        wind_speeds = VELs
+        humidities = RHs
+        cloud_covers = CLDs
     end
     zenith_angles = solrad_out.zenith_angle
     zenith_slope_angle = solrad_out.zenith_slope_angle
@@ -397,8 +397,8 @@ function runmicro(;
         end
         if daily == false
             ∑phase = zeros(Float64, numnodes_a)u"J"
-            sub2 = (iday*25-25+1):(iday*25) # for getting mean monthly over the 25 hrs as in fortran version
-            t = u"K"(mean(ustrip(TAIRs25[sub2]))u"°C") # make initial soil temps equal to mean annual temperature
+            sub2 = (iday*24-24+1):(iday*24) # for getting mean monthly over the 25 hrs as in fortran version
+            t = u"K"(mean(ustrip(TAIRs[sub2]))u"°C") # make initial soil temps equal to mean annual temperature
             T0 = SVector(ntuple(_ -> t, numnodes_a))
             #T_soils[step, :] = T0
             θ_soil0_a = collect(fill(initial_soil_moisture[iday], numnodes_a)) # initial soil moisture
