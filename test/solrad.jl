@@ -48,7 +48,7 @@ cloud_min = (DataFrame(CSV.File("$testdir/data/init_monthly/CCMINN.csv"))[:, 2] 
 cloud_max = (DataFrame(CSV.File("$testdir/data/init_monthly/CCMAXX.csv"))[:, 2] * 1.0) # max cloud cover (c%)
 iuv = Bool(Int(microinput[:IUV])) # this makes it take ages if true!
 
-hours = collect(0.:1:24.)
+hours = collect(0.0:1:23.0)
 days = [15, 46, 74, 105, 135, 166, 196, 227, 258, 288, 319, 349]*1.0
 
 @time solrad_out = @inferred solrad(;
@@ -93,21 +93,6 @@ global_spectra = solrad_out.global_spectra
 diffuse_spectra = solrad_out.diffuse_spectra
 direct_spectra = solrad_out.direct_spectra
 rayleigh_spectra = solrad_out.rayleigh_spectra
-
-hours25 = repeat(hours, outer = length(days))
-hours24 = repeat(0:1:23, outer = length(days))
-hours_remove = findall(x->x==24.0, hours25)
-deleteat!(zenith_angle, hours_remove)
-deleteat!(global_total, hours_remove)
-deleteat!(global_cloud, hours_remove)
-deleteat!(direct_total, hours_remove)
-deleteat!(diffuse_total, hours_remove)
-rows_to_remove = 25:25:300
-global_spectra = global_spectra[setdiff(1:end, rows_to_remove), :]
-diffuse_spectra = diffuse_spectra[setdiff(1:end, rows_to_remove), :]
-direct_spectra = direct_spectra[setdiff(1:end, rows_to_remove), :]
-rayleigh_spectra = rayleigh_spectra[setdiff(1:end, rows_to_remove), :]
-
 
 # diffuse spectra test needs to be 1e-2 to pass with iuv=true
 # global_cloud out by a tiny amount, < 0.5 W/nm/m2
