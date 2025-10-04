@@ -409,7 +409,7 @@ function runmicro(;
         end
         T0 = setindex(T0, tdeep, numnodes_a) # set deepest node to boundary condition
 
-        @inbounds for iter = 1:niter
+        for iter = 1:niter
             for i in 1:length(hours)
                 if i < length(hours)
                     step = (j - 1) * (length(hours) - 1) + i
