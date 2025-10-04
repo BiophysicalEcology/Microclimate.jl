@@ -406,7 +406,7 @@ function runmicro(;
             θ_soil0_a = collect(fill(initial_soil_moisture[iday], numnodes_a)) # initial soil moisture
         end
 
-        @inbounds for iter = 1:niter
+        for iter = 1:niter
             for i in 1:length(hours)
                 if i < length(hours)
                     step = (j - 1) * (length(hours) - 1) + i

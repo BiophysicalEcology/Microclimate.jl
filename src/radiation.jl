@@ -166,7 +166,7 @@ end
 #     GAML = zeros(Float64, 101)
 #     # Set up AMU array
 #     AMU[1] = 0.0
-#     @inbounds @simd for I in 2:101
+#     for I in 2:101
 #         AMU[I] = 0.01 * (I - 1)
 #     end
 
@@ -176,7 +176,7 @@ end
 #     CFA[3] = 0.0
 #     NST = 111
 #     CHX, CHY, NTR = dchxy(TAU1, CFA, NST)
-#     @inbounds @simd for I in 1:101
+#     for I in 1:101
 #         X1[I] = CHX[I]
 #         Y1[I] = CHY[I]
 #     end
@@ -186,7 +186,7 @@ end
 #     CFA[2] = -0.375
 #     NST = 0
 #     CHX, CHY, NTR = dchxy(TAU1, CFA, NST)
-#     @inbounds @simd for I in 1:101
+#     for I in 1:101
 #         X2[I] = CHX[I]
 #         Y2[I] = CHY[I]
 #     end
@@ -195,7 +195,7 @@ end
 #     AIL[1] = 0.01 / 3.0
 #     CNU1 = 4.0 * AIL[1]
 #     CNU2 = 2.0 * AIL[1]
-#     @inbounds @simd for I in 2:2:100
+#     for I in 2:2:100
 #         AIL[I] = CNU1
 #         AIL[I+1] = CNU2
 #     end
@@ -205,7 +205,7 @@ end
 #     fill!(XA, 0.0)
 #     fill!(XB, 0.0)
 
-#     @inbounds @simd for I in 1:101
+#     for I in 1:101
 #         c1 = AIL[I] * X1[I] * AMU[I]
 #         XA[1] += c1
 #         XA[2] += c1 * AMU[I]
@@ -265,7 +265,7 @@ end
 #     AI[22] = AI[21] * (CU4 - CU3)
 #     AI[23] = AI[21] * AI[15]
 
-#     @inbounds @simd for I in 1:101
+#     for I in 1:101
 #         GAML[I] = AI[20] * (X1[I] + Y1[I])
 #         GAMR[I] = AI[22] * (X2[I] + Y2[I]) - AMU[I] * AI[23] * (X2[I] - Y2[I])
 #     end
@@ -304,7 +304,7 @@ using the method of the X and Y functions.
 
 #     # Set up AMU array
 #     AMU[1] = 0.0
-#     @inbounds @simd for I in 2:101
+#     for I in 2:101
 #         AMU[I] = 0.01 * (I - 1)
 #     end
 
@@ -319,7 +319,7 @@ using the method of the X and Y functions.
 #     CFA[1] = 0.375
 #     CFA[2] = -0.375
 #     CHX, CHY, _ = dchxy(TAU1, CFA, 0)
-#     @inbounds @simd for I in 1:101
+#     for I in 1:101
 #         X2[I] = CHX[I]
 #         Y2[I] = CHY[I]
 #     end
@@ -328,7 +328,7 @@ using the method of the X and Y functions.
 #     AIL[1] = 0.01 / 3.0
 #     CNU1   = 4.0 * AIL[1]
 #     CNU2   = 2.0 * AIL[1]
-#     @inbounds @simd for I in 2:2:100
+#     for I in 2:2:100
 #         AIL[I]   = CNU1
 #         AIL[I+1] = CNU2
 #     end
@@ -338,7 +338,7 @@ using the method of the X and Y functions.
 #     xa1 = xa2 = xa3 = xa4 = 0.0
 #     xb1 = xb2 = xb3 = xb4 = xb5 = xb6 = xb7 = xb8 = 0.0
 
-#     @inbounds @simd for I in 1:101
+#     for I in 1:101
 #         a  = AMU[I]
 #         a2 = a * a
 #         a3 = a2 * a
@@ -408,7 +408,7 @@ using the method of the X and Y functions.
 #     AI[22] = AI[21] * (CU4 - CU3)
 #     AI[23] = AI[21] * AI[15]
 
-#     @inbounds @simd for I in 1:101
+#     for I in 1:101
 #         GAML[I] = AI[20] * (X1[I] + Y1[I])
 #         GAMR[I] = AI[22] * (X2[I] + Y2[I]) - AMU[I] * AI[23] * (X2[I] - Y2[I])
 #     end
@@ -444,7 +444,7 @@ function GAMMA!(buffers, TAU1::Float64)
 
     # Set up AMU array
     AMU[1] = 0.0
-    @inbounds for I in 2:101
+    for I in 2:101
         AMU[I] = 0.01 * (I - 1)
     end
 
@@ -467,7 +467,7 @@ function GAMMA!(buffers, TAU1::Float64)
     AIL[1] = 0.01 / 3.0
     CNU1 = 4.0 * AIL[1]
     CNU2 = 2.0 * AIL[1]
-    @inbounds for I in 2:2:100
+    for I in 2:2:100
         AIL[I] = CNU1
         AIL[I+1] = CNU2
     end
@@ -477,7 +477,7 @@ function GAMMA!(buffers, TAU1::Float64)
     xa1 = xa2 = xa3 = xa4 = 0.0
     xb1 = xb2 = xb3 = xb4 = xb5 = xb6 = xb7 = xb8 = 0.0
 
-    @inbounds for I in 1:101
+    for I in 1:101
         a  = AMU[I]
         a2 = a * a
         a3 = a2 * a
@@ -545,7 +545,7 @@ function GAMMA!(buffers, TAU1::Float64)
     AI[22] = AI[21] * (CU4 - CU3)
     AI[23] = AI[21] * AI[15]
 
-    @inbounds for I in 1:101
+    for I in 1:101
         GAML[I] = AI[20] * (X1[I] + Y1[I])
         GAMR[I] = AI[22] * (X2[I] + Y2[I]) - AMU[I] * AI[23] * (X2[I] - Y2[I])
     end
@@ -695,7 +695,7 @@ function dchxy!(buffers, TAU1::Float64, CFA::AbstractVector{Float64}, NCASE::Int
     end
 
     # Compute MU, PSI(MU), and weights
-    @inbounds for i in 1:101
+    for i in 1:101
         AMU[i] = (i - 1) * 0.01
         TEMA = AMU[i]^2
         PSI[i] = CFA[1] + CFA[2] * TEMA + CFA[3] * (TEMA^2)
@@ -711,7 +711,7 @@ function dchxy!(buffers, TAU1::Float64, CFA::AbstractVector{Float64}, NCASE::Int
     XA[1] = 0.01 / 3.0
     TEMA = 4.0 * XA[1]
     TEMB = 2.0 * XA[1]
-    @inbounds @simd for i in 2:2:100
+    for i in 2:2:100
         XA[i] = TEMA
         XA[i+1] = TEMB
     end
@@ -748,7 +748,7 @@ function dchxy!(buffers, TAU1::Float64, CFA::AbstractVector{Float64}, NCASE::Int
         ACAP[4] = 0.36268378337836198
     end
 
-    @inbounds @simd for i in 1:KMX
+    for i in 1:KMX
         TEMX[i] = UMA[i]^2
         TEMY[i] = CFA[1] + CFA[2] * TEMX[i] + CFA[3] * TEMX[i]^2
         TEMY[i] = 2.0 * ACAP[i] * TEMY[i]
@@ -761,7 +761,7 @@ function dchxy!(buffers, TAU1::Float64, CFA::AbstractVector{Float64}, NCASE::Int
         IST = 1
     end
 
-    @inbounds @simd for i in IST:KMX # Fortran line 152
+    for i in IST:KMX # Fortran line 152
         RTK[i] = (1.0 - TEMY[i]) / TEMX[i]
         if i == 1
             TEMA = 1.0 / UMA[1]^2
@@ -790,7 +790,7 @@ function dchxy!(buffers, TAU1::Float64, CFA::AbstractVector{Float64}, NCASE::Int
         end
 
         TEMC = 1.0
-        @inbounds @simd for i in 1:KMX
+        for i in 1:KMX
             TEMC -= TEMY[i] / (1.0 - RTK[J] * TEMX[i])
         end
         TEMD = abs(TEMC)
@@ -812,7 +812,7 @@ function dchxy!(buffers, TAU1::Float64, CFA::AbstractVector{Float64}, NCASE::Int
             end
 
             TEMD = 0.0
-            @inbounds @simd for i in 1:KMX
+            for i in 1:KMX
                 TEMD -= (TEMY[i] * TEMX[i]) / (1.0 - RTK[J] * TEMX[i])^2
             end
 
@@ -826,14 +826,14 @@ function dchxy!(buffers, TAU1::Float64, CFA::AbstractVector{Float64}, NCASE::Int
         end
     end
 
-    @inbounds @simd for i in 1:KMX
+    for i in 1:KMX
         RTK[i] = sqrt(RTK[i])
     end
 
     if NCASE != 0
         N1 = 11
         KMX = 4
-        @inbounds @simd for j in 1:KMX
+        for j in 1:KMX
             RTK[j] = RTK[j+1]
         end
     end
@@ -848,9 +848,9 @@ function dchxy!(buffers, TAU1::Float64, CFA::AbstractVector{Float64}, NCASE::Int
     ACAP[4] = 0.36268378337836198
 
     # --- COMPUTE FUNCTIONS LAMDA, P AND W ---
-    @inbounds @simd for j in 1:KMX
+    for j in 1:KMX
         ALAM[j] = 1.0
-        @inbounds @simd for i in 1:KMX
+        for i in 1:KMX
             ALAM[j] *= (RTK[j] * UMA[i] + 1.0) / (RTK[j] * UMA[i] - 1.0)
         end
         ALAM[j] = exp(-RTK[j] * TAU1) / ALAM[j]
@@ -860,17 +860,17 @@ function dchxy!(buffers, TAU1::Float64, CFA::AbstractVector{Float64}, NCASE::Int
         #Printf.printf("%12.5E %12.5E %12.5E\n", CFA[1], CFA[2], CFA[3])
         #Printf.printf("%12.5E\n", TAU1)
         #Printf.printf("\n")
-        @inbounds @simd for j in 1:KMX
+        for j in 1:KMX
             TEMA = 1.0 / RTK[j]
             # (In the FORTRAN code, TEMA is calculated but not used or printed here)
         end
     end
 
-    @inbounds @simd for i in 1:101 # Fortran line 225
+    for i in 1:101 # Fortran line 225
         FNPP[i] = 1.0
         FNPN[i] = 1.0
         FNW[i] = 1.0
-        @inbounds @simd for j in 1:KMX
+        for j in 1:KMX
             FNPP[i] *= (AMU[i] / UMA[j] - 1.0)
             FNPN[i] *= (-AMU[i] / UMA[j] - 1.0)
             FNW[i] *= (1.0 - RTK[j]^2 * AMU[i]^2)
@@ -880,11 +880,11 @@ function dchxy!(buffers, TAU1::Float64, CFA::AbstractVector{Float64}, NCASE::Int
 
     TEMX[1] = 1.0
     TEMX[8] = 1.0
-    @inbounds for k in 2:7
+    for k in 2:7
         TEMX[k] = 1.0
-        @inbounds for i in 1:2
+        for i in 1:2
             N1 = NC0[i, k-1]
-            @inbounds for j in 1:2
+            for j in 1:2
                 N2 = NC0[j+2, k-1]
                 TEMX[k] *= (RTK[N1] + RTK[N2]) / (RTK[N1] - RTK[N2])
             end
@@ -892,29 +892,29 @@ function dchxy!(buffers, TAU1::Float64, CFA::AbstractVector{Float64}, NCASE::Int
         TEMX[k] = -TEMX[k]
     end
 
-    @inbounds for k in 1:4
+    for k in 1:4
         TEMY[k] = 1.0
         N2 = NC1[4, k]
-        @inbounds for i in 1:3
+        for i in 1:3
             N1 = NC1[i, k]
             TEMY[k] *= (RTK[N1] + RTK[N2]) / (RTK[N1] - RTK[N2])
         end
     end
 
-    @inbounds for k in 5:8
+    for k in 5:8
         TEMY[k] = 1.0
         N1 = NC1[1, k]
-        @inbounds for j in 1:3
+        for j in 1:3
             N2 = NC1[j+1, k]
             TEMY[k] *= (RTK[N1] + RTK[N2]) / (RTK[N1] - RTK[N2])
         end
         TEMY[k] = -TEMY[k]
     end
 
-    @inbounds @simd for i in 1:101 # Fortran line 266
+    for i in 1:101 # Fortran line 266
         TEMA = 1.0
         TEMB = 1.0
-        @inbounds for j in 1:4
+        for j in 1:4
             TEMA *= (1.0 + RTK[j] * AMU[i])
             TEMB *= (1.0 - RTK[j] * AMU[i])
         end
@@ -923,7 +923,7 @@ function dchxy!(buffers, TAU1::Float64, CFA::AbstractVector{Float64}, NCASE::Int
 
         TEMA = 1.0
         TEMB = 1.0
-        @inbounds for j in 1:4
+        for j in 1:4
             TEMA *= (1.0 - RTK[j] * AMU[i]) * ALAM[j]
             TEMB *= (1.0 + RTK[j] * AMU[i]) * ALAM[j]
         end
@@ -934,12 +934,12 @@ function dchxy!(buffers, TAU1::Float64, CFA::AbstractVector{Float64}, NCASE::Int
         while IST <= 7
             TEMA = 1.0
             TEMB = 1.0
-            @inbounds for k in 1:2
+            for k in 1:2
                 N2 = NC0[k+2, IST-1]
                 TEMA *= (1.0 - RTK[N2] * AMU[i]) * ALAM[N2]
                 TEMB *= (1.0 + RTK[N2] * AMU[i]) * ALAM[N2]
             end
-            @inbounds for j in 1:2
+            for j in 1:2
                 N1 = NC0[j, IST-1]
                 TEMA *= (1.0 + RTK[N1] * AMU[i])
                 TEMB *= (1.0 - RTK[N1] * AMU[i])
@@ -950,7 +950,7 @@ function dchxy!(buffers, TAU1::Float64, CFA::AbstractVector{Float64}, NCASE::Int
             IST += 1
         end
     end
-    @inbounds @simd for i in 1:101
+    for i in 1:101
         FNC1[i] = 0.0
         FMC1[i] = 0.0
         IST = 1
@@ -958,7 +958,7 @@ function dchxy!(buffers, TAU1::Float64, CFA::AbstractVector{Float64}, NCASE::Int
             N2 = NC1[4, IST]
             TEMA = (1.0 - RTK[N2] * AMU[i]) * ALAM[N2]
             TEMB = (1.0 + RTK[N2] * AMU[i]) * ALAM[N2]
-            @inbounds for j in 1:3
+            for j in 1:3
                 N1 = NC1[j, IST]
                 TEMA *= (1.0 + RTK[N1] * AMU[i])
                 TEMB *= (1.0 - RTK[N1] * AMU[i])
@@ -971,7 +971,7 @@ function dchxy!(buffers, TAU1::Float64, CFA::AbstractVector{Float64}, NCASE::Int
             N1 = NC1[1, IST]
             TEMA = 1.0 + RTK[N1] * AMU[i]
             TEMB = 1.0 - RTK[N1] * AMU[i]
-            @inbounds for j in 1:3
+            for j in 1:3
                 N2 = NC1[j+1, IST]
                 TEMA *= (1.0 - RTK[N2] * AMU[i]) * ALAM[N2]
                 TEMB *= (1.0 + RTK[N2] * AMU[i]) * ALAM[N2]
@@ -1001,12 +1001,12 @@ function dchxy!(buffers, TAU1::Float64, CFA::AbstractVector{Float64}, NCASE::Int
     # COMPUTE THE FOURTH APPROXIMATION OF X AND Y FUNCTIONS
     XB[1] = TAU1 == 0.0 ? 1.0 : 0.0 # Fortran line 345
 
-    @inbounds @simd for i in 2:101
+    for i in 2:101
         XB[i] = exp(-TAU1 / AMU[i])
     end
 
     TEMA = 1.0 / sqrt(FNC0[1]^2 - FNC1[1]^2)
-    @inbounds @simd for i in 1:101
+    for i in 1:101
         TEMC = TEMA / FNW[i]
         FNX[i] = (FNPN[i] * FMC0[i] - XB[i] * FNPP[i] * FNC1[i]) * TEMC
         FNY[i] = (XB[i] * FNPP[i] * FNC0[i] - FNPN[i] * FMC1[i]) * TEMC
@@ -1022,14 +1022,14 @@ function dchxy!(buffers, TAU1::Float64, CFA::AbstractVector{Float64}, NCASE::Int
         tsumx = 0.0
         tsumb = 0.0
         tsumc = 0.0
-        @inbounds @simd for i in 1:101
+        for i in 1:101
             δ = PSI[i] * AMU[i] * XA[i]
             tsumx += δ * CHX[i]
             tsumb += δ * CHY[i]
             tsumc += PSI[i] * CHY[i] * XA[i]
         end
         ratio = tsumc / (tsumx + tsumb)
-        @inbounds @simd for i in 1:101
+        for i in 1:101
             Δ = ratio * AMU[i] * (CHX[i] + CHY[i])
             CHX[i] += Δ
             CHY[i] -= Δ
@@ -1293,7 +1293,7 @@ function solrad(;
     step = 1
     HH = 0.0 # initialise sunrise hour angle
     tsn = 12.0 # initialise time of solar noon
-    @inbounds for i in 1:ndays
+    for i in 1:ndays
         # arrays to hold radiation for a given hour between 300 and 320 nm in 2 nm steps
         GRINT = fill(0.0u"mW/cm^2", nmax)   # integrated global radiation component (direct + scattered)
         DRRINT = fill(0.0u"mW/cm^2", nmax)  # integrated direct Rayleigh radiation component
@@ -1305,7 +1305,7 @@ function solrad(;
         DRλ = GRINT * u"1/nm"               # wavelength-specific direct radiation component
         SRλ = GRINT * u"1/nm"               # wavelength-specific scattered radiation component
         albedo = albedos[i]
-        @inbounds for j in 1:ntimes
+        for j in 1:ntimes
             d = days[i]
             t = hours[j]
             h, tsn = hour_angle(t, lonc) # hour angle (radians)
@@ -1438,7 +1438,7 @@ function solrad(;
 
                 P = P_atmos
 
-                @inbounds for N in 1:nmax
+                for N in 1:nmax
                     τλ1 = (P / 101300u"Pa") * τR[N] * ELEVFCT1
                     τλ2 = (25.0u"km" / amr) * τA[N] * ELEVFCT2
                     τλ3 = (ozone / 0.34) * τO[N] * ELEVFCT3
@@ -1677,7 +1677,7 @@ function cloud_adjust_radiation(cloud, D_cs, B_cs, zenith, doy; a=0.36, b=0.64, 
     Kt    = clamp.(Kt, 0.0, 1.2)
 
     Fd = similar(Kt) # diffuse fraction
-    @inbounds for i in eachindex(Kt)
+    for i in eachindex(Kt)
         if Kt[i] <= 0.22
             Fd[i] = 1 - 0.09*Kt[i]
         elseif Kt[i] <= 0.80
@@ -1709,7 +1709,7 @@ end
     converged = false
 
     while !converged
-        @inbounds for I in 2:101
+        for I in 2:101
             fnx_i = FNX[I] 
             fny_i = FNY[I] 
             amu_i = AMU[I]
@@ -1718,11 +1718,11 @@ end
             # Compute XD and XE for this I
             # The most performance-intensive code of the package: loop inside loop inside while, called from another loop
             # Possibly there is a faster algorithm?
-            # @simd works marginally better when each line is separate
-            @inbounds @simd for IC in 1:101
+            # works marginally better when each line is separate
+            for IC in 1:101
                 XD[IC] = PSI[IC] * (fnx_i * FNX[IC] - fny_i * FNY[IC]) / (amu_i + AMU[IC])
             end
-            @inbounds @simd for IC in 1:101
+            for IC in 1:101
                 XE[IC] = PSI[IC] * (fny_i * FNX[IC] - fnx_i * FNY[IC]) / (amu_i - AMU[IC])
             end
             #######################################################################################################
@@ -1741,21 +1741,21 @@ end
 
             #########################################################
             # Second most expensive code in the package
-            # @simd is a huge performance gain
+            # is a huge performance gain
             sxd = 0.0
             sxe = 0.0
-            @inbounds @simd for ic in 1:101
+            for ic in 1:101
                 sxd += XA[ic] * XD[ic]
                 sxe += XA[ic] * XE[ic]
             end
             #########################################################
 
-            @inbounds CHXA[I] = 1.0 + amu_i * sxd
-            @inbounds CHYA[I] = XB[I] + amu_i * sxe
+            CHXA[I] = 1.0 + amu_i * sxd
+            CHYA[I] = XB[I] + amu_i * sxe
         end
 
         # Correction to CHX and CHY
-        @inbounds @simd for i in 1:101
+        for i in 1:101
             TEMD = TEMC * AMU[i] * (1.0 - XB[i])
             CHX[i] = CHXA[i] + TEMD
             CHY[i] = CHYA[i] + TEMD
@@ -1763,7 +1763,7 @@ end
 
         # Check convergence (same as before)
         if nomitr > 1
-            @inbounds for I in 2:101
+            for I in 2:101
                 rel_error = abs((CHY[I] - FNY[I]) / CHY[I])
                 # TODO this seems wrong? shouldnt it only break if errors are <= 2.0e-4 for all I ?
                 if rel_error <= 2.0e-4
@@ -1774,7 +1774,7 @@ end
         end
 
         # Prepare for next iteration
-        @inbounds @simd for I in 1:101
+        for I in 1:101
             FNX[I] = CHX[I]
             FNY[I] = CHY[I]
         end
