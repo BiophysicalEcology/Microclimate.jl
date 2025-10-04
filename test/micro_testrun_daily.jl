@@ -1,6 +1,6 @@
 using Microclimate
 using Unitful
-using CSV, DataFrames
+using CSV, DataFrames, Dates
 using Test
 
 testdir = realpath(joinpath(dirname(pathof(Microclimate)), "../test"))
@@ -12,6 +12,10 @@ soil_conductivity_nmr = (DataFrame(CSV.File("$testdir/data/tcond_FordDryLake.csv
 soil_specific_heat_nmr = (DataFrame(CSV.File("$testdir/data/specheat_FordDryLake.csv"))[:, 5:14])
 soil_bulk_density_nmr = (DataFrame(CSV.File("$testdir/data/densit_FordDryLake.csv"))[:, 5:14])
 metout_nmr = (DataFrame(CSV.File("$testdir/data/metout_FordDryLake.csv"))[:, 2:21])
+obs_soil_temperature = (DataFrame(CSV.File("$testdir/data/obs_soiltemp_FordDryLake.csv"; missingstring="NA"))[:, 2:6]) .* u"°C"
+obs_soil_moisture = (DataFrame(CSV.File("$testdir/data/obs_soilmoist_FordDryLake.csv"; missingstring="NA"))[:, 2:6])./100.0
+df = dateformat"y-m-d H:M:S"
+obs_dates = DateTime.((DataFrame(CSV.File("$testdir/data/dates_FordDryLake.csv"; missingstring="NA"))[:, 2]), df)
 
 microinput_vec = DataFrame(CSV.File("$testdir/data/init_daily/microinput.csv"))[:, 2]
 
@@ -96,15 +100,16 @@ keywords = (;
     wind_speeds = clamp.(Float64.(CSV.File("$testdir/data/init_daily/WNhr.csv").x[1:hours2do])u"m/s", 0.1u"m/s", (Inf)u"m/s"),
     solar_radiation = Float64.(CSV.File("$testdir/data/init_daily/SOLRhr.csv").x[1:hours2do])u"W/m^2",
     cloud_covers = clamp.(Float64.(CSV.File("$testdir/data/init_daily/CLDhr.csv").x[1:hours2do]), 0, 100),
-    RAINs = clamp.(Float64.(CSV.File("$testdir/data/init_daily/RAINhr.csv").x[1:hours2do])u"kg" / u"m^2", 0u"kg/m^2", (Inf)u"kg/m^2"),
+    RAINs = clamp.(Float64.(CSV.File("$testdir/data/init_daily/RAINhr.csv").x[1:hours2do])u"kg/m^2", 0u"kg/m^2", (Inf)u"kg/m^2"),
     zenith_angles=nothing,
     longwave_radiation=nothing,
     # intial conditions
     initial_soil_temperature = u"K".((DataFrame(CSV.File("$testdir/data/init_daily/soilinit.csv"))[1:length(depths), 2] * 1.0)u"°C"), # initial soil temperature
-    initial_soil_moisture = (Array(DataFrame(CSV.File("$testdir/data/init_daily/moists.csv"))[1, 2:13]) .* 1.0), # * soil_saturation_moisture, # initial soil moisture
+    initial_soil_moisture = (Array(DataFrame(CSV.File("$testdir/data/init_daily/moists.csv"))[1:10, 2]) .* 1.0), # * soil_saturation_moisture, # initial soil moisture
     leaf_area_index = (DataFrame(CSV.File("$testdir/data/init_daily/LAI.csv"))[:, 2] * 1.0u"Mg/m^3"), # leaf area indices per day
     iterate_day = (microinput[:ndmax]), # number of iterations per day
     daily = Bool(Int(microinput[:microdaily])), # doing consecutive days?
+    rainhourly = Bool(Int(microinput[:rainhourly])),
     runmoist = Bool(Int(microinput[:runmoist])), # run soil moisture algorithm?
     spinup = Bool(Int(microinput[:spinup])), # spin-up the first day by iterate_day iterations?
     iuv = Bool(Int(microinput[:IUV])), # this makes it take ages if true!

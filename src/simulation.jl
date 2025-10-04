@@ -186,6 +186,7 @@ function runmicro(;
     iterate_day = 3, # number of iterations per day
     #maximum_surface_temperature = u"K"(85.0u"°C"),
     daily = false, # doing consecutive days?
+    rainhourly = false,
     runmoist = false, # run soil moisture algorithm?
     spinup = false, # spin-up the first day by iterate_day iterations?
     __n::Val{N} = Val{length(depths)}() # This is a tiny hack so N is known to the compiler in function body
@@ -295,7 +296,7 @@ function runmicro(;
         initial_soil_temperature = SVector(ntuple(_ -> t, numnodes_a))
     end
     soillayers = init_soillayers(numnodes_b)  # only once
-    θ_soil0_a = collect(fill(initial_soil_moisture[1], numnodes_a)) # initial soil moisture
+    θ_soil0_a = initial_soil_moisture#collect(fill(initial_soil_moisture[1], numnodes_a)) # initial soil moisture
     θ_soil0_b = similar(θ_soil0_a, numnodes_b)  # preallocate vector of length numnodes_b
     jj = 1
     for ii in 1:numnodes_b
@@ -379,7 +380,7 @@ function runmicro(;
         input = MicroInputs(; params, forcing, soillayers, buffers)
         step = 1
         # loop through hours of day
-        if spinup && j == 1 && i == 1 || daily == false
+        if spinup && j == 1 || daily == false
             niter = iterate_day # number of interations for steady periodic
         else
             niter = 1
@@ -427,7 +428,11 @@ function runmicro(;
                     Tsky = longwave_out.Tsky
                     T_skys[step] = Tsky
                     #step = (j - 1) * (length(hours) - 1) + i
-                    pool += rainfall
+                    if rainhourly
+                        pool += RAINs[step]
+                    else
+                        pool += rainfall
+                    end
                     if runmoist
                         infil_out, pctwet, pool, θ_soil0_b = get_soil_water_balance!(buffers;
                                 roughness_height,
@@ -508,6 +513,9 @@ function runmicro(;
                     λ_bulk[step, :] = λ_b
                     c_p_bulk[step, :] = cp_b
                     ρ_bulk[step, :] = ρ_b
+                    if rainhourly
+                        pool += RAINs[step]
+                    end
                     if runmoist
                         infil_out, pctwet, pool, θ_soil0_b = get_soil_water_balance!(buffers;
                                 roughness_height,
