@@ -122,7 +122,7 @@ keywords = (;
 # TODO test plotting again at some stage, but it slows down CI a lot
 # plot(micro_out)
 
-sub = 696:hours2do
+sub = 269:hours2do
 @testset "runmicro comparisons" begin
     @test all(isapprox.(micro_out.soil_temperature[:, 1:10], u"K".(Matrix(soil_temperature_nmr[1:hours2do, 1:10])); rtol=1e-1)) # TODO make better!
     @test all(isapprox.(micro_out.soil_moisture[:, 2:10], Matrix(soil_moisture_nmr[1:hours2do, 2:10]); rtol=1e-1))

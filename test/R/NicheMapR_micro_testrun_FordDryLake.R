@@ -189,7 +189,7 @@ soilinit <- init_approx(DEP)
 lm_soilinit <- summary(lm(soilinit~log10(DEP)))
 m <- lm_soilinit$coefficients[2]
 c <- lm_soilinit$coefficients[1]
-abline(c, m)
+#abline(c, m)
 predict_temps <- m * log10(DEP[2:3]+0.01) + c
 soilinit[2:3] <- predict_temps
 soilinit[1] <- -3
