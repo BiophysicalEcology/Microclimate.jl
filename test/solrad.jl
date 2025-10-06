@@ -48,7 +48,7 @@ cloud_min = (DataFrame(CSV.File("$testdir/data/init_monthly/CCMINN.csv"))[:, 2] 
 cloud_max = (DataFrame(CSV.File("$testdir/data/init_monthly/CCMAXX.csv"))[:, 2] * 1.0) # max cloud cover (c%)
 iuv = Bool(Int(microinput[:IUV])) # this makes it take ages if true!
 
-hours = collect(0.:1:24.)
+hours = collect(0.0:1:23.0)
 days = [15, 46, 74, 105, 135, 166, 196, 227, 258, 288, 319, 349]*1.0
 
 @time solrad_out = @inferred solrad(;
@@ -88,33 +88,12 @@ day_of_year = repeat(days, inner=length(hours))
 global_cloud, diffuse_cloud, direct_cloud = cloud_adjust_radiation(cloud_covers / 100., diffuse_total, direct_total, zenith_angle, day_of_year)
 #global_cloud = global_total .* (0.36 .+ 0.64 * (1.0 .- (cloud_covers ./ 100.0))) # Angstrom formula (formula 5.33 on P. 177 of "Climate Data and Resources" by Edward Linacre 1992
 
-wavelength = solrad_out.wavelength
-global_spectra = solrad_out.global_spectra
-diffuse_spectra = solrad_out.diffuse_spectra
-direct_spectra = solrad_out.direct_spectra
-rayleigh_spectra = solrad_out.rayleigh_spectra
-
-hours25 = repeat(hours, outer = length(days))
-hours24 = repeat(0:1:23, outer = length(days))
-hours_remove = findall(x->x==24.0, hours25)
-deleteat!(zenith_angle, hours_remove)
-deleteat!(global_total, hours_remove)
-deleteat!(global_cloud, hours_remove)
-deleteat!(direct_total, hours_remove)
-deleteat!(diffuse_total, hours_remove)
-rows_to_remove = 25:25:300
-global_spectra = global_spectra[setdiff(1:end, rows_to_remove), :]
-diffuse_spectra = diffuse_spectra[setdiff(1:end, rows_to_remove), :]
-direct_spectra = direct_spectra[setdiff(1:end, rows_to_remove), :]
-rayleigh_spectra = rayleigh_spectra[setdiff(1:end, rows_to_remove), :]
-
-
 # diffuse spectra test needs to be 1e-2 to pass with iuv=true
 # global_cloud out by a tiny amount, < 0.5 W/nm/m2
 @testset "solar radiation comparisons" begin
     @test ustrip.(u"°", zenith_angle) ≈ metout_nmr.ZEN atol=1e-4
     @test all(isapprox.(ustrip.(u"W/m^2", global_cloud), metout_nmr.SOLR; atol=0.5))
-    @test direct_spectra ≈ direct_spectra_nmr_units atol=1e-4u"W/nm/m^2"
-    @test diffuse_spectra ≈ diffuse_spectra_nmr_units atol=1e-2u"W/nm/m^2"
-    @test rayleigh_spectra ≈ rayleigh_spectra_nmr_units atol=1e-4u"W/nm/m^2"
+    @test solrad_out.direct_spectra ≈ direct_spectra_nmr_units atol=1e-4u"W/nm/m^2"
+    @test solrad_out.diffuse_spectra ≈ diffuse_spectra_nmr_units atol=1e-2u"W/nm/m^2"
+    @test solrad_out.rayleigh_spectra ≈ rayleigh_spectra_nmr_units atol=1e-4u"W/nm/m^2"
 end  
