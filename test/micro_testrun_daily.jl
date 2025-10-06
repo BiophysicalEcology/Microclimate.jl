@@ -64,7 +64,7 @@ environment_minmax = (;
 )
 
 # now try the simulation function
-keywords = (;
+problem = MicroProblem(;
     # locations, times, depths and heights
     latitude = (microinput[:ALAT] + microinput[:AMINUT] / 60) * 1.0u"°", # latitude
     days = days[1:days2do], # days of year to simulate - TODO leap years
@@ -122,7 +122,7 @@ keywords = (;
 )
 
 # now try the simulation function
-@time micro_out = runmicro(; keywords...);
+@time micro_out = solve(problem);
 
 using ProfileView
 @profview runmicro(; keywords...);

@@ -117,13 +117,13 @@ end
 function interpolate_forcings(f, t)
     t_m = ustrip(u"minute", t)
     return (; 
-        tair = f.TAIRt(t_m)
-        vel = max(0.1u"m/s", f.VELt(t_m))
-        zenr = min(90.0u"°", u"°"(round(f.ZENRt(t_m), digits=3)))
-        solr = max(0.0u"W/m^2", f.SOLRt(t_m))
-        cloud = clamp(f.CLDt(t_m), 0.0, 100.0)
-        rh = clamp(f.RHt(t_m), 0.0, 100.0)
-        zslr = min(90.0u"°", f.ZSLt(t_m))
+        tair = f.TAIRt(t_m),
+        vel = max(0.1u"m/s", f.VELt(t_m)),
+        zenr = min(90.0u"°", u"°"(round(f.ZENRt(t_m), digits=3))),
+        solr = max(0.0u"W/m^2", f.SOLRt(t_m)),
+        cloud = clamp(f.CLDt(t_m), 0.0, 100.0),
+        rh = clamp(f.RHt(t_m), 0.0, 100.0),
+        zslr = min(90.0u"°", f.ZSLt(t_m)),
     )
 end
 
@@ -213,7 +213,7 @@ function soil_water_balance!(buffers, smm::SoilMoistureModel;
     soil_moisture,
     rh_loc,
     ET,
-    T10
+    T10,
     lai,
 )
     dt = smm.moist_step
@@ -473,7 +473,7 @@ function get_soil_water_balance!(buffers, soil_moisture_model::SoilMoistureModel
         zenith_angle = ZENRs[step],
     )
     # compute scalar profiles
-    profile_out = get_profile!(buffers.profile;
+    profile_out = atmospheric_surface_profile!(buffers.profile;
         terrain,
         environment_instant,
     )
@@ -483,7 +483,7 @@ function get_soil_water_balance!(buffers, soil_moisture_model::SoilMoistureModel
 
     # evaporation
     rh_loc = min(0.99, profile_out.humidities[2] / 100)
-    hc = max(abs(Q_convection / (tsurf - tair), 0.5u"W/m^2/K")
+    hc = max(abs(Q_convection / (tsurf - tair)), 0.5u"W/m^2/K")
     wet_air_out = wet_air_properties(tair; rh, P_atmos)
     c_p_air = wet_air_out.c_p
     ρ_air = wet_air_out.ρ_air

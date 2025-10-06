@@ -39,7 +39,7 @@ Simulates soil and microclimate dynamics over multiple days.
 
 # Profiles
 - After all days, computes air, wind, humidity profiles
-  via `get_profile`.
+  via `atmospheric_surface_profile`.
 - Results are "flipped" into vectors with `flip2vectors`.
 
 # Return Values
@@ -68,26 +68,40 @@ Returns a named tuple containing:
     # locations, times, depths and heights
     # These are fine to keep as defaults, theyre generic
     days = [15, 46, 74, 105, 135, 166, 196, 227, 258, 288, 319, 349] # days of year to simulate - TODO leap years - why not use real dates?
-    hours = collect(0.0:1:23.0), # hour of day for solrad
+    hours = collect(0.0:1:23.0) # hour of day for solrad
     depths = DEFAULT_DEPTHS # soil nodes - keep spacing close near the surface
     heights = [0.01, 2]u"m" # air nodes for temperature, wind speed and humidity profile, last height is reference height for weather data
     # TODO: this should be mandatory with no default??
-    latitude = 43.07305u"°" # latitude
+    latitude
     # Objects defined above
-    solar_model=SolarRadiation()
-    terrain=default_terrain()
-    soil_moisture_model=default_soil_moisture_model()
-    soil_thermal_model=default_soil_thermal_parameters()
-    environment_minmax=default_monthly_weather()
-    environment_daily=default_daily_environment()
+    solar_model = SolarRadiation()
+    terrain
+    soil_moisture_model
+    soil_thermal_model
+    environment_minmax
+    environment_daily
     # intial conditions TODO: where to put these?
-    initial_soil_temperature = fill(u"K"(7.741667u"tC"), length(depths))
+    initial_soil_temperature = fill(u"K"(7.741667u"°C"), length(depths))
     initial_soil_moisture = [0.42, 0.42, 0.42, 0.43, 0.44, 0.44, 0.43, 0.42, 0.41, 0.42, 0.42, 0.43]
     iterate_day = 3 # number of iterations per day
     # TODO: make these types so their code blocks can be removed by the compiler
     daily = false # doing consecutive days?
     runmoist = false # run soil moisture algorithm?
     spinup = false # spin-up the first day by iterate_day iterations?
+end
+
+function example_microclimate_problem(;
+    latitude = 43.07305u"°",
+    terrain=default_terrain(),
+    soil_moisture_model=example_soil_moisture_model(),
+    soil_thermal_model=example_soil_thermal_parameters(),
+    environment_minmax=example_monthly_weather(),
+    environment_daily=example_daily_environment(),
+    kw...
+)
+    MicroProblem(; 
+         latitude, terrain, soil_moisture_model, soil_thermal_model, environment_minmax, environment_daily, kw...
+    )
 end
 # TODO 1. Needs the snow algorithm to be incorporated. The way I did this in the Fortran version was not
 # elegant.
@@ -113,73 +127,8 @@ end
 # TODO 9. Make it work on GPUs for rapid computation of grids, with intelligent initialisation based on near
 # neighbours.
 
-abstract type AbstractSolarRadiation end
-
-"""
-    SolarRadiation
-
-# TODO who wrote this model what is it called
-
-# Keyword Arguments
-
-- `cmH2O::Real=1`: Precipitable water in cm for atmospheric column (e.g. 0.1: dry, 1.0: moist, 2.0: humid).
-- `ϵ::Real=0.0167238`: Orbital eccentricity of Earth.
-- `ω::Real=2π/365`: Mean angular orbital velocity of Earth (radians/day).
-- `se::Real=0.39779`: Precomputed solar elevation constant.
-- `d0::Real=80`: Reference day for declination calculations.
-- `iuv::Bool=false`: If `true`, uses the full gamma-function model for diffuse radiation (expensive).
-- `scattered::Bool=true`: If `true`, disables scattered light computations (faster).
-- `amr::Quantity=25.0u"km"`: Mixing ratio height of the atmosphere.
-- `nmax::Integer=111`: Maximum number of wavelength intervals.
-- `Iλ::Vector{Quantity}`: Vector of wavelength bins (e.g. in `nm`).
-- `OZ::Matrix{Float64}`: Ozone column depth table indexed by latitude band and month (size 19×12).
-- `τR`, `τO`, `τA`, `τW`: Vectors of optical depths per wavelength for Rayleigh scattering, ozone, aerosols, and water vapor.
-- `Sλ::Vector{Quantity}`: Solar spectral irradiance per wavelength bin (e.g. in `mW * cm^-2 * nm^-1`).
-- `FD`, `FDQ`: Radiation scattered from the direct solar beam and reflected radiation
-    rescattered downward as a function of wavelength, from tables in Dave & Furukawa (1966).
-- `s̄`: a function of τR linked to molecular scattering in the UV range (< 360 nm)
-"""
-@kwdef struct SolarRadiation <: AbsractSolarRadiation
-    # solar radiation
-    d0 = 80.0 # reference day for declination calculations
-    cmH2O = 1 # precipitable cm H2O in air column 0.1 = very dry; 1 = moist air conditions; 2 = humid tropical conditions (note this is for the whole atmospheric profile not just near the ground)
-    ϵ = 0.0167238 # orbital eccentricity of Earth
-    ω = 2π / 365 # mean angular orbital velocity of Earth (radians/day)
-    se = 0.39784993 # precomputed solar elevation constant
-    iuv = false # if `true` uses the full gamma-function model for diffuse radiation (expensive)
-    scattered = true # if `false` disables scattered light computations (faster)
-    amr = 25.0u"km" # mixing ratio height of the atmosphere
-    nmax = 111 # Maximum number of wavelength intervals
-    # TODO better field names
-    Iλ = DEFAULT_Iλ # cector of wavelength bins (e.g. in `nm`)
-    OZ = DEFAULT_OZ # ozone column depth table indexed by latitude band and month (size 19×12)
-    τR = DEFAULT_τR # vector of optical depths per wavelength for Rayleigh scattering
-    τO = DEFAULT_τO # vector of optical depths per wavelength for ozone
-    τA = DEFAULT_τA # vector of optical depths per wavelength for aerosols
-    τW = DEFAULT_τW # vector of optical depths per wavelength for water vapor
-    Sλ = DEFAULT_Sλ # solar spectral irradiance per wavelength bin (e.g. in `mW * cm^-2 * nm^-1`)
-    FD = DEFAULT_FD # interpolated functino of radiation scattered from the direct solar beam
-    FDQ = DEFAULT_FDQ # interpolated function of radiation scattered from ground-reflected radiation
-    s̄ = DEFAULT_s̄ # a function of τR linked to molecular scattering in the UV range (< 360 nm)
-end
-
-abstract type AbstractTerrain end
-
-# TODO is there a more specific name for this collection of terrain variables
-@kwdef struct Terrain <: AbstractTerrain
-    elevation
-    horizon_angles
-    slope
-    aspect
-    roughness_height
-    zh
-    d0
-    κ
-    P_atmos = atmospheric_pressure(elevation)
-    viewfactor = 1 - sum(sin.(horizon_angles)) / length(horizon_angles) # convert horizon angles to radians and calc view factor(s)
-end
-
-function default_terrain(;
+# TODO some of these can be actual defaults ?
+function example_terrain(;
     elevation = 226.0u"m", # elevation (m)
     horizon_angles = fill(0.0u"°", 24), # enter the horizon angles (degrees) so that they go from 0 degrees azimuth (north) clockwise in 15 degree intervals
     slope = 0.0u"°", # slope (degrees, range 0-90)
@@ -193,23 +142,7 @@ function default_terrain(;
     Terrain(; elevation, horizon_angles, slope, aspect, roughness_height, zh, d0, κ)
 end
 
-# TODO: this should be more generic.
-# We could possible make a field type that is either interpolated or indexed
-# so we just mix min-max fields with e.g. daily fields in a single environment object
-@kwdef struct MonthlyMinMaxEnvironment{AT,W,H,C,M}
-    air_temperature_min::AT
-    air_temperature_max::AT
-    wind_min::W
-    wind_max::W
-    humidity_min::H
-    humidity_max::H
-    cloud_min::C
-    cloud_max::C
-    minima_times::M
-    maxima_times::M
-end
-
-function default_monthly_weather(;
+function example_monthly_weather(;
     air_temperature_min = [-14.3, -12.1, -5.1, 1.2, 6.9, 12.3, 15.2, 13.6, 8.9, 3, -3.2, -10.6]u"°C",
     air_temperature_max = [-3.2, 0.1, 6.8, 14.6, 21.3, 26.4, 29, 27.7, 23.3, 16.6, 7.8, -0.4]u"°C",
     wind_min = [4.9, 4.8, 5.2, 5.3, 4.6, 4.3, 3.8, 3.7, 4, 4.6, 4.9, 4.8] * 0.1u"m/s",
@@ -224,20 +157,7 @@ function default_monthly_weather(;
     MonthlyMinMaxWeather(air_temperature_min, air_temperature_max, wind_min, wind_max, humidity_min, humidity_max, cloud_min, cloud_max, minima_times, maxima_times)
 end
 
-abstract type AbstractSoilThermalModel end
-
-# TODO are these parameters for a specific named model
-@kwdef struct CampbelldeVriesSoilThermal <: AbstractSoilThermalModel 
-    mineral_conductivity
-    mineral_density
-    mineral_heat_capacity
-    bulk_density
-    saturation_moisture
-    recirculation_power
-    return_flow_threshold
-end
-
-function default_soil_thermal_parameters(;
+function example_soil_thermal_parameters(;
     soil_mineral_conductivity = 1.25u"W/m/K", # soil minerals thermal conductivity
     soil_mineral_density = 2.560u"Mg/m^3", # soil minerals density
     soil_mineral_heat_capacity = 870.0u"J/kg/K", # soil minerals specific heat
@@ -252,28 +172,8 @@ function default_soil_thermal_parameters(;
     )
 end
 
-abstract type AbstractSoilMoistureModel end
-
-# TODO whos model is this what is it called
-@kwdef struct SoilMoistureModel <: AbstractSoilMoistureModel
-    air_entry_water_potential
-    saturated_hydraulic_conductivity
-    Campbells_b_parameter
-    soil_bulk_density2
-    soil_mineral_density2
-    root_density
-    root_resistance
-    stomatal_closure_potential
-    leaf_resistance
-    stomatal_stability_parameter
-    root_radius
-    moist_error
-    moist_count
-    moist_step
-    maxpool
-end
-
-function default_soil_moisture_model(;
+# TODO move real defaults to the struct keywords
+function example_soil_moisture_model(;
     deVries_shape_factor = 0.1, # de Vries shape factor, 0.33 for organic soils, 0.1 for mineral
     # soil moisture model soil parameters
     air_entry_water_potential = fill(0.7, length(depths) * 2 - 2)u"J/kg", #air entry potential
@@ -300,18 +200,7 @@ function default_soil_moisture_model(;
         root_radius, moist_error, moist_count, moist_step, maxpool
     )
 end
-
-@kwdef struct EnvironmentTimeseries <: AbstractEnvironment
-    albedos
-    shades
-    pctwets
-    sles
-    rainfall
-    deep_soil_temperatures
-    leaf_area_index
-end
-
-function default_daily_environmental(;
+function example_daily_environmental(;
     albedos = fill(0.1, length(days)), # substrate albedo (decimal %)
     shades = fill(0.0, length(days)), # % shade cast by vegetation
     pctwets = fill(0.0, length(days)), # % surface wetness
@@ -567,7 +456,7 @@ function solve_air!(output::MicroResult, weather, mp::MicroProblem)
             zenith_angle=output.zenith_angles[i],
         )
         # compute scalar profiles
-        output.profile[i] = get_profile!(profile_buffers; terrain, environment_instant)
+        output.profile[i] = atmospheric_surface_profile!(profile_buffers; terrain, environment_instant)
     end
 end
 
@@ -661,19 +550,19 @@ function get_day(environment_daily, iday)
         rainfall = environment_daily.rainfall[iday],
     )
 end
-function get_instant(environment_day, output, weather, θ_soilθ_a, 1)
+function get_instant(environment_day, output, weather, θ_soilθ_a, i)
     return (;
         environment_day...,
-        air_temperature = weather.air_temperature[1],
-        wind_speed = weather.wind_speed[1],
-        humidity = weather.relative_humidity[1],
-        zenith_angle = output.zenith_angle[1],
+        air_temperature = weather.air_temperature[i],
+        wind_speed = weather.wind_speed[i],
+        humidity = weather.relative_humidity[i],
+        zenith_angle = output.zenith_angle[i],
         θ_soil=θ_soil0_a,
     )
 end
 
 # This handles getting values from a Number or array of numbers, or objects of these
-maybegetindex(obj::SoilThermalParams, i::Int) = SoilThermalParams(; maybegetindex(ConstructionBase.getproperties(obj), i)...)
+maybegetindex(obj::CampbelldeVriesSoilThermal, i::Int) = CampbelldeVriesSoilThermal(; maybegetindex(ConstructionBase.getproperties(obj), i)...)
 maybegetindex(props::NamedTuple, i::Int) = map(p -> maybegetindex(p, i), props)
 maybegetindex(val::Number, i::Int) = val
 maybegetindex(vals::AbstractArray, i::Int) = vals[i]

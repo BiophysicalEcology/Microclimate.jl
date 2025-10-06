@@ -42,6 +42,8 @@ function hour_angle(t::Real, lonc::Real=0)
     return h, tsn
 end
 
+abstract type AbstractSolarGeometryModel end
+
 """
     solar_geometry(d::Real, latitude::Quantity, h::Quantity; d0::Real = 80, ω::Real = 2π/365, ϵ::Real = 0.0167, se::Real = 0.39779)
 
@@ -68,16 +70,17 @@ Tuple: `(ζ, δ, z, AR2)` with angle quantities in radians and AR2 unitless.
 # Reference
 McCullough & Porter (1971)
 """
-struct McCulloughPorterSolarGeometry <: AbstractSolarGeometryModel
-    d0::Real=80,
-    ω::Real=2π / 365,
-    ϵ::Real=0.0167238,
-    se::Real=0.39784993#0.39779
+@kwdef struct McCulloughPorterSolarGeometry <: AbstractSolarGeometryModel
+    d0::Real = 80
+    ω::Real = 2π / 365
+    ϵ::Real = 0.0167238
+    se::Real = 0.39784993 #0.39779
 end
-function solar_geometry(sm::McCulloughPorter;
-    d::Real=1.0,
-    latitude::Quantity=83.07305u"°",
-    h::Quantity=-2.87979u"rad",
+
+function solar_geometry(sm::McCulloughPorterSolarGeometry;
+    d::Real, # =1.0,
+    latitude::Quantity, # =83.07305u"°",
+    h::Quantity, # =-2.87979u"rad",
 )
 
     ζ = (ω * (d - d0)) + 2.0ϵ * (sin(ω * d) - sin(ω * d0))          # Eq.5
@@ -1545,12 +1548,16 @@ function solrad(solar_model::SolarRadiation;
     )
 end
 
-function atmospheric_radiation(::Swinbank, P_vap, tair)
+abstract type AbstractAtmosphericRadiationModel end
+struct SwinbankAtmosphericRadiation <: AbstractAtmosphericRadiationModel end
+struct CampbellNormanAtmosphericRadiation <: AbstractAtmosphericRadiationModel end
+
+function atmospheric_radiation(::SwinbankAtmosphericRadiation, P_vap, tair)
     # Swinbank, Eq. 10.11 in Campbell and Norman 1998
     arad = uconvert(u"W*m^-2", ((9.2e-6 * (u"K"(tair))^2) * σ * (u"K"(tair))^4) / 1u"K^2")
     return P_vap, arad
 end
-function atmospheric_radiation(::CampbellNorman, P_vap, tair)
+function atmospheric_radiation(::CampbellNormanAtmosphericRadiation, P_vap, tair)
     # Campbell and Norman 1998 eq. 10.10 to get emissivity of sky
     arad = u"W/m^2"((1.72 * (ustrip(u"kPa", P_vap) / ustrip(u"K", tair + 0.01u"K"))^(1//7)) * σ * (u"K"(tair) + 0.01u"K")^4) 
     return P_vap, arad

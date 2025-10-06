@@ -9,7 +9,7 @@ function allocate_profile(heights)
 end
 
 """
-    get_profile(; kwargs...)
+    atmospheric_surface_profile(; kwargs...)
 
 Compute vertical profiles of wind speed, air temperature, and relative humidity 
 in the atmospheric surface layer, using Monin–Obukhov similarity theory (MOST).
@@ -21,6 +21,7 @@ with surface roughness parameters. Zenith angle and a maximum allowed surface te
 to assess whether conditions are stable or unstable.
 
 # Keyword Arguments
+
 - `z0::Quantity=0.004u"m"`: roughness length (surface aerodynamic roughness).
 - `zh::Quantity=0.0u"m"`: heat transfer roughness height
 - `d0::Quantity=0.0u"m"`: zero plane displacement correction factor.
@@ -69,7 +70,7 @@ that handles canopy displacement, invoked if `zh > 0` and otherwise
 # Example
 
 ```julia
-profile = get_profile(
+profile = atmospheric_surface_profile(
     reference_temperature = 25u"°C",
     reference_wind_speed = 2.0u"m/s",
     relative_humidity = 60.0,
@@ -81,9 +82,9 @@ profile.air_temperatures  # vertical profile of air temperatures
 profile.wind_speeds       # vertical profile of wind speeds
 ```
 """
-get_profile(; heights=DEFAULT_HEIGHTS, kw...) =
-    get_profile!(allocate_profile(heights); kw...)
-function get_profile!(buffers;
+atmospheric_surface_profile(; heights=DEFAULT_HEIGHTS, kw...) =
+    atmospheric_surface_profile!(allocate_profile(heights); kw...)
+function atmospheric_surface_profile!(buffers;
     terrain,
     environment_instant,
     γ = 16.0, # coefficient from Dyer and Hicks for Φ_m (momentum), TODO make it available as a user param?

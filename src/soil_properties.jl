@@ -5,7 +5,6 @@ Compute bulk soil properties — thermal conductivity (`λ_b`), volumetric heat 
 and bulk density (`ρ_b`) — for a given soil layer.
 
 # Arguments
-<<<<<<< HEAD
 
 - `soil_thermal::AbstractSoilThermalModel`
 
