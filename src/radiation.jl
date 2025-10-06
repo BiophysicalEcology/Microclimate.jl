@@ -78,10 +78,11 @@ McCullough & Porter (1971)
 end
 
 function solar_geometry(sm::McCulloughPorterSolarGeometry;
-    d::Real, # =1.0,
     latitude::Quantity, # =83.07305u"°",
+    d::Real, # =1.0,
     h::Quantity, # =-2.87979u"rad",
 )
+    (; d0, ω, ϵ, se) = sm
 
     ζ = (ω * (d - d0)) + 2.0ϵ * (sin(ω * d) - sin(ω * d0))          # Eq.5
     δ = asin(se * sin(ζ))                                         # Eq.4
@@ -132,12 +133,12 @@ A `NamedTuple` with the fields:
 function elevation_correction(elevation)
     elev_km = ustrip(u"km", elevation + 1.0u"km")
 
-    molecular =0.00007277 * elev_km^3 +
+    molecular_corr =0.00007277 * elev_km^3 +
                0.00507293 * elev_km^2 -
                0.12482149 * elev_km +
                1.11687469
 
-    aerosol =  8.35656e-7 * elev_km^6 -
+    aerosol_corr =  8.35656e-7 * elev_km^6 -
                6.26384e-5 * elev_km^5 +
                1.86967e-3 * elev_km^4 -
                2.82585e-2 * elev_km^3 +
@@ -145,14 +146,14 @@ function elevation_correction(elevation)
                9.25268e-1 * elev_km +
                1.71321
 
-    ozone =    1.07573e-6 * elev_km^5 -
+    ozone_corr =    1.07573e-6 * elev_km^5 -
                5.14511e-5 * elev_km^4 +
                7.97960e-4 * elev_km^3 -
                4.90904e-3 * elev_km^2 +
                2.99258e-3 * elev_km +
                1.00238
 
-    water_vapour = 1.0
+    water_vapour_corr = 1.0
 
     return (; molecular_corr, aerosol_corr, ozone_corr, water_vapour_corr)
 end
@@ -1190,7 +1191,7 @@ Compute clear sky solar radiation at a given place and time using a detailed atm
 - `lonc::Real=0.0`: Longitude correction in hours (positive west of standard meridian).
 - `year::Real=2001`: Year used for ozone table lookup.
 - `terrain`
-- `albedos::Vector{<:Real}=fill(0.15, length(days))`: Daily ground albedo, fraction [0, 1].
+- `albedo::Vector{<:Real}=fill(0.15, length(days))`: Daily ground albedo, fraction [0, 1].
 
 # Returns
 
@@ -1228,15 +1229,15 @@ Dave, J. V., & Furukawa, P. M. (1966). Scattered radiation in the ozone
 """
 function solrad(solar_model::SolarRadiation;
     days::Vector{<:Real}=[15, 46, 74, 105, 135, 166, 196, 227, 258, 288, 319, 349],
-    hours::Vector{<:Real}=collect(0.0:23.0),
+    hours::AbstractVector{<:Real}=0:1:23,
     year::Real=2001.0, # needed to determine if a leap year
     latitude::Quantity=43.1379u"°",
     lonc::Real=0.0, # longitude correction, hours
     terrain,
-    albedos::Vector{<:Real}=fill(0.15, length(days)), # substrate albedo (decimal %)
+    albedo::Vector{<:Real}=fill(0.15, length(days)), # substrate albedo (decimal %)
 )
     (; solar_geometry_model, cmH2O, iuv, scattered, amr, nmax, Iλ, OZ, τR, τO, τA, τW, Sλ, FD, FDQ, s̄) = solar_model
-    (; elevation) = terrain
+    (; elevation, horizon_angles, slope, P_atmos) = terrain
 
     ndays = length(days)    # number of days
     ntimes = length(hours)  # number of times
@@ -1276,12 +1277,12 @@ function solrad(solar_model::SolarRadiation;
         DRRλ = GRINT * u"1/nm"              # wavelength-specific direct Rayleigh radiation component
         DRλ = GRINT * u"1/nm"               # wavelength-specific direct radiation component
         SRλ = GRINT * u"1/nm"               # wavelength-specific scattered radiation component
-        albedo = albedos[i]
+        alb = albedo[i]
         for j in 1:ntimes
             d = days[i]
             t = hours[j]
             h, tsn = hour_angle(t, lonc) # hour angle (radians)
-            (; ζ, δ, z, AR2) = solar_geometry(solar_geometry_model; latitude, day, hour) # compute ecliptic, declination, zenith angle and (a/r)^2
+            (; ζ, δ, z, AR2) = solar_geometry(solar_geometry_model; latitude, d, h) # compute ecliptic, declination, zenith angle and (a/r)^2
             Z = uconvert(u"°", z)
             Zsl = Z
             amult = 1.0
@@ -1450,7 +1451,7 @@ function solrad(solar_model::SolarRadiation;
                         if τλ1 >= 0.03
                             GAMR, GAML, SBAR = GAMMA!(gamma_buffers, τλ1)
                             SRλ[N] = (
-                                         ((float(GAML[intcz]) + float(GAMR[intcz])) / (2.0 * (1.0 - albedo * float(SBAR))))
+                                         ((float(GAML[intcz]) + float(GAMR[intcz])) / (2.0 * (1.0 - alb * float(SBAR))))
                                          -
                                          exp(-float(τλ1) * airms)
                                      ) * cz * Sλ[N] * AR2 / 1000.0
@@ -1479,7 +1480,7 @@ function solrad(solar_model::SolarRadiation;
                             end
                             FDAV = FD[N, I]
                             FDQDAV = FDQ[N, I]
-                            SRλ[N] = (Sλ[N] / π) * (FDAV + FDQDAV * (albedo / (1.0 - (albedo * s̄[N])))) / 1000.0
+                            SRλ[N] = (Sλ[N] / π) * (FDAV + FDQDAV * (alb / (1.0 - (alb * s̄[N])))) / 1000.0
                             SRλ[N] *= AR2
                         end
                     end
@@ -1563,16 +1564,28 @@ function atmospheric_radiation(::CampbellNormanAtmosphericRadiation, P_vap, tair
     return P_vap, arad
 end
 
-function get_longwave(radiaion_model=CampbellNorman(); terrain, environment_instant)
+function longwave_radiation(radiation_model=CampbellNormanAtmosphericRadiation(); 
+    terrain, 
+    environment_instant,
+    surface_temperature,
+)
     # TODO these are not the real names
-    (; rh, tair, tsurf, slep, sle, cloud, viewfactor, shade) = environment_instant
-    (; elevation, P_atmos) = terrain
+    (; elevation, P_atmos, viewfactor) = terrain
+    (; relative_humidity, air_temperature, surface_emissivity, cloud_emissivity, cloud_cover, shade) = environment_instant
+
+    # Short names, hardly worth it
+    tsurf = surface_temperature
+    tair = air_temperature
+    rh = relative_humidity
+    slep = surface_emissivity
+    sle = cloud_emissivity
+    cloud = cloud_cover
 
     # Longwave radiation (handle both IR modes)
     wet_air_out = wet_air_properties(u"K"(tair); rh, P_atmos)
 
     # Atmospheric radiation
-    P_vap, arad = atmospheric_radiation(radiation_model, wet_air_out.Pvap, tair)
+    P_vap, arad = atmospheric_radiation(radiation_model, wet_air_out.P_vap, tair)
 
     # Cloud radiation temperature (shade approximation, TAIR - 2°C)
     crad = σ * slep * (u"K"(tair) - 2.0u"K")^4
@@ -1593,6 +1606,7 @@ function get_longwave(radiaion_model=CampbellNorman(); terrain, environment_inst
     qradhl = hrad
     qrad = (qradsk + qradvg) * viewfactor + qradhl * (1.0 - viewfactor) - qradgr
     tsky = (((qradsk + qradvg) * viewfactor + qradhl * (1.0 - viewfactor)) / σ)^(1//4)
+
     return (;
         # TODO standardise these names with their target uses
         Tsky=tsky,
@@ -1625,10 +1639,11 @@ Maxwell, E. L., "A Quasi-Physical Model for Converting Hourly
            Report No. SERI/TR-215-3087, Golden, CO: Solar Energy Research
            Institute, 1987.
 """
-function cloud_adjust_radiation!(output, cloud, D_cs, B_cs, zenith, doy; 
-    a=0.36, b=0.64, gamma=1.0
+function cloud_adjust_radiation!(output, cloud::AbstractArray, D_cs, B_cs, zenith::AbstractArray, doy; 
+    a=0.36, b=0.64, gamma=1.0,
 )
-    G, D, B = output[(:global_solar, :diffuse_solar, :direct_solar)]
+    (; global_solar, diffuse_solar, direct_solar) = output
+    G, D, B = (global_solar, diffuse_solar, direct_solar)
     # Solar geometry
     cosz     = cos.(zenith)
     cosz_pos = max.(cosz, 0.0)

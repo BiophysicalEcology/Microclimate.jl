@@ -87,10 +87,11 @@ atmospheric_surface_profile(; heights=DEFAULT_HEIGHTS, kw...) =
 function atmospheric_surface_profile!(buffers;
     terrain,
     environment_instant,
+    surface_temperature, 
     γ = 16.0, # coefficient from Dyer and Hicks for Φ_m (momentum), TODO make it available as a user param?
 )
     (; roughness_height, zh, d0, κ, elevation, P_atmos) = terrain
-    (; reference_temperature, reference_wind_speed, relative_humidity, surface_temperature, zenith_angle) = environment_instant
+    (; reference_temperature, reference_wind_speed, relative_humidity, zenith_angle) = environment_instant
 
     (; heights, height_array, air_temperatures, wind_speeds, humidities) = buffers
     N_heights = length(heights)
@@ -178,9 +179,9 @@ function atmospheric_surface_profile!(buffers;
     humidities .= clamp.(e ./ vapour_pressure.(air_temperatures) .* 100.0, 0.0, 100.0)
 
     return (;
-        wind_speeds=u"m/s".(wind_speeds),
-        air_temperatures,
-        humidities,
+        wind_speed=u"m/s".(wind_speeds),
+        air_temperature=air_temperatures,
+        relative_humidity=humidities,
         Q_convection=u"W/m^2"(Q_convection),
         ustar=u"m/s"(u_star)
     )
@@ -306,7 +307,7 @@ end
 Compute convective heat flux given bulk and sublayer Stanton numbers.
 """
 function convective_flux(ρ_cp, ΔT, u_star, bulk_stanton_number, sublayer_stanton_number)
-        return ρ_cp * ΔT * u_star * bulk_stanton_number / (1 + bulk_stanton_number / sublayer_stanton_number)
+    return ρ_cp * ΔT * u_star * bulk_stanton_number / (1 + bulk_stanton_number / sublayer_stanton_number)
 end
 
 

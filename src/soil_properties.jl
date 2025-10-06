@@ -54,7 +54,7 @@ Campbell, G. S., & Norman, J. M. (1998). Environmental Biophysics. Springer.
 """
 function soil_properties(soil_thermal::CampbelldeVriesSoilThermal;
     terrain,
-    soil_teperature::Quantity,
+    soil_temperature::Quantity,
     soil_moisture::Number,
 )
     (; elevation, P_atmos) = terrain
@@ -67,6 +67,8 @@ function soil_properties(soil_thermal::CampbelldeVriesSoilThermal;
     ρ_mineral = st.mineral_density
     q = st.recirculation_power 
     θ_0 = st.return_flow_threshold
+    g_a = st.deVries_shape_factor
+
     T_soil = soil_temperature
     θ_soil = soil_moisture
 
@@ -147,8 +149,8 @@ Returns three arrays: `λ_b`, `cp_b`, `ρ_b`.
 function soil_properties!(buffers::NamedTuple, soil_thermal; 
     terrain, soil_temperature::AbstractVector, soil_moisture::AbstractVector
 )
-    N = length(T_soil)
-    @assert length(θ_soil) == N
+    N = length(soil_temperature)
+    @assert length(soil_moisture) == N
     (; λ_b, cp_b, ρ_b) = buffers
     soil_props_i(i) = soil_properties(soil_thermal;
         terrain,
@@ -162,5 +164,5 @@ function soil_properties!(buffers::NamedTuple, soil_thermal;
     cp_b .= getindex.(results, 2)
     ρ_b  .= getindex.(results, 3)
 
-    return λ_b, cp_b, ρ_b
+    return (; λ_b, cp_b, ρ_b)
 end

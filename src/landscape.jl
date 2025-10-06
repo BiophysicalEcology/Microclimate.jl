@@ -1,13 +1,12 @@
 @kwdef struct SoilEnergyInputs{F,B,SP,D<:Vector{<:Number},H<:Vector{<:Number},T,EI}
     forcing::F
     buffers::B
-    soilprops::SP
+    soil_thermal_model::SP
     depths::D
     heights::H
     nodes::Vector{Float64}
     terrain::T
     environment_instant::EI
-    θ_soil::Vector{Float64}
     runmoist::Bool
 end
 
@@ -49,19 +48,18 @@ abstract type AbstractEnvironment end
     solrad::SR
     profile::Pr
 end
-function MicroResult(nsteps::Int, numodes_a::Int)
+function MicroResult(nsteps::Int, numnodes_a::Int)
     return MicroResult(;
-        # TODO ... the rest
-        air_temperatures,
-        wind_speeds,
-        relative_humidity,
-        cloud_cover = cloud_covers,
-        global_solar,
-        direct_solar,
-        diffuse_solar,
-        zenith_angles,
+        air_temperature = Array{typeof(1.0u"K")}(undef, nsteps, numnodes_a),
+        wind_speed = Array{typeof(1.0u"m/s")}(undef, nsteps, numnodes_a),
+        relative_humidity = Array{Float64}(undef, nsteps, numnodes_a),
+        cloud_cover = Array{Float64}(undef, nsteps, numnodes_a),
+        global_solar = Array{typeof(1.0u"W/m^2")}(undef, nsteps, numnodes_a),
+        direct_solar = Array{typeof(1.0u"W/m^2")}(undef, nsteps, numnodes_a),
+        diffuse_solar = Array{typeof(1.0u"W/m^2")}(undef, nsteps, numnodes_a),
+        zenith_angle = Array{Float64}(undef, nsteps, numnodes_a),
         sky_temperature = Array{typeof(1.0u"K")}(undef, nsteps),
-        soil_temperature = Array{SVector{numnodes_a,typeof(1.0u"K")}}(undef, nsteps),
+        soil_temperature = Array{typeof(1.0u"K")}(undef, nsteps, numnodes_a),
         soil_moisture = Array{Float64}(undef, nsteps, numnodes_a),
         soil_water_potential = Array{typeof(1.0u"J/kg")}(undef, nsteps, numnodes_a),
         soil_humidity = Array{Float64}(undef, nsteps, numnodes_a),
@@ -69,28 +67,9 @@ function MicroResult(nsteps::Int, numodes_a::Int)
         soil_specific_heat = Array{typeof(1.0u"J/kg/K")}(undef, nsteps, numnodes_a),
         soil_bulk_density = Array{typeof(1.0u"kg/m^3")}(undef, nsteps, numnodes_a),
         surface_water = Array{typeof(1.0u"kg/m^2")}(undef, nsteps),
+        solrad = nothing,
+        profile = Array{Any}(undef, nsteps),
     )
-    # return MicroResult(;
-    #     air_temperatures,
-    #     wind_speeds,
-    #     relative_humidity,
-    #     cloud_cover = cloud_covers,
-    #     global_solar,
-    #     direct_solar,
-    #     diffuse_solar,
-    #     zenith_angles,
-    #     sky_temperature = T_skys,
-    #     soil_temperature = reduce(vcat, transpose.(T_soils)),
-    #     soil_moisture = θ_soils,
-    #     soil_water_potential = ψ_soils,
-    #     soil_humidity = rh_soils,
-    #     soil_thermal_conductivity = λ_bulk,
-    #     soil_specific_heat = c_p_bulk,
-    #     soil_bulk_density = ρ_bulk,
-    #     surface_water = pools,
-    #     solrad=solrad_out,
-    #     profile=profile_out,
-    # )
 end
 
 Base.show(io::IO, mr::MicroResult) = print(io, "MicroResult")
@@ -100,6 +79,7 @@ abstract type AbstractSoilThermalModel end
 
 # TODO are these parameters for a specific named model
 @kwdef struct CampbelldeVriesSoilThermal <: AbstractSoilThermalModel 
+    deVries_shape_factor
     mineral_conductivity
     mineral_density
     mineral_heat_capacity
@@ -113,7 +93,6 @@ abstract type AbstractSoilMoistureModel end
 
 # TODO whos model is this what is it called
 @kwdef struct SoilMoistureModel <: AbstractSoilMoistureModel
-    deVries_shape_factor
     air_entry_water_potential
     saturated_hydraulic_conductivity
     Campbells_b_parameter
@@ -150,7 +129,7 @@ end
 # TODO: this should be more generic.
 # We could possible make a field type that is either interpolated or indexed
 # so we just mix min-max fields with e.g. daily fields in a single environment object
-@kwdef struct MonthlyMinMaxEnvironment{AT,W,H,C,M}
+@kwdef struct MonthlyMinMaxEnvironment{AT,W,H,C,M}# <: AbstractEnvironment
     air_temperature_min::AT
     air_temperature_max::AT
     wind_min::W
@@ -162,16 +141,24 @@ end
     minima_times::M
     maxima_times::M
 end
-
-
-@kwdef struct EnvironmentTimeseries <: AbstractEnvironment
-    albedos
-    shades
-    pctwets
-    sles
+@kwdef struct DailyTimeseries <: AbstractEnvironment
+    albedo
+    shade
+    soil_wetness
+    surface_emissivity
     rainfall
-    deep_soil_temperatures
+    deep_soil_temperature
     leaf_area_index
+end
+@kwdef struct HourlyTimeseries <: AbstractEnvironment
+    air_temperature
+    relative_humidity
+    wind_speed
+    solar_radiation
+    longwave_radiation
+    cloud_cover
+    rainfall
+    zenith_angle
 end
 
 
@@ -202,12 +189,8 @@ abstract type AbstractSolarRadiation end
 - `s̄`: a function of τR linked to molecular scattering in the UV range (< 360 nm)
 """
 @kwdef struct SolarRadiation <: AbstractSolarRadiation
-    # solar radiation
-    d0 = 80.0 # reference day for declination calculations
+    solar_geometry_model = McCulloughPorterSolarGeometry()
     cmH2O = 1 # precipitable cm H2O in air column 0.1 = very dry; 1 = moist air conditions; 2 = humid tropical conditions (note this is for the whole atmospheric profile not just near the ground)
-    ϵ = 0.0167238 # orbital eccentricity of Earth
-    ω = 2π / 365 # mean angular orbital velocity of Earth (radians/day)
-    se = 0.39784993 # precomputed solar elevation constant
     iuv = false # if `true` uses the full gamma-function model for diffuse radiation (expensive)
     scattered = true # if `false` disables scattered light computations (faster)
     amr = 25.0u"km" # mixing ratio height of the atmosphere

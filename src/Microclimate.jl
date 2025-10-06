@@ -16,6 +16,10 @@ using Interpolations: AbstractInterpolation
 
 export MicroProblem
 
+export CampbelldeVriesSoilThermal, SoilMoistureModel, SolarRadiation
+
+export MonthlyMinMaxEnvironment, DailyTimeseries, HourlyTimeseries, Terrain
+
 export sine_exponential!, vsine, hourly_vars
 
 export hour_angle, solar_geometry, elev_corr, dchxy, solrad, cloud_adjust_radiation
