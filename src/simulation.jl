@@ -391,7 +391,7 @@ function solve_soil!(output::MicroResult, mp::MicroProblem, solrad_out;
         forcing = forcing_day(solrad_out, mp.environment_hourly, iday)
         step = 1
         # loop through hours of day
-        if mp.spinup && j == 1 && i == 1 || daily == false
+        if mp.spinup && j == 1 || daily == false
             niter = iterate_day # number of interations for steady periodic
         else
             niter = 1
@@ -411,13 +411,12 @@ function solve_soil!(output::MicroResult, mp::MicroProblem, solrad_out;
                 if i == 1 # make first hour of day equal last hour of previous iteration
                     # Then why do we run the soil water balance again??
                     output.soil_temperature[step, :] .= T0
-                    step = (j - 1) * length(hours) + i
                     pool += environment_instant.rainfall
                     if runmoist
                         infil_out, soil_wetness, pool, θ_soil0_b = get_soil_water_balance!(buffers, soil_moisture_model;
                             depths, heights, terrain, environment_instant, T0, niter_moist, soil_wetness, pool, soil_moisture=θ_soil0_b,
                         )
-                        iday > 1 && update_soil_water!(output, infil_out, sub, step)
+                        update_soil_water!(output, infil_out, sub, step)
                     end
                     pool = clamp(pool, 0.0u"kg/m^2", soil_moisture_model.maxpool)
                 else
@@ -434,7 +433,7 @@ function solve_soil!(output::MicroResult, mp::MicroProblem, solrad_out;
                         infil_out, soil_wetness, pool, θ_soil0_b = get_soil_water_balance!(buffers, soil_moisture_model;
                             depths, heights, terrain, environment_instant, T0, niter_moist, pool, soil_wetness, soil_moisture=θ_soil0_b 
                         )
-                        i < length(hours) && update_soil_water!(output, infil_out, sub, step)
+                        update_soil_water!(output, infil_out, sub, step)
                     end
                     # TODO: why use every second step what is this
                     sub = vcat(findall(isodd, 1:numnodes_b), numnodes_b)
@@ -442,11 +441,9 @@ function solve_soil!(output::MicroResult, mp::MicroProblem, solrad_out;
                     longwave_out = longwave_radiation(; terrain, environment_instant, surface_temperature=T0[1])
                 end
                 # Write to output
-                if i < length(hours)
-                    output.surface_water[step] = pool
-                    output.soil_temperature[step, :] .= T0
-                    output.sky_temperature[step] = longwave_out.Tsky
-                end
+                output.surface_water[step] = pool
+                output.soil_temperature[step, :] .= T0
+                output.sky_temperature[step] = longwave_out.Tsky
                 update_soil_properties!(output, buffers.soil_properties, soil_thermal_model;
                     soil_temperature=T0, soil_moisture=θ_soil0_a, terrain, step
                 )
