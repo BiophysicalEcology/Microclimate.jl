@@ -12,6 +12,7 @@ function sine_exponential!(
     daily,
     iday
 )
+    nhours = 24
     minimum_temperature = u"K"(minimum_temperature)
     maximum_temperature = u"K"(maximum_temperature)
     next_minimum_temperature = u"K"(next_minimum_temperature)
@@ -32,7 +33,7 @@ function sine_exponential!(
     # Nighttime exponential decay constant
     decay_rate = 3 / ((2400 - time_sunset) + time_sunrise)
 
-    for i in 1:24
+    for i in 1:nhours
         j = i + 1
         time = i * 100
         if time == time_sunrise # sunrise
@@ -68,8 +69,10 @@ function sine_exponential!(
         FRMIN *= 100
         TIMEC = ITIME + FRMIN
 
-        times[j] = TIMEC
-        temperatures[j] = temperature
+        if j <= nhours 
+            times[j] = TIMEC
+            temperatures[j] = temperature
+        end
     end
 
     # Set first time step
@@ -79,14 +82,16 @@ function sine_exponential!(
     else
         temperatures[1] = temperature
     end
-    initial_temperature = temperatures[25]
+
+    return nothing
 end
 
 function vsine(VMIN, VMAX, time_sunrise, time_sunset, TIMIN, TIMAX, daily, iday, IVAR)
+    nhours = 24
     vinit = 0.0 * VMIN[1]
-    XA = fill(0.0, 25)
-    YA = fill(vinit, 25)
-    times = fill(0.0, 25)  
+    XA = fill(0.0, nhours)
+    YA = fill(vinit, nhours)
+    times = fill(0.0, nhours)  
     vave = (VMAX + VMIN) / 2.0
 
     if daily == 1 && iday > 1
@@ -113,7 +118,7 @@ function vsine(VMIN, VMAX, time_sunrise, time_sunset, TIMIN, TIMAX, daily, iday,
     end
 
 
-    for i in 1:25
+    for i in 1:nhours
         XA[i] = i * 100.0 - 100.0
         time = XA[i]
 
@@ -166,9 +171,10 @@ function vsine(VMIN, VMAX, time_sunrise, time_sunset, TIMIN, TIMAX, daily, iday,
     end
 
     # Fix any negative values
-    for JCT in 1:25
+    for JCT in 1:nhours
         if YA[JCT] < 0.0 * VMIN[1]
-            if JCT < 25 && YA[JCT + 1] > 0.0 * VMIN[1]
+            if JCT < nhours && YA[JCT + 1] > 0.0 * VMIN[1]
+                # FIXME: this can index out of bounds
                 YA[JCT] = (YA[JCT - 1] + YA[JCT + 1]) / 2.0
             else
                 YA[JCT] = abs(YA[JCT])
@@ -184,21 +190,23 @@ function hourly_vars(minmax, solrad_out, daily::Bool=false)
         humidity_max, cloud_min, cloud_max, minima_times, maxima_times) = minmax
 
     ndays = length(air_temperature_min)
-    air_temperatures = fill(air_temperature_min[1], 25 * ndays)
-    cloud_covers = fill(cloud_min[1], 25 * ndays)
-    humidities = fill(humidity_min[1], 25 * ndays)
-    wind_speeds = fill(wind_min[1], 25 * ndays)
+    nhours = 24
+    all_hours = nhours * ndays
+    air_temperatures = fill(air_temperature_min[1], all_hours)
+    cloud_covers = fill(cloud_min[1], all_hours)
+    humidities = fill(humidity_min[1], all_hours)
+    wind_speeds = fill(wind_min[1], all_hours)
 
     for iday in 1:ndays
         initial_temperature = air_temperature_min[iday] # initial air temperature for daily
         initial_wind = wind_min[iday]
         initial_humidity = humidity_max[iday]
         initial_cloud = cloud_min[iday]
-        times = fill(0.0, 25)
-        temperatures = fill(0.0u"°C", 25)
-        winds = fill(initial_wind, 25)
-        humids = fill(initial_humidity, 25)
-        clouds = fill(initial_cloud, 25)
+        times = fill(0.0, nhours)
+        temperatures = fill(0.0u"°C", nhours)
+        winds = fill(initial_wind, nhours)
+        humids = fill(initial_humidity, nhours)
+        clouds = fill(initial_cloud, nhours)
 
         HH = solrad_out.hour_angle_sunrise[iday]
         tsn = solrad_out.hour_solar_noon[iday]
@@ -288,11 +296,65 @@ function hourly_vars(minmax, solrad_out, daily::Bool=false)
         IVAR = initial_cloud
         clouds = vsine(VMIN, VMAX, time_sunrise, time_sunset, TIMIN, TIMAX, daily, iday, IVAR)
 
-        air_temperatures[(iday*25-24):(iday*25)] = temperatures[1:25]
-        wind_speeds[(iday*25-24):(iday*25)] = winds[1:25]
-        humidities[(iday*25-24):(iday*25)] = humids[1:25]
-        cloud_covers[(iday*25-24):(iday*25)] = clouds[1:25]
+        dayrange = (iday*nhours-nhours+1):(iday*nhours)
+        air_temperatures[dayrange] .= temperatures
+        wind_speeds[dayrange] .= winds
+        humidities[dayrange] .= humids
+        cloud_covers[dayrange] .= clouds
     end
 
     return (; air_temperatures, wind_speeds, humidities, cloud_covers)
+end
+
+# TODO this does just cloud_covers but should generalise first version better down the track
+function hourly_vars(
+    cloud_min::Vector,
+    cloud_max::Vector,
+    solrad_out::Any,
+    minima_times::Vector=[0, 0, 1, 1],
+    maxima_times::Vector=[1, 1, 0, 0],
+    daily::Bool=false)
+
+    ndays = length(cloud_min)
+    nhours = 24
+    cloud_covers = fill(cloud_min[1], nhours * ndays)
+
+    for iday in 1:ndays
+        initial_cloud = cloud_min[iday]
+        times = fill(0.0, 25)
+        clouds = fill(initial_cloud,  nhours)
+
+        HH = solrad_out.hour_angle_sunrise[iday]
+        tsn = solrad_out.hour_solar_noon[iday]
+
+        #     Air temperature calculations
+        #     SUNSET IN MILITARY TIME
+        HHINT = trunc(HH)
+        FRACT = (HH - HHINT) * 60.0
+        HSINT = trunc(tsn)
+        FRACTS = (tsn - HSINT) * 60.0
+        time_sunset = (HSINT * 100.0 + FRACTS) + (HHINT * 100.0 + FRACT)
+        #     SUNRISE IN MILITARY TIME
+        DELT = tsn - HH
+        HRINT = trunc(DELT)
+        FRACTR = (DELT - HRINT) * 60.0
+
+        # cloud_covers cover
+        VMIN = cloud_min[iday]
+        VMAX = cloud_max[iday]
+        #      SETTING MAX & MIN TIMES RELATIVE TO SUNRISE & SOLAR NOON
+        #     TIME OF MINIMUM
+        TSRHR = minima_times[4]
+        time_sunrise = (HRINT * 100.0 + FRACTR) + (TSRHR * 100.0)
+        #      TIME OF MAXIMUM at sunrise for relative humidities
+        TSNHR = maxima_times[4] #+ TIMCOR
+        time_maximum_temperature = (HSINT * 100.0 + FRACTS) + (TSNHR * 100.0)
+        TIMIN = time_sunrise
+        TIMAX = time_maximum_temperature
+        IVAR = initial_cloud
+        clouds = vsine(VMIN, VMAX, time_sunrise, time_sunset, TIMIN, TIMAX, daily, iday, IVAR)
+
+        cloud_covers[(iday*nhours-nhours+1):(iday*nhours)] = clouds[1:nhours]
+    end
+    return cloud_covers
 end

@@ -5,6 +5,7 @@ Compute bulk soil properties — thermal conductivity (`λ_b`), volumetric heat 
 and bulk density (`ρ_b`) — for a given soil layer.
 
 # Arguments
+<<<<<<< HEAD
 
 - `soil_thermal::AbstractSoilThermalModel`
 
@@ -17,7 +18,7 @@ and bulk density (`ρ_b`) — for a given soil layer.
 # Returns
 
 A named tuple `(λ_b, cp_b, ρ_b)`:
-- `λ_b::Quantity`: Bulk thermal conductivity of soil layer (W/m/K)
+- `λ_b::Quantity`: Bulk thermal conductivity (W/m/K)
 - `cp_b::Quantity`: Bulk volumetric heat capacity (J/kg/K)
 - `ρ_b::Quantity`: Bulk density (kg/m³)
 
@@ -43,6 +44,14 @@ approach, which accounts for:
 
 This method provides an accurate representation of heat transfer in variably wet soils 
 for land surface or microclimate modeling.
+
+# References
+
+Campbell, G. S., Jungbauer, J. D. Jr., Bidlake, W. R., & Hungerford, R. D. (1994). Predicting 
+ the effect of temperature on soil thermal conductivity. Soil Science, 158(5), 307–313.
+
+Campbell, G. S., & Norman, J. M. (1998). Environmental Biophysics. Springer.
+
 """
 function soil_properties(soil_thermal::CampbelldeVriesSoilThermal;
     terrain,
@@ -51,7 +60,7 @@ function soil_properties(soil_thermal::CampbelldeVriesSoilThermal;
 )
     (; elevation, P_atmos) = terrain
     # Soil thermal parameters
-    # Do we need these short names?
+    # TODO: do we need these short names?
     st = soil_thermal
     ρ_dry = st.bulk_density
     λ_mineral = st.mineral_conductivity
@@ -62,18 +71,7 @@ function soil_properties(soil_thermal::CampbelldeVriesSoilThermal;
     T_soil = soil_temperature
     θ_soil = soil_moisture
 
-
     p_a0 = Unitful.atm
-    # TODO make a parameter with default, 
-    # or q_0 * (T_soil / 303) ^ 2, q_0 = ~2 to 6 (power for recirculation function)
-    #q = 4.0
-    #TODO make a parameter with default
-    # m3/m3 return-flow cutoff water content (~0.05 for coarse sand to 0.25 for heavy clay),
-    # p. 121 Campbell & Norman 1991 
-    #θ_0 = 0.162
-    # TODO make a parameter (~0.07 to 1.1), 
-    # de Vries shape factor, 0.33 for organic soils, 0.1 for mineral
-    g_a = 0.1
     g_c = 1.0 - 2.0 * g_a
 
     # generalisation of eq. 8.20, Campbell and Norman (1991)

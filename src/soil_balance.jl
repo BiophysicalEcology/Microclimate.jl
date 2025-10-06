@@ -1,14 +1,14 @@
 # This is a 3-parameters OrdinaryDiffEq function
 function soil_energy_balance(
     T::U,                # state
-    i::SoilEnergyInputs, # "tarameters"
+    p::SoilEnergyInputs, # "parameters"
     t::Quantity,          # timestep
 ) where U <: SVector{N} where N
     #t_min = t / 60 * u"minute"  # convert Float64 time back to unitful
     #T_K = T .* u"K"  # convert Float64 time back to unitful
     #dT_K = dT .* 60 .* u"K/minute"  # convert Float64 time back to unitful
     # extract prameters
-    (; forcings, buffers, heights, depths, nodes, soilprops, environment_instant, terrain, runmoist) = params
+    (; forcings, buffers, heights, depths, nodes, soilprops, environment_instant, terrain, runmoist) = p
     (; depp, wc, c) = buffers.soil_energy
     # Get environmental data at time t
     (; tair, vel, zenr, solr, cloud, rh, zslr) = interpolate_forcings(forcings, t)
@@ -21,15 +21,24 @@ function soil_energy_balance(
 
     # get soil properties
     (; λ_b, cp_b, ρ_b) = soil_props_vector!(buffers.soil_properties; T_soil=T1, θ_soil=θ_soil, soilprops, terrain)
-    # TODO Why do we reset the last value
+
+    # Get environmental data at time t
+    # f = i.forcing
+    # tair = f.TAIRt(ustrip(u"minute", t))
+    # vel = max(0.1u"m/s", f.VELt(ustrip(t)))
+    # zenr = min(90.0u"°", u"°"(round(f.ZENRt(ustrip(t)), digits=3)))
+    # solr = max(0.0u"W/m^2", f.SOLRt(ustrip(t)))
+    # cloud = clamp(f.CLDt(ustrip(t)), 0.0, 100.0)
+    # rh = clamp(f.RHt(ustrip(t)), 0.0, 100.0)
+    # zslr = min(90.0u"°", f.ZSLt(ustrip(t)))
+
     T1m = MVector(T1)
-    T1m[N] = tdeep # boundary condition
     T2 = SVector(T1m)
 
     # set boundary condition of deep soil temperature
     depp[1:N] = depths
     # Compute soil layer properties
-    @inbounds for i in 1:N
+    for i in 1:N
         rcsp = ρ_b[i] * cp_b[i]
         if i == 1
             wc[i] = rcsp * depp[2] / 2.0
@@ -160,35 +169,35 @@ end
 
 function allocate_soil_water_balance(M)
     (;
-        P = zeros(M+1) .* u"J/kg",
-        Z = zeros(M+1) .* u"m",
-        V = zeros(M+1) .* u"kg/m^2",
-        W = zeros(M+1) .* u"m^3/m^3",
-        WN = zeros(M+1) .* u"m^3/m^3",
-        K = zeros(M+1) .* u"kg*s/m^3",
-        H = zeros(M+1),
-        T = zeros(M+1) .* u"K",
+        P = zeros(typeof(0.0u"J/kg"), M+1),
+        Z = zeros(typeof(0.0u"m"), M+1),
+        V = zeros(typeof(0.0u"kg/m^2"), M+1),
+        W = zeros(typeof(0.0u"m^3/m^3"), M+1),
+        WN = zeros(typeof(0.0u"m^3/m^3"), M+1),
+        K = zeros(typeof(0.0u"kg*s/m^3"), M+1),
+        H = zeros(typeof(0.0), M+1),
+        T = zeros(typeof(0.0u"K"), M+1),
         rh_soil = zeros(M),
-        ψ_soil = zeros(M) .* u"J/kg",
-        ψ_root = zeros(M) .* u"J/kg",
-        PR = zeros(M+1) .* u"J/kg",
-        PP = zeros(M+1) .* u"J/kg",
-        B1 = zeros(M+1),
-        N = zeros(M+1),
-        N1 = zeros(M+1),
-        WS = zeros(M+1),
-        RR = zeros(M+1) .* u"m^4/kg/s",
-        BZ = zeros(M+1) .* u"m",
-        JV = zeros(M+1) .* u"kg/m^2/s",
-        DJ = zeros(M+1) .* u"kg*s/m^4",
-        CP = zeros(M+1) .* u"kg*s/m^4",
-        A = zeros(M+1) .* u"kg*s/m^4",
-        B = zeros(M+1) .* u"kg*s/m^4",
-        C = zeros(M+1) .* u"kg*s/m^4",
-        C2 = zeros(M+1),
-        F = zeros(M+1) .* u"kg/m^2/s",
-        F2 = zeros(M+1) .* u"J/kg",
-        DP = zeros(M+1) .* u"J/kg",
+        ψ_soil = zeros(typeof(0.0u"J/kg"), M),
+        ψ_root = zeros(typeof(0.0u"J/kg"), M),
+        PR = zeros(typeof(0.0u"J/kg"), M+1),
+        PP = zeros(typeof(0.0u"J/kg"), M+1),
+        B1 = zeros(typeof(0.0), M+1),
+        N = zeros(typeof(0.0), M+1),
+        N1 = zeros(typeof(0.0), M+1),
+        WS = zeros(typeof(0.0), M+1),
+        RR = zeros(typeof(0.0u"m^4/kg/s"), M+1),
+        BZ = zeros(typeof(0.0u"m"), M+1),
+        JV = zeros(typeof(0.0u"kg/m^2/s"), M+1),
+        DJ = zeros(typeof(0.0u"kg*s/m^4"), M+1),
+        CP = zeros(typeof(0.0u"kg*s/m^4"), M+1),
+        A = zeros(typeof(0.0u"kg*s/m^4"), M+1),
+        B = zeros(typeof(0.0u"kg*s/m^4"), M+1),
+        C = zeros(typeof(0.0u"kg*s/m^4"), M+1),
+        C2 = zeros(typeof(0.0), M+1),
+        F = zeros(typeof(0.0u"kg/m^2/s"), M+1),
+        F2 = zeros(typeof(0.0u"J/kg"), M+1),
+        DP = zeros(typeof(0.0u"J/kg"), M+1),
         RS = zeros(typeof(0.0u"m^4/kg/s"), M + 1), # soil resistance, m4 /(s kg)
         E = zeros(typeof(0.0u"kg/m^2/s"), M + 1),
         # The output is resized for these
@@ -252,7 +261,7 @@ function soil_water_balance!(buffers, smm::SoilMoistureModel;
 
     # Fill Z using provided depth vector
     j = 2
-    @inbounds for i in 3:M
+    for i in 3:M
         if isodd(i)
             Z[i] = depth[j]
             j += 1
@@ -263,7 +272,7 @@ function soil_water_balance!(buffers, smm::SoilMoistureModel;
 
     # Interpolate T from temp
     j = 1
-    @inbounds for i in 1:M+1
+    for i in 1:M+1
         if isodd(i)
             T[i] = T10[j]
             j += 1
@@ -277,7 +286,7 @@ function soil_water_balance!(buffers, smm::SoilMoistureModel;
     Z[2] = 0.0u"m"
 
     # Set initial water content and related variables
-    @inbounds for i in 2:M
+    for i in 2:M
         WN[i] = θ_soil[i-1]
         P[i] = PE[i] * (WS[i] / WN[i])^BB[i] # matric water potential, EQ5.9 (note thetas=W are inverted so not raised to -BB)
         H[i] = exp(MW * P[i] / (R * T[i-1])) # fractional humidity, EQ5.14
@@ -286,7 +295,7 @@ function soil_water_balance!(buffers, smm::SoilMoistureModel;
     end
 
     # Bulk water mass per soil layer
-    @inbounds for i in 2:M
+    for i in 2:M
         V[i] = WD * (Z[i+1] - Z[i-1]) / 2 # bulk density x volume per unit area, kg/m²
     end
     # Lower boundary condition set to saturated (stays constant)
@@ -299,7 +308,7 @@ function soil_water_balance!(buffers, smm::SoilMoistureModel;
     K[M+1] = KS[M] * (PE[M] / P[M+1])^N[M+1] # lower boundary conductivity
 
     # Initialize root water uptake variables
-    @inbounds for i in 2:M
+    for i in 2:M
         if L[i] > 0.0u"m/m^3"
             RR[i] = rw / (L[i] * (Z[i+1] - Z[i-1]) / 2.0) # root resistance
             BZ[i] = N1[i] * log(π * r1^2 * L[i]) / (4.0 * π * L[i] * (Z[i+1] - Z[i-1]) / 2.0)
@@ -320,7 +329,7 @@ function soil_water_balance!(buffers, smm::SoilMoistureModel;
     PB1 = 0.0u"J*s/m^4"  # numerator of first term on left of EQ11.18, J * s / m⁴
     RB1 = 0.0u"kg*s/m^4" # weighted mean root-soil resistance, R_bar, m4 /(s kg)
     PL = 0.0u"J/kg"      # leaf water potential, J/kg
-    @inbounds for i in 2:M
+    for i in 2:M
         RS[i] = BZ[i] / K[i] # soil resistance, simplification of EQ11.14, assuming conductivity constant in the rhizosphere
         PB1 += P[i] / (RS[i] + RR[i]) # summing over layers
         RB1 += 1.0 / (RS[i] + RR[i]) # summing over layers
@@ -346,7 +355,7 @@ function soil_water_balance!(buffers, smm::SoilMoistureModel;
     end
     XP = (PL / pc)^sp
     TR = TP / (1.0 + XP)
-    @inbounds for i in 2:M
+    for i in 2:M
         E[i] = (P[i] - PL - rl * TR) / (RR[i] + RS[i]) # root water uptake, EQ11.15
     end
 
@@ -355,14 +364,14 @@ function soil_water_balance!(buffers, smm::SoilMoistureModel;
     while counter < moist_count
         SE = 0.0u"kg/m^2/s"
         counter += 1
-        @inbounds @simd for i in 2:M
+        for i in 2:M
             K[i] = KS[i] * (PE[i] / P[i])^N[i]
         end
 
         JV[1] = EP * (H[2] - rh_loc) / (1.0 - rh_loc) # vapour flux at soil surface, EQ9.14
         DJ[1] = EP * MW * H[2] / (R * T[1] * (1.0 - rh_loc)) # derivative of vapour flux at soil surface, combination of EQ9.14 and EQ5.14
 
-        @inbounds @simd for i in 2:M
+        for i in 2:M
             VP = wet_air_properties(u"K"(T[i]); rh=100.0, P_atmos).ρ_vap # VP is vapour density = c'_v in EQ9.7
             KV = 0.66 * DV * VP * (WS[i] - (WN[i] + WN[i+1]) / 2.0) / (Z[i+1] - Z[i]) # vapour conductivity, EQ9.7, assuming epsilon(psi_g) = b*psi_g^m (eq. 3.10) where b = 0.66 and m = 1 (p.99)
             JV[i] = KV * (H[i+1] - H[i]) # fluxes of vapour within soil, EQ9.14
@@ -379,7 +388,7 @@ function soil_water_balance!(buffers, smm::SoilMoistureModel;
         end
         
         # Thomas algorithm (Gauss elimination)
-        @inbounds @simd for i in 2:M-1
+        for i in 2:M-1
             C2[i] = C[i] / B[i]
             #C[i] = C2[i] < 1e-8 ? 1e-8u"kg*s/m^4" : C[i]
             #C2[i] = C2[i] < 1e-8 ? 1e-8 : C2[i]
@@ -392,7 +401,7 @@ function soil_water_balance!(buffers, smm::SoilMoistureModel;
         P[M] -= DP[M]
         P[M] = min(P[M], PE[M])
 
-        @inbounds for i in (M-1):-1:2
+        for i in (M-1):-1:2
             DP[i] = F2[i] - C2[i] * DP[i+1] # change in matric potential in an interation step, J/kg
             P[i] -= DP[i]                   # matric potential, J/kg
             if P[i] > PE[i]
@@ -400,7 +409,7 @@ function soil_water_balance!(buffers, smm::SoilMoistureModel;
             end
         end
 
-        @inbounds @simd for i in 2:M
+        for i in 2:M
             WN[i] = max(WS[i] * (PE[i] / P[i])^B1[i], 1e-7)
             P[i] = PE[i] * (WS[i] / WN[i])^BB[i]
             H[i] = exp(MW * P[i] / (R * T[i-1]))
@@ -413,11 +422,11 @@ function soil_water_balance!(buffers, smm::SoilMoistureModel;
 
     SW = ((P[2] * K[2] - P[3] * K[3]) / (N1[2] * (Z[3] - Z[2])) + Unitful.gn * K[2] + TR) * dt
     W .= WN
-    @inbounds for i in 2:M+1
+    for i in 2:M+1
         θ_soil[i-1] = WN[i]
     end
 
-    @inbounds for i in 2:M
+    for i in 2:M
         PR[i] = -1.0 * (TR * RS[i] - P[i])
     end
     

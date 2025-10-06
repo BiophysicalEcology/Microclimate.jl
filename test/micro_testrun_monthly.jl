@@ -36,7 +36,7 @@ keywords = (;
     # locations, times, depths and heights
     latitude = longlat[2]*1.0u"°",
     days = days[days2do], # days of year for solrad
-    hours = collect(0.:1:24.), # hour of day for solrad
+    hours = collect(0.0:1:23.0), # hour of day for solrad
     depths,
     heights, # air nodes for temperature, wind speed and humidity profile
     # terrain
@@ -81,7 +81,7 @@ keywords = (;
     #maximum_surface_temperature = u"K"(microinput[:maxsurf]u"°C")
 );
 
-# TODO check why deep soil temp not being outputted
+# TODO allow vector of pre-calculated soil moisture to be provided as input
 @time micro_out = runmicro(; keywords...);
 
 # subset NicheMapR predictions

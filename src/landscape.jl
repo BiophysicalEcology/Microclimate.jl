@@ -25,7 +25,6 @@ Base.@kwdef struct MicroForcing{
     CLDt::CL
 end
 
-
 abstract type AbstractEnvironment end
 
 @kwdef struct MicroResult{AT,WS,RH,CC,GS,DrS,DfS,ZA,SkT,SoT,SM,SWP,SH,STC,SPH,SBD,SW,SR,Pr} <: AbstractEnvironment
