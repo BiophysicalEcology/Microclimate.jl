@@ -405,10 +405,6 @@ function solve_soil!(output::MicroResult, mp::MicroProblem, solrad_out;
                 if i == 1 # make first hour of day equal last hour of previous iteration
                     # Then why do we run the soil water balance again??
                     output.soil_temperature[step, :] .= T0
-                    update_soil_properties!(output, buffers.soil_properties, soil_thermal_model;
-                    soil_temperature=T0, soil_moisture=θ_soil0_a, terrain, step
-                    )
-                    longwave_out = longwave_radiation(; terrain, environment_instant, surface_temperature=T0[1])
                     pool += environment_instant.rainfall
                     sub = vcat(findall(isodd, 1:numnodes_b), numnodes_b)
                     θ_soil0_a = θ_soil0_b[sub]                     
@@ -447,6 +443,9 @@ function solve_soil!(output::MicroResult, mp::MicroProblem, solrad_out;
                 output.surface_water[step] = pool
                 output.soil_temperature[step, :] .= T0
                 output.sky_temperature[step] = longwave_out.Tsky
+                update_soil_properties!(output, buffers.soil_properties, soil_thermal_model;
+                    soil_temperature=T0, soil_moisture=θ_soil0_a, terrain, step
+                )
             end
         end
     end
