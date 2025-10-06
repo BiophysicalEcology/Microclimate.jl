@@ -1,4 +1,4 @@
-# Integer arrays
+# Integer arrays TODO give them real names
 const NC0 = reshape(Int[
         3, 4, 1, 2,
         2, 4, 1, 3,
@@ -29,6 +29,7 @@ Compute the solar hour angle `h` in radians.
 - `lonc`: Longitude correction in hours (e.g., `0.5`)
 
 # Returns
+
 - Hour angle `h` as a `Quantity` in radians
 - Time at solar noon, `tsn` as a time in hours
 
@@ -55,6 +56,7 @@ Computes key solar geometry parameters based on McCullough & Porter (1971):
 - `d`: Day of year (1–365)
 - `latitude`: Latitude (with angle units, e.g. `u"°"` or `u"rad"`)
 - `h`: Hour angle (radians)
+
 - `d0`: Reference day (default: 80)
 - `ω`: Angular frequency of Earth’s orbit (default: `2π/365`)
 - `ϵ`: Orbital eccentricity (default: `0.0167`)
@@ -66,15 +68,18 @@ Tuple: `(ζ, δ, z, AR2)` with angle quantities in radians and AR2 unitless.
 # Reference
 McCullough & Porter (1971)
 """
-function solar_geometry(;
-    d::Real=1.0,
-    latitude::Quantity=83.07305u"°",
-    h::Quantity=-2.87979u"rad",
+struct McCulloughPorterSolarGeometry <: AbstractSolarGeometryModel
     d0::Real=80,
     ω::Real=2π / 365,
     ϵ::Real=0.0167238,
     se::Real=0.39784993#0.39779
+end
+function solar_geometry(sm::McCulloughPorter;
+    d::Real=1.0,
+    latitude::Quantity=83.07305u"°",
+    h::Quantity=-2.87979u"rad",
 )
+
     ζ = (ω * (d - d0)) + 2.0ϵ * (sin(ω * d) - sin(ω * d0))          # Eq.5
     δ = asin(se * sin(ζ))                                         # Eq.4
     cosZ = cos(latitude) * cos(δ) * cos(h) + sin(latitude) * sin(δ)         # Eq.3
@@ -1227,7 +1232,7 @@ function solrad(solar_model::SolarRadiation;
     terrain,
     albedos::Vector{<:Real}=fill(0.15, length(days)), # substrate albedo (decimal %)
 )
-    (; d0, cmH2O, ϵ, ω, se, iuv, scattered, amr, nmax, Iλ, OZ, τR, τO, τA, τW, Sλ, FD, FDQ, s̄) = solar_model
+    (; solar_geometry_model, cmH2O, iuv, scattered, amr, nmax, Iλ, OZ, τR, τO, τA, τW, Sλ, FD, FDQ, s̄) = solar_model
     (; elevation) = terrain
 
     ndays = length(days)    # number of days
@@ -1274,7 +1279,7 @@ function solrad(solar_model::SolarRadiation;
             d = days[i]
             t = hours[j]
             h, tsn = hour_angle(t, lonc) # hour angle (radians)
-            (; ζ, δ, z, AR2) = solar_geometry(; d, latitude, h, d0, ω, ϵ, se) # compute ecliptic, declination, zenith angle and (a/r)^2
+            (; ζ, δ, z, AR2) = solar_geometry(solar_geometry_model; latitude, day, hour) # compute ecliptic, declination, zenith angle and (a/r)^2
             Z = uconvert(u"°", z)
             Zsl = Z
             amult = 1.0
@@ -1582,9 +1587,10 @@ function get_longwave(radiaion_model=CampbellNorman(); terrain, environment_inst
     qradhl = hrad
     qrad = (qradsk + qradvg) * viewfactor + qradhl * (1.0 - viewfactor) - qradgr
     tsky = (((qradsk + qradvg) * viewfactor + qradhl * (1.0 - viewfactor)) / σ)^(1//4)
-    return (
+    return (;
+        # TODO standardise these names with their target uses
         Tsky=tsky,
-        Qrad=qrad,
+        Qrad=qrad, # e.g. this is Q_infrared in `solar_radiation`
         Qrad_sky=qradsk,
         Qrad_veg=qradvg,
         Qrad_ground=qradgr,
@@ -1613,7 +1619,9 @@ Maxwell, E. L., "A Quasi-Physical Model for Converting Hourly
            Report No. SERI/TR-215-3087, Golden, CO: Solar Energy Research
            Institute, 1987.
 """
-function cloud_adjust_radiation!(output, cloud, D_cs, B_cs, zenith, doy; a=0.36, b=0.64, gamma=1.0)
+function cloud_adjust_radiation!(output, cloud, D_cs, B_cs, zenith, doy; 
+    a=0.36, b=0.64, gamma=1.0
+)
     G, D, B = output[(:global_solar, :diffuse_solar, :direct_solar)]
     # Solar geometry
     cosz     = cos.(zenith)
@@ -1637,7 +1645,6 @@ function cloud_adjust_radiation!(output, cloud, D_cs, B_cs, zenith, doy; a=0.36,
     ϵ     = 1e-9u"W/m^2"
     Kt    = G ./ max.(G0h, ϵ)
     Kt    = clamp.(Kt, 0.0, 1.2)
-
     Fd = similar(Kt) # diffuse fraction
     @inbounds for i in eachindex(Kt)
         if Kt[i] <= 0.22
@@ -1648,8 +1655,8 @@ function cloud_adjust_radiation!(output, cloud, D_cs, B_cs, zenith, doy; a=0.36,
             Fd[i] = 0.165
         end
     end
-    # TODO this allocates
-    Fd = clamp.(Fd, 0.0, 1.0)
+    # TODO probably this still allocates because of aliasing 
+    Fd .= clamp.(Fd, zero(eltype(Fd)), oneunit(eltype(Fd)))
 
     D .= Fd .* G
     B .= G .- D
@@ -1666,6 +1673,7 @@ end
 
 # Separated out from dchxy for easier optimisation
 # This algorithm is very expensive
+# TODO these argument names are nightmare fuel
 @noinline function _dchxy_converge!(FNX, FNY, AMU, PSI, XA, XB, XD, XE, CHX, CHY, CHXA, CHYA)
     nomitr = 1 # Fortran line 362
     TEMC = 0.0 # Initialize before convergence loop

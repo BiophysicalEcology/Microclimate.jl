@@ -1,8 +1,5 @@
-const DEFAULT_HEIGHTS = [0.01, 0.05, 0.1, 0.2, 0.3, 0.4, 0.5, 0.75, 1.0, 1.2] .* u"m"
-
 function allocate_profile(heights)
     N_heights = length(heights)
-    # TODO why cm/minute here and m/s in the output?
     wind_speeds = similar(heights, typeof(0.0u"cm/minute")) # output wind speeds
     height_array = similar(heights, typeof(0.0u"cm"))
     height_array[end:-1:begin] .= heights 
@@ -24,7 +21,6 @@ with surface roughness parameters. Zenith angle and a maximum allowed surface te
 to assess whether conditions are stable or unstable.
 
 # Keyword Arguments
-
 - `z0::Quantity=0.004u"m"`: roughness length (surface aerodynamic roughness).
 - `zh::Quantity=0.0u"m"`: heat transfer roughness height
 - `d0::Quantity=0.0u"m"`: zero plane displacement correction factor.
@@ -38,7 +34,6 @@ to assess whether conditions are stable or unstable.
 - `elevation::Quantity=0.0u"m"`: Elevation above sea level.
 
 # Returns
-
 Named tuple with fields:
 - `wind_speeds`: Wind speed profile at each height (`cm/min` internally, returned in SI units).
 - `air_temperatures`: Air temperature profile at each height (`K`).
@@ -47,7 +42,6 @@ Named tuple with fields:
 - `ustar`: Friction velocity (`m/s`).
 
 # Notes
-
 - Stability corrections use the **Businger–Dyer** formulations for unstable conditions.
 - The Monin–Obukhov length is estimated iteratively through `calc_Obukhov_length`.
 - Two broad options for aerodynamic roughness calculations are available: Campbell & Norman's (1998) approach
@@ -58,13 +52,12 @@ that handles canopy displacement, invoked if `zh > 0` and otherwise
 | --------------------------- | ------------------------------ | -------------------------------------------- |
 | `zh > 0` + neutral/hot      | log-law                        | log between `z` and `zh`                     |
 | `zh > 0` + unstable/stable  | log-law with `calc_ψ_m` correction | log with displacement/`zh`                   |
-| `zh == 0` + neutral/hot     | log-law        j               | weighted by bulk/sublayer Stanton numbers    |
+| `zh == 0` + neutral/hot     | log-law                        | weighted by bulk/sublayer Stanton numbers    |
 | `zh == 0` + unstable/stable | log-law with `calc_ψ_m` correction | full Monin–Obukhov profile via `calc_Obukhov_length` |
 
 - Relative humidity profiles are estimated from vapor pressure at each height.
 
 # References
-
 - Businger, J. A., Wyngaard, J. C., Izumi, Y., & Bradley, E. F. (1971).
   Flux–profile relationships in the atmospheric surface layer.
   *Journal of the Atmospheric Sciences*, 28(2), 181–189.
@@ -91,19 +84,18 @@ profile.wind_speeds       # vertical profile of wind speeds
 get_profile(; heights=DEFAULT_HEIGHTS, kw...) =
     get_profile!(allocate_profile(heights); kw...)
 function get_profile!(buffers;
-    terrain=default_terrain()
+    terrain,
     environment_instant,
     γ = 16.0, # coefficient from Dyer and Hicks for Φ_m (momentum), TODO make it available as a user param?
 )
+    (; roughness_height, zh, d0, κ, elevation, P_atmos) = terrain
     (; reference_temperature, reference_wind_speed, relative_humidity, surface_temperature, zenith_angle) = environment_instant
-    (; elevation, roughness_height, zh, d0, κ, P_atmos) = terrain
-    (; heights, height_array, air_temperatures, wind_speeds, humidities) = buffers
 
+    (; heights, height_array, air_temperatures, wind_speeds, humidities) = buffers
+    N_heights = length(heights)
     if minimum(heights) < roughness_height
         throw(ArgumentError("The minimum height is not greater than the roughness height."))
     end
-
-    N_heights = length(heights)
     reference_height = last(heights)
 
     T_ref_height = u"K"(reference_temperature)
@@ -151,6 +143,7 @@ function get_profile!(buffers;
             air_temperatures[i] = T0 - A * log((height_array[i] - d0_cm) / zh_cm)
         end
     end
+    # TODO name and explain this check, why `|| zenith_angle`
     if T_ref_height ≥ T_surface || zenith_angle ≥ 90°
         for i in 2:N_heights
             wind_speeds[i] = calc_wind(height_array[i], z0, κ, u_star, 1.0)
@@ -161,6 +154,7 @@ function get_profile!(buffers;
         end
     else
         L_Obukhov = -30.0u"cm" # initialise Obukhov length
+        # TODO just pass the environment_instant through here
         Obukhov_out = calc_Obukhov_length(T_ref_height, T_surface, v_ref_height, z0, z, ρcpTκg, κ, log_z_ratio, ΔT, ρ_cp; max_iter=30, tol=1e-2)
         L_Obukhov = u"cm"(Obukhov_out.L_Obukhov)
         T_z0 = Obukhov_out.T_z0
@@ -429,8 +423,10 @@ end
 
 Iteratively solve for Monin-Obukhov length and convective heat flux.
 """
-function calc_Obukhov_length(T_ref_height, T_surface, v_ref_height, z0, z, ρcpTκg, κ, 
-    log_z_ratio, ΔT, ρ_cp; γ=16.0, max_iter=30, tol=1e-2)
+function calc_Obukhov_length(
+    T_ref_height, T_surface, v_ref_height, z0, z, ρcpTκg, κ, log_z_ratio, ΔT, ρ_cp; 
+    γ=16.0, max_iter=30, tol=1e-2
+)
     L_Obukhov = -30.0u"cm" # initial Monin-Obukhov length cm
 
     # conversions
