@@ -38,7 +38,7 @@ days = collect(1:Int(length(soil_temperature_nmr[:, 1]) / 24)) # days of year to
 depths = ((DataFrame(CSV.File("$testdir/data/init_daily/DEP.csv"))[:, 2]) / 100.0)u"m" # Soil nodes (cm) - keep spacing close near the surface, last value is where it is assumed that the soil temperature is at the annual mean air temperature
 heights = [microinput[:Usrhyt], microinput[:Refhyt]]u"m" # air nodes for temperature, wind speed and humidity profile
 soil_saturation_moisture = (CSV.File("$testdir/data/init_daily/soilprop.csv")[1, 1][3]) * 1.0u"m^3/m^3" # volumetric water content at saturation (0.1 bar matric potential) (m3/m3)
-days2do = 30
+days2do = 365
 hours2do = days2do * 24
 # now try the simulation function
 keywords = (;
@@ -124,7 +124,7 @@ keywords = (;
 
 sub = 269:hours2do
 @testset "runmicro comparisons" begin
-    @test all(isapprox.(micro_out.soil_temperature[:, 1:10], u"K".(Matrix(soil_temperature_nmr[1:hours2do, 1:10])); rtol=1e-1)) # TODO make better!
+    @test all(isapprox.(micro_out.soil_temperature[:, 1:10], u"K".(Matrix(soil_temperature_nmr[1:hours2do, 1:10])); rtol=1e-2)) # TODO make better!
     @test all(isapprox.(micro_out.soil_moisture[:, 2:10], Matrix(soil_moisture_nmr[1:hours2do, 2:10]); rtol=1e-1))
     @test all(isapprox.(micro_out.soil_thermal_conductivity[sub, 1:10], Matrix(soil_conductivity_nmr[sub, 1:10])u"W * m^-1 * K^-1"; rtol=1e-1))
 end 

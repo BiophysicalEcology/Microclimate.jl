@@ -71,7 +71,8 @@ keywords = (;
     deep_soil_temperatures = (DataFrame(CSV.File("$testdir/data/init_monthly/tannulrun.csv"))[days2do, 2] * 1.0)u"°C", # daily deep soil temperatures
     # intial conditions
     initial_soil_temperature = u"K".((DataFrame(CSV.File("$testdir/data/init_monthly/soilinit.csv"))[1:length(depths), 2] * 1.0)u"°C"), # initial soil temperature
-    initial_soil_moisture = (Array(DataFrame(CSV.File("$testdir/data/init_monthly/moists.csv"))[1, 2:13])) * 1.0, # initial soil moisture
+    #initial_soil_moisture = (Array(DataFrame(CSV.File("$testdir/data/init_monthly/moists.csv"))[1, 2:13])) * 1.0, # initial soil moisture
+    initial_soil_moisture = collect(fill(DataFrame(CSV.File("$testdir/data/init_monthly/moists.csv"))[1, 2], 10)),
     leaf_area_index = fill(0.1, length(days)),
     iterate_day = microinput[:ndmax], # number of iterations per day
     daily = Bool(Int(microinput[:microdaily])), # doing consecutive days?

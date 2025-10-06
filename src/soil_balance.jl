@@ -558,78 +558,92 @@ end
 phase_transition(; depths, kw...) = 
     phase_transition!(allocate_phase_transition(length(depths)); depths, kw...)
 
-function phase_transition!(buffers::NamedTuple; 
-    Ts::AbstractVector,       # current temps at nodes
-    T_past::AbstractVector,   # temps at previous step
-    ∑phase::AbstractVector,   # accumulated latent heat (J/m² column)
-    θ::AbstractVector,        # soil moisture by layer (vol frac)
+function phase_transition!(
+    buffers::NamedTuple;
+    Ts::AbstractVector,       # current temperatures (°C)
+    T_past::AbstractVector,   # previous step temperatures (°C)
+    ∑phase::AbstractVector,   # accumulated latent heat (J)
+    θ::AbstractVector,        # soil moisture fraction by layer
     depths::AbstractVector    # soil depth boundaries (cm)
 )
     (; layermass, qphase) = buffers
-
-    HTOFN = 333500.0u"J/kg"     # latent heat of fusion
-    c_p   = 4186.0u"J/kg/K"     # specific heat of water
-    Tf    = 273.15u"K"          # freeze point reference
-    ϵ     = 1e-4u"K"            # tolerance band
-
+    HTOFN = 33500.0u"J/kg"      # latent heat of fusion of water
+    c_p   = 4184.0u"J/kg/K"      # specific heat of water
     nodes = length(depths)
     meanT = similar(Ts)
     meanTpast = similar(Ts)
     T = MVector(Ts)
+    tol = 1.0e-4u"°C"
 
     for j in 1:nodes
-        if θ[j] > 0.0
+        idx = j  # index for layer-level variables
+
+        # --- Always compute mean layer temperatures ---
+        if j < nodes
+            meanT[j]     = 0.5 * (T[j] + T[j+1])
+            meanTpast[j] = 0.5 * (T_past[j] + T_past[j+1])
+        else
+            meanT[j]     = T[j]
+            meanTpast[j] = T_past[j]
+        end
+        # --- Compute layer mass (kg), handle dry layers ---
+        if θ[idx] > 0
             if j < nodes
-                meanT[j]     = (T[j] + T[j+1]) / 2
-                meanTpast[j] = (T_past[j] + T_past[j+1]) / 2
+                layermass[idx] = (u"m"(depths[j+1] - depths[j])) * 1000.0u"kg/m" * θ[idx]
             else
-                meanT[j]     = T[j]
-                meanTpast[j] = T_past[j]
-            end
-
-            # layer water mass (kg/m² column)
-            if j < nodes
-                layermass[j] = u"m"(depths[j+1] - depths[j]) *
-                               1.0u"m^2" * 1000.0u"kg/m^3" * θ[j]
-            else
-                layermass[j] = u"m"(100.0u"cm") *
-                               1.0u"m^2" * 1000.0u"kg/m^3" * θ[j]
-            end
-            maxlatent = HTOFN * layermass[j]
-
-            # --- Freezing (cooling across 0 °C) ---
-            if meanTpast[j] > Tf + ϵ && meanT[j] <= Tf - ϵ
-                qphase[j] = (meanTpast[j] - meanT[j]) * layermass[j] * c_p
-                ∑phase[j] = min(∑phase[j] + qphase[j], maxlatent)
-
-                # keep node temps at Tf while phase change occurs
-                T[j] = Tf
-                if j < nodes
-                    T[j+1] = Tf
-                end
-
-            # --- Thawing (warming across 0 °C) ---
-            elseif meanTpast[j] < Tf - ϵ && meanT[j] >= Tf + ϵ
-                qphase[j] = (meanT[j] - meanTpast[j]) * layermass[j] * c_p
-                ∑phase[j] = max(∑phase[j] - qphase[j], 0.0u"J")
-
-                # hold at freeze point until reservoir is exhausted
-                if ∑phase[j] > 0u"J"
-                    T[j] = Tf
-                    if j < nodes
-                        T[j+1] = Tf
-                    end
-                end
-
-            else
-                qphase[j] = 0.0u"J"
+                layermass[idx] = (u"m"(depths[j] + 100.0u"cm" - depths[j])) * 1000.0u"kg/m" * θ[idx]
             end
         else
-            qphase[j] = 0.0u"J"
-            ∑phase[j] = 0.0u"J"
+            layermass[idx] = 0.0u"kg"
+        end
+        maxlatent = HTOFN * layermass[idx]
+
+        # --- If no water, reset and skip ---
+        if θ[idx] <= 0.0 || layermass[idx] <= 0.0u"kg"
+            ∑phase[idx] = 0.0u"J"
+            qphase[idx] = 0.0u"J"
+            continue
+        end
+
+        # ==============================
+        #  PHASE CHANGE CALCULATIONS
+        # ==============================
+
+        # --- FREEZING (above → below 0°C) ---
+        if (meanTpast[j] > tol) && (meanT[j] <= -tol)
+            qphase[idx] = (meanTpast[j] - meanT[j]) * layermass[idx] * c_p
+            ∑phase[idx] += qphase[idx]
+            if ∑phase[idx] >= maxlatent
+                ∑phase[idx] = maxlatent
+                qphase[idx] = 0.0u"J"
+            end
+
+            T[j] = 0.0u"°C"
+            if j < nodes
+                T[j+1] = 0.0u"°C"
+            end
+
+        # --- THAWING (below → above 0°C) ---
+        elseif (meanTpast[j] < -tol) && (meanT[j] >= tol)
+            qphase[idx] = (meanT[j] - meanTpast[j]) * layermass[idx] * c_p
+            ∑phase[idx] -= qphase[idx]
+
+            if ∑phase[idx] <= 0.0u"J"
+                ∑phase[idx] = 0.0u"J"
+                qphase[idx] = 0.0u"J"
+            end
+
+            if ∑phase[idx] > 0.0u"J"
+                T[j] = 0.0u"°C"
+                if j < nodes
+                    T[j+1] = 0.0u"°C"
+                end
+            end
+
+        else
+            qphase[idx] = 0.0u"J"
         end
     end
-
     return (; ∑phase, qphase, T=SVector(T))
 end
 

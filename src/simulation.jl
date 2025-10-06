@@ -391,7 +391,8 @@ function runmicro(;
             t = u"K"(mean(ustrip(TAIRs25[sub2]))u"°C") # make initial soil temps equal to mean monthly temperature
             T0 = SVector(ntuple(_ -> t, numnodes_a))
             #T_soils[step, :] = T0
-            θ_soil0_a = collect(fill(initial_soil_moisture[iday], numnodes_a)) # initial soil moisture
+            #θ_soil0_a = collect(fill(initial_soil_moisture[iday], numnodes_a)) # initial soil moisture
+            θ_soil0_a = initial_soil_moisture # initial soil moisture
         end
         T0 = setindex(T0, tdeep, numnodes_a) # set deepest node to boundary condition
 
