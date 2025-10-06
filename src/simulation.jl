@@ -164,14 +164,12 @@ function example_soil_thermal_parameters(;
     soil_mineral_density = 2.560u"Mg/m^3", # soil minerals density
     soil_mineral_heat_capacity = 870.0u"J/kg/K", # soil minerals specific heat
     soil_bulk_density = 2.56u"Mg/m^3", # dry soil bulk density
-    # TODO why is this calculated elsewhere but also specified here
-    soil_saturation_moisture = 0.26u"m^3/m^3", # volumetric water content at saturation (0.1 bar matric potential)
     recirculation_power = 4.0, # power for recirculation function
     return_flow_threshold = 0.162, # return-flow cutoff soil moisture, m^3/m^3
 )
     CampbelldeVriesSoilThermal(
         deVries_shape_factor, soil_mineral_conductivity, soil_mineral_density, soil_mineral_heat_capacity,
-        soil_bulk_density, soil_saturation_moisture, recirculation_power, return_flow_threshold
+        soil_bulk_density, recirculation_power, return_flow_threshold
     )
 end
 
@@ -347,9 +345,6 @@ function solve_soil!(output::MicroResult, mp::MicroProblem, solrad_out;
     # end
     (; θ_soil0_a, θ_soil0_b) = initialise_soil_moisture(initial_soil_moisture, numnodes_a, numnodes_b)
 
-    # TODO did we set this
-    # T_soils[1] = T0
-    # θ_soils[1, :] = θ_soil0_a
     nodes = nodes_day[:, 1]
     M = 18 # soil_water_balance default
     buffers = (;
@@ -368,7 +363,6 @@ function solve_soil!(output::MicroResult, mp::MicroProblem, solrad_out;
     output.soil_water_potential[1, :] .= air_entry_water_potential[sub] .* (soil_saturation_moisture[sub] ./ θ_soil0_a) .^ Campbells_b_parameter[sub]
     output.soil_temperature[1, :] .= T0
     output.soil_moisture[1, :] = θ_soil0_a
-
     if runmoist
         MW = 0.01801528u"kg/mol" # molar mass of water, kg/mol # TODO use UnitfulMoles
         output.soil_humidity[1, :] = clamp.(exp.(MW .* output.soil_water_potential[1, :] ./ (R .* T0)), 0, 1)
@@ -376,7 +370,7 @@ function solve_soil!(output::MicroResult, mp::MicroProblem, solrad_out;
 
     environment_day = get_day(environment_daily, 1)
     environment_instant = get_instant(environment_day, mp.environment_hourly, output, θ_soil0_a, 1)
-    longwave_out = longwave_radiation(; terrain, surface_temperature=T0[1], environment_instant)
+    #longwave_out = longwave_radiation(; terrain, surface_temperature=T0[1], environment_instant)
 
     # simulate all days
     pool = 0.0u"kg/m^2" # initialise depth of pooling water TODO make this an init option
@@ -391,7 +385,7 @@ function solve_soil!(output::MicroResult, mp::MicroProblem, solrad_out;
         forcing = forcing_day(solrad_out, mp.environment_hourly, iday)
         step = 1
         # loop through hours of day
-        if mp.spinup && j == 1 && i == 1 || daily == false
+        if mp.spinup && j == 1 || daily == false
             niter = iterate_day # number of interations for steady periodic
         else
             niter = 1
@@ -411,13 +405,18 @@ function solve_soil!(output::MicroResult, mp::MicroProblem, solrad_out;
                 if i == 1 # make first hour of day equal last hour of previous iteration
                     # Then why do we run the soil water balance again??
                     output.soil_temperature[step, :] .= T0
-                    step = (j - 1) * length(hours) + i
+                    update_soil_properties!(output, buffers.soil_properties, soil_thermal_model;
+                    soil_temperature=T0, soil_moisture=θ_soil0_a, terrain, step
+                    )
+                    longwave_out = longwave_radiation(; terrain, environment_instant, surface_temperature=T0[1])
                     pool += environment_instant.rainfall
+                    sub = vcat(findall(isodd, 1:numnodes_b), numnodes_b)
+                    θ_soil0_a = θ_soil0_b[sub]                     
                     if runmoist
                         infil_out, soil_wetness, pool, θ_soil0_b = get_soil_water_balance!(buffers, soil_moisture_model;
                             depths, heights, terrain, environment_instant, T0, niter_moist, soil_wetness, pool, soil_moisture=θ_soil0_b,
                         )
-                        iday > 1 && update_soil_water!(output, infil_out, sub, step)
+                        update_soil_water!(output, infil_out, sub, step)
                     end
                     pool = clamp(pool, 0.0u"kg/m^2", soil_moisture_model.maxpool)
                 else
@@ -430,11 +429,14 @@ function solve_soil!(output::MicroResult, mp::MicroProblem, solrad_out;
                         ∑phase, qphase, T0 = phase_transition!(buffers.phase_transition; Ts=soiltemps[2], T_past=soiltemps[1], ∑phase, θ=θ_soil0_a, depths)
                     end
                     output.soil_temperature[step, :] .= T0
+                    update_soil_properties!(output, buffers.soil_properties, soil_thermal_model;
+                    soil_temperature=T0, soil_moisture=θ_soil0_a, terrain, step
+                    )                     
                     if runmoist
                         infil_out, soil_wetness, pool, θ_soil0_b = get_soil_water_balance!(buffers, soil_moisture_model;
                             depths, heights, terrain, environment_instant, T0, niter_moist, pool, soil_wetness, soil_moisture=θ_soil0_b 
                         )
-                        i < length(hours) && update_soil_water!(output, infil_out, sub, step)
+                        update_soil_water!(output, infil_out, sub, step)
                     end
                     # TODO: why use every second step what is this
                     sub = vcat(findall(isodd, 1:numnodes_b), numnodes_b)
@@ -442,14 +444,9 @@ function solve_soil!(output::MicroResult, mp::MicroProblem, solrad_out;
                     longwave_out = longwave_radiation(; terrain, environment_instant, surface_temperature=T0[1])
                 end
                 # Write to output
-                if i < length(hours)
-                    output.surface_water[step] = pool
-                    output.soil_temperature[step, :] .= T0
-                    output.sky_temperature[step] = longwave_out.Tsky
-                end
-                update_soil_properties!(output, buffers.soil_properties, soil_thermal_model;
-                    soil_temperature=T0, soil_moisture=θ_soil0_a, terrain, step
-                )
+                output.surface_water[step] = pool
+                output.soil_temperature[step, :] .= T0
+                output.sky_temperature[step] = longwave_out.Tsky
             end
         end
     end
@@ -539,7 +536,7 @@ function forcing_day(solrad_out, environment_hourly, iday::Int)
 end
 
 function initialise_soil_moisture(initial_soil_moisture, numnodes_a, numnodes_b)
-    θ_soil0_a = collect(fill(initial_soil_moisture[1], numnodes_a)) # initial soil moisture
+    θ_soil0_a = initial_soil_moisture # initial soil moisture
     θ_soil0_b = similar(θ_soil0_a, numnodes_b)  # preallocate vector of length numnodes_b
     jj = 1
     for ii in 1:numnodes_b

@@ -19,7 +19,7 @@ runshade <- 0 # run the model twice, once for each shade level (1) or just for t
 runmoist <- 1 # run soil moisture model (0 = no, 1 = yes)?
 snowmodel <- 0 # run the snow model (0 = no, 1 = yes)? - note that this runs slower
 hourly <- 1 # run the model with hourly input data
-rainhourly <- 0 # run the model with hourly rainfall input data (irrelevant if hourly = 1)
+rainhourly <- 1 # run the model with hourly rainfall input data (irrelevant if hourly = 1)
 microdaily <- 1 # run microclimate model where one iteration of each day occurs and last day gives initial conditions for present day
 ndmax <- 1 # iterations of each day to get a steady periodic
 IR <- 0 # compute clear-sky longwave radiation using Campbell and Norman (1998) eq. 10.10 (includes humidity)
@@ -179,6 +179,29 @@ soilprops[, 4]<-SpecHeat # insert specific heat to profile 1
 soilprops[, 5]<-Density # insert mineral density to profile 1
 soilinit <- rep(tannul, 20) # make initial soil temps equal to mean annual
 
+obs_dates <- weather[, 49]
+obs_temperature <- weather[, 15:19]
+init_obs_temperature <- c(obs_temperature[1, ], tannul)
+init_obs_depths <- c(c(2, 4, 8, 20, 40) * 2.54, max(DEP))
+init_approx <- approxfun(init_obs_depths, init_obs_temperature)
+soilinit <- init_approx(DEP)
+#plot(log10(DEP), soilinit, ylim = c(-5, 25))
+lm_soilinit <- summary(lm(soilinit~log10(DEP)))
+m <- lm_soilinit$coefficients[2]
+c <- lm_soilinit$coefficients[1]
+#abline(c, m)
+predict_temps <- m * log10(DEP[2:3]+0.01) + c
+soilinit[2:3] <- predict_temps
+soilinit[1] <- -3
+
+obs_moisture <- weather[, 10:14]
+init_obs_moisture <- unlist(c(obs_moisture[1, ], max(obs_moisture, na.rm = TRUE)))
+init_obs_depths <- c(c(2, 4, 8, 20, 40) * 2.54, max(DEP))
+init_approx <- approxfun(init_obs_depths, init_obs_moisture)
+SoilMoist_Init <- init_approx(DEP)
+SoilMoist_Init[1:3] <- SoilMoist_Init[4]
+SoilMoist_Init <- SoilMoist_Init / 100
+
 #use Campbell and Norman Table 9.1 soil moisture properties
 soiltype <- 3 # 3 = sandy loam
 PE <- rep(CampNormTbl9_1[soiltype, 4],19) #air entry potential J/kg
@@ -203,7 +226,7 @@ LAI <- rep(0.1, doynum) # leaf area index, used to partition traspiration/evapor
 rainmult <- 1 # rainfall multiplier to impose catchment
 maxpool <- 10 # max depth for water pooling on the surface, mm (to account for runoff)
 evenrain <- 0 # spread daily rainfall evenly across 24hrs (1) or one event at midnight (0)
-SoilMoist_Init <- rep(0.2, 10) # initial soil water content for each node, m3/m3
+#SoilMoist_Init <- rep(0.2, 10) # initial soil water content for each node, m3/m3
 moists <- matrix(nrow = 10, ncol = doynum, data = 0) # set up an empty vector for soil moisture values through time
 moists[1:10,] <- SoilMoist_Init # insert initial soil moisture
 spinup <- 0 # repeat first day 3 times for steady state
@@ -314,7 +337,7 @@ specheat <- cbind(dates, specheat)
 densit <- cbind(dates, densit)
 
 tstart <- as.POSIXct("2015-01-01",format="%Y-%m-%d")
-tfinish <- as.POSIXct("2015-01-31",format="%Y-%m-%d")
+tfinish <- as.POSIXct("2015-03-31",format="%Y-%m-%d")
 
 # set up plot parameters
 par(mfrow = c(1, 1)) # set up for 6 plots in 1 columns
@@ -343,11 +366,14 @@ points(dates, tcond$TC5cm, type='l',xlim = c(tstart, tfinish), col = 3, xaxt = "
 # par(mgp = c(2, 1, 0) ) # margin spacing stuff
 #
 # # plot the soil temperatures
-# plot(dates, soil$D5cm, type='l',ylim = c(-10, 70),xlim = c(tstart, tfinish),xaxt = "n",ylab = expression("soil temperature (" * degree * C *")"),xlab="")
-# points(weather$datetime, weather$STO.I_2, type='l',col="red")
-# axis.POSIXct(side = 1, x = micro$dates, at = seq(tstart, tfinish, "weeks"), format = "%d-%m",  las = 2)
-# text(tstart, 10,"5cm",col="black",pos = 4, cex = 1.5)
-# abline(0, 0, lty = 2, col='light blue')
+tstart <- as.POSIXct("2015-01-01",format="%Y-%m-%d")
+tfinish <- as.POSIXct("2015-03-31",format="%Y-%m-%d")
+
+plot(dates, soil$D5cm, type='l',ylim = c(-10, 70),xlim = c(tstart, tfinish),xaxt = "n",ylab = expression("soil temperature (" * degree * C *")"),xlab="")
+points(weather$datetime, weather$STO.I_2, type='l',col="red")
+axis.POSIXct(side = 1, x = micro$dates, at = seq(tstart, tfinish, "weeks"), format = "%d-%m",  las = 2)
+#text(tstart, 10,"5cm",col="black",pos = 4, cex = 1.5)
+abline(0, 0, lty = 2, col='light blue')
 # #points(dates, metout$SNOWDEP, type='h',col='light blue')
 # plot(dates, soil$D10cm, type='l',ylim = c(-10, 70),xlim = c(tstart, tfinish),xaxt = "n",ylab = expression("soil temperature (" * degree * C *")"),xlab="")
 # points(weather$datetime, weather$STO.I_4, type='l',col="red")
@@ -371,14 +397,14 @@ points(dates, tcond$TC5cm, type='l',xlim = c(tstart, tfinish), col = 3, xaxt = "
 # text(tstart, 10,"100cm",col="black",pos = 4, cex = 1.5)
 # mtext(site$name, outer = TRUE)
 #
-# # plot the soil moisture
-# plot(dates, soilmoist$WC5cm * 100, type='l',ylim = c(0, 60),xaxt = "n",xlim = c(tstart, tfinish),col="blue",ylab="soil moisture (%)",xlab="")
-# axis.POSIXct(side = 1, x = micro$dates, at = seq(tstart, tfinish, "weeks"), format = "%d-%m",  las = 2)
-# points(weather$datetime, weather$SMS.I_2, type='l',col="red")
+# plot the soil moisture
+plot(dates, soilmoist$WC5cm * 100, type='l',ylim = c(0, 60),xaxt = "n",xlim = c(tstart, tfinish),col="blue",ylab="soil moisture (%)",xlab="")
+axis.POSIXct(side = 1, x = micro$dates, at = seq(tstart, tfinish, "weeks"), format = "%d-%m",  las = 2)
+points(weather$datetime, weather$SMS.I_2, type='l',col="red")
 # text(tstart, 40,"5cm",col="black",pos = 4, cex = 1.5)
-# plot(dates, soilmoist$WC10cm * 100, type='l',ylim = c(0, 60),xaxt = "n",xlim = c(tstart, tfinish),col="blue",ylab="soil moisture (%)",xlab="")
-# axis.POSIXct(side = 1, x = micro$dates, at = seq(tstart, tfinish, "weeks"), format = "%d-%m",  las = 2)
-# points(weather$datetime, weather$SMS.I_4, type='l',col="red")
+plot(dates, soilmoist$WC10cm * 100, type='l',ylim = c(0, 60),xaxt = "n",xlim = c(tstart, tfinish),col="blue",ylab="soil moisture (%)",xlab="")
+axis.POSIXct(side = 1, x = micro$dates, at = seq(tstart, tfinish, "weeks"), format = "%d-%m",  las = 2)
+points(weather$datetime, weather$SMS.I_4, type='l',col="red")
 # text(tstart, 40,"10cm",col="black",pos = 4, cex = 1.5)
 # plot(dates, soilmoist$WC20cm * 100, type='l',ylim = c(0, 60),xaxt = "n",xlim = c(tstart, tfinish),col="blue",ylab="soil moisture (%)",xlab="")
 # axis.POSIXct(side = 1, x = micro$dates, at = seq(tstart, tfinish, "weeks"), format = "%d-%m",  las = 2)
@@ -401,3 +427,6 @@ write.csv(soilpot, file = 'c:/git/Microclimate.jl/test/data/soilpot_FordDryLake.
 write.csv(tcond, file = 'c:/git/Microclimate.jl/test/data/tcond_FordDryLake.csv')
 write.csv(specheat, file = 'c:/git/Microclimate.jl/test/data/specheat_FordDryLake.csv')
 write.csv(densit, file = 'c:/git/Microclimate.jl/test/data/densit_FordDryLake.csv')
+write.csv(obs_dates, file = 'c:/git/Microclimate.jl/test/data/dates_FordDryLake.csv')
+write.csv(obs_temperature, file = 'c:/git/Microclimate.jl/test/data/obs_soiltemp_FordDryLake.csv')
+write.csv(obs_moisture, file = 'c:/git/Microclimate.jl/test/data/obs_soilmoist_FordDryLake.csv')
