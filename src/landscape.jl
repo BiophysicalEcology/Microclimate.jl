@@ -14,14 +14,13 @@ end
     S<:AbstractInterpolation,ZE<:AbstractInterpolation,ZS<:AbstractInterpolation,T<:AbstractInterpolation,
     V<:AbstractInterpolation,RH<:AbstractInterpolation,CL<:AbstractInterpolation,
 }
-    # TODO readable names
-    SOLRt::S
-    ZENRt::ZE
-    ZSLt::ZS
-    TAIRt::T
-    VELt::V
-    RHt::RH
-    CLDt::CL
+    interpolate_solar::S
+    interpolate_zenith::ZE
+    interpolate_slope_zenith::ZS
+    interpolate_temperature::T
+    interpolate_wind::V
+    interpolate_humidity::RH
+    interpolate_cloud::CL
 end
 
 abstract type AbstractEnvironment end
@@ -42,7 +41,7 @@ abstract type AbstractEnvironment end
     soil_water_potential::SWP
     soil_humidity::SH 
     soil_thermal_conductivity::STC
-    soil_specific_heat::SPH 
+    soil_heat_capacity::SPH 
     soil_bulk_density::SBD 
     surface_water::SW
     solrad::SR
@@ -64,7 +63,7 @@ function MicroResult(nsteps::Int, numnodes_a::Int)
         soil_water_potential = Array{typeof(1.0u"J/kg")}(undef, nsteps, numnodes_a),
         soil_humidity = Array{Float64}(undef, nsteps, numnodes_a),
         soil_thermal_conductivity = Array{typeof(1.0u"W/m/K")}(undef, nsteps, numnodes_a),
-        soil_specific_heat = Array{typeof(1.0u"J/kg/K")}(undef, nsteps, numnodes_a),
+        soil_heat_capacity = Array{typeof(1.0u"J/kg/K")}(undef, nsteps, numnodes_a),
         soil_bulk_density = Array{typeof(1.0u"kg/m^3")}(undef, nsteps, numnodes_a),
         surface_water = Array{typeof(1.0u"kg/m^2")}(undef, nsteps),
         solrad = nothing,
@@ -195,7 +194,7 @@ abstract type AbstractSolarRadiation end
     amr = 25.0u"km" # mixing ratio height of the atmosphere
     nmax = 111 # Maximum number of wavelength intervals
     # TODO better field names
-    Iλ = DEFAULT_Iλ # cector of wavelength bins (e.g. in `nm`)
+    Iλ = DEFAULT_Iλ # vector of wavelength bins (e.g. in `nm`)
     OZ = DEFAULT_OZ # ozone column depth table indexed by latitude band and month (size 19×12)
     τR = DEFAULT_τR # vector of optical depths per wavelength for Rayleigh scattering
     τO = DEFAULT_τO # vector of optical depths per wavelength for ozone

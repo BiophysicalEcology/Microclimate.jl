@@ -1,6 +1,6 @@
 using Microclimate
 using Unitful
-using CSV, DataFrames
+using CSV, DataFrames, Dates
 using Test
 
 testdir = realpath(joinpath(dirname(pathof(Microclimate)), "../test"))
@@ -9,7 +9,7 @@ testdir = realpath(joinpath(dirname(pathof(Microclimate)), "../test"))
 soil_temperature_nmr = (DataFrame(CSV.File("$testdir/data/soil_FordDryLake.csv"))[:, 5:14]) .* u"°C"
 soil_moisture_nmr = (DataFrame(CSV.File("$testdir/data/soilmoist_FordDryLake.csv"))[:, 5:14])
 soil_conductivity_nmr = (DataFrame(CSV.File("$testdir/data/tcond_FordDryLake.csv"))[:, 5:14])
-soil_specific_heat_nmr = (DataFrame(CSV.File("$testdir/data/specheat_FordDryLake.csv"))[:, 5:14])
+soil_heat_capacity_nmr = (DataFrame(CSV.File("$testdir/data/specheat_FordDryLake.csv"))[:, 5:14])
 soil_bulk_density_nmr = (DataFrame(CSV.File("$testdir/data/densit_FordDryLake.csv"))[:, 5:14])
 metout_nmr = (DataFrame(CSV.File("$testdir/data/metout_FordDryLake.csv"))[:, 2:21])
 obs_soil_temperature = (DataFrame(CSV.File("$testdir/data/obs_soiltemp_FordDryLake.csv"; missingstring="NA"))[:, 2:6]) .* u"°C"
@@ -139,6 +139,7 @@ problem = MicroProblem(;
     iterate_day = (microinput[:ndmax]), # number of iterations per day
     daily = Bool(Int(microinput[:microdaily])), # doing consecutive days?
     runmoist = Bool(Int(microinput[:runmoist])), # run soil moisture algorithm?
+    hourly_rainfall = Bool(Int(microinput[:rainhourly])), # is hourly rainfall to be used?
     spinup = Bool(Int(microinput[:spinup])), # spin-up the first day by iterate_day iterations?
     # intial conditions
     initial_soil_temperature = u"K".((DataFrame(CSV.File("$testdir/data/init_daily/soilinit.csv"))[1:length(depths), 2] * 1.0)u"°C"), # initial soil temperature

@@ -34,7 +34,7 @@ Simulates soil and microclimate dynamics over multiple days.
 - Each hour:
   * `soil_energy_balance!` updates temperature.
   * `get_soil_water_balance` updates moisture (optional).
-  * Soil properties (`λ_bulk`, `c_p_bulk`, `ρ_bulk`) updated.
+  * Soil properties (`bulk_thermal_conductivity`, `bulk_heat_capacity`, `bulk_density`) updated.
   * Sky temperature computed with `longwave_radiation`.
 
 # Profiles
@@ -87,7 +87,8 @@ Returns a named tuple containing:
     iterate_day = 3 # number of iterations per day
     # TODO: make these types so their code blocks can be removed by the compiler
     daily = false # doing consecutive days?
-    runmoist = false # run soil moisture algorithm?
+    hourly_rainfall = false # is hourly rainfall to be used? (can be better to aggregate it to daily or may only have daily)
+    runmoist = false # run soil moisture algorithm? TODO when this is a type, dispatch on an environment that includes observations of soil moisture and soil wetness
     spinup = false # spin-up the first day by iterate_day iterations?
 end
 
@@ -300,7 +301,7 @@ end
 function solve_soil!(output::MicroResult, mp::MicroProblem, solrad_out; 
     days, hours, depths, heights
 )
-    (; terrain, soil_thermal_model, soil_moisture_model, environment_minmax, environment_daily, daily, initial_soil_temperature, initial_soil_moisture, runmoist) = mp
+    (; terrain, soil_thermal_model, soil_moisture_model, environment_minmax, environment_daily, daily, initial_soil_temperature, initial_soil_moisture, runmoist, hourly_rainfall) = mp
     (; moist_step, Campbells_b_parameter, soil_bulk_density2, soil_mineral_density2, air_entry_water_potential) = soil_moisture_model
     
 
@@ -370,7 +371,6 @@ function solve_soil!(output::MicroResult, mp::MicroProblem, solrad_out;
 
     environment_day = get_day(environment_daily, 1)
     environment_instant = get_instant(environment_day, mp.environment_hourly, output, θ_soil0_a, 1)
-    #longwave_out = longwave_radiation(; terrain, surface_temperature=T0[1], environment_instant)
 
     # simulate all days
     pool = 0.0u"kg/m^2" # initialise depth of pooling water TODO make this an init option
@@ -395,7 +395,6 @@ function solve_soil!(output::MicroResult, mp::MicroProblem, solrad_out;
             sub2 = (iday*nhours-nhours+1):(iday*nhours) # for getting mean monthly over the 25 hrs as in fortran version
             t = u"K"(mean(ustrip(TAIRs[sub2]))u"°C") # make initial soil temps equal to mean annual temperature
             T0 = SVector(ntuple(_ -> t, numnodes_a))
-            #T_soils[step, :] = T0
             θ_soil0_a = collect(fill(initial_soil_moisture[iday], numnodes_a)) # initial soil moisture
         end
         T0 = setindex(T0, environment_instant.deep_soil_temperature, numnodes_a) # set deepest node to boundary condition
@@ -405,7 +404,11 @@ function solve_soil!(output::MicroResult, mp::MicroProblem, solrad_out;
                 if i == 1 # make first hour of day equal last hour of previous iteration
                     # Then why do we run the soil water balance again??
                     output.soil_temperature[step, :] .= T0
-                    pool += environment_instant.rainfall
+                    if hourly_rainfall
+                        pool += mp.environment_hourly.rainfall[step]
+                    else
+                        pool += environment_instant.rainfall
+                    end
                     sub = vcat(findall(isodd, 1:numnodes_b), numnodes_b)
                     θ_soil0_a = θ_soil0_b[sub]                     
                     if runmoist
@@ -427,7 +430,10 @@ function solve_soil!(output::MicroResult, mp::MicroProblem, solrad_out;
                     output.soil_temperature[step, :] .= T0
                     update_soil_properties!(output, buffers.soil_properties, soil_thermal_model;
                     soil_temperature=T0, soil_moisture=θ_soil0_a, terrain, step
-                    )                     
+                    )
+                    if hourly_rainfall
+                        pool += mp.environment_hourly.rainfall[step]
+                    end
                     if runmoist
                         infil_out, soil_wetness, pool, θ_soil0_b = get_soil_water_balance!(buffers, soil_moisture_model;
                             depths, heights, terrain, environment_instant, T0, niter_moist, pool, soil_wetness, soil_moisture=θ_soil0_b 
@@ -437,11 +443,11 @@ function solve_soil!(output::MicroResult, mp::MicroProblem, solrad_out;
                     # TODO: why use every second step what is this
                     sub = vcat(findall(isodd, 1:numnodes_b), numnodes_b)
                     θ_soil0_a = θ_soil0_b[sub]
-                    longwave_out = longwave_radiation(; terrain, environment_instant, surface_temperature=T0[1])
                 end
                 # Write to output
                 output.surface_water[step] = pool
                 output.soil_temperature[step, :] .= T0
+                longwave_out = longwave_radiation(; terrain, environment_instant, surface_temperature=T0[1])
                 output.sky_temperature[step] = longwave_out.Tsky
                 update_soil_properties!(output, buffers.soil_properties, soil_thermal_model;
                     soil_temperature=T0, soil_moisture=θ_soil0_a, terrain, step
@@ -479,11 +485,11 @@ function get_soil_temp_timeline(T0, input, i)
 end
 
 function update_soil_properties!(output, soil_properties_buffers, soil_thermal_model; step, kw...)
-    (; λ_b, cp_b, ρ_b) = soil_properties!(soil_properties_buffers, soil_thermal_model; kw...)
+    (; bulk_thermal_conductivity, bulk_heat_capacity, bulk_density) = soil_properties!(soil_properties_buffers, soil_thermal_model; kw...)
 
-    output.soil_thermal_conductivity[step, :] .= λ_b
-    output.soil_specific_heat[step, :] .= cp_b
-    output.soil_bulk_density[step, :] .= ρ_b
+    output.soil_thermal_conductivity[step, :] .= bulk_thermal_conductivity
+    output.soil_heat_capacity[step, :] .= bulk_heat_capacity
+    output.soil_bulk_density[step, :] .= bulk_density
 
     return output
 end
@@ -504,34 +510,18 @@ function forcing_day(solrad_out, environment_hourly, iday::Int)
 
     nhours = 24
     sub1 = (iday*nhours-nhours+1):(iday*nhours)
-    tspan = 0.0:60:(60*nhours)
+    tspan = 0.0:60:(60*(nhours-1))
 
     # get today's weather
-    SOLR = solar_radiation[sub1]
-    ZENR = zenith_angle[sub1]
-    ZSL = zenith_slope_angle[sub1]
-    TAIR = air_temperature[sub1]
-    VEL = wind_speed[sub1]
-    RH = relative_humidity[sub1]
-    CLD = cloud_cover[sub1]
+    interpolate_solar = scale(interpolate(solar_radiation[sub1], BSpline(Linear())), tspan)
+    interpolate_zenith = scale(interpolate(zenith_angle[sub1], BSpline(Linear())), tspan)
+    interpolate_slope_zenith = scale(interpolate(zenith_slope_angle[sub1], BSpline(Linear())), tspan)
+    interpolate_temperature = scale(interpolate(u"K".(air_temperature[sub1]), BSpline(Linear())), tspan)
+    interpolate_wind = scale(interpolate(wind_speed[sub1], BSpline(Linear())), tspan)
+    interpolate_humidity = scale(interpolate(relative_humidity[sub1], BSpline(Linear())), tspan)
+    interpolate_cloud = scale(interpolate(cloud_cover[sub1], BSpline(Linear())), tspan)
 
-    interpSOLR = interpolate([SOLR; SOLR[end]], BSpline(Linear()))
-    interpZENR = interpolate([ZENR; ZENR[end]], BSpline(Linear()))
-    interpZSL = interpolate([ZSL; ZSL[end]], BSpline(Linear()))
-    interpTAIR = interpolate(u"K".([TAIR; TAIR[end]]), BSpline(Linear()))
-    interpVEL = interpolate([VEL; VEL[end]], BSpline(Linear()))
-    interpRH = interpolate([RH; RH[end]], BSpline(Linear()))
-    interpCLD = interpolate([CLD; CLD[end]], BSpline(Linear()))
-
-    SOLRt = scale(interpSOLR, tspan)
-    ZENRt = scale(interpZENR, tspan)
-    ZSLt = scale(interpZSL, tspan)
-    TAIRt = scale(interpTAIR, tspan)
-    VELt = scale(interpVEL, tspan)
-    RHt = scale(interpRH, tspan)
-    CLDt = scale(interpCLD, tspan)
-
-    return MicroForcing(; SOLRt, ZENRt, ZSLt, TAIRt, VELt, RHt, CLDt)
+    return MicroForcing(; interpolate_solar, interpolate_zenith, interpolate_slope_zenith, interpolate_temperature, interpolate_wind, interpolate_humidity, interpolate_cloud)
 end
 
 function initialise_soil_moisture(initial_soil_moisture, numnodes_a, numnodes_b)

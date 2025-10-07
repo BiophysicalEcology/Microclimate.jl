@@ -123,8 +123,7 @@ function soil_properties(soil_thermal::CampbelldeVriesSoilThermal;
            ϕ_mineral * ϵ(λ_mineral, λ_fluid) + 
            ϕ_gas * ϵ(λ_gas, λ_fluid))
 
-    # TODO real names for these
-    return (; λ_b, cp_b, ρ_b)
+    return (; bulk_thermal_conductivity=λ_b, bulk_heat_capacity=cp_b, bulk_density=ρ_b)
 end
 
 function allocate_soil_properties(nodes, soil_thermal)
@@ -135,7 +134,7 @@ function allocate_soil_properties(nodes, soil_thermal)
     cp_b = fill(mineral_heat_capacity[1], NON)
     ρ_b = fill(mineral_density[1], NON)
 
-    return (; λ_b, cp_b, ρ_b)
+    return (; bulk_thermal_conductivity=λ_b, bulk_heat_capacity=cp_b, bulk_density=ρ_b)
 end
 
 """
@@ -143,15 +142,14 @@ end
 
 Compute soil properties for vectors of soil temperature and moisture using broadcasting.
 
-# TODO these should have readable names
-Returns three arrays: `λ_b`, `cp_b`, `ρ_b`.
+Returns three arrays: `bulk_thermal_conductivity`, `bulk_heat_capacity`, `bulk_density`.
 """
 function soil_properties!(buffers::NamedTuple, soil_thermal; 
     terrain, soil_temperature::AbstractVector, soil_moisture::AbstractVector
 )
     N = length(soil_temperature)
     @assert length(soil_moisture) == N
-    (; λ_b, cp_b, ρ_b) = buffers
+    (; bulk_thermal_conductivity, bulk_heat_capacity, bulk_density) = buffers
     soil_props_i(i) = soil_properties(soil_thermal;
         terrain,
         soil_temperature = soil_temperature[i],
@@ -160,9 +158,9 @@ function soil_properties!(buffers::NamedTuple, soil_thermal;
 
     results = soil_props_i.(1:N)
 
-    λ_b  .= getindex.(results, 1)
-    cp_b .= getindex.(results, 2)
-    ρ_b  .= getindex.(results, 3)
+    bulk_thermal_conductivity  .= getindex.(results, 1)
+    bulk_heat_capacity .= getindex.(results, 2)
+    bulk_density  .= getindex.(results, 3)
 
-    return (; λ_b, cp_b, ρ_b)
+    return (; bulk_thermal_conductivity, bulk_heat_capacity, bulk_density)
 end

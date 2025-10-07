@@ -145,8 +145,8 @@ function atmospheric_surface_profile!(buffers;
             air_temperatures[i] = T0 - A * log((height_array[i] - d0_cm) / zh_cm)
         end
     end
-    # TODO name and explain this check, why `|| zenith_angle`
-    if T_ref_height ≥ T_surface || zenith_angle ≥ 90°
+    # check for free convection (lapse) conditions (assumed not to happen at night)
+    if T_ref_height ≥ T_surface || zenith_angle ≥ 90° # stable
         for i in 2:N_heights
             wind_speeds[i] = calc_wind(height_array[i], z0, κ, u_star, 1.0)
             T_z0 = (T_ref_height * bulk_stanton(log_z_ratio) + T_surface * sublayer_stanton(z0, u_star)) / (bulk_stanton(log_z_ratio) + sublayer_stanton(z0, u_star))
@@ -154,7 +154,7 @@ function atmospheric_surface_profile!(buffers;
                 air_temperatures[i] = T_z0 + (T_ref_height - T_z0) * log(height_array[i] / z0 + 1.0) / log_z_ratio
             end
         end
-    else
+    else # free convection occuring
         L_Obukhov = -30.0u"cm" # initialise Obukhov length
         # TODO just pass the environment_instant through here
         Obukhov_out = calc_Obukhov_length(T_ref_height, T_surface, v_ref_height, z0, z, ρcpTκg, κ, log_z_ratio, ΔT, ρ_cp; max_iter=30, tol=1e-2)
