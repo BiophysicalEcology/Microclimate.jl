@@ -63,12 +63,12 @@ soil_thermal_model = CampbelldeVriesSoilThermal(;
 
 environment_minmax = nothing
 # MonthlyMinMaxEnvironment(;
-#     air_temperature_min = (DataFrame(CSV.File("$testdir/data/init_daily/TMINN.csv"))[1:days2do, 2] * 1.0)u"°C", # minimum air temperatures (°C)
-#     air_temperature_max = (DataFrame(CSV.File("$testdir/data/init_daily/TMAXX.csv"))[1:days2do, 2] * 1.0)u"°C", # maximum air temperatures (°C)
-#     wind_min = nothing,
-#     wind_max = nothing,
-#     humidity_min = nothing,
-#     humidity_max = nothing,
+#     reference_temperature_min = (DataFrame(CSV.File("$testdir/data/init_daily/TMINN.csv"))[1:days2do, 2] * 1.0)u"°C", # minimum air temperatures (°C)
+#     reference_temperature_max = (DataFrame(CSV.File("$testdir/data/init_daily/TMAXX.csv"))[1:days2do, 2] * 1.0)u"°C", # maximum air temperatures (°C)
+#     reference_wind_min = nothing,
+#     reference_wind_max = nothing,
+#     reference_humidity_min = nothing,
+#     reference_humidity_max = nothing,
 #     cloud_min = nothing,
 #     cloud_max = nothing,
 #     minima_times = [0, 0, 1, 1], # time of minima for air temp, wind, humidity and cloud cover (h), air & wind mins relative to sunrise, humidity and cloud cover mins relative to solar noon
@@ -100,7 +100,6 @@ environment_daily = DailyTimeseries(;
     # daily environmental vectors
     albedo = (DataFrame(CSV.File("$testdir/data/init_daily/REFLS.csv"))[1:days2do, 2] * 1.0), # substrate albedo (decimal %)
     shade = (DataFrame(CSV.File("$testdir/data/init_daily/Minshades.csv"))[1:days2do, 2] * 1.0), # daily shade (%)
-    soil_wetness = (DataFrame(CSV.File("$testdir/data/init_daily/PCTWET.csv"))[1:days2do, 2] * 1.0),
     surface_emissivity = (DataFrame(CSV.File("$testdir/data/init_daily/SLES.csv"))[1:days2do, 2] * 1.0), # - surface emissivity
     rainfall = ((DataFrame(CSV.File("$testdir/data/init_daily/rain.csv"))[1:days2do, 2] * 1.0))u"kg/m^2",
     deep_soil_temperature = (DataFrame(CSV.File("$testdir/data/init_daily/tannulrun.csv"))[1:days2do, 2] * 1.0)u"°C", # daily deep soil temperatures
@@ -108,9 +107,9 @@ environment_daily = DailyTimeseries(;
 )
 
 environment_hourly = HourlyTimeseries(;
-    air_temperature = Float64.(CSV.File("$testdir/data/init_daily/TAIRhr.csv").x[1:hours2do])u"°C",
-    relative_humidity = clamp.(Float64.(CSV.File("$testdir/data/init_daily/RHhr.csv").x[1:hours2do]), 0, 100),
-    wind_speed = clamp.(Float64.(CSV.File("$testdir/data/init_daily/WNhr.csv").x[1:hours2do])u"m/s", 0.1u"m/s", (Inf)u"m/s"),
+    reference_temperature = Float64.(CSV.File("$testdir/data/init_daily/TAIRhr.csv").x[1:hours2do])u"°C",
+    reference_humidity = clamp.(Float64.(CSV.File("$testdir/data/init_daily/RHhr.csv").x[1:hours2do]), 0, 100),
+    reference_wind_speed = clamp.(Float64.(CSV.File("$testdir/data/init_daily/WNhr.csv").x[1:hours2do])u"m/s", 0.1u"m/s", (Inf)u"m/s"),
     solar_radiation = Float64.(CSV.File("$testdir/data/init_daily/SOLRhr.csv").x[1:hours2do])u"W/m^2",
     cloud_cover = clamp.(Float64.(CSV.File("$testdir/data/init_daily/CLDhr.csv").x[1:hours2do]), 0, 100),
     rainfall = clamp.(Float64.(CSV.File("$testdir/data/init_daily/RAINhr.csv").x[1:hours2do])u"kg" / u"m^2", 0u"kg/m^2", Inf * u"kg/m^2"),

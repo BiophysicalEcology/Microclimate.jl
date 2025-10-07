@@ -1571,12 +1571,12 @@ function longwave_radiation(radiation_model=CampbellNormanAtmosphericRadiation()
 )
     # TODO these are not the real names
     (; elevation, P_atmos, viewfactor) = terrain
-    (; relative_humidity, air_temperature, surface_emissivity, cloud_emissivity, cloud_cover, shade) = environment_instant
+    (; reference_humidity, reference_temperature, surface_emissivity, cloud_emissivity, cloud_cover, shade) = environment_instant
 
     # Short names, hardly worth it
     tsurf = surface_temperature
-    tair = air_temperature
-    rh = relative_humidity
+    tair = reference_temperature
+    rh = reference_humidity
     slep = surface_emissivity
     sle = cloud_emissivity
     cloud = cloud_cover

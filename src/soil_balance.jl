@@ -15,9 +15,9 @@ function soil_energy_balance(
     #T_K = T .* u"K"  # convert Float64 time back to unitful
     #dT_K = dT .* 60 .* u"K/minute"  # convert Float64 time back to unitful
     # extract prameters
-    (; soil_thermal_model, forcing, buffers, heights, depths, nodes, environment_instant, terrain, runmoist) = p
+    (; soil_thermal_model, forcing, buffers, heights, depths, nodes, environment_instant, terrain, soil_wetness, runmoist) = p
     (; depp, wc, c) = buffers.soil_energy_balance
-    (; soil_moisture, soil_wetness, shade) = environment_instant
+    (; soil_moisture, shade) = environment_instant
     # Get environmental data at time t
     (; tair, vel, zenr, solr, cloud, rh, zslr) = interpolate_forcings(forcing, t)
     (; slope, P_atmos, roughness_height, κ) = terrain
@@ -33,7 +33,7 @@ function soil_energy_balance(
     λ_b = bulk_thermal_conductivity
     cp_b = bulk_heat_capacity
     ρ_b = bulk_density
-    
+
     T1m = MVector(T1)
     T2 = SVector(T1m)
 
@@ -75,14 +75,14 @@ function soil_energy_balance(
     ΔT = T_ref_height - T_surface
     T_mean = (T_surface + T_ref_height) / 2
     # TODO call calc_ρ_cp method specific to elevation and RH in final version but do it this way for NicheMapR comparison
-    ρ_cp = calc_ρ_cp(T_mean)#, elevation, relative_humidity)
+    ρ_cp = calc_ρ_cp(T_mean)#, elevation, reference_humidity)
     if T_ref_height ≥ T_surface || zenr ≥ 90°
         u_star = calc_u_star(; reference_wind_speed=vel, log_z_ratio, κ)
         Q_convection = calc_convection(; u_star, log_z_ratio, ΔT, ρ_cp, z0=roughness_height)
     else
         # compute ρcpTκg (was a constant in original Fortran version)
         # dry_air_out = dry_air_properties(u"K"(reference_temperature), elevation=elevation)
-        # wet_air_out = wet_air_properties(u"K"(reference_temperature), rh = relative_humidity)
+        # wet_air_out = wet_air_properties(u"K"(reference_temperature), rh = reference_humidity)
         #ρ = dry_air_out.ρ_air
         #c_p = wet_air_out.c_p
         # TODO make this work with SI units
@@ -471,8 +471,8 @@ function get_soil_water_balance!(buffers, soil_moisture_model::SoilMoistureModel
     soil_moisture,
 )
     ei = environment_instant
-    tair = ei.air_temperature
-    rh = ei.relative_humidity
+    tair = ei.reference_temperature
+    rh = ei.reference_humidity
     leaf_area_index = ei.leaf_area_index
 
     P_atmos = terrain.P_atmos

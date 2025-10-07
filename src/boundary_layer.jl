@@ -91,7 +91,7 @@ function atmospheric_surface_profile!(buffers;
     γ = 16.0, # coefficient from Dyer and Hicks for Φ_m (momentum), TODO make it available as a user param?
 )
     (; roughness_height, zh, d0, κ, elevation, P_atmos) = terrain
-    (; reference_temperature, reference_wind_speed, relative_humidity, zenith_angle) = environment_instant
+    (; reference_temperature, reference_wind_speed, reference_humidity, zenith_angle) = environment_instant
 
     (; heights, height_array, air_temperatures, wind_speeds, humidities) = buffers
     N_heights = length(heights)
@@ -102,6 +102,7 @@ function atmospheric_surface_profile!(buffers;
 
     T_ref_height = u"K"(reference_temperature)
     T_surface = u"K"(surface_temperature)
+    rh = reference_humidity
 
     # Units: m to cm
     z = u"cm"(reference_height)
@@ -121,7 +122,7 @@ function atmospheric_surface_profile!(buffers;
 
     # compute rcptkg (was a constant in original Fortran version)
     # dry_air_out = dry_air_properties(u"K"(reference_temperature); elevation, P_atmos)
-    # wet_air_out = wet_air_properties(u"K"(reference_temperature); rh=relative_humidity, P_atmos)
+    # wet_air_out = wet_air_properties(u"K"(reference_temperature); rh, P_atmos)
     # ρ = dry_air_out.ρ_air
     # c_p = wet_air_out.c_p
     # TODO make this work with SI units
@@ -134,7 +135,7 @@ function atmospheric_surface_profile!(buffers;
     ΔT = T_ref_height - T_surface
     T_mean = (T_surface + T_ref_height) / 2
     # TODO call calc_ρ_cp method specific to elevation and RH in final version but do it this way for NicheMapR comparison
-    ρ_cp = calc_ρ_cp(T_mean)#, elevation, relative_humidity)
+    ρ_cp = calc_ρ_cp(T_mean)#, elevation, rh)
     u_star = calc_u_star(; reference_wind_speed, log_z_ratio, κ)
     Q_convection = calc_convection(; u_star, log_z_ratio, ΔT, ρ_cp, z0)
 
@@ -175,7 +176,7 @@ function atmospheric_surface_profile!(buffers;
     end
     wind_speeds = reverse(wind_speeds)
     air_temperatures = reverse(air_temperatures)
-    e = wet_air_properties(T_ref_height; rh = relative_humidity).P_vap
+    e = wet_air_properties(T_ref_height; rh).P_vap
     humidities .= clamp.(e ./ vapour_pressure.(air_temperatures) .* 100.0, 0.0, 100.0)
 
     return (;
