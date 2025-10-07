@@ -10,6 +10,7 @@ using SpecialFunctions, StaticArrays
 using FluidProperties: atmospheric_pressure, wet_air_properties, dry_air_properties, vapour_pressure 
 using FluidProperties: enthalpy_of_vaporisation, molar_enthalpy_of_vaporisation, water_properties
 using FluidProperties: g_n, σ, atm, R
+using FluidProperties: GoffGratch
 using Unitful: °, rad, °C
 using Interpolations: AbstractInterpolation
 
@@ -25,7 +26,7 @@ export sine_exponential!, vsine, hourly_vars, interpolate_minmax!
 export hour_angle, solar_geometry, elev_corr, dchxy, solrad, cloud_adjust_radiation
 export get_longwave, init_dchxy_buffers, adjust_for_cloud_cover!
 
-export atmospheric_surface_profile, calc_u_star, calc_convection, calc_ρ_cp
+export atmospheric_surface_profile, calc_u_star, calc_convection, calc_ρ_cp, allocate_profile, atmospheric_surface_profile!
 
 export soil_props, soil_props_vector, allocate_soil_properties
 

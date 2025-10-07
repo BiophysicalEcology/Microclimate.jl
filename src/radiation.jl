@@ -1577,8 +1577,8 @@ function longwave_radiation(radiation_model=CampbellNormanAtmosphericRadiation()
     tsurf = surface_temperature
     tair = reference_temperature
     rh = reference_humidity
-    slep = surface_emissivity
-    sle = cloud_emissivity
+    sle = surface_emissivity
+    slep = cloud_emissivity
     cloud = cloud_cover
 
     # Longwave radiation (handle both IR modes)

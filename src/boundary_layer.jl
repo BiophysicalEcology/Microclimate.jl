@@ -75,7 +75,8 @@ profile.wind_speeds       # vertical profile of wind speeds
 """
 atmospheric_surface_profile(; heights=DEFAULT_HEIGHTS, kw...) =
     atmospheric_surface_profile!(allocate_profile(heights); kw...)
-function atmospheric_surface_profile!(buffers;
+function atmospheric_surface_profile!(
+    buffers;
     terrain,
     environment_instant,
     surface_temperature, 
@@ -135,6 +136,7 @@ function atmospheric_surface_profile!(buffers;
         for i in 2:N_heights
             wind_speeds[i] = calc_wind(height_array[i], z0, κ, u_star, 1.0)
             T_z0 = (T_ref_height * bulk_stanton(log_z_ratio) + T_surface * sublayer_stanton(z0, u_star)) / (bulk_stanton(log_z_ratio) + sublayer_stanton(z0, u_star))
+            air_temperatures[i] = T_z0 + (T_ref_height - T_z0) * log(height_array[i] / z0 + 1.0) / log_z_ratio
         end
     else # free convection occuring
         L_Obukhov = -30.0u"cm" # initialise Obukhov length
@@ -150,6 +152,7 @@ function atmospheric_surface_profile!(buffers;
             ψ_m1 = calc_ψ_m(φ_m1)
             ψ_h2 = calc_ψ_h(φ_m1)
             wind_speeds[i] = calc_wind(height_array[i], z0, κ, u_star, -ψ_m1)
+            air_temperatures[i] = T_z0 + (T_ref_height - T_z0) * log(height_array[i] / z0 + 1.0) / log_z_ratio
         end
     end
     wind_speeds = reverse(wind_speeds)

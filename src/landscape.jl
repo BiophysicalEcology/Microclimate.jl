@@ -143,6 +143,7 @@ end
     albedo
     shade
     surface_emissivity
+    cloud_emissivity
     rainfall
     deep_soil_temperature
     leaf_area_index
