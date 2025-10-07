@@ -150,3 +150,12 @@ const D_v0 = 2.12e-5u"m^2/s" # diffusivity of water vapour at STP, p. 309 Campbe
 const DEFAULT_HEIGHTS = [0.01, 0.05, 0.1, 0.2, 0.3, 0.4, 0.5, 0.75, 1.0, 1.2] .* u"m"
 const DEFAULT_DEPTHS = [0.0, 2.5, 5.0, 10.0, 15.0, 20.0, 30.0, 40.0, 50.0, 100.0, 200.0]u"cm"
 
+# radiation parameters
+const DEFAULT_HORIZON_ANGLES = fill(0.0u"°", 24) # enter the horizon angles (degrees) so that they go from 0 degrees azimuth (north) clockwise in 15 degree intervals
+const DEFAULT_SLOPE = 0.0u"°" # slope (degrees, range 0-90)
+const DEFAULT_ASPECT = 0.0u"°" # aspect (degrees, 0 = North, range 0-360)
+
+# boundary layer parameters
+const DEFAULT_ROUGHNESS_HEIGHT = 0.004u"m" # aerodynamic roughness height
+const DEFAULT_KARMAN_CONSTANT = 0.4 # Kármán constant, κ
+const DEFAULT_DYER_CONSTANT = 16.0 # coefficient from Dyer and Hicks for Φ_m (momentum), γ

@@ -118,9 +118,8 @@ abstract type AbstractTerrain end
     slope
     aspect
     roughness_height
-    zh
-    d0
-    κ
+    karman_constant
+    dyer_constant
     P_atmos = atmospheric_pressure(elevation)
     viewfactor = 1 - sum(sin.(horizon_angles)) / length(horizon_angles) # convert horizon angles to radians and calc view factor(s)
 end

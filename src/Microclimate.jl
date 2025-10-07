@@ -20,10 +20,10 @@ export CampbelldeVriesSoilThermal, SoilMoistureModel, SolarRadiation
 
 export MonthlyMinMaxEnvironment, DailyTimeseries, HourlyTimeseries, Terrain
 
-export sine_exponential!, vsine, hourly_vars
+export sine_exponential!, vsine, hourly_vars, interpolate_minmax!
 
 export hour_angle, solar_geometry, elev_corr, dchxy, solrad, cloud_adjust_radiation
-export get_longwave, init_dchxy_buffers
+export get_longwave, init_dchxy_buffers, adjust_for_cloud_cover!
 
 export atmospheric_surface_profile, calc_u_star, calc_convection, calc_ρ_cp
 

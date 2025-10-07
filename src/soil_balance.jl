@@ -20,7 +20,7 @@ function soil_energy_balance(
     (; soil_moisture, shade) = environment_instant
     # Get environmental data at time t
     (; tair, vel, zenr, solr, cloud, rh, zslr) = interpolate_forcings(forcing, t)
-    (; slope, P_atmos, roughness_height, κ) = terrain
+    (; slope, P_atmos, roughness_height, karman_constant) = terrain
 
     reference_height = last(heights)
     sabnew = 1.0 - environment_instant.albedo
@@ -77,7 +77,7 @@ function soil_energy_balance(
     # TODO call calc_ρ_cp method specific to elevation and RH in final version but do it this way for NicheMapR comparison
     ρ_cp = calc_ρ_cp(T_mean)#, elevation, reference_humidity)
     if T_ref_height ≥ T_surface || zenr ≥ 90°
-        u_star = calc_u_star(; reference_wind_speed=vel, log_z_ratio, κ)
+        u_star = calc_u_star(; reference_wind_speed=vel, log_z_ratio, κ=karman_constant)
         Q_convection = calc_convection(; u_star, log_z_ratio, ΔT, ρ_cp, z0=roughness_height)
     else
         # compute ρcpTκg (was a constant in original Fortran version)
@@ -89,7 +89,7 @@ function soil_energy_balance(
         #ρcpTκg = u"cal*minute^2/cm^4"(ρ * c_p * T_ref_height / (κ * g_n))
         ρcpTκg = 6.003e-8u"cal*minute^2/cm^4"
         L_Obukhov = -30.0u"cm" # initialise Obukhov length
-        Obukhov_out = calc_Obukhov_length(T_ref_height, T_surface, vel, roughness_height, reference_height, ρcpTκg, κ, log_z_ratio, ΔT, ρ_cp)
+        Obukhov_out = calc_Obukhov_length(T_ref_height, T_surface, vel, roughness_height, reference_height, ρcpTκg, karman_constant, log_z_ratio, ΔT, ρ_cp)
         L_Obukhov = Obukhov_out.L_Obukhov
         Q_convection = Obukhov_out.Q_convection
     end

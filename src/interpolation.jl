@@ -306,6 +306,30 @@ function hourly_vars(minmax, solrad_out, daily::Bool=false)
     return (; air_temperatures, wind_speeds, humidities, cloud_covers)
 end
 
+function interpolate_minmax!(output, environment_minmax, environment_daily, environment_hourly, solrad_out)
+    # interpolate daily min/max forcing variables to hourly
+    reference_temperature, reference_wind_speed, reference_humidity, cloud_cover = 
+        hourly_vars(environment_minmax, solrad_out, environment_daily)
+    # TODO just use loops for these this allocates
+    reference_humidity[reference_humidity .> 100] .= 100
+    cloud_cover[cloud_cover .> 100] .= 100
+
+    output.cloud_cover .= cloud_cover
+    output.reference_temperature .= reference_temperature
+    output.reference_wind_speed .= reference_wind_speed
+    output.reference_humidity .= reference_humidity
+
+    return 
+end
+function interpolate_minmax!(output, environment_minmax::Nothing, environment_daily, environment_hourly, solrad_out)
+    output.cloud_cover .= environment_hourly.cloud_cover
+    output.reference_temperature .= environment_hourly.reference_temperature
+    output.reference_wind_speed .= environment_hourly.reference_wind_speed
+    output.reference_humidity .= environment_hourly.reference_humidity
+
+    return 
+end
+
 # TODO this does just cloud_covers but should generalise first version better down the track
 function hourly_vars(
     cloud_min::Vector,

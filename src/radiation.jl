@@ -1618,6 +1618,18 @@ function longwave_radiation(radiation_model=CampbellNormanAtmosphericRadiation()
     )
 end
 
+function adjust_for_cloud_cover!(output, solrad_out, days, hours)
+    zenith_angle = solrad_out.zenith_angle
+    zenith_slope_angle = solrad_out.zenith_slope_angle
+    # adjust for cloud using Angstrom formula (formula 5.33 on P. 177 of "Climate Data and Resources" by Edward Linacre 1992
+    day_of_year = repeat(days, inner=length(hours))
+    direct_total = solrad_out.direct_total
+    diffuse_total = solrad_out.diffuse_total
+    cloud_adjust_radiation!(output, output.cloud_cover ./ 100.0, diffuse_total, direct_total, zenith_angle, day_of_year)
+
+    return output
+end
+
 """
     cloud_adjust_radiation(cloud, D_cs, B_cs, zenith, doy; a=0.25, b=0.5, gamma=1.0)
 

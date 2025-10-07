@@ -1,3 +1,6 @@
+abstract type AbstractBoundaryLayerModel end
+struct BusingerDyerBoundaryLayer <: AbstractBoundaryLayerModel end
+
 function allocate_profile(heights)
     N_heights = length(heights)
     wind_speeds = similar(heights, typeof(0.0u"cm/minute")) # output wind speeds
@@ -22,9 +25,7 @@ to assess whether conditions are stable or unstable.
 
 # Keyword Arguments
 
-- `z0::Quantity=0.004u"m"`: roughness length (surface aerodynamic roughness).
-- `zh::Quantity=0.0u"m"`: heat transfer roughness height
-- `d0::Quantity=0.0u"m"`: zero plane displacement correction factor.
+- `roughness_height::Quantity=0.004u"m"`: aerodynamic roughness length, z0.
 - `κ::Float64=0.4`: von Kármán constant.
 - `heights::Vector{Quantity}`: Requested heights above the surface, the last being the reference height.
 - `reference_temperature::Quantity=27.78u"°C"`: Air temperature at the reference height.
@@ -45,16 +46,6 @@ Named tuple with fields:
 # Notes
 - Stability corrections use the **Businger–Dyer** formulations for unstable conditions.
 - The Monin–Obukhov length is estimated iteratively through `calc_Obukhov_length`.
-- Two broad options for aerodynamic roughness calculations are available: Campbell & Norman's (1998) approach
-that handles canopy displacement, invoked if `zh > 0` and otherwise  
-- When `zh > 0`, canopy displacement is considered in the profile calculation.
-- zh and d0 for Campbell and Norman air temperature/wind speed profile (0.6 * canopy height in m if unknown
-| Condition                   | Wind profile                   | Temperature profile                          |
-| --------------------------- | ------------------------------ | -------------------------------------------- |
-| `zh > 0` + neutral/hot      | log-law                        | log between `z` and `zh`                     |
-| `zh > 0` + unstable/stable  | log-law with `calc_ψ_m` correction | log with displacement/`zh`                   |
-| `zh == 0` + neutral/hot     | log-law                        | weighted by bulk/sublayer Stanton numbers    |
-| `zh == 0` + unstable/stable | log-law with `calc_ψ_m` correction | full Monin–Obukhov profile via `calc_Obukhov_length` |
 
 - Relative humidity profiles are estimated from vapor pressure at each height.
 
@@ -88,9 +79,8 @@ function atmospheric_surface_profile!(buffers;
     terrain,
     environment_instant,
     surface_temperature, 
-    γ = 16.0, # coefficient from Dyer and Hicks for Φ_m (momentum), TODO make it available as a user param?
 )
-    (; roughness_height, zh, d0, κ, elevation, P_atmos) = terrain
+    (; roughness_height, karman_constant, dyer_constant, elevation, P_atmos) = terrain
     (; reference_temperature, reference_wind_speed, reference_humidity, zenith_angle) = environment_instant
 
     (; heights, height_array, air_temperatures, wind_speeds, humidities) = buffers
@@ -99,6 +89,9 @@ function atmospheric_surface_profile!(buffers;
         throw(ArgumentError("The minimum height is not greater than the roughness height."))
     end
     reference_height = last(heights)
+    
+    κ = karman_constant
+    γ = dyer_constant
 
     T_ref_height = u"K"(reference_temperature)
     T_surface = u"K"(surface_temperature)
@@ -107,8 +100,6 @@ function atmospheric_surface_profile!(buffers;
     # Units: m to cm
     z = u"cm"(reference_height)
     z0 = u"cm"(roughness_height)
-    zh_cm = u"cm"(zh)
-    d0_cm = u"cm"(d0)
     v_ref_height = u"cm/minute"(reference_wind_speed)
 
     # define air heights
@@ -139,21 +130,11 @@ function atmospheric_surface_profile!(buffers;
     u_star = calc_u_star(; reference_wind_speed, log_z_ratio, κ)
     Q_convection = calc_convection(; u_star, log_z_ratio, ΔT, ρ_cp, z0)
 
-    if zh > 0.0u"m" # Campbell & Norman canopy displacement approach
-        for i in 2:N_heights
-            A = (T_ref_height - T_surface) / (1 - log((z - d0_cm) / zh_cm))
-            T0 = T_ref_height + A * log((z - d0_cm) / zh_cm)
-            air_temperatures[i] = T0 - A * log((height_array[i] - d0_cm) / zh_cm)
-        end
-    end
     # check for free convection (lapse) conditions (assumed not to happen at night)
     if T_ref_height ≥ T_surface || zenith_angle ≥ 90° # stable
         for i in 2:N_heights
             wind_speeds[i] = calc_wind(height_array[i], z0, κ, u_star, 1.0)
             T_z0 = (T_ref_height * bulk_stanton(log_z_ratio) + T_surface * sublayer_stanton(z0, u_star)) / (bulk_stanton(log_z_ratio) + sublayer_stanton(z0, u_star))
-            if zh <= 0.0u"m"
-                air_temperatures[i] = T_z0 + (T_ref_height - T_z0) * log(height_array[i] / z0 + 1.0) / log_z_ratio
-            end
         end
     else # free convection occuring
         L_Obukhov = -30.0u"cm" # initialise Obukhov length
@@ -169,9 +150,6 @@ function atmospheric_surface_profile!(buffers;
             ψ_m1 = calc_ψ_m(φ_m1)
             ψ_h2 = calc_ψ_h(φ_m1)
             wind_speeds[i] = calc_wind(height_array[i], z0, κ, u_star, -ψ_m1)
-            if zh <= 0.0u"m"
-                air_temperatures[i] = T_z0 + (T_ref_height - T_z0) * log(height_array[i] / z0 - ψ_h2) / log(z / z0 - ψ_h)
-            end
         end
     end
     wind_speeds = reverse(wind_speeds)

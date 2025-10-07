@@ -132,16 +132,13 @@ end
 # TODO some of these can be actual defaults ?
 function example_terrain(;
     elevation = 226.0u"m", # elevation (m)
-    horizon_angles = fill(0.0u"°", 24), # enter the horizon angles (degrees) so that they go from 0 degrees azimuth (north) clockwise in 15 degree intervals
-    slope = 0.0u"°", # slope (degrees, range 0-90)
-    aspect = 0.0u"°", # aspect (degrees, 0 = North, range 0-360)
-    # boundary layer parameters
-    roughness_height = 0.004u"m", # heat transfer roughness height
-    zh = 0u"m", #  heat transfer roughness height
-    d0 = 0u"m", # zero plane displacement correction factor
-    κ = 0.4, # Kármán constant
+    horizon_angles = DEFAULT_HORIZON_ANGLES, # enter the horizon angles (degrees) so that they go from 0 degrees azimuth (north) clockwise in 15 degree intervals
+    slope = DEFAULT_SLOPE, # slope (degrees, range 0-90)
+    aspect = DEFAULT_ASPECT, # aspect (degrees, 0 = North, range 0-360)
+    roughness_height = DEFAULT_ROUGHNESS_HEIGHT, # aerodynamic roughness height, z0
+    karman_constant = DEFAULT_KARMAN_CONSTANT, # Kármán constant, κ
 )
-    Terrain(; elevation, horizon_angles, slope, aspect, roughness_height, zh, d0, κ)
+    Terrain(; elevation, horizon_angles, slope, aspect, roughness_height, karman_constant)
 end
 
 function example_monthly_weather(;
@@ -254,46 +251,6 @@ function solve_solar(mp::MicroProblem)
     solrad_out.zenith_slope_angle[solrad_out.zenith_slope_angle .> 90u"°"] .= 90u"°"
 
     return solrad_out
-end
-
-# TODO: this function is pretty weird
-# Why do we get 25 hour days from hourly_vars and then
-# throw them away to just use the 24 hour days?
-function interpolate_minmax!(output, environment_minmax, environment_daily, environment_hourly, solrad_out)
-    # interpolate daily min/max forcing variables to hourly
-    reference_temperature, reference_wind_speed, reference_humidity, cloud_cover = 
-        hourly_vars(environment_minmax, solrad_out, environment_daily)
-    # TODO just use loops for these this allocates
-    reference_humidity[reference_humidity .> 100] .= 100
-    cloud_cover[cloud_cover .> 100] .= 100
-
-    output.cloud_cover .= cloud_cover
-    output.reference_temperature .= reference_temperature
-    output.reference_wind_speed .= reference_wind_speed
-    output.reference_humidity .= reference_humidity
-
-    return 
-end
-function interpolate_minmax!(output, environment_minmax::Nothing, environment_daily, environment_hourly, solrad_out)
-    output.cloud_cover .= environment_hourly.cloud_cover
-    output.reference_temperature .= environment_hourly.reference_temperature
-    output.reference_wind_speed .= environment_hourly.reference_wind_speed
-    output.reference_humidity .= environment_hourly.reference_humidity
-
-    return 
-end
-
-function adjust_for_cloud_cover!(output, solrad_out, days, hours)
-    # vector for removing extra interpolated hour TODO: this feels like a hack, there must be a better way
-    zenith_angle = solrad_out.zenith_angle # remove every 25th output
-    zenith_slope_angle = solrad_out.zenith_slope_angle # remove every 25th output
-    # adjust for cloud using Angstrom formula (formula 5.33 on P. 177 of "Climate Data and Resources" by Edward Linacre 1992
-    day_of_year = repeat(days, inner=length(hours))
-    direct_total = solrad_out.direct_total # remove every 25th output
-    diffuse_total = solrad_out.diffuse_total # remove every 25th output
-    cloud_adjust_radiation!(output, output.cloud_cover ./ 100.0, diffuse_total, direct_total, zenith_angle, day_of_year)
-
-    return output
 end
 
 # Solves soil temperature and moisture
