@@ -1,5 +1,3 @@
-const DEFAULT_HEIGHTS = [0.01, 0.05, 0.1, 0.2, 0.3, 0.4, 0.5, 0.75, 1.0, 1.2] .* u"m"
-
 function allocate_profile(heights)
     N_heights = length(heights)
     wind_speeds = similar(heights, typeof(0.0u"cm/minute")) # output wind speeds
@@ -11,7 +9,7 @@ function allocate_profile(heights)
 end
 
 """
-    get_profile(; kwargs...)
+    atmospheric_surface_profile(; kwargs...)
 
 Compute vertical profiles of wind speed, air temperature, and relative humidity 
 in the atmospheric surface layer, using Monin–Obukhov similarity theory (MOST).
@@ -23,6 +21,7 @@ with surface roughness parameters. Zenith angle and a maximum allowed surface te
 to assess whether conditions are stable or unstable.
 
 # Keyword Arguments
+
 - `z0::Quantity=0.004u"m"`: roughness length (surface aerodynamic roughness).
 - `zh::Quantity=0.0u"m"`: heat transfer roughness height
 - `d0::Quantity=0.0u"m"`: zero plane displacement correction factor.
@@ -70,9 +69,8 @@ that handles canopy displacement, invoked if `zh > 0` and otherwise
 
 # Example
 
-
 ```julia
-profile = get_profile(
+profile = atmospheric_surface_profile(
     reference_temperature = 25u"°C",
     reference_wind_speed = 2.0u"m/s",
     relative_humidity = 60.0,
@@ -84,22 +82,16 @@ profile.air_temperatures  # vertical profile of air temperatures
 profile.wind_speeds       # vertical profile of wind speeds
 ```
 """
-get_profile(; heights=DEFAULT_HEIGHTS, kw...) =
-    get_profile!(allocate_profile(heights); kw...)
-function get_profile!(buffers;
-    roughness_height=0.004u"m",
-    zh=0.0u"m",
-    d0=0.0u"m",
-    κ=0.4,
+atmospheric_surface_profile(; heights=DEFAULT_HEIGHTS, kw...) =
+    atmospheric_surface_profile!(allocate_profile(heights); kw...)
+function atmospheric_surface_profile!(buffers;
+    terrain,
+    environment_instant,
+    surface_temperature, 
     γ = 16.0, # coefficient from Dyer and Hicks for Φ_m (momentum), TODO make it available as a user param?
-    reference_temperature,
-    reference_wind_speed,
-    relative_humidity,
-    surface_temperature,
-    zenith_angle,
-    elevation=0.0u"m",
-    P_atmos=atmospheric_pressure(elevation),
 )
+    (; roughness_height, zh, d0, κ, elevation, P_atmos) = terrain
+    (; reference_temperature, reference_wind_speed, relative_humidity, zenith_angle) = environment_instant
 
     (; heights, height_array, air_temperatures, wind_speeds, humidities) = buffers
     N_heights = length(heights)
@@ -153,6 +145,7 @@ function get_profile!(buffers;
             air_temperatures[i] = T0 - A * log((height_array[i] - d0_cm) / zh_cm)
         end
     end
+    # TODO name and explain this check, why `|| zenith_angle`
     if T_ref_height ≥ T_surface || zenith_angle ≥ 90°
         for i in 2:N_heights
             wind_speeds[i] = calc_wind(height_array[i], z0, κ, u_star, 1.0)
@@ -163,6 +156,7 @@ function get_profile!(buffers;
         end
     else
         L_Obukhov = -30.0u"cm" # initialise Obukhov length
+        # TODO just pass the environment_instant through here
         Obukhov_out = calc_Obukhov_length(T_ref_height, T_surface, v_ref_height, z0, z, ρcpTκg, κ, log_z_ratio, ΔT, ρ_cp; max_iter=30, tol=1e-2)
         L_Obukhov = u"cm"(Obukhov_out.L_Obukhov)
         T_z0 = Obukhov_out.T_z0
@@ -185,9 +179,9 @@ function get_profile!(buffers;
     humidities .= clamp.(e ./ vapour_pressure.(air_temperatures) .* 100.0, 0.0, 100.0)
 
     return (;
-        wind_speeds=u"m/s".(wind_speeds),
-        air_temperatures,
-        humidities,
+        wind_speed=u"m/s".(wind_speeds),
+        air_temperature=air_temperatures,
+        relative_humidity=humidities,
         Q_convection=u"W/m^2"(Q_convection),
         ustar=u"m/s"(u_star)
     )
@@ -313,7 +307,7 @@ end
 Compute convective heat flux given bulk and sublayer Stanton numbers.
 """
 function convective_flux(ρ_cp, ΔT, u_star, bulk_stanton_number, sublayer_stanton_number)
-        return ρ_cp * ΔT * u_star * bulk_stanton_number / (1 + bulk_stanton_number / sublayer_stanton_number)
+    return ρ_cp * ΔT * u_star * bulk_stanton_number / (1 + bulk_stanton_number / sublayer_stanton_number)
 end
 
 
@@ -431,8 +425,10 @@ end
 
 Iteratively solve for Monin-Obukhov length and convective heat flux.
 """
-function calc_Obukhov_length(T_ref_height, T_surface, v_ref_height, z0, z, ρcpTκg, κ, 
-    log_z_ratio, ΔT, ρ_cp; γ=16.0, max_iter=30, tol=1e-2)
+function calc_Obukhov_length(
+    T_ref_height, T_surface, v_ref_height, z0, z, ρcpTκg, κ, log_z_ratio, ΔT, ρ_cp; 
+    γ=16.0, max_iter=30, tol=1e-2
+)
     L_Obukhov = -30.0u"cm" # initial Monin-Obukhov length cm
 
     # conversions

@@ -185,20 +185,9 @@ function vsine(VMIN, VMAX, time_sunrise, time_sunset, TIMIN, TIMAX, daily, iday,
     return YA
 end
 
-# this version does all variables
-function hourly_vars(
-    air_temperature_min::Vector,
-    air_temperature_max::Vector,
-    wind_min::Vector,
-    wind_max::Vector,
-    humidity_min::Vector,
-    humidity_max::Vector,
-    cloud_min::Vector,
-    cloud_max::Vector,
-    solrad_out::Any,
-    minima_times::Vector=[0, 0, 1, 1],
-    maxima_times::Vector=[1, 1, 0, 0],
-    daily::Bool = false)
+function hourly_vars(minmax, solrad_out, daily::Bool=false)
+    (; air_temperature_min, air_temperature_max, wind_min, wind_max, humidity_min, 
+        humidity_max, cloud_min, cloud_max, minima_times, maxima_times) = minmax
 
     ndays = length(air_temperature_min)
     nhours = 24
@@ -313,7 +302,8 @@ function hourly_vars(
         humidities[dayrange] .= humids
         cloud_covers[dayrange] .= clouds
     end
-    return air_temperatures, wind_speeds, humidities, cloud_covers
+
+    return (; air_temperatures, wind_speeds, humidities, cloud_covers)
 end
 
 # TODO this does just cloud_covers but should generalise first version better down the track
@@ -321,9 +311,10 @@ function hourly_vars(
     cloud_min::Vector,
     cloud_max::Vector,
     solrad_out::Any,
-    minima_times::Vector=[0, 0, 1, 1],
-    maxima_times::Vector=[1, 1, 0, 0],
-    daily::Bool=false)
+    minima_times::Vector,
+    maxima_times::Vector,
+    daily::Bool=false
+)
 
     ndays = length(cloud_min)
     nhours = 24
