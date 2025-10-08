@@ -311,9 +311,10 @@ function hourly_vars(
     cloud_min::Vector,
     cloud_max::Vector,
     solrad_out::Any,
-    minima_times::Vector=[0, 0, 1, 1],
-    maxima_times::Vector=[1, 1, 0, 0],
-    daily::Bool=false)
+    minima_times::Vector,
+    maxima_times::Vector,
+    daily::Bool=false
+)
 
     ndays = length(cloud_min)
     nhours = 24
