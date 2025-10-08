@@ -494,7 +494,9 @@ function get_soil_water_balance!(buffers, soil_moisture_model::SoilMoistureModel
 
     # evaporation
     # TODO: these percentage vs fraction humidities are asking for bugs
-    local_relative_humidity = min(0.99, profile_out.relative_humidity[2] / 100)
+    wet_air_out_ref = wet_air_properties(u"K"(last(profile_out.air_temperature)); rh = last(profile_out.relative_humidity), P_atmos)    
+    wet_air_out_loc = wet_air_properties(u"K"(profile_out.air_temperature[1]); rh = 100.0, P_atmos)    
+    local_relative_humidity = clamp(wet_air_out_ref.P_vap / wet_air_out_loc.P_vap_sat, 0.0, 0.99)
     hc = max(abs(Q_convection / (tsurf - tair)), 0.5u"W/m^2/K")
     wet_air_out = wet_air_properties(tair; rh, P_atmos)
     c_p_air = wet_air_out.c_p
@@ -502,7 +504,7 @@ function get_soil_water_balance!(buffers, soil_moisture_model::SoilMoistureModel
     hd = (hc / (c_p_air * ρ_air)) * (0.71 / 0.60)^0.666
     Q_evaporation, gwsurf = evaporation(; tsurf, tair, rh, rhsurf=100.0, hd, terrain, soil_wetness, saturated=true)
     λ_evap = enthalpy_of_vaporisation(tsurf)
-    EP = max(1e-7u"kg/m^2/s", Q_evaporation / λ_evap) # evaporation potential, mm/s (kg/m2/s)
+    EP = max(1.0e-7u"kg/m^2/s", Q_evaporation / λ_evap) # evaporation potential, mm/s (kg/m2/s)
 
     # run infiltration algorithm
     infil_out = soil_water_balance!(buffers.soil_water_balance, soil_moisture_model;
@@ -521,6 +523,7 @@ function get_soil_water_balance!(buffers, soil_moisture_model::SoilMoistureModel
     if pool > 0.0u"kg/m^2" # surface is wet - saturate it for infiltration
         θ_soil0_b[1] = 1 - BD[1] / DD[1]
     end
+
     for _ in 1:(niter_moist-1)
         infil_out = soil_water_balance!(buffers.soil_water_balance, soil_moisture_model;
             depths,

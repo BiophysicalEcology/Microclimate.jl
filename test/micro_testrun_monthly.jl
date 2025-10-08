@@ -91,7 +91,7 @@ environment_daily = DailyTimeseries(;
     albedo = (DataFrame(CSV.File("$testdir/data/init_monthly/REFLS.csv"))[:, 2] * 1.0), # substrate albedo (decimal %)
     shade = (DataFrame(CSV.File("$testdir/data/init_monthly/Minshades.csv"))[:, 2] * 1.0), # daily shade (%)
     surface_emissivity = (DataFrame(CSV.File("$testdir/data/init_monthly/SLES.csv"))[:, 2] * 1.0), # - surface emissivity
-    cloud_emissivity = fill(0.96, days2do), # - surface emissivity
+    cloud_emissivity = fill(0.96, length(days)), # - surface emissivity
     rainfall = ((DataFrame(CSV.File("$testdir/data/init_monthly/rain.csv"))[:, 2] * 1.0))u"kg/m^2",
     deep_soil_temperature = (DataFrame(CSV.File("$testdir/data/init_monthly/tannulrun.csv"))[:, 2] * 1.0)u"°C", # daily deep soil temperatures
     leaf_area_index = (DataFrame(CSV.File("$testdir/data/init_monthly/LAI.csv"))[:, 2] * 1.0u"Mg/m^3"), # leaf area indices per day
@@ -136,6 +136,17 @@ problem = MicroProblem(;
     initial_soil_moisture = (Array(DataFrame(CSV.File("$testdir/data/init_monthly/moists.csv"))[1:10, 2]) .* 1.0), # initial soil moisture
     #maximum_surface_temperature = u"K"(microinput[:maxsurf]u"°C")
 )
+
+solrad_out = solve_solar(problem)
+ndays = length(days)
+hours = 0:1:23
+nhours = length(hours)
+nsteps = ndays * nhours
+numnodes_a = length(depths) # number of soil nodes for temperature calcs and final output
+output = MicroResult(nsteps, numnodes_a)
+    reference_temperature, reference_wind_speed, reference_humidity, cloud_cover = 
+        hourly_vars(environment_minmax, solrad_out, environment_daily)
+interpolate_minmax!(output, environment_minmax, environment_daily, environment_hourly, solrad_out)
 
 # TODO allow vector of pre-calculated soil moisture to be provided as input
 # now try the simulation function

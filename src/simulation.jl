@@ -44,7 +44,7 @@ Simulates soil and microclimate dynamics over multiple days.
 
 # Return Values
 Returns a named tuple containing:
--jkkkkkkk Air/wind/RH profiles
+- Air/wind/RH profiles
 - Cloud cover and solar radiation
 - Soil temperature, moisture, water potential, RH
 - Soil thermal properties and bulk density
@@ -203,7 +203,7 @@ function example_daily_environmental(;
     albedo = fill(0.1, length(days)), # substrate albedo (decimal %)
     shade = fill(0.0, length(days)), # % shade cast by vegetation
     surface_emissivity = fill(0.96, length(days)), # - surface emissivity
-    cloud_emissivity = fill(1.0, length(days)), # - cloud emissivity
+    cloud_emissivity = fill(0.96, length(days)), # - cloud emissivity
     rainfall = ([28, 28.2, 54.6, 79.7, 81.3, 100.1, 101.3, 102.5, 89.7, 62.4, 54.9, 41.2])u"kg/m^2",
     deep_soil_temperature = fill(7.741666u"°C", length(days)),
     leaf_area_index = fill(0.1, length(days)),
@@ -305,7 +305,7 @@ function solve_soil!(output::MicroResult, mp::MicroProblem, solrad_out;
     pool = 0.0u"kg/m^2" # initialise depth of pooling water TODO make this an init option
     niter_moist = ustrip(u"s^-1", 3600 / moist_step) # TODO use a solver for soil moisture calc
     ∑phase = zeros(Float64, numnodes_a)u"J"
-    infil_out = nothing
+    infil_out = nothing # TODO is there a better way to initialise this?
     soil_wetness = 0.0
     sub = vcat(findall(isodd, 1:numnodes_b), numnodes_b)
     for iday in 1:ndays
@@ -328,27 +328,19 @@ function solve_soil!(output::MicroResult, mp::MicroProblem, solrad_out;
             T0 = SVector(ntuple(_ -> t, numnodes_a))
             θ_soil0_a = initial_soil_moisture # TODO make this an input vector
         end
-        T0 = setindex(T0, environment_instant.deep_soil_temperature, numnodes_a) # set deepest node to boundary condition
+        # set deepest node to boundary condition
+        T0 = setindex(T0, environment_instant.deep_soil_temperature, numnodes_a)
         for iter = 1:niter
             for i in 1:length(hours)
                 step = (iday - 1) * length(hours) + i
                 environment_instant = get_instant(environment_day, mp.environment_hourly, output, θ_soil0_a, step)
                 if i == 1 # make first hour of day equal last hour of previous iteration
-                    # Then why do we run the soil water balance again??
                     output.soil_temperature[step, :] .= T0
                     if hourly_rainfall
-                        pool += mp.environment_hourly.rainfall[step]
+                        pool =+ mp.environment_hourly.rainfall[step]
                     else
-                        pool += environment_instant.rainfall
+                        pool =+ environment_instant.rainfall
                     end
-                    if runmoist
-                        infil_out, soil_wetness, pool, θ_soil0_b = get_soil_water_balance!(buffers, soil_moisture_model;
-                            depths, heights, terrain, environment_instant, T0, niter_moist, soil_wetness, pool, soil_moisture=θ_soil0_b,
-                        )
-                        update_soil_water!(output, infil_out, sub, step)
-                    end
-                    pool = clamp(pool, 0.0u"kg/m^2", soil_moisture_model.maxpool)
-                    θ_soil0_a = θ_soil0_b[sub]
                 else
                     environment_instant = get_instant(environment_day, mp.environment_hourly, output, θ_soil0_a, step)
                     inputs = SoilEnergyInputs(; forcing, buffers, soil_thermal_model, depths, heights, terrain, runmoist, nodes, environment_instant, soil_wetness)
@@ -362,14 +354,14 @@ function solve_soil!(output::MicroResult, mp::MicroProblem, solrad_out;
                     if hourly_rainfall
                         pool += mp.environment_hourly.rainfall[step]
                     end
-                    if runmoist
-                        infil_out, soil_wetness, pool, θ_soil0_b = get_soil_water_balance!(buffers, soil_moisture_model;
-                            depths, heights, terrain, environment_instant, T0, niter_moist, pool, soil_wetness, soil_moisture=θ_soil0_b 
-                        )
-                        update_soil_water!(output, infil_out, sub, step)
-                    end
-                    θ_soil0_a = θ_soil0_b[sub]
                 end
+                if runmoist
+                    infil_out, soil_wetness, pool, θ_soil0_b = get_soil_water_balance!(buffers, soil_moisture_model;
+                        depths, heights, terrain, environment_instant, T0, niter_moist, soil_wetness, pool, soil_moisture=θ_soil0_b,
+                    )
+                    update_soil_water!(output, infil_out, sub, step)
+                end
+                θ_soil0_a = θ_soil0_b[sub]
                 # Write to output
                 output.surface_water[step] = pool
                 output.soil_temperature[step, :] .= T0
