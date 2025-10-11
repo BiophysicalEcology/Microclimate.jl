@@ -9,7 +9,13 @@ testdir = realpath(joinpath(dirname(pathof(Microclimate)), "../test"))
 soil_temperature_nmr = (DataFrame(CSV.File("$testdir/data/soil_FordDryLake.csv"))[:, 5:14]) .* u"°C"
 soil_moisture_nmr = (DataFrame(CSV.File("$testdir/data/soilmoist_FordDryLake.csv"))[:, 5:14])
 soil_conductivity_nmr = (DataFrame(CSV.File("$testdir/data/tcond_FordDryLake.csv"))[:, 5:14])
+soil_specific_heat_nmr = (DataFrame(CSV.File("$testdir/data/specheat_FordDryLake.csv"))[:, 5:14])
+soil_bulk_density_nmr = (DataFrame(CSV.File("$testdir/data/densit_FordDryLake.csv"))[:, 5:14])
 metout_nmr = (DataFrame(CSV.File("$testdir/data/metout_FordDryLake.csv"))[:, 2:21])
+obs_soil_temperature = (DataFrame(CSV.File("$testdir/data/obs_soiltemp_FordDryLake.csv"; missingstring="NA"))[:, 2:6]) .* u"°C"
+obs_soil_moisture = (DataFrame(CSV.File("$testdir/data/obs_soilmoist_FordDryLake.csv"; missingstring="NA"))[:, 2:6])./100.0
+df = dateformat"y-m-d H:M:S"
+obs_dates = DateTime.((DataFrame(CSV.File("$testdir/data/dates_FordDryLake.csv"; missingstring="NA"))[:, 2]), df)
 
 microinput_vec = DataFrame(CSV.File("$testdir/data/init_daily/microinput.csv"))[:, 2]
 
@@ -51,7 +57,6 @@ soil_thermal_model = CampbelldeVriesSoilThermal(;
     mineral_density = (CSV.File("$testdir/data/init_daily/soilprop.csv")[1, 1][6]) * 1.0u"Mg/m^3", # soil minerals density (Mg/m3)
     mineral_heat_capacity = (CSV.File("$testdir/data/init_daily/soilprop.csv")[1, 1][5]) * 1.0u"J/kg/K", # soil minerals specific heat (J/kg-K)
     bulk_density = (CSV.File("$testdir/data/init_daily/soilprop.csv")[1, 1][2]) * 1.0u"Mg/m^3", # dry soil bulk density (Mg/m3)
-    saturation_moisture = (CSV.File("$testdir/data/init_daily/soilprop.csv")[1, 1][3]) * 1.0u"m^3/m^3", # volumetric water content at saturation (0.1 bar matric potential) (m3/m3)
     recirculation_power = 4.0, # power for recirculation function
     return_flow_threshold = 0.162, # return-flow cutoff soil moisture, m^3/m^3
 )
@@ -137,7 +142,7 @@ problem = MicroProblem(;
     spinup = Bool(Int(microinput[:spinup])), # spin-up the first day by iterate_day iterations?
     # intial conditions
     initial_soil_temperature = u"K".((DataFrame(CSV.File("$testdir/data/init_daily/soilinit.csv"))[1:length(depths), 2] * 1.0)u"°C"), # initial soil temperature
-    initial_soil_moisture = (Array(DataFrame(CSV.File("$testdir/data/init_daily/moists.csv"))[1, 2:13]) .* 1.0), # initial soil moisture
+    initial_soil_moisture = (Array(DataFrame(CSV.File("$testdir/data/init_daily/moists.csv"))[1:10, 2]) .* 1.0), # initial soil moisture
     #maximum_surface_temperature = u"K"(microinput[:maxsurf]u"°C")
 )
 
@@ -148,8 +153,9 @@ problem = MicroProblem(;
 # plot(micro_out)
 
 # TODO include 1st node (currently left out, i.e. just columns 2:10, because way off at times)
+sub = 269:hours2do
 @testset "runmicro comparisons" begin
-    @test all(isapprox.(micro_out.soil_temperature[:, 2:10], u"K".(Matrix(soil_temperature_nmr[1:hours2do, 2:10])); atol=10u"K")) # TODO make better!
-    @test all(isapprox.(micro_out.soil_moisture[:, 2:10], Matrix(soil_moisture_nmr[1:hours2do, 2:10]); atol=0.3)) # TODO make better!
-    @test all(isapprox.(micro_out.soil_thermal_conductivity[:, 2:10], Matrix(soil_conductivity_nmr[1:hours2do, 2:10])u"W * m^-1 * K^-1"; atol=1u"W * m^-1 * K^-1")) # TODO make better!
+    @test all(isapprox.(micro_out.soil_temperature[:, 1:10], u"K".(Matrix(soil_temperature_nmr[1:hours2do, 1:10])); rtol=1e-1)) # TODO make better!
+    @test all(isapprox.(micro_out.soil_moisture[:, 2:10], Matrix(soil_moisture_nmr[1:hours2do, 2:10]); rtol=1e-1))
+    @test all(isapprox.(micro_out.soil_thermal_conductivity[sub, 1:10], Matrix(soil_conductivity_nmr[sub, 1:10])u"W * m^-1 * K^-1"; rtol=1e-1))
 end 

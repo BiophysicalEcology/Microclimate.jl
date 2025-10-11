@@ -84,7 +84,6 @@ abstract type AbstractSoilThermalModel end
     mineral_density
     mineral_heat_capacity
     bulk_density
-    saturation_moisture
     recirculation_power
     return_flow_threshold
 end
