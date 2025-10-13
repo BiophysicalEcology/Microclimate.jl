@@ -20,13 +20,13 @@ const NC1 = reshape(Int[
     ], 4, 8)
 
 """
-    hour_angle(t::Quantity, lonc::Quantity) -> Quantity
+    hour_angle(t::Quantity, longitude_correction::Quantity) -> Quantity
 
 Compute the solar hour angle `h` in radians.
 
 # Arguments
 - `t`: Local solar hour (e.g., `14.0`)
-- `lonc`: Longitude correction in hours (e.g., `0.5`)
+- `longitude_correction`: Longitude correction in hours (e.g., `0.5`)
 
 # Returns
 
@@ -36,8 +36,8 @@ Compute the solar hour angle `h` in radians.
 # Reference
 McCullough & Porter 1971, Eq. 6
 """
-function hour_angle(t::Real, lonc::Real=0)
-    tsn = 12.0 + lonc                      # solar noon time
+function hour_angle(t::Real, longitude_correction::Real=0)
+    tsn = 12.0 + longitude_correction                      # solar noon time
     h = (π / 12) * (t - tsn) * u"rad"      # convert hours to radians
     return h, tsn
 end
@@ -1188,8 +1188,8 @@ Compute clear sky solar radiation at a given place and time using a detailed atm
 - `days::Vector{Float64}`: Days of the year (1–365/366) to evaluate.
 - `hours::Vector{Float64}`: Decimal hours of the day (0.0–23.0).
 - `latitude::Quantity`: Latitude in degrees, e.g. `43.0u"°"`.
-- `lonc::Real=0.0`: Longitude correction in hours (positive west of standard meridian).
-- `year::Real=2001`: Year used for ozone table lookup.
+- `longitude_correction::Real=0.0`: Longitude correction in hours (positive west of standard meridian).
+- `year::Real`: Year used for ozone table lookup.
 - `terrain`
 - `albedo::Vector{<:Real}=fill(0.15, length(days))`: Daily ground albedo, fraction [0, 1].
 
@@ -1229,12 +1229,12 @@ Dave, J. V., & Furukawa, P. M. (1966). Scattered radiation in the ozone
 """
 function solrad(solar_model::SolarRadiation;
     days::Vector{<:Real}=[15, 46, 74, 105, 135, 166, 196, 227, 258, 288, 319, 349],
+    year::Real=2001, # TODO: this shouldn't have a default
+    latitude::Number,
+    terrain::Terrain,
+    longitude_correction::Real=0.0, # longitude correction, hours
     hours::AbstractVector{<:Real}=0:1:23,
-    year::Real=2001.0, # needed to determine if a leap year
-    latitude::Quantity=43.1379u"°",
-    lonc::Real=0.0, # longitude correction, hours
-    terrain,
-    albedo::Vector{<:Real}=fill(0.15, length(days)), # substrate albedo (decimal %)
+    albedo::Vector{<:Real}, # substrate albedo (decimal %)
 )
     (; solar_geometry_model, cmH2O, iuv, scattered, amr, nmax, Iλ, OZ, τR, τO, τA, τW, Sλ, FD, FDQ, s̄) = solar_model
     (; elevation, horizon_angles, slope, P_atmos) = terrain
@@ -1281,7 +1281,7 @@ function solrad(solar_model::SolarRadiation;
         for j in 1:ntimes
             d = days[i]
             t = hours[j]
-            h, tsn = hour_angle(t, lonc) # hour angle (radians)
+            h, tsn = hour_angle(t, longitude_correction) # hour angle (radians)
             (; ζ, δ, z, AR2) = solar_geometry(solar_geometry_model; latitude, d, h) # compute ecliptic, declination, zenith angle and (a/r)^2
             Z = uconvert(u"°", z)
             Zsl = Z
@@ -1691,6 +1691,16 @@ function cloud_adjust_radiation!(output, cloud::AbstractArray, D_cs, B_cs, zenit
     return output
 end
 
+function cloud_adjust_radiation(cloud::AbstractVector, args...; kw...)
+    n = length(cloud)
+    global_solar = fill(0.0u"W/m^2", n)
+    diffuse_solar = fill(0.0u"W/m^2", n)
+    direct_solar = fill(0.0u"W/m^2", n)
+    output = (; global_solar, diffuse_solar, direct_solar)
+    cloud_adjust_radiation!(output, cloud, args...; kw...)
+
+    return output
+end
 
 # Separated out from dchxy for easier optimisation
 # This algorithm is very expensive
