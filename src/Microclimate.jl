@@ -22,16 +22,18 @@ export MonthlyMinMaxEnvironment, DailyTimeseries, HourlyTimeseries, Terrain
 
 export sine_exponential!, vsine, hourly_vars
 
-export hour_angle, solar_geometry, elev_corr, dchxy, solrad, cloud_adjust_radiation
-export get_longwave, init_dchxy_buffers
+export hour_angle, solar_geometry, elevation_correction, solrad, cloud_adjust_radiation!
 
-export atmospheric_surface_profile, calc_u_star, calc_convection, calc_ρ_cp
+export longwave_radiation
 
-export soil_props, soil_props_vector, allocate_soil_properties
+export atmospheric_surface_profile, calc_convection
+
+export soil_properties, soil_properties!, allocate_soil_properties
 
 export soil_energy_balance, evaporation, soil_water_balance!, phase_transition
 
-export runmicro
+# TODO replace this with CommonSolve.jl
+export solve
 
 
 include("constants.jl")
