@@ -133,7 +133,7 @@ wind_matrix = hcat([p.wind_speed for p in micro_out.profile]...)'
 @testset "runmicro comparisons" begin
     @test_broken air_temperature_matrix[:, 1] ≈ rh1cm_nmr atol=0.2 # TODO make this work
     @test humidity_matrix[:, 2] ≈ rh2m_nmr atol=1e-5
-    @test_broken wind_matrix[:, 1] ≈ vel1cm_nmr atol=2e-1u"m/s" # now failing because of first day due to soil temps not being the same
+    @test wind_matrix[:, 1] ≈ vel1cm_nmr atol=2e-1u"m/s" # now failing because of first day due to soil temps not being the same
     @test wind_matrix[:, 2] ≈ vel2m_nmr atol=1e-6u"m/s" 
     @test u"K".(air_temperature_matrix[:, 2]) ≈ ta2m_nmr atol=1e-5u"K"
     @test micro_out.sky_temperature ≈ u"K".(tskyC_nmr) atol=1u"K" # TODO make this better
