@@ -1,11 +1,11 @@
 function allocate_profile(heights)
     N_heights = length(heights)
-    wind_speeds = similar(heights, typeof(0.0u"cm/minute")) # output wind speeds
+    wind_speed = similar(heights, typeof(0.0u"cm/minute")) # output wind speeds
     height_array = similar(heights, typeof(0.0u"cm"))
     height_array[end:-1:begin] .= heights 
-    air_temperatures = similar(heights, typeof(0.0u"K")) # output temperatures, need to do this otherwise get InexactError
-    humidities = similar(heights, Float64) # output relative humidities
-    return (; heights, height_array, air_temperatures, wind_speeds, humidities)
+    air_temperature = similar(heights, typeof(0.0u"K")) # output temperatures, need to do this otherwise get InexactError
+    relative_humidity = similar(heights, Float64) # output relative humidities
+    return (; heights, height_array, air_temperature, wind_speed, relative_humidity)
 end
 
 """
@@ -25,7 +25,7 @@ to assess whether conditions are stable or unstable.
 - `z0::Quantity=0.004u"m"`: roughness length (surface aerodynamic roughness).
 - `zh::Quantity=0.0u"m"`: heat transfer roughness height
 - `d0::Quantity=0.0u"m"`: zero plane displacement correction factor.
-- `κ::Float64=0.4`: von Kármán constant.
+- `karman_constant::Float64=0.4`: von Kármán constant.
 - `heights::Vector{Quantity}`: Requested heights above the surface, the last being the reference height.
 - `reference_temperature::Quantity=27.78u"°C"`: Air temperature at the reference height.
 - `reference_wind_speed::Quantity=2.75u"m/s"`: Wind speed at the reference height.
@@ -36,9 +36,9 @@ to assess whether conditions are stable or unstable.
 
 # Returns
 Named tuple with fields:
-- `wind_speeds`: Wind speed profile at each height (`cm/min` internally, returned in SI units).
-- `air_temperatures`: Air temperature profile at each height (`K`).
-- `humidities`: Relative humidity (%) at each height.
+- `wind_speed`: Wind speed profile at each height (`cm/min` internally, returned in SI units).
+- `air_temperature`: Air temperature profile at each height (`K`).
+- `relative_humidity`: Relative humidity (%) at each height.
 - `Q_convection`: Convective heat flux (`W/m²`).
 - `ustar`: Friction velocity (`m/s`).
 
@@ -78,8 +78,8 @@ profile = atmospheric_surface_profile(
     zenith_angle = 45u"°"
 )
 
-profile.air_temperatures  # vertical profile of air temperatures
-profile.wind_speeds       # vertical profile of wind speeds
+profile.air_temperature  # vertical profile of air temperatures
+profile.wind_speed       # vertical profile of wind speeds
 ```
 """
 atmospheric_surface_profile(; heights=DEFAULT_HEIGHTS, kw...) =
@@ -90,10 +90,10 @@ function atmospheric_surface_profile!(buffers;
     surface_temperature, 
     γ = 16.0, # coefficient from Dyer and Hicks for Φ_m (momentum), TODO make it available as a user param?
 )
-    (; roughness_height, zh, d0, κ, elevation, P_atmos) = terrain
-    (; reference_temperature, reference_wind_speed, relative_humidity, zenith_angle) = environment_instant
+    (; roughness_height, zh, d0, karman_constant, elevation, P_atmos) = terrain
+    (; reference_temperature, reference_wind_speed, reference_humidity, zenith_angle) = environment_instant
 
-    (; heights, height_array, air_temperatures, wind_speeds, humidities) = buffers
+    (; heights, height_array, air_temperature, wind_speed, relative_humidity) = buffers
     N_heights = length(heights)
     if minimum(heights) < roughness_height
         throw(ArgumentError("The minimum height is not greater than the roughness height."))
@@ -102,7 +102,7 @@ function atmospheric_surface_profile!(buffers;
 
     T_ref_height = u"K"(reference_temperature)
     T_surface = u"K"(surface_temperature)
-
+    κ = karman_constant
     # Units: m to cm
     z = u"cm"(reference_height)
     z0 = u"cm"(roughness_height)
@@ -113,15 +113,15 @@ function atmospheric_surface_profile!(buffers;
     # define air heights
     N_heights = length(heights)
     height_array = u"cm".(reverse(heights))
-    wind_speeds = zeros(Float64, N_heights) .* 1u"cm/minute" # output wind speeds
-    air_temperatures = Vector{typeof(0.0u"K")}(undef, N_heights) # output temperatures, need to do this otherwise get InexactError
-    humidities = zeros(Float64, N_heights) # output relative humidities
-    wind_speeds[1] = v_ref_height
-    air_temperatures[1] = T_ref_height
+    wind_speed = zeros(Float64, N_heights) .* 1u"cm/minute" # output wind speeds
+    air_temperature = Vector{typeof(0.0u"K")}(undef, N_heights) # output temperatures, need to do this otherwise get InexactError
+    relative_humidity = zeros(Float64, N_heights) # output relative humidities
+    wind_speed[1] = v_ref_height
+    air_temperature[1] = T_ref_height
 
     # compute rcptkg (was a constant in original Fortran version)
     # dry_air_out = dry_air_properties(u"K"(reference_temperature); elevation, P_atmos)
-    # wet_air_out = wet_air_properties(u"K"(reference_temperature); rh=relative_humidity, P_atmos)
+    # wet_air_out = wet_air_properties(u"K"(reference_temperature); rh=reference_humidity, P_atmos)
     # ρ = dry_air_out.ρ_air
     # c_p = wet_air_out.c_p
     # TODO make this work with SI units
@@ -134,7 +134,7 @@ function atmospheric_surface_profile!(buffers;
     ΔT = T_ref_height - T_surface
     T_mean = (T_surface + T_ref_height) / 2
     # TODO call calc_ρ_cp method specific to elevation and RH in final version but do it this way for NicheMapR comparison
-    ρ_cp = calc_ρ_cp(T_mean)#, elevation, relative_humidity)
+    ρ_cp = calc_ρ_cp(T_mean)#, elevation, reference_humidity)
     u_star = calc_u_star(; reference_wind_speed, log_z_ratio, κ)
     Q_convection = calc_convection(; u_star, log_z_ratio, ΔT, ρ_cp, z0)
 
@@ -142,16 +142,16 @@ function atmospheric_surface_profile!(buffers;
         for i in 2:N_heights
             A = (T_ref_height - T_surface) / (1 - log((z - d0_cm) / zh_cm))
             T0 = T_ref_height + A * log((z - d0_cm) / zh_cm)
-            air_temperatures[i] = T0 - A * log((height_array[i] - d0_cm) / zh_cm)
+            air_temperature[i] = T0 - A * log((height_array[i] - d0_cm) / zh_cm)
         end
     end
     # TODO name and explain this check, why `|| zenith_angle`
     if T_ref_height ≥ T_surface || zenith_angle ≥ 90°
         for i in 2:N_heights
-            wind_speeds[i] = calc_wind(height_array[i], z0, κ, u_star, 1.0)
+            wind_speed[i] = calc_wind(height_array[i], z0, κ, u_star, 1.0)
             T_z0 = (T_ref_height * bulk_stanton(log_z_ratio) + T_surface * sublayer_stanton(z0, u_star)) / (bulk_stanton(log_z_ratio) + sublayer_stanton(z0, u_star))
             if zh <= 0.0u"m"
-                air_temperatures[i] = T_z0 + (T_ref_height - T_z0) * log(height_array[i] / z0 + 1.0) / log_z_ratio
+                air_temperature[i] = T_z0 + (T_ref_height - T_z0) * log(height_array[i] / z0 + 1.0) / log_z_ratio
             end
         end
     else
@@ -167,21 +167,21 @@ function atmospheric_surface_profile!(buffers;
             φ_m1 = calc_φ_m(height_array[i], γ, L_Obukhov)
             ψ_m1 = calc_ψ_m(φ_m1)
             ψ_h2 = calc_ψ_h(φ_m1)
-            wind_speeds[i] = calc_wind(height_array[i], z0, κ, u_star, -ψ_m1)
+            wind_speed[i] = calc_wind(height_array[i], z0, κ, u_star, -ψ_m1)
             if zh <= 0.0u"m"
-                air_temperatures[i] = T_z0 + (T_ref_height - T_z0) * log(height_array[i] / z0 - ψ_h2) / log(z / z0 - ψ_h)
+                air_temperature[i] = T_z0 + (T_ref_height - T_z0) * log(height_array[i] / z0 - ψ_h2) / log(z / z0 - ψ_h)
             end
         end
     end
-    wind_speeds = reverse(wind_speeds)
-    air_temperatures = reverse(air_temperatures)
-    e = wet_air_properties(T_ref_height; rh = relative_humidity).P_vap
-    humidities .= clamp.(e ./ vapour_pressure.(air_temperatures) .* 100.0, 0.0, 100.0)
+    wind_speed = reverse(wind_speed)
+    air_temperature = reverse(air_temperature)
+    e = wet_air_properties(T_ref_height; rh = reference_humidity).P_vap
+    relative_humidity .= clamp.(e ./ vapour_pressure.(air_temperature) .* 100.0, 0.0, 100.0)
 
     return (;
-        wind_speed=u"m/s".(wind_speeds),
-        air_temperature=air_temperatures,
-        relative_humidity=humidities,
+        wind_speed=u"m/s".(wind_speed),
+        air_temperature,
+        relative_humidity,
         Q_convection=u"W/m^2"(Q_convection),
         ustar=u"m/s"(u_star)
     )
