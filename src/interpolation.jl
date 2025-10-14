@@ -192,10 +192,10 @@ function hourly_vars(minmax, solrad_out, daily::Bool=false)
     ndays = length(reference_temperature_min)
     nhours = 24
     all_hours = nhours * ndays
-    temperature = fill(reference_temperature_min[1], all_hours)
-    cloud_cover = fill(cloud_min[1], all_hours)
-    humidity = fill(reference_humidity_min[1], all_hours)
-    wind = fill(reference_wind_min[1], all_hours)
+    air_temperatures = fill(reference_temperature_min[1], all_hours)
+    cloud_covers = fill(cloud_min[1], all_hours)
+    humidities = fill(reference_humidity_min[1], all_hours)
+    wind_speeds = fill(reference_wind_min[1], all_hours)
 
     for iday in 1:ndays
         initial_temperature = reference_temperature_min[iday] # initial air temperature for daily
@@ -203,9 +203,9 @@ function hourly_vars(minmax, solrad_out, daily::Bool=false)
         initial_humidity = reference_humidity_max[iday]
         initial_cloud = cloud_min[iday]
         times = fill(0.0, nhours)
-        temperature = fill(0.0u"°C", nhours)
-        wind = fill(initial_wind, nhours)
-        humidity = fill(initial_humidity, nhours)
+        temperatures = fill(0.0u"°C", nhours)
+        winds = fill(initial_wind, nhours)
+        humids = fill(initial_humidity, nhours)
         clouds = fill(initial_cloud, nhours)
 
         HH = solrad_out.hour_angle_sunrise[iday]
@@ -249,11 +249,11 @@ function hourly_vars(minmax, solrad_out, daily::Bool=false)
         # setting time of minimum and maximum (hours before sunrise or after solar noon)     #     AFTER SOLAR NOON)
         TIMIN = time_sunrise
         TIMAX = time_maximum_temperature
-        sine_exponential!(initial_temperature, times, temperature, minimum_temperature, maximum_temperature, next_minimum_temperature, next_maximum_temperature, time_sunrise, time_sunset, time_maximum_temperature, daily, iday)
+        sine_exponential!(initial_temperature, times, temperatures, minimum_temperature, maximum_temperature, next_minimum_temperature, next_maximum_temperature, time_sunrise, time_sunset, time_maximum_temperature, daily, iday)
 
         # wind speed
-        VMIN = wind_min[iday]
-        VMAX = wind_max[iday]
+        VMIN = reference_wind_min[iday]
+        VMAX = reference_wind_max[iday]
         #      SETTING MAX & MIN TIMES RELATIVE TO SUNRISE & SOLAR NOON
         #     TIME OF MINIMUM
         TSRHR = minima_times[2]
@@ -264,7 +264,7 @@ function hourly_vars(minmax, solrad_out, daily::Bool=false)
         TIMIN = time_sunrise
         TIMAX = time_maximum_temperature
         IVAR = initial_wind
-        wind = vsine(VMIN, VMAX, time_sunrise, time_sunset, TIMIN, TIMAX, daily, iday, IVAR)
+        winds = vsine(VMIN, VMAX, time_sunrise, time_sunset, TIMIN, TIMAX, daily, iday, IVAR)
 
         # relative humidities
         VMIN = reference_humidity_min[iday]
@@ -279,7 +279,7 @@ function hourly_vars(minmax, solrad_out, daily::Bool=false)
         TIMIN = time_maximum_temperature
         TIMAX = time_sunrise
         IVAR = initial_humidity
-        humidity = vsine(VMIN, VMAX, time_sunrise, time_sunset, TIMIN, TIMAX, daily, iday, IVAR)
+        humids = vsine(VMIN, VMAX, time_sunrise, time_sunset, TIMIN, TIMAX, daily, iday, IVAR)
 
         # cloud_covers cover
         VMIN = cloud_min[iday]
@@ -297,13 +297,16 @@ function hourly_vars(minmax, solrad_out, daily::Bool=false)
         clouds = vsine(VMIN, VMAX, time_sunrise, time_sunset, TIMIN, TIMAX, daily, iday, IVAR)
 
         dayrange = (iday*nhours-nhours+1):(iday*nhours)
-        reference_temperature[dayrange] .= temperature
-        reference_wind_speed[dayrange] .= wind
-        reference_humidity[dayrange] .= humidity
-        cloud_cover[dayrange] .= clouds
+        air_temperatures[dayrange] .= temperatures
+        wind_speeds[dayrange] .= winds
+        humidities[dayrange] .= humids
+        cloud_covers[dayrange] .= clouds
     end
 
-    return (; reference_temperature, reference_wind_speed, reference_humidity, cloud_cover)
+    return (; reference_temperature=air_temperatures,
+            reference_wind_speed=wind_speeds,
+            reference_humidity=humidities,
+            cloud_cover=cloud_covers)
 end
 
 # TODO this does just cloud_cover but should generalise first version better down the track
