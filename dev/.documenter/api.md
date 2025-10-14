@@ -45,7 +45,7 @@ Tuple: `(ζ, δ, z, AR2)` with angle quantities in radians and AR2 unitless.
 McCullough &amp; Porter (1971)
 
 
-<Badge type="info" class="source-link" text="source"><a href="https://github.com/BiophysicalEcology/Microclimate.jl/blob/249615d416695025a74967af1bdbeecbc4c201a6/src/radiation.jl#L47-L72" target="_blank" rel="noreferrer">source</a></Badge>
+<Badge type="info" class="source-link" text="source"><a href="https://github.com/BiophysicalEcology/Microclimate.jl/blob/770f516cf49cad412a52864ce24f6b77bb662a32/src/radiation.jl#L47-L72" target="_blank" rel="noreferrer">source</a></Badge>
 
 </details>
 
@@ -148,7 +148,7 @@ Returns a named tuple containing:
   
 
 
-<Badge type="info" class="source-link" text="source"><a href="https://github.com/BiophysicalEcology/Microclimate.jl/blob/249615d416695025a74967af1bdbeecbc4c201a6/src/simulation.jl#L1-L66" target="_blank" rel="noreferrer">source</a></Badge>
+<Badge type="info" class="source-link" text="source"><a href="https://github.com/BiophysicalEcology/Microclimate.jl/blob/770f516cf49cad412a52864ce24f6b77bb662a32/src/simulation.jl#L1-L66" target="_blank" rel="noreferrer">source</a></Badge>
 
 </details>
 
@@ -197,7 +197,7 @@ SolarRadiation
   
 
 
-<Badge type="info" class="source-link" text="source"><a href="https://github.com/BiophysicalEcology/Microclimate.jl/blob/249615d416695025a74967af1bdbeecbc4c201a6/src/landscape.jl#L168-L191" target="_blank" rel="noreferrer">source</a></Badge>
+<Badge type="info" class="source-link" text="source"><a href="https://github.com/BiophysicalEcology/Microclimate.jl/blob/770f516cf49cad412a52864ce24f6b77bb662a32/src/landscape.jl#L168-L191" target="_blank" rel="noreferrer">source</a></Badge>
 
 </details>
 
@@ -302,7 +302,7 @@ profile.wind_speeds       # vertical profile of wind speeds
 
 
 
-<Badge type="info" class="source-link" text="source"><a href="https://github.com/BiophysicalEcology/Microclimate.jl/blob/249615d416695025a74967af1bdbeecbc4c201a6/src/boundary_layer.jl#L11-L84" target="_blank" rel="noreferrer">source</a></Badge>
+<Badge type="info" class="source-link" text="source"><a href="https://github.com/BiophysicalEcology/Microclimate.jl/blob/770f516cf49cad412a52864ce24f6b77bb662a32/src/boundary_layer.jl#L11-L84" target="_blank" rel="noreferrer">source</a></Badge>
 
 </details>
 
@@ -319,7 +319,7 @@ bulk_stanton(log_z_ratio, z, L_Obukhov)
 Compute the bulk Stanton number for unstable conditions.
 
 
-<Badge type="info" class="source-link" text="source"><a href="https://github.com/BiophysicalEcology/Microclimate.jl/blob/249615d416695025a74967af1bdbeecbc4c201a6/src/boundary_layer.jl#L332-L336" target="_blank" rel="noreferrer">source</a></Badge>
+<Badge type="info" class="source-link" text="source"><a href="https://github.com/BiophysicalEcology/Microclimate.jl/blob/770f516cf49cad412a52864ce24f6b77bb662a32/src/boundary_layer.jl#L332-L336" target="_blank" rel="noreferrer">source</a></Badge>
 
 </details>
 
@@ -336,7 +336,7 @@ bulk_stanton(log_z_ratio)
 Compute the bulk Stanton number for stable conditions.
 
 
-<Badge type="info" class="source-link" text="source"><a href="https://github.com/BiophysicalEcology/Microclimate.jl/blob/249615d416695025a74967af1bdbeecbc4c201a6/src/boundary_layer.jl#L323-L327" target="_blank" rel="noreferrer">source</a></Badge>
+<Badge type="info" class="source-link" text="source"><a href="https://github.com/BiophysicalEcology/Microclimate.jl/blob/770f516cf49cad412a52864ce24f6b77bb662a32/src/boundary_layer.jl#L323-L327" target="_blank" rel="noreferrer">source</a></Badge>
 
 </details>
 
@@ -354,7 +354,7 @@ calc_Obukhov_length(T_ref_height, T_surface, v_ref_height, z, z0, ρcpTκg, κ, 
 Iteratively solve for Monin-Obukhov length and convective heat flux.
 
 
-<Badge type="info" class="source-link" text="source"><a href="https://github.com/BiophysicalEcology/Microclimate.jl/blob/249615d416695025a74967af1bdbeecbc4c201a6/src/boundary_layer.jl#L422-L427" target="_blank" rel="noreferrer">source</a></Badge>
+<Badge type="info" class="source-link" text="source"><a href="https://github.com/BiophysicalEcology/Microclimate.jl/blob/770f516cf49cad412a52864ce24f6b77bb662a32/src/boundary_layer.jl#L422-L427" target="_blank" rel="noreferrer">source</a></Badge>
 
 </details>
 
@@ -393,7 +393,7 @@ Uses bulk and sublayer Stanton numbers to account for turbulence near the surfac
 [`calc_u_star`](/api#Microclimate.calc_u_star-Tuple{}), [`calc_wind`](/api#Microclimate.calc_wind-NTuple{5,%20Any}), [`sublayer_stanton`](/api#Microclimate.sublayer_stanton-Tuple{Any,%20Any}), [`bulk_stanton`](/api#Microclimate.bulk_stanton-Tuple{Any,%20Any,%20Any}), [`convective_flux`](/api#Microclimate.convective_flux-NTuple{5,%20Any})
 
 
-<Badge type="info" class="source-link" text="source"><a href="https://github.com/BiophysicalEcology/Microclimate.jl/blob/249615d416695025a74967af1bdbeecbc4c201a6/src/boundary_layer.jl#L278-L297" target="_blank" rel="noreferrer">source</a></Badge>
+<Badge type="info" class="source-link" text="source"><a href="https://github.com/BiophysicalEcology/Microclimate.jl/blob/770f516cf49cad412a52864ce24f6b77bb662a32/src/boundary_layer.jl#L278-L297" target="_blank" rel="noreferrer">source</a></Badge>
 
 </details>
 
@@ -426,7 +426,7 @@ Compute the friction velocity (u*) from a reference wind speed using the logarit
 [`calc_convection`](/api#Microclimate.calc_convection-Tuple{}), [`calc_wind`](/api#Microclimate.calc_wind-NTuple{5,%20Any})
 
 
-<Badge type="info" class="source-link" text="source"><a href="https://github.com/BiophysicalEcology/Microclimate.jl/blob/249615d416695025a74967af1bdbeecbc4c201a6/src/boundary_layer.jl#L233-L249" target="_blank" rel="noreferrer">source</a></Badge>
+<Badge type="info" class="source-link" text="source"><a href="https://github.com/BiophysicalEcology/Microclimate.jl/blob/770f516cf49cad412a52864ce24f6b77bb662a32/src/boundary_layer.jl#L233-L249" target="_blank" rel="noreferrer">source</a></Badge>
 
 </details>
 
@@ -463,7 +463,7 @@ Calculate wind speed at height `z` using the logarithmic wind profile.
 [`calc_u_star`](/api#Microclimate.calc_u_star-Tuple{}), [`calc_convection`](/api#Microclimate.calc_convection-Tuple{})
 
 
-<Badge type="info" class="source-link" text="source"><a href="https://github.com/BiophysicalEcology/Microclimate.jl/blob/249615d416695025a74967af1bdbeecbc4c201a6/src/boundary_layer.jl#L255-L272" target="_blank" rel="noreferrer">source</a></Badge>
+<Badge type="info" class="source-link" text="source"><a href="https://github.com/BiophysicalEcology/Microclimate.jl/blob/770f516cf49cad412a52864ce24f6b77bb662a32/src/boundary_layer.jl#L255-L272" target="_blank" rel="noreferrer">source</a></Badge>
 
 </details>
 
@@ -494,7 +494,7 @@ Compute the volumetric heat capacity of moist air (ρ·cₚ) given temperature, 
 Uses `dry_air_properties` to compute air density (ρ) and  `wet_air_properties` to compute specific heat capacity (cₚ).
 
 
-<Badge type="info" class="source-link" text="source"><a href="https://github.com/BiophysicalEcology/Microclimate.jl/blob/249615d416695025a74967af1bdbeecbc4c201a6/src/boundary_layer.jl#L208-L224" target="_blank" rel="noreferrer">source</a></Badge>
+<Badge type="info" class="source-link" text="source"><a href="https://github.com/BiophysicalEcology/Microclimate.jl/blob/770f516cf49cad412a52864ce24f6b77bb662a32/src/boundary_layer.jl#L208-L224" target="_blank" rel="noreferrer">source</a></Badge>
 
 </details>
 
@@ -521,7 +521,7 @@ Compute the volumetric heat capacity of air (ρ·cₚ) as a function of mean tem
 This is a simplified empirical regression based only on temperature, without accounting for moisture or elevation effects.
 
 
-<Badge type="info" class="source-link" text="source"><a href="https://github.com/BiophysicalEcology/Microclimate.jl/blob/249615d416695025a74967af1bdbeecbc4c201a6/src/boundary_layer.jl#L190-L203" target="_blank" rel="noreferrer">source</a></Badge>
+<Badge type="info" class="source-link" text="source"><a href="https://github.com/BiophysicalEcology/Microclimate.jl/blob/770f516cf49cad412a52864ce24f6b77bb662a32/src/boundary_layer.jl#L190-L203" target="_blank" rel="noreferrer">source</a></Badge>
 
 </details>
 
@@ -560,7 +560,7 @@ This corresponds to the Businger–Dyer formulation for unstable stratification:
   
 
 
-<Badge type="info" class="source-link" text="source"><a href="https://github.com/BiophysicalEcology/Microclimate.jl/blob/249615d416695025a74967af1bdbeecbc4c201a6/src/boundary_layer.jl#L342-L365" target="_blank" rel="noreferrer">source</a></Badge>
+<Badge type="info" class="source-link" text="source"><a href="https://github.com/BiophysicalEcology/Microclimate.jl/blob/770f516cf49cad412a52864ce24f6b77bb662a32/src/boundary_layer.jl#L342-L365" target="_blank" rel="noreferrer">source</a></Badge>
 
 </details>
 
@@ -595,7 +595,7 @@ This is the Businger–Dyer form for scalars:
   
 
 
-<Badge type="info" class="source-link" text="source"><a href="https://github.com/BiophysicalEcology/Microclimate.jl/blob/249615d416695025a74967af1bdbeecbc4c201a6/src/boundary_layer.jl#L397-L416" target="_blank" rel="noreferrer">source</a></Badge>
+<Badge type="info" class="source-link" text="source"><a href="https://github.com/BiophysicalEcology/Microclimate.jl/blob/770f516cf49cad412a52864ce24f6b77bb662a32/src/boundary_layer.jl#L397-L416" target="_blank" rel="noreferrer">source</a></Badge>
 
 </details>
 
@@ -630,7 +630,7 @@ This is the Businger–Dyer form for momentum:
   
 
 
-<Badge type="info" class="source-link" text="source"><a href="https://github.com/BiophysicalEcology/Microclimate.jl/blob/249615d416695025a74967af1bdbeecbc4c201a6/src/boundary_layer.jl#L372-L391" target="_blank" rel="noreferrer">source</a></Badge>
+<Badge type="info" class="source-link" text="source"><a href="https://github.com/BiophysicalEcology/Microclimate.jl/blob/770f516cf49cad412a52864ce24f6b77bb662a32/src/boundary_layer.jl#L372-L391" target="_blank" rel="noreferrer">source</a></Badge>
 
 </details>
 
@@ -655,7 +655,7 @@ Returns `(G, D, B)`; works with arrays but needs to not use &#39;similar&#39; if
 Reference Maxwell, E. L., &quot;A Quasi-Physical Model for Converting Hourly            Global Horizontal to Direct Normal Insolation&quot;, Technical            Report No. SERI/TR-215-3087, Golden, CO: Solar Energy Research            Institute, 1987.
 
 
-<Badge type="info" class="source-link" text="source"><a href="https://github.com/BiophysicalEcology/Microclimate.jl/blob/249615d416695025a74967af1bdbeecbc4c201a6/src/radiation.jl#L1621-L1641" target="_blank" rel="noreferrer">source</a></Badge>
+<Badge type="info" class="source-link" text="source"><a href="https://github.com/BiophysicalEcology/Microclimate.jl/blob/770f516cf49cad412a52864ce24f6b77bb662a32/src/radiation.jl#L1621-L1641" target="_blank" rel="noreferrer">source</a></Badge>
 
 </details>
 
@@ -672,7 +672,7 @@ convective_flux(ρ_cp, ΔT, u_star, St_bulk, St_sublayer)
 Compute convective heat flux given bulk and sublayer Stanton numbers.
 
 
-<Badge type="info" class="source-link" text="source"><a href="https://github.com/BiophysicalEcology/Microclimate.jl/blob/249615d416695025a74967af1bdbeecbc4c201a6/src/boundary_layer.jl#L304-L308" target="_blank" rel="noreferrer">source</a></Badge>
+<Badge type="info" class="source-link" text="source"><a href="https://github.com/BiophysicalEcology/Microclimate.jl/blob/770f516cf49cad412a52864ce24f6b77bb662a32/src/boundary_layer.jl#L304-L308" target="_blank" rel="noreferrer">source</a></Badge>
 
 </details>
 
@@ -724,7 +724,7 @@ https://en.wikipedia.org/wiki/Chandrasekhar%27s_X-_and_Y-function
 McCullough, E. C., &amp; Porter, W. P. (1971). Computing clear day solar radiation  spectra for the terrestrial ecological environment. Ecology, 52(6), 1008–1015.      https://doi.org/10.2307/1933806
 
 
-<Badge type="info" class="source-link" text="source"><a href="https://github.com/BiophysicalEcology/Microclimate.jl/blob/249615d416695025a74967af1bdbeecbc4c201a6/src/radiation.jl#L591-L643" target="_blank" rel="noreferrer">source</a></Badge>
+<Badge type="info" class="source-link" text="source"><a href="https://github.com/BiophysicalEcology/Microclimate.jl/blob/770f516cf49cad412a52864ce24f6b77bb662a32/src/radiation.jl#L591-L643" target="_blank" rel="noreferrer">source</a></Badge>
 
 </details>
 
@@ -771,7 +771,7 @@ A `NamedTuple` with the fields:
   
 
 
-<Badge type="info" class="source-link" text="source"><a href="https://github.com/BiophysicalEcology/Microclimate.jl/blob/249615d416695025a74967af1bdbeecbc4c201a6/src/radiation.jl#L97-L132" target="_blank" rel="noreferrer">source</a></Badge>
+<Badge type="info" class="source-link" text="source"><a href="https://github.com/BiophysicalEcology/Microclimate.jl/blob/770f516cf49cad412a52864ce24f6b77bb662a32/src/radiation.jl#L97-L132" target="_blank" rel="noreferrer">source</a></Badge>
 
 </details>
 
@@ -804,7 +804,7 @@ Compute the solar hour angle `h` in radians.
 McCullough &amp; Porter 1971, Eq. 6
 
 
-<Badge type="info" class="source-link" text="source"><a href="https://github.com/BiophysicalEcology/Microclimate.jl/blob/249615d416695025a74967af1bdbeecbc4c201a6/src/radiation.jl#L22-L38" target="_blank" rel="noreferrer">source</a></Badge>
+<Badge type="info" class="source-link" text="source"><a href="https://github.com/BiophysicalEcology/Microclimate.jl/blob/770f516cf49cad412a52864ce24f6b77bb662a32/src/radiation.jl#L22-L38" target="_blank" rel="noreferrer">source</a></Badge>
 
 </details>
 
@@ -825,7 +825,7 @@ Compute soil properties for vectors of soil temperature and moisture using broad
 Returns three arrays: `λ_b`, `cp_b`, `ρ_b`.
 
 
-<Badge type="info" class="source-link" text="source"><a href="https://github.com/BiophysicalEcology/Microclimate.jl/blob/249615d416695025a74967af1bdbeecbc4c201a6/src/soil_properties.jl#L141-L148" target="_blank" rel="noreferrer">source</a></Badge>
+<Badge type="info" class="source-link" text="source"><a href="https://github.com/BiophysicalEcology/Microclimate.jl/blob/770f516cf49cad412a52864ce24f6b77bb662a32/src/soil_properties.jl#L141-L148" target="_blank" rel="noreferrer">source</a></Badge>
 
 </details>
 
@@ -886,7 +886,7 @@ Campbell, G. S., Jungbauer, J. D. Jr., Bidlake, W. R., &amp; Hungerford, R. D. (
 Campbell, G. S., &amp; Norman, J. M. (1998). Environmental Biophysics. Springer.
 
 
-<Badge type="info" class="source-link" text="source"><a href="https://github.com/BiophysicalEcology/Microclimate.jl/blob/249615d416695025a74967af1bdbeecbc4c201a6/src/soil_properties.jl#L1-L54" target="_blank" rel="noreferrer">source</a></Badge>
+<Badge type="info" class="source-link" text="source"><a href="https://github.com/BiophysicalEcology/Microclimate.jl/blob/770f516cf49cad412a52864ce24f6b77bb662a32/src/soil_properties.jl#L1-L54" target="_blank" rel="noreferrer">source</a></Badge>
 
 </details>
 
@@ -971,7 +971,7 @@ A named tuple containing:
 FD and FDQ derived from tables in Dave and Furukawa (1967) Dave, J. V., &amp; Furukawa, P. M. (1966). Scattered radiation in the ozone   absorption bands at selected levels of a terrestrial, Rayleigh atmosphere (Vol. 7).  Americal Meteorological Society.
 
 
-<Badge type="info" class="source-link" text="source"><a href="https://github.com/BiophysicalEcology/Microclimate.jl/blob/249615d416695025a74967af1bdbeecbc4c201a6/src/radiation.jl#L1177-L1229" target="_blank" rel="noreferrer">source</a></Badge>
+<Badge type="info" class="source-link" text="source"><a href="https://github.com/BiophysicalEcology/Microclimate.jl/blob/770f516cf49cad412a52864ce24f6b77bb662a32/src/radiation.jl#L1177-L1229" target="_blank" rel="noreferrer">source</a></Badge>
 
 </details>
 
@@ -988,7 +988,7 @@ sublayer_stanton(z0, u_star)
 Compute the Stanton number for the viscous sublayer.
 
 
-<Badge type="info" class="source-link" text="source"><a href="https://github.com/BiophysicalEcology/Microclimate.jl/blob/249615d416695025a74967af1bdbeecbc4c201a6/src/boundary_layer.jl#L314-L318" target="_blank" rel="noreferrer">source</a></Badge>
+<Badge type="info" class="source-link" text="source"><a href="https://github.com/BiophysicalEcology/Microclimate.jl/blob/770f516cf49cad412a52864ce24f6b77bb662a32/src/boundary_layer.jl#L314-L318" target="_blank" rel="noreferrer">source</a></Badge>
 
 </details>
 
