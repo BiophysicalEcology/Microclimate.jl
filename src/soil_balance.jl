@@ -569,7 +569,7 @@ function phase_transition!(
     depths::AbstractVector    # soil depth boundaries (cm)
 )
     (; layermass, qphase) = buffers
-    HTOFN = 33500.0u"J/kg"      # latent heat of fusion of water
+    HTOFN = 333550.0u"J/kg"      # latent heat of fusion of water
     c_p   = 4184.0u"J/kg/K"      # specific heat of water
     nodes = length(depths)
     meanT = similar(Ts)
