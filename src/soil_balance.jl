@@ -631,9 +631,7 @@ function phase_transition!(
             if ∑phase[i] <= 0.0u"J"
                 ∑phase[i] = 0.0u"J"
                 qphase[i] = 0.0u"J"
-            end
-
-            if ∑phase[i] > 0.0u"J"
+            else
                 T[i] = 0.0u"°C"
                 if i < nodes
                     T[i+1] = 0.0u"°C"
