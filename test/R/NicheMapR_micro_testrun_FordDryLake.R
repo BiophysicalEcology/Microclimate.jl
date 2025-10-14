@@ -1,6 +1,9 @@
 library(NicheMapR)
 library(zoo)
 head(SCANsites)
+
+days2do <- 30
+
 sitenum <- '2184' # Ford Dry Lake
 site <- subset(SCANsites, id == sitenum) # subset the SCANsites dataset for Ford Dry Lake
 name <- site$name # the name of the sites
@@ -28,7 +31,7 @@ message <- 0 # do not allow the Fortran integrator to output warnings
 fail <- 24*365 # how many restarts of the integrator before the Fortran program quits (avoids endless loops when solutions can't be found)
 
 longlat <- c(Longitude, Latitude) # decimal degrees longitude and latitude from the SCAN site data table
-doynum <- floor(nrow(weather) / 24) # number of days to run, determined by counting the number of rows in the weather dataset and dividing by 24 to get days, but keeping it as a whole number
+doynum <- days2do#floor(nrow(weather) / 24) # number of days to run, determined by counting the number of rows in the weather dataset and dividing by 24 to get days, but keeping it as a whole number
 idayst <- 1 # start day
 ida <- doynum # end day
 HEMIS <- ifelse(longlat[2] < 0, 2, 1) # chose hemisphere based on latitude
@@ -38,7 +41,7 @@ ALONG <- abs(trunc(longlat[1])) # degrees longitude
 ALMINT <- (abs(longlat[1]) - ALONG) * 60 # minutes latitude
 ALREF <- ALONG # reference longitude for time zone
 
-EC <- 0.0167238 # Eccenricity of the earth's orbit (current value 0.0167238, ranges between 0.0034 to 0.058)
+EC <- 0.0167238 # Eccentricity of the earth's orbit (current value 0.0167238, ranges between 0.0034 to 0.058)
 RUF <- 0.004 # Roughness height (m), , e.g. sand is 0.0005, grass may be 0.02, current allowed range: 0.00001 (snow) - 0.02 cm.
 ZH <- 0 # heat transfer roughness height (m) for Campbell and Norman air temperature/wind speed profile (invoked if greater than 1, 0.02 * canopy height in m if unknown)
 D0 <- 0 # zero plane displacement correction factor (m) for Campbell and Norman air temperature/wind speed profile (0.6 * canopy height in m if unknown)
@@ -101,11 +104,11 @@ if(is.na(weather$PRCP.H[1])==TRUE){ # hourly precipitation
 }
 weather$TAVG.H <- weather$TAVG.H
 # use na.approx function from zoo package to fill in missing data
-TAIRhr <- weather$TAVG.H <- na.approx(weather$TAVG.H)
-RHhr <- weather$RHUM.I <- na.approx(weather$RHUM.I)
-SOLRhr <- weather$SRADV.H <- na.approx(weather$SRADV.H)
-RAINhr <- weather$PRCP.H <- na.approx(weather$PRCP.H * 25.4) # convert rainfall from inches to mm
-WNhr <- weather$WSPDV.H <- na.approx(weather$WSPDV.H * 0.44704) # convert wind speed from miles/hour to m/s
+TAIRhr <- weather$TAVG.H[1:(days2do*24)] <- na.approx(weather$TAVG.H)[1:(days2do*24)]
+RHhr <- weather$RHUM.I[1:(days2do*24)] <- na.approx(weather$RHUM.I)[1:(days2do*24)]
+SOLRhr <- weather$SRADV.H[1:(days2do*24)] <- na.approx(weather$SRADV.H)[1:(days2do*24)]
+RAINhr <- weather$PRCP.H[1:(days2do*24)] <- na.approx(weather$PRCP.H * 25.4)[1:(days2do*24)] # convert rainfall from inches to mm
+WNhr <- weather$WSPDV.H[1:(days2do*24)] <- na.approx(weather$WSPDV.H * 0.44704)[1:(days2do*24)] # convert wind speed from miles/hour to m/s
 ZENhr <- TAIRhr * 0 - 1 # negative zenith angles to force model to compute them
 IRDhr <- TAIRhr * 0 - 1 #
 
@@ -116,7 +119,7 @@ tzone <- paste0("Etc/GMT", TZoffset)
 dates <- seq(ISOdate(ystart, 1, 1, tz = tzone)-3600 * 12, ISOdate((ystart+nyears),1, 1, tz = tzone)-3600 * 13, by="hours")
 clear <- as.data.frame(cbind(dates, as.data.frame(rep(micro$metout[1:(365 * 24),13],nyears))),stringsAsFactors = FALSE)
 doy <- rep(seq(1, 365),nyears)[1:floor(nrow(weather)/24)] # days of year to run
-clear <- as.data.frame(clear, stringsAsFactors = FALSE)
+clear <- as.data.frame(clear, stringsAsFactors = FALSE)[1:(days2do*24), ]
 colnames(clear)=c("datetime", "sol")
 
 # find the maximum observed solar and adjust the clear sky prediction to this value
@@ -127,8 +130,8 @@ clear2 <- clear[, 2]*(maxsol / max(clear[, 2])) # get ratio of max observed to p
 sol <- SOLRhr
 clr <- clear2
 zenthresh <- 85
-sol[metout$ZEN > zenthresh] <- NA # remove values for nighttime (and very early morning/late afternoon)
-clr[metout$ZEN > zenthresh] <- NA # remove values for nighttime (and very early morning/late afternoon)
+sol[metout$ZEN[1:(days2do*24)] > zenthresh] <- NA # remove values for nighttime (and very early morning/late afternoon)
+clr[metout$ZEN[1:(days2do*24)] > zenthresh] <- NA # remove values for nighttime (and very early morning/late afternoon)
 a <- ((clr - sol) / clr) * 100 # get ratio of observed to predicted solar, convert to %
 a[a > 100] <- 100 # cap max 100%
 a[a < 0] <- 0 # cap min at 0%
@@ -139,15 +142,15 @@ a <- na.approx(a, na.rm = FALSE) # apply na.approx, but leave any trailing NAs
 a[is.na(a)] <- 0 # make trailing NAs zero
 CLDhr <- a # now we have hourly cloud cover
 
-CCMAXX <- aggregate(CLDhr, by = list(weather$Date), FUN = max)[,2]#c(100, 100) # max cloud cover (%)
-CCMINN <- aggregate(CLDhr, by = list(weather$Date), FUN = min)[,2]#c(0, 15.62) # min cloud cover (%)
-TMAXX <- aggregate(TAIRhr, by = list(weather$Date), FUN = max)[,2]#c(40.1, 31.6) # maximum air temperatures (°C)
-TMINN <- aggregate(TAIRhr, by = list(weather$Date), FUN = min)[,2]#c(19.01, 19.57) # minimum air temperatures (°C)
-RAINFALL <- aggregate(RAINhr, by = list(weather$Date), FUN = sum)[,2]#c(19.01, 19.57) # minimum air temperatures (°C)
-RHMAXX <- aggregate(RHhr, by = list(weather$Date), FUN = max)[,2]#c(90.16, 80.92) # max relative humidity (%)
-RHMINN <- aggregate(RHhr, by = list(weather$Date), FUN = min)[,2]#c(11.05, 27.9) # min relative humidity (%)
-WNMAXX <- aggregate(WNhr, by = list(weather$Date), FUN = max)[,2]#c(1.35, 2.0) # max wind speed (m/s)
-WNMINN <- aggregate(WNhr, by = list(weather$Date), FUN = min)[,2]#c(0.485, 0.610) # min wind speed (m/s)
+CCMAXX <- aggregate(CLDhr, by = list(weather$Date[1:(days2do*24)]), FUN = max)[,2]#c(100, 100) # max cloud cover (%)
+CCMINN <- aggregate(CLDhr, by = list(weather$Date[1:(days2do*24)]), FUN = min)[,2]#c(0, 15.62) # min cloud cover (%)
+TMAXX <- aggregate(TAIRhr, by = list(weather$Date[1:(days2do*24)]), FUN = max)[,2]#c(40.1, 31.6) # maximum air temperatures (°C)
+TMINN <- aggregate(TAIRhr, by = list(weather$Date[1:(days2do*24)]), FUN = min)[,2]#c(19.01, 19.57) # minimum air temperatures (°C)
+RAINFALL <- aggregate(RAINhr, by = list(weather$Date[1:(days2do*24)]), FUN = sum)[,2]#c(19.01, 19.57) # minimum air temperatures (°C)
+RHMAXX <- aggregate(RHhr, by = list(weather$Date[1:(days2do*24)]), FUN = max)[,2]#c(90.16, 80.92) # max relative humidity (%)
+RHMINN <- aggregate(RHhr, by = list(weather$Date[1:(days2do*24)]), FUN = min)[,2]#c(11.05, 27.9) # min relative humidity (%)
+WNMAXX <- aggregate(WNhr, by = list(weather$Date[1:(days2do*24)]), FUN = max)[,2]#c(1.35, 2.0) # max wind speed (m/s)
+WNMINN <- aggregate(WNhr, by = list(weather$Date[1:(days2do*24)]), FUN = min)[,2]#c(0.485, 0.610) # min wind speed (m/s)
 
 #tannul <- mean(c(TMAXX, TMINN)) # annual mean temperature for getting monthly deep soil temperature (°C)
 tannul <- mean(TAIRhr) # annual mean temperature for getting monthly deep soil temperature (°C)
@@ -179,6 +182,29 @@ soilprops[, 4]<-SpecHeat # insert specific heat to profile 1
 soilprops[, 5]<-Density # insert mineral density to profile 1
 soilinit <- rep(tannul, 20) # make initial soil temps equal to mean annual
 
+obs_dates <- weather[1:(days2do*24), 49]
+obs_temperature <- weather[1:(days2do*24), 15:19]
+init_obs_temperature <- c(obs_temperature[1, ], tannul)
+init_obs_depths <- c(c(2, 4, 8, 20, 40) * 2.54, max(DEP))
+init_approx <- approxfun(init_obs_depths, init_obs_temperature)
+soilinit <- init_approx(DEP)
+#plot(log10(DEP), soilinit, ylim = c(-5, 25))
+lm_soilinit <- summary(lm(soilinit~log10(DEP)))
+m <- lm_soilinit$coefficients[2]
+c <- lm_soilinit$coefficients[1]
+#abline(c, m)
+predict_temps <- m * log10(DEP[2:3]+0.01) + c
+soilinit[2:3] <- predict_temps
+soilinit[1] <- -3
+
+obs_moisture <- weather[1:(days2do*24), 10:14]
+init_obs_moisture <- unlist(c(obs_moisture[1, ], max(obs_moisture, na.rm = TRUE)))
+init_obs_depths <- c(c(2, 4, 8, 20, 40) * 2.54, max(DEP))
+init_approx <- approxfun(init_obs_depths, init_obs_moisture)
+SoilMoist_Init <- init_approx(DEP)
+SoilMoist_Init[1:3] <- SoilMoist_Init[4]
+SoilMoist_Init <- SoilMoist_Init / 100
+
 #use Campbell and Norman Table 9.1 soil moisture properties
 soiltype <- 3 # 3 = sandy loam
 PE <- rep(CampNormTbl9_1[soiltype, 4],19) #air entry potential J/kg
@@ -203,7 +229,7 @@ LAI <- rep(0.1, doynum) # leaf area index, used to partition traspiration/evapor
 rainmult <- 1 # rainfall multiplier to impose catchment
 maxpool <- 10 # max depth for water pooling on the surface, mm (to account for runoff)
 evenrain <- 0 # spread daily rainfall evenly across 24hrs (1) or one event at midnight (0)
-SoilMoist_Init <- rep(0.2, 10) # initial soil water content for each node, m3/m3
+#SoilMoist_Init <- rep(0.2, 10) # initial soil water content for each node, m3/m3
 moists <- matrix(nrow = 10, ncol = doynum, data = 0) # set up an empty vector for soil moisture values through time
 moists[1:10,] <- SoilMoist_Init # insert initial soil moisture
 spinup <- 0 # repeat first day 3 times for steady state
@@ -314,7 +340,7 @@ specheat <- cbind(dates, specheat)
 densit <- cbind(dates, densit)
 
 tstart <- as.POSIXct("2015-01-01",format="%Y-%m-%d")
-tfinish <- as.POSIXct("2015-01-31",format="%Y-%m-%d")
+tfinish <- as.POSIXct("2015-01-30",format="%Y-%m-%d")
 
 # set up plot parameters
 par(mfrow = c(1, 1)) # set up for 6 plots in 1 columns

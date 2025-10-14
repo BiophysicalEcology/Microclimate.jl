@@ -108,7 +108,7 @@ Nodes[1, 1:doynum] <- 10 # deepest node for first substrate type
 Thcond <- 1.25 # soil minerals thermal conductivity (W/mC)
 Density <- 2.560 # soil minerals density (Mg/m3)
 SpecHeat <- 870 # soil minerals specific heat (J/kg-K)
-BulkDensity <- 2.56 # soil bulk density (Mg/m3)
+BulkDensity <- 1.3 # soil bulk density (Mg/m3)
 SatWater <- 0.26 # volumetric water content at saturation (0.1 bar matric potential) (m3/m3)
 #SoilMoist<-rep(SoilMoist,timeinterval) # soil moisture
 
@@ -146,7 +146,7 @@ LAI <- rep(0.1, doynum) # leaf area index, used to partition transpiration/evapo
 rainmult <- 1 # rainfall multiplier to impose catchment
 maxpool <- 10 # max depth for water pooling on the surface, mm (to account for runoff)
 evenrain <- 1 # spread daily rainfall evenly across 24hrs (1) or one event at midnight (2)
-SoilMoist <- 1*c(0.42, 0.42, 0.42, 0.43, 0.44, 0.44, 0.43, 0.42, 0.41, 0.42, 0.42, 0.43) # soil moisture (decimal %, 1 means saturated)
+SoilMoist <- SatWater * c(0.42, 0.42, 0.42, 0.43, 0.44, 0.44, 0.43, 0.42, 0.41, 0.42, 0.42, 0.43) # soil moisture (decimal %, 1 means saturated)
 SoilMoist_Init <- rep(SoilMoist[1], 10) # initial soil water content for each node, m3/m3
 #moists <- matrix(nrow = 10, ncol = doynum, data = 0) # set up an empty vector for soil moisture values through time
 #moists[1:10, ] <- SoilMoist_Init # insert initial soil moisture
