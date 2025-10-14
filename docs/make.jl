@@ -15,9 +15,10 @@ makedocs(;
     ),
 )
 
-deploydocs(;
+DocumenterVitepress.deploydocs(;
     repo="github.com/BiophysicalEcology/Microclimate.jl",
     branch="gh-pages",
+    target = joinpath(@__DIR__, "build"),
     devbranch="main",
-    push_preview = true
+    push_preview=true,
 )
