@@ -186,21 +186,21 @@ function vsine(VMIN, VMAX, time_sunrise, time_sunset, TIMIN, TIMAX, daily, iday,
 end
 
 function hourly_vars(minmax, solrad_out, daily::Bool=false)
-    (; air_temperature_min, air_temperature_max, wind_min, wind_max, humidity_min, 
-        humidity_max, cloud_min, cloud_max, minima_times, maxima_times) = minmax
+    (; reference_temperature_min, reference_temperature_max, reference_wind_min, reference_wind_max, reference_humidity_min, 
+        reference_humidity_max, cloud_min, cloud_max, minima_times, maxima_times) = minmax
 
-    ndays = length(air_temperature_min)
+    ndays = length(reference_temperature_min)
     nhours = 24
     all_hours = nhours * ndays
-    air_temperatures = fill(air_temperature_min[1], all_hours)
+    air_temperatures = fill(reference_temperature_min[1], all_hours)
     cloud_covers = fill(cloud_min[1], all_hours)
-    humidities = fill(humidity_min[1], all_hours)
-    wind_speeds = fill(wind_min[1], all_hours)
+    humidities = fill(reference_humidity_min[1], all_hours)
+    wind_speeds = fill(reference_wind_min[1], all_hours)
 
     for iday in 1:ndays
-        initial_temperature = air_temperature_min[iday] # initial air temperature for daily
-        initial_wind = wind_min[iday]
-        initial_humidity = humidity_max[iday]
+        initial_temperature = reference_temperature_min[iday] # initial air temperature for daily
+        initial_wind = reference_wind_min[iday]
+        initial_humidity = reference_humidity_max[iday]
         initial_cloud = cloud_min[iday]
         times = fill(0.0, nhours)
         temperatures = fill(0.0u"°C", nhours)
@@ -236,11 +236,11 @@ function hourly_vars(minmax, solrad_out, daily::Bool=false)
         TSNHR = maxima_times[1]# + TIMCOR (TIMCOR never used in Fortran version - uninitialised?)
         time_maximum_temperature = (HSINT * 100.0 + FRACTS) + (TSNHR * 100.0)
         #     SETTING minimum_temperature, maximum_temperature FROM ARRAYS OBTAINED FROM SUB. IOSOLR
-        minimum_temperature = air_temperature_min[iday]
-        maximum_temperature = air_temperature_max[iday]
+        minimum_temperature = reference_temperature_min[iday]
+        maximum_temperature = reference_temperature_max[iday]
         if iday < ndays & ndays > 1
-            next_minimum_temperature = air_temperature_min[iday+1]
-            next_maximum_temperature = air_temperature_max[iday+1]
+            next_minimum_temperature = reference_temperature_min[iday+1]
+            next_maximum_temperature = reference_temperature_max[iday+1]
         else
             next_minimum_temperature = minimum_temperature
             next_maximum_temperature = maximum_temperature
@@ -252,8 +252,8 @@ function hourly_vars(minmax, solrad_out, daily::Bool=false)
         sine_exponential!(initial_temperature, times, temperatures, minimum_temperature, maximum_temperature, next_minimum_temperature, next_maximum_temperature, time_sunrise, time_sunset, time_maximum_temperature, daily, iday)
 
         # wind speed
-        VMIN = wind_min[iday]
-        VMAX = wind_max[iday]
+        VMIN = reference_wind_min[iday]
+        VMAX = reference_wind_max[iday]
         #      SETTING MAX & MIN TIMES RELATIVE TO SUNRISE & SOLAR NOON
         #     TIME OF MINIMUM
         TSRHR = minima_times[2]
@@ -267,8 +267,8 @@ function hourly_vars(minmax, solrad_out, daily::Bool=false)
         winds = vsine(VMIN, VMAX, time_sunrise, time_sunset, TIMIN, TIMAX, daily, iday, IVAR)
 
         # relative humidities
-        VMIN = humidity_min[iday]
-        VMAX = humidity_max[iday]
+        VMIN = reference_humidity_min[iday]
+        VMAX = reference_humidity_max[iday]
         #      SETTING MAX & MIN TIMES RELATIVE TO SUNRISE & SOLAR NOON
         #     TIME OF MINIMUM
         TSRHR = minima_times[3]
@@ -303,10 +303,13 @@ function hourly_vars(minmax, solrad_out, daily::Bool=false)
         cloud_covers[dayrange] .= clouds
     end
 
-    return (; air_temperatures, wind_speeds, humidities, cloud_covers)
+    return (; reference_temperature=air_temperatures,
+            reference_wind_speed=wind_speeds,
+            reference_humidity=humidities,
+            cloud_cover=cloud_covers)
 end
 
-# TODO this does just cloud_covers but should generalise first version better down the track
+# TODO this does just cloud_cover but should generalise first version better down the track
 function hourly_vars(
     cloud_min::Vector,
     cloud_max::Vector,
@@ -318,12 +321,12 @@ function hourly_vars(
 
     ndays = length(cloud_min)
     nhours = 24
-    cloud_covers = fill(cloud_min[1], nhours * ndays)
+    cloud_cover = fill(cloud_min[1], nhours * ndays)
 
     for iday in 1:ndays
         initial_cloud = cloud_min[iday]
         times = fill(0.0, 25)
-        clouds = fill(initial_cloud,  nhours)
+        cloud = fill(initial_cloud,  nhours)
 
         HH = solrad_out.hour_angle_sunrise[iday]
         tsn = solrad_out.hour_solar_noon[iday]
@@ -353,9 +356,9 @@ function hourly_vars(
         TIMIN = time_sunrise
         TIMAX = time_maximum_temperature
         IVAR = initial_cloud
-        clouds = vsine(VMIN, VMAX, time_sunrise, time_sunset, TIMIN, TIMAX, daily, iday, IVAR)
+        cloud = vsine(VMIN, VMAX, time_sunrise, time_sunset, TIMIN, TIMAX, daily, iday, IVAR)
 
-        cloud_covers[(iday*nhours-nhours+1):(iday*nhours)] = clouds[1:nhours]
+        cloud_cover[(iday*nhours-nhours+1):(iday*nhours)] = cloud[1:nhours]
     end
-    return cloud_covers
+    return cloud_cover
 end

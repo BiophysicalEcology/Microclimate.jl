@@ -41,7 +41,7 @@ terrain = Terrain(;
     roughness_height = microinput[:RUF] * 1.0u"m", # roughness height for standard mode TODO dispatch based on roughness pars
     zh = microinput[:ZH] * 1.0u"m", # heat transfer roughness height for Campbell and Norman mode
     d0 = microinput[:D0] * 1.0u"m", # zero plane displacement correction factor
-    κ = 0.4, # Kármán constant
+    karman_constant = 0.4, # Kármán constant
 )
 
 mineral_density = (CSV.File("$testdir/data/init_monthly/soilprop.csv")[1, 1][6]) * 1.0u"Mg/m^3" # soil minerals density (Mg/m3)
@@ -70,12 +70,12 @@ environment_daily = DailyTimeseries(;
 )
 
 environment_minmax = MonthlyMinMaxEnvironment(;
-    air_temperature_min = (DataFrame(CSV.File("$testdir/data/init_monthly/TMINN.csv"))[days2do, 2] * 1.0)u"°C", # minimum air temperatures
-    air_temperature_max = (DataFrame(CSV.File("$testdir/data/init_monthly/TMAXX.csv"))[days2do, 2] * 1.0)u"°C", # maximum air temperatures
-    wind_min = (DataFrame(CSV.File("$testdir/data/init_monthly/WNMINN.csv"))[days2do, 2] * 1.0)u"m/s", # min wind speed (m/s)
-    wind_max = (DataFrame(CSV.File("$testdir/data/init_monthly/WNMAXX.csv"))[days2do, 2] * 1.0)u"m/s", # max wind speed (m/s)
-    humidity_min = (DataFrame(CSV.File("$testdir/data/init_monthly/RHMINN.csv"))[days2do, 2] * 1.0), # min relative humidity (%)
-    humidity_max = (DataFrame(CSV.File("$testdir/data/init_monthly/RHMAXX.csv"))[days2do, 2] * 1.0), # max relative humidity (%)
+    reference_temperature_min = (DataFrame(CSV.File("$testdir/data/init_monthly/TMINN.csv"))[days2do, 2] * 1.0)u"°C", # minimum air temperatures
+    reference_temperature_max = (DataFrame(CSV.File("$testdir/data/init_monthly/TMAXX.csv"))[days2do, 2] * 1.0)u"°C", # maximum air temperatures
+    reference_wind_min = (DataFrame(CSV.File("$testdir/data/init_monthly/WNMINN.csv"))[days2do, 2] * 1.0)u"m/s", # min wind speed (m/s)
+    reference_wind_max = (DataFrame(CSV.File("$testdir/data/init_monthly/WNMAXX.csv"))[days2do, 2] * 1.0)u"m/s", # max wind speed (m/s)
+    reference_humidity_min = (DataFrame(CSV.File("$testdir/data/init_monthly/RHMINN.csv"))[days2do, 2] * 1.0), # min relative humidity (%)
+    reference_humidity_max = (DataFrame(CSV.File("$testdir/data/init_monthly/RHMAXX.csv"))[days2do, 2] * 1.0), # max relative humidity (%)
     cloud_min = (DataFrame(CSV.File("$testdir/data/init_monthly/CCMINN.csv"))[days2do, 2] * 1.0), # min cloud cover (%)
     cloud_max = (DataFrame(CSV.File("$testdir/data/init_monthly/CCMAXX.csv"))[days2do, 2] * 1.0), # max cloud cover (%)
     minima_times = [microinput[:TIMINS1], microinput[:TIMINS2], microinput[:TIMINS3], microinput[:TIMINS4]], # time of minima for air temp, wind, humidity and cloud cover (h), air & wind mins relative to sunrise, humidity and cloud cover mins relative to solar noon
@@ -122,16 +122,20 @@ rh1cm_nmr = collect(metout_nmr[:, 6])
 rh2m_nmr = collect(metout_nmr[:, 7])
 tskyC_nmr = collect(metout_nmr[:, 15]) .* u"°C"
 
+air_temperature_matrix = hcat([p.air_temperature for p in micro_out.profile]...)'
+humidity_matrix = hcat([p.relative_humidity for p in micro_out.profile]...)'
+wind_matrix = hcat([p.wind_speed for p in micro_out.profile]...)'
+
 # note tests seem to need to be in K rather than °C to work properly
 # not all tests passing, some commented out, possibly due to different
 # solvers and possibly to do with floating point error and issue with 
 # the way the phase transition is being calculated
 @testset "runmicro comparisons" begin
-    @test_broken micro_out.relative_humidity[:, 1] ≈ rh1cm_nmr atol=0.2 # TODO make this work
-    @test micro_out.relative_humidity[:, 2] ≈ rh2m_nmr atol=1e-5
-    @test_broken micro_out.wind_speed[:, 1] ≈ vel1cm_nmr atol=2e-1u"m/s" # now failing because of first day due to soil temps not being the same
-    @test micro_out.wind_speed[:, 2] ≈ vel2m_nmr atol=1e-6u"m/s" 
-    @test u"K".(micro_out.air_temperature[:, 2]) ≈ ta2m_nmr atol=1e-5u"K"
+    @test_broken air_temperature_matrix[:, 1] ≈ rh1cm_nmr atol=0.2 # TODO make this work
+    @test humidity_matrix[:, 2] ≈ rh2m_nmr atol=1e-5
+    @test wind_matrix[:, 1] ≈ vel1cm_nmr atol=2e-1u"m/s" # now failing because of first day due to soil temps not being the same
+    @test wind_matrix[:, 2] ≈ vel2m_nmr atol=1e-6u"m/s" 
+    @test u"K".(air_temperature_matrix[:, 2]) ≈ ta2m_nmr atol=1e-5u"K"
     @test micro_out.sky_temperature ≈ u"K".(tskyC_nmr) atol=1u"K" # TODO make this better
     @test_broken all(isapprox.(micro_out.soil_temperature, u"K".(Matrix(soiltemps_nmr)); atol=0.5u"K"))
     @test_broken all(isapprox.(micro_out.soil_temperature[:, 2:10], u"K".(Matrix(soiltemps_nmr[:, 2:10])); atol=0.5u"K")) # TODO make better!
