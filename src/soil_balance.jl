@@ -577,34 +577,32 @@ function phase_transition!(
     T = MVector(Ts)
     tol = 1.0e-4u"°C"
 
-    for j in 1:nodes
-        idx = j  # index for layer-level variables
-
+    for i in 1:nodes
         # --- Always compute mean layer temperatures ---
-        if j < nodes
-            meanT[j]     = 0.5 * (T[j] + T[j+1])
-            meanTpast[j] = 0.5 * (T_past[j] + T_past[j+1])
+        if i < nodes
+            meanT[i]     = 0.5 * (T[i] + T[i+1])
+            meanTpast[i] = 0.5 * (T_past[i] + T_past[i+1])
         else
-            meanT[j]     = T[j]
-            meanTpast[j] = T_past[j]
+            meanT[i]     = T[i]
+            meanTpast[i] = T_past[i]
         end
         # --- Compute layer mass (kg), handle dry layers ---
-        if θ[idx] > 0
-            if j < nodes
-                layermass[idx] = (u"m"(depths[j+1] - depths[j])) * 1000.0u"kg/m" * θ[idx]
+        if θ[i] > 0
+            if i < nodes
+                layermass[i] = (u"m"(depths[i+1] - depths[i])) * 1000.0u"kg/m" * θ[i]
             else
-                layermass[idx] = (u"m"(depths[j] + 100.0u"cm" - depths[j])) * 1000.0u"kg/m" * θ[idx]
+                layermass[i] = (u"m"(depths[i] + 100.0u"cm" - depths[i])) * 1000.0u"kg/m" * θ[i]
             end
         else
-            layermass[idx] = 0.0u"kg"
+            layermass[i] = 0.0u"kg"
         end
-        maxlatent = HTOFN * layermass[idx]
+        maxlatent = HTOFN * layermass[i]
 
         # --- If no water, reset and skip ---
-        if θ[idx] <= 0.0 || layermass[idx] <= 0.0u"kg"
-            ∑phase[idx] = 0.0u"J"
-            qphase[idx] = 0.0u"J"
-            continue
+        if θ[i] <= 0.0 || layermass[i] <= 0.0u"kg"
+            ∑phase[i] = 0.0u"J"
+            qphase[i] = 0.0u"J"
+            ∑phase[i] = 0.0u"J"
         end
 
         # ==============================
@@ -612,38 +610,38 @@ function phase_transition!(
         # ==============================
 
         # --- FREEZING (above → below 0°C) ---
-        if (meanTpast[j] > tol) && (meanT[j] <= -tol)
-            qphase[idx] = (meanTpast[j] - meanT[j]) * layermass[idx] * c_p
-            ∑phase[idx] += qphase[idx]
-            if ∑phase[idx] >= maxlatent
-                ∑phase[idx] = maxlatent
-                qphase[idx] = 0.0u"J"
+        if (meanTpast[i] > tol) && (meanT[i] <= -tol)
+            qphase[i] = (meanTpast[i] - meanT[i]) * layermass[i] * c_p
+            ∑phase[i] += qphase[i]
+            if ∑phase[i] >= maxlatent
+                ∑phase[i] = maxlatent
+                qphase[i] = 0.0u"J"
             end
 
-            T[j] = 0.0u"°C"
-            if j < nodes
-                T[j+1] = 0.0u"°C"
+            T[i] = 0.0u"°C"
+            if i < nodes
+                T[i+1] = 0.0u"°C"
             end
 
         # --- THAWING (below → above 0°C) ---
-        elseif (meanTpast[j] < -tol) && (meanT[j] >= tol)
-            qphase[idx] = (meanT[j] - meanTpast[j]) * layermass[idx] * c_p
-            ∑phase[idx] -= qphase[idx]
+        elseif (meanTpast[i] < -tol) && (meanT[i] >= tol)
+            qphase[i] = (meanT[i] - meanTpast[i]) * layermass[i] * c_p
+            ∑phase[i] -= qphase[i]
 
-            if ∑phase[idx] <= 0.0u"J"
-                ∑phase[idx] = 0.0u"J"
-                qphase[idx] = 0.0u"J"
+            if ∑phase[i] <= 0.0u"J"
+                ∑phase[i] = 0.0u"J"
+                qphase[i] = 0.0u"J"
             end
 
-            if ∑phase[idx] > 0.0u"J"
-                T[j] = 0.0u"°C"
-                if j < nodes
-                    T[j+1] = 0.0u"°C"
+            if ∑phase[i] > 0.0u"J"
+                T[i] = 0.0u"°C"
+                if i < nodes
+                    T[i+1] = 0.0u"°C"
                 end
             end
 
         else
-            qphase[idx] = 0.0u"J"
+            qphase[i] = 0.0u"J"
         end
     end
     return (; ∑phase, qphase, T=SVector(T))

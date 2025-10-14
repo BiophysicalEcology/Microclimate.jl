@@ -113,6 +113,33 @@ problem = MicroProblem(;
 # now try the simulation function
 @time micro_out = Microclimate.solve(problem);
 
+# do it again imposing wetter soil conditions to trigger more of the phase transiton code
+# to meet code coverage requirements
+problem = MicroProblem(;
+    # locations, times, depths and heights 
+    latitude = longlat[2]*1.0u"°",
+    days = days[days2do], # days of year for solrad
+    hours = collect(0.0:1:23.0), # hour of day for solrad
+    depths,
+    heights, # air nodes for temperature, wind speed and humidity profile
+    # Objects defined above
+    terrain,
+    solar_model,
+    soil_moisture_model,
+    soil_thermal_model,
+    environment_minmax,
+    environment_daily,
+    iterate_day = (microinput[:ndmax]), # number of iterations per day
+    daily = Bool(Int(microinput[:microdaily])), # doing consecutive days?
+    runmoist = Bool(Int(microinput[:runmoist])), # run soil moisture algorithm?
+    spinup = Bool(Int(microinput[:spinup])), # spin-up the first day by iterate_day iterations?
+    # intial conditions
+    initial_soil_temperature = u"K".((DataFrame(CSV.File("$testdir/data/init_monthly/soilinit.csv"))[1:length(depths), 2] * 1.0)u"°C"), # initial soil temperature
+    initial_soil_moisture = fill(0.4, 12), # initial soil moisture
+    #maximum_surface_temperature = u"K"(microinput[:maxsurf]u"°C")
+)
+@time micro_out2 = Microclimate.solve(problem);
+
 # subset NicheMapR predictions
 vel1cm_nmr = collect(metout_nmr[:, 8]) .* 1u"m/s"
 vel2m_nmr = collect(metout_nmr[:, 9]) .* 1u"m/s"
