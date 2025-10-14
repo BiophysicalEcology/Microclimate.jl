@@ -1,43 +1,28 @@
-function allocate_soil_properties(nodes, soilprops)
-    (; λ_mineral, cp_mineral, ρ_mineral) = soilprops
-    NON = length(nodes)
-
-    λ_b = fill(λ_mineral[1], NON)
-    cp_b = fill(cp_mineral[1], NON)
-    ρ_b = fill(ρ_mineral[1], NON)
-
-    return (; λ_b, cp_b, ρ_b)
-end
-
 """
-    soil_props(; T_soil, θ_soil, soilprops, elevation, P_atmos=atmospheric_pressure(elevation))
+    soil_properties(soil_thermal; soil_temperature, soil_moisture, terrain)
 
 Compute bulk soil properties — thermal conductivity (`λ_b`), volumetric heat capacity (`cp_b`), 
 and bulk density (`ρ_b`) — for a given soil layer.
 
 # Arguments
-- `T_soil::Quantity`: Soil temperature in Kelvin.
-- `θ_soil::Real`: Volumetric soil moisture (m³/m³).
-- `soilprops::NamedTuple`: Soil physical parameters, with components:
-    - `ρ_dry`: Dry soil bulk density (kg/m³)
-    - `λ_mineral`: Thermal conductivity of mineral fraction (W/m/K)
-    - `cp_mineral`: Heat capacity of mineral fraction (J/kg/K)
-    - `ρ_mineral`: Density of mineral fraction (kg/m³)
-    - `q`: Empirical parameter for water recirculation (dimensionless), values between
-       ~2 and 6, typically lower for coarser particles
-    - `θ_0`: Reference water content for recirculation (m³/m³), ~0.05 for coarse sand 
-       to 0.25 for heavy clay
-    - `g_a`: de Vries shape factor, 0.33 for organic soils, 0.1 for mineral
-- `elevation::Quantity`: Elevation above sea level.
-- `P_atmos::Quantity` (optional): Atmospheric pressure; defaults to `atmospheric_pressure(elevation)`.
+
+- `soil_thermal::AbstractSoilThermalModel`
+
+# Keywords
+
+- `terrain`
+- `soil_temperature::Quantity`: Soil temperature in Kelvin.
+- `soil_moisture::Real`: Volumetric soil moisture (m³/m³).
 
 # Returns
+
 A named tuple `(λ_b, cp_b, ρ_b)`:
 - `λ_b::Quantity`: Bulk thermal conductivity (W/m/K)
 - `cp_b::Quantity`: Bulk volumetric heat capacity (J/kg/K)
 - `ρ_b::Quantity`: Bulk density (kg/m³)
 
 # Theory
+
 This function calculates soil thermal properties using the Campbell & Norman (1991, 1994) 
 approach, which accounts for:
 
@@ -67,16 +52,25 @@ Campbell, G. S., Jungbauer, J. D. Jr., Bidlake, W. R., & Hungerford, R. D. (1994
 Campbell, G. S., & Norman, J. M. (1998). Environmental Biophysics. Springer.
 
 """
-function soil_props(; 
-    T_soil::T, # vector of soil temperatures, K
-    θ_soil::R, # vector of soil moisture, m^3/m^3
-    soilprops::S, # soil properties
-    elevation::E, # elevation, m
-    P_atmos = atmospheric_pressure(elevation),
-) where {T<:Quantity, R<:Real, S<:NamedTuple, E<:Quantity}
+function soil_properties(soil_thermal::CampbelldeVriesSoilThermal;
+    terrain,
+    soil_temperature::Quantity,
+    soil_moisture::Number,
+)
+    (; elevation, P_atmos) = terrain
+    # Soil thermal parameters
+    # TODO: do we need these short names?
+    st = soil_thermal
+    ρ_dry = st.bulk_density
+    λ_mineral = st.mineral_conductivity
+    cp_mineral = st.mineral_heat_capacity
+    ρ_mineral = st.mineral_density
+    q = st.recirculation_power 
+    θ_0 = st.return_flow_threshold
+    g_a = st.deVries_shape_factor
 
-    # ρ = density, λ = thermal conductivity, cp = specific heat capacity
-    (; ρ_dry, λ_mineral, cp_mineral, ρ_mineral, q, θ_0, g_a) = soilprops
+    T_soil = soil_temperature
+    θ_soil = soil_moisture
 
     p_a0 = Unitful.atm
     g_c = 1.0 - 2.0 * g_a
@@ -129,42 +123,46 @@ function soil_props(;
            ϕ_mineral * ϵ(λ_mineral, λ_fluid) + 
            ϕ_gas * ϵ(λ_gas, λ_fluid))
 
+    # TODO real names for these
     return (; λ_b, cp_b, ρ_b)
 end
 
+function allocate_soil_properties(nodes, soil_thermal)
+    (; mineral_conductivity, mineral_heat_capacity, mineral_density) = soil_thermal
+    NON = length(nodes)
+
+    λ_b = fill(mineral_conductivity[1], NON)
+    cp_b = fill(mineral_heat_capacity[1], NON)
+    ρ_b = fill(mineral_density[1], NON)
+
+    return (; λ_b, cp_b, ρ_b)
+end
 
 """
-    soil_props_vector(T_soil, θ_soil, soilprops, elevation)
+    soil_props_vector!(buffers, soil_thermal; terrain, soil_temperature, soil_moisture)
 
 Compute soil properties for vectors of soil temperature and moisture using broadcasting.
+
+# TODO these should have readable names
 Returns three arrays: `λ_b`, `cp_b`, `ρ_b`.
 """
-function soil_props_vector(buffers::NamedTuple; T_soil::AbstractVector, θ_soil::AbstractVector, soilprops::NamedTuple, elevation, P_atmos)
-    N = length(T_soil)
-    @assert length(θ_soil) == N
+function soil_properties!(buffers::NamedTuple, soil_thermal; 
+    terrain, soil_temperature::AbstractVector, soil_moisture::AbstractVector
+)
+    N = length(soil_temperature)
+    @assert length(soil_moisture) == N
     (; λ_b, cp_b, ρ_b) = buffers
-    soil_props_i(i) = soil_props(
-        T_soil = T_soil[i],
-        θ_soil = θ_soil[i],
-        soilprops = (
-            ρ_dry     = soilprops.ρ_dry[i],
-            λ_mineral = soilprops.λ_mineral[i],
-            cp_mineral = soilprops.cp_mineral[i],
-            ρ_mineral = soilprops.ρ_mineral[i],
-            q = soilprops.q[i],
-            θ_0 = soilprops.θ_0[i],
-            g_a = soilprops.g_a[i],
-        ),
-        elevation = elevation,
-        P_atmos = P_atmos
+    soil_props_i(i) = soil_properties(soil_thermal;
+        terrain,
+        soil_temperature = soil_temperature[i],
+        soil_moisture = soil_moisture[i],
     )
 
     results = soil_props_i.(1:N)
 
-    λ_b  = getindex.(results, 1)
-    cp_b = getindex.(results, 2)
-    ρ_b  = getindex.(results, 3)
+    λ_b  .= getindex.(results, 1)
+    cp_b .= getindex.(results, 2)
+    ρ_b  .= getindex.(results, 3)
 
-    return λ_b, cp_b, ρ_b
+    return (; λ_b, cp_b, ρ_b)
 end
-

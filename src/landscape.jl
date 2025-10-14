@@ -1,67 +1,20 @@
-Base.@kwdef struct SoilLayers
-    depp::Vector{typeof(0.0u"m")}
-    wc::Vector{typeof(1.0u"J/K/m^2")}
-    c::Vector{typeof(1.0u"W/K/m^2")}
-end
-
-Base.@kwdef struct MoistLayers
-    P::Vector{typeof(1.0u"J/kg")} 
-    Z::Vector{typeof(1.0u"m")}
-    V::Vector{typeof(1.0u"kg/m^2")}
-    W::Vector{typeof(1.0u"m^3/m^3")}
-    WN::Vector{typeof(1.0u"m^3/m^3")}
-    K::Vector{typeof(1.0u"kg*s/m^3")}
-    H::Vector{Float64}
-    T::Vector{typeof(1.0u"K")}
-    rh_soil::Vector{Float64}
-    ψ_soil::Vector{typeof(1.0u"J/kg")}
-    ψ_root::Vector{typeof(1.0u"J/kg")}
-    PR::Vector{typeof(1.0u"J/kg")}
-    PP::Vector{typeof(1.0u"J/kg")}
-    B1::Vector{Float64}
-    N::Vector{Float64}
-    N1::Vector{Float64}
-    WS::Vector{Float64}
-    RR::Vector{typeof(1.0u"m^4/kg/s")}
-    BZ::Vector{typeof(1.0u"m")}
-    JV::Vector{typeof(1.0u"kg/m^2/s")}
-    DJ::Vector{typeof(1.0u"kg*s/m^4")}
-    CP::Vector{typeof(1.0u"kg*s/m^4")}
-    A::Vector{typeof(1.0u"kg*s/m^4")}
-    B::Vector{typeof(1.0u"kg*s/m^4")}
-    C::Vector{typeof(1.0u"kg*s/m^4")}
-    C2::Vector{Float64}
-    F::Vector{typeof(1.0u"kg/m^2/s")}
-    F2::Vector{typeof(1.0u"J/kg")}
-    DP::Vector{typeof(1.0u"J/kg")}
-end
-
-
-Base.@kwdef struct MicroParams{SP,D<:Vector{<:Number},H<:Vector{<:Number},ReH,RoH<:Number,Sl<:Number,E<:Number,P<:Number}
-    soilprops::SP
+@kwdef struct SoilEnergyInputs{F,B,SP,D<:Vector{<:Number},H<:Vector{<:Number},T,EI}
+    forcing::F
+    buffers::B
+    soil_thermal_model::SP
     depths::D
     heights::H
-    reference_height::ReH
-    roughness_height::RoH
-    κ::Float64
-    slope::Sl
-    shade::Float64
-    viewfactor::Float64
-    elevation::E
-    P_atmos::P
-    albedo::Float64
-    sle::Float64
-    slep::Float64
-    pctwet::Float64
     nodes::Vector{Float64}
-    θ_soil::Vector{Float64}
+    terrain::T
+    environment_instant::EI
     runmoist::Bool
 end
 
-Base.@kwdef struct MicroForcing{
+@kwdef struct MicroForcing{
     S<:AbstractInterpolation,ZE<:AbstractInterpolation,ZS<:AbstractInterpolation,T<:AbstractInterpolation,
     V<:AbstractInterpolation,RH<:AbstractInterpolation,CL<:AbstractInterpolation,
 }
+    # TODO readable names
     SOLRt::S
     ZENRt::ZE
     ZSLt::ZS
@@ -69,60 +22,6 @@ Base.@kwdef struct MicroForcing{
     VELt::V
     RHt::RH
     CLDt::CL
-end
-
-Base.@kwdef struct MicroInputs{MP<:MicroParams,MF<:MicroForcing,SL<:SoilLayers,B}
-    params::MP
-    forcing::MF
-    soillayers::SL
-    buffers::B = (;)
-end
-
-#Base.@kwdef struct MicroInputs{MP::MicroParams,MF<:MicroForcing,SL<:SoilLayers}
-#    params::MP
-#    forcing::MF
-#    soillayers::SL
-#end
-
-function init_soillayers(N)
-    depp = fill(0.0u"cm", N + 1)
-    wc = fill(1.0u"J/K/m^2", N)
-    c = fill(1.0u"W/K/m^2", N)
-    return SoilLayers(depp, wc, c)
-end
-
-function init_moistlayers(M)
-    MoistLayers(
-        P = zeros(typeof(1.0u"J/kg"), M+1),
-        Z = zeros(typeof(1.0u"m"), M+1),
-        V = zeros(typeof(1.0u"kg/m^2"), M+1),
-        W = zeros(typeof(1.0u"m^3/m^3"), M+1),
-        WN = zeros(typeof(1.0u"m^3/m^3"), M+1),
-        K = zeros(typeof(1.0u"kg*s/m^3"), M+1),
-        H = zeros(M+1),
-        T = zeros(typeof(1.0u"K"), M+1),
-        rh_soil = zeros(M),
-        ψ_soil = zeros(typeof(1.0u"J/kg"), M),
-        ψ_root = zeros(typeof(1.0u"J/kg"), M),
-        PR = zeros(typeof(1.0u"J/kg"), M+1),
-        PP = zeros(typeof(1.0u"J/kg"), M+1),
-        B1 = zeros(M+1),
-        N = zeros(M+1),
-        N1 = zeros(M+1),
-        WS = zeros(M+1),
-        RR = zeros(typeof(1.0u"m^4/kg/s"), M+1),
-        BZ = zeros(typeof(1.0u"m"), M+1),
-        JV = zeros(typeof(1.0u"kg/m^2/s"), M+1),
-        DJ = zeros(typeof(1.0u"kg*s/m^4"), M+1),
-        CP = zeros(typeof(1.0u"kg*s/m^4"), M+1),
-        A = zeros(typeof(1.0u"kg*s/m^4"), M+1),
-        B = zeros(typeof(1.0u"kg*s/m^4"), M+1),
-        C = zeros(typeof(1.0u"kg*s/m^4"), M+1),
-        C2 = zeros(M+1),
-        F = zeros(typeof(1.0u"kg/m^2/s"), M+1),
-        F2 = zeros(typeof(1.0u"J/kg"), M+1),
-        DP = zeros(typeof(1.0u"J/kg"), M+1)
-    )
 end
 
 abstract type AbstractEnvironment end
@@ -149,5 +48,163 @@ abstract type AbstractEnvironment end
     solrad::SR
     profile::Pr
 end
+function MicroResult(nsteps::Int, numnodes_a::Int)
+    return MicroResult(;
+        air_temperature = Array{typeof(1.0u"K")}(undef, nsteps, numnodes_a),
+        wind_speed = Array{typeof(1.0u"m/s")}(undef, nsteps, numnodes_a),
+        relative_humidity = Array{Float64}(undef, nsteps, numnodes_a),
+        cloud_cover = Array{Float64}(undef, nsteps, numnodes_a),
+        global_solar = Array{typeof(1.0u"W/m^2")}(undef, nsteps, numnodes_a),
+        direct_solar = Array{typeof(1.0u"W/m^2")}(undef, nsteps, numnodes_a),
+        diffuse_solar = Array{typeof(1.0u"W/m^2")}(undef, nsteps, numnodes_a),
+        zenith_angle = Array{Float64}(undef, nsteps, numnodes_a),
+        sky_temperature = Array{typeof(1.0u"K")}(undef, nsteps),
+        soil_temperature = Array{typeof(1.0u"K")}(undef, nsteps, numnodes_a),
+        soil_moisture = Array{Float64}(undef, nsteps, numnodes_a),
+        soil_water_potential = Array{typeof(1.0u"J/kg")}(undef, nsteps, numnodes_a),
+        soil_humidity = Array{Float64}(undef, nsteps, numnodes_a),
+        soil_thermal_conductivity = Array{typeof(1.0u"W/m/K")}(undef, nsteps, numnodes_a),
+        soil_specific_heat = Array{typeof(1.0u"J/kg/K")}(undef, nsteps, numnodes_a),
+        soil_bulk_density = Array{typeof(1.0u"kg/m^3")}(undef, nsteps, numnodes_a),
+        surface_water = Array{typeof(1.0u"kg/m^2")}(undef, nsteps),
+        solrad = nothing,
+        profile = Array{Any}(undef, nsteps),
+    )
+end
 
 Base.show(io::IO, mr::MicroResult) = print(io, "MicroResult")
+
+
+abstract type AbstractSoilThermalModel end
+
+# TODO are these parameters for a specific named model
+@kwdef struct CampbelldeVriesSoilThermal <: AbstractSoilThermalModel 
+    deVries_shape_factor
+    mineral_conductivity
+    mineral_density
+    mineral_heat_capacity
+    bulk_density
+    saturation_moisture
+    recirculation_power
+    return_flow_threshold
+end
+
+abstract type AbstractSoilMoistureModel end
+
+# TODO whos model is this what is it called
+@kwdef struct SoilMoistureModel <: AbstractSoilMoistureModel
+    air_entry_water_potential
+    saturated_hydraulic_conductivity
+    Campbells_b_parameter
+    soil_bulk_density2
+    soil_mineral_density2
+    root_density
+    root_resistance
+    stomatal_closure_potential
+    leaf_resistance
+    stomatal_stability_parameter
+    root_radius
+    moist_error
+    moist_count
+    moist_step
+    maxpool
+end
+
+abstract type AbstractTerrain end
+
+# TODO is there a more specific name for this collection of terrain variables
+@kwdef struct Terrain <: AbstractTerrain
+    elevation
+    horizon_angles
+    slope
+    aspect
+    # TODO these are not needed in solrad
+    roughness_height = nothing
+    zh = nothing
+    d0 = nothing
+    κ = nothing
+    P_atmos = atmospheric_pressure(elevation)
+    viewfactor = 1 - sum(sin.(horizon_angles)) / length(horizon_angles) # convert horizon angles to radians and calc view factor(s)
+end
+
+# TODO: this should be more generic.
+# We could possible make a field type that is either interpolated or indexed
+# so we just mix min-max fields with e.g. daily fields in a single environment object
+@kwdef struct MonthlyMinMaxEnvironment{AT,W,H,C,M}# <: AbstractEnvironment
+    air_temperature_min::AT
+    air_temperature_max::AT
+    wind_min::W
+    wind_max::W
+    humidity_min::H
+    humidity_max::H
+    cloud_min::C
+    cloud_max::C
+    minima_times::M
+    maxima_times::M
+end
+@kwdef struct DailyTimeseries <: AbstractEnvironment
+    albedo
+    shade
+    soil_wetness
+    surface_emissivity
+    rainfall
+    deep_soil_temperature
+    leaf_area_index
+end
+@kwdef struct HourlyTimeseries <: AbstractEnvironment
+    air_temperature
+    relative_humidity
+    wind_speed
+    solar_radiation
+    longwave_radiation
+    cloud_cover
+    rainfall
+    zenith_angle
+end
+
+
+abstract type AbstractSolarRadiation end
+
+"""
+    SolarRadiation
+
+# TODO who wrote this model what is it called
+
+# Keyword Arguments
+
+- `cmH2O::Real=1`: Precipitable water in cm for atmospheric column (e.g. 0.1: dry, 1.0: moist, 2.0: humid).
+- `ϵ::Real=0.0167238`: Orbital eccentricity of Earth.
+- `ω::Real=2π/365`: Mean angular orbital velocity of Earth (radians/day).
+- `se::Real=0.39779`: Precomputed solar elevation constant.
+- `d0::Real=80`: Reference day for declination calculations.
+- `iuv::Bool=false`: If `true`, uses the full gamma-function model for diffuse radiation (expensive).
+- `scattered::Bool=true`: If `true`, disables scattered light computations (faster).
+- `amr::Quantity=25.0u"km"`: Mixing ratio height of the atmosphere.
+- `nmax::Integer=111`: Maximum number of wavelength intervals.
+- `Iλ::Vector{Quantity}`: Vector of wavelength bins (e.g. in `nm`).
+- `OZ::Matrix{Float64}`: Ozone column depth table indexed by latitude band and month (size 19×12).
+- `τR`, `τO`, `τA`, `τW`: Vectors of optical depths per wavelength for Rayleigh scattering, ozone, aerosols, and water vapor.
+- `Sλ::Vector{Quantity}`: Solar spectral irradiance per wavelength bin (e.g. in `mW * cm^-2 * nm^-1`).
+- `FD`, `FDQ`: Radiation scattered from the direct solar beam and reflected radiation
+    rescattered downward as a function of wavelength, from tables in Dave & Furukawa (1966).
+- `s̄`: a function of τR linked to molecular scattering in the UV range (< 360 nm)
+"""
+@kwdef struct SolarRadiation <: AbstractSolarRadiation
+    solar_geometry_model = McCulloughPorterSolarGeometry()
+    cmH2O = 1 # precipitable cm H2O in air column 0.1 = very dry; 1 = moist air conditions; 2 = humid tropical conditions (note this is for the whole atmospheric profile not just near the ground)
+    iuv = false # if `true` uses the full gamma-function model for diffuse radiation (expensive)
+    scattered = true # if `false` disables scattered light computations (faster)
+    amr = 25.0u"km" # mixing ratio height of the atmosphere
+    nmax = 111 # Maximum number of wavelength intervals
+    # TODO better field names
+    Iλ = DEFAULT_Iλ # cector of wavelength bins (e.g. in `nm`)
+    OZ = DEFAULT_OZ # ozone column depth table indexed by latitude band and month (size 19×12)
+    τR = DEFAULT_τR # vector of optical depths per wavelength for Rayleigh scattering
+    τO = DEFAULT_τO # vector of optical depths per wavelength for ozone
+    τA = DEFAULT_τA # vector of optical depths per wavelength for aerosols
+    τW = DEFAULT_τW # vector of optical depths per wavelength for water vapor
+    Sλ = DEFAULT_Sλ # solar spectral irradiance per wavelength bin (e.g. in `mW * cm^-2 * nm^-1`)
+    FD = DEFAULT_FD # interpolated functino of radiation scattered from the direct solar beam
+    FDQ = DEFAULT_FDQ # interpolated function of radiation scattered from ground-reflected radiation
+    s̄ = DEFAULT_s̄ # a function of τR linked to molecular scattering in the UV range (< 360 nm)
+end

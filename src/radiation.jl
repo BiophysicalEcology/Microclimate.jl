@@ -1,4 +1,4 @@
-# Integer arrays
+# Integer arrays TODO give them real names
 const NC0 = reshape(Int[
         3, 4, 1, 2,
         2, 4, 1, 3,
@@ -20,26 +20,29 @@ const NC1 = reshape(Int[
     ], 4, 8)
 
 """
-    hour_angle(t::Quantity, lonc::Quantity) -> Quantity
+    hour_angle(t::Quantity, longitude_correction::Quantity) -> Quantity
 
 Compute the solar hour angle `h` in radians.
 
 # Arguments
 - `t`: Local solar hour (e.g., `14.0`)
-- `lonc`: Longitude correction in hours (e.g., `0.5`)
+- `longitude_correction`: Longitude correction in hours (e.g., `0.5`)
 
 # Returns
+
 - Hour angle `h` as a `Quantity` in radians
 - Time at solar noon, `tsn` as a time in hours
 
 # Reference
 McCullough & Porter 1971, Eq. 6
 """
-function hour_angle(t::Real, lonc::Real=0)
-    tsn = 12.0 + lonc                      # solar noon time
+function hour_angle(t::Real, longitude_correction::Real=0)
+    tsn = 12.0 + longitude_correction                      # solar noon time
     h = (π / 12) * (t - tsn) * u"rad"      # convert hours to radians
     return h, tsn
 end
+
+abstract type AbstractSolarGeometryModel end
 
 """
     solar_geometry(d::Real, latitude::Quantity, h::Quantity; d0::Real = 80, ω::Real = 2π/365, ϵ::Real = 0.0167, se::Real = 0.39779)
@@ -55,6 +58,7 @@ Computes key solar geometry parameters based on McCullough & Porter (1971):
 - `d`: Day of year (1–365)
 - `latitude`: Latitude (with angle units, e.g. `u"°"` or `u"rad"`)
 - `h`: Hour angle (radians)
+
 - `d0`: Reference day (default: 80)
 - `ω`: Angular frequency of Earth’s orbit (default: `2π/365`)
 - `ϵ`: Orbital eccentricity (default: `0.0167`)
@@ -66,15 +70,20 @@ Tuple: `(ζ, δ, z, AR2)` with angle quantities in radians and AR2 unitless.
 # Reference
 McCullough & Porter (1971)
 """
-function solar_geometry(;
-    d::Real=1.0,
-    latitude::Quantity=83.07305u"°",
-    h::Quantity=-2.87979u"rad",
-    d0::Real=80,
-    ω::Real=2π / 365,
-    ϵ::Real=0.0167238,
-    se::Real=0.39784993#0.39779
+@kwdef struct McCulloughPorterSolarGeometry <: AbstractSolarGeometryModel
+    d0::Real = 80
+    ω::Real = 2π / 365
+    ϵ::Real = 0.0167238
+    se::Real = 0.39784993 #0.39779
+end
+
+function solar_geometry(sm::McCulloughPorterSolarGeometry;
+    latitude::Quantity, # =83.07305u"°",
+    d::Real, # =1.0,
+    h::Quantity, # =-2.87979u"rad",
 )
+    (; d0, ω, ϵ, se) = sm
+
     ζ = (ω * (d - d0)) + 2.0ϵ * (sin(ω * d) - sin(ω * d0))          # Eq.5
     δ = asin(se * sin(ζ))                                         # Eq.4
     cosZ = cos(latitude) * cos(δ) * cos(h) + sin(latitude) * sin(δ)         # Eq.3
@@ -86,13 +95,14 @@ function solar_geometry(;
 end
 
 """
-    elev_corr(elevation)
+    elevation_correction(elevation)
 
 Calculates smooth polynomial approximations of atmospheric constituent correction factors 
 as a function of elevation (based on Kearney's modification of the ALTFCT array originally 
 from SOLAR.DAT). Input `elevation` is the elevation in meters and can include units.
 
 # Description
+
 
 The array `ELEVFCT(i, j)` represents the **ratio of the total amount of a given 
 atmospheric constituent (index j) above the elevation of interest (index i) to that 
@@ -114,21 +124,21 @@ from `elevation` (in meters) using continuous approximation.
 
 # Returns
 
-A named tuple with the following keys:
-- `ELEVFCT1` for Molecular
-- `ELEVFCT2` for Aerosol
-- `ELEVFCT3` for Ozone
-- `ELEVFCT4` for Water vapor
+A `NamedTuple` with the fields:
+- `molecular_corr`
+- `aerosol_corr`
+- `ozone_corr`
+- `water_vapor_corr`
 """
-function elev_corr(elevation)
+function elevation_correction(elevation)
     elev_km = ustrip(u"km", elevation + 1.0u"km")
 
-    ELEVFCT1 = 0.00007277 * elev_km^3 +
+    molecular_corr =0.00007277 * elev_km^3 +
                0.00507293 * elev_km^2 -
                0.12482149 * elev_km +
                1.11687469
 
-    ELEVFCT2 = 8.35656e-7 * elev_km^6 -
+    aerosol_corr =  8.35656e-7 * elev_km^6 -
                6.26384e-5 * elev_km^5 +
                1.86967e-3 * elev_km^4 -
                2.82585e-2 * elev_km^3 +
@@ -136,16 +146,16 @@ function elev_corr(elevation)
                9.25268e-1 * elev_km +
                1.71321
 
-    ELEVFCT3 = 1.07573e-6 * elev_km^5 -
+    ozone_corr =    1.07573e-6 * elev_km^5 -
                5.14511e-5 * elev_km^4 +
                7.97960e-4 * elev_km^3 -
                4.90904e-3 * elev_km^2 +
                2.99258e-3 * elev_km +
                1.00238
 
-    ELEVFCT4 = 1.0
+    water_vapour_corr = 1.0
 
-    return (ELEVFCT1, ELEVFCT2, ELEVFCT3, ELEVFCT4)
+    return (; molecular_corr, aerosol_corr, ozone_corr, water_vapour_corr)
 end
 
 # function GAMMA(TAU1::Float64)
@@ -1165,43 +1175,26 @@ end
 # end
 
 """
-    solrad(; days, hours, latitude...[, year, lonc, elevation, slope, aspect, horizon_angles, albedos, cmH2O, ϵ,
-           ω, se, d0, iuv, scattered, amr, nmax, Iλ, OZ, τR, τO, τA, τW, Sλ, FD, FDQ,
-           s̄, ER, ERλ]) -> NamedTuple
+    solrad(solar_radiaion_model; kw...)
 
 Compute clear sky solar radiation at a given place and time using a detailed atmospheric radiative transfer model.
 
 # Arguments
+
+- `solar_radiaion_model`:
+
+# Keyword Arguments
+
 - `days::Vector{Float64}`: Days of the year (1–365/366) to evaluate.
 - `hours::Vector{Float64}`: Decimal hours of the day (0.0–23.0).
 - `latitude::Quantity`: Latitude in degrees, e.g. `43.0u"°"`.
-
-# Keyword Arguments
-- `year::Real=2001`: Year used for ozone table lookup.
-- `lonc::Real=0.0`: Longitude correction in hours (positive west of standard meridian).
-- `elevation::Quantity=0.0u"m"`: Elevation above sea level.
-- `slope::Quantity=0u"°"`: Slope angle of the surface.
-- `aspect::Quantity=0u"°"`: Azimuth of slope aspect (from north).
-- `horizon_angles::Vector{Quantity}`: Horizon angles for each of 24 azimuth sectors (default 0°).
-- `albedos::Vector{<:Real}=fill(0.15, length(days))`: Daily ground albedo, fraction [0, 1].
-- `cmH2O::Real=1`: Precipitable water in cm for atmospheric column (e.g. 0.1: dry, 1.0: moist, 2.0: humid).
-- `ϵ::Real=0.0167238`: Orbital eccentricity of Earth.
-- `ω::Real=2π/365`: Mean angular orbital velocity of Earth (radians/day).
-- `se::Real=0.39779`: Precomputed solar elevation constant.
-- `d0::Real=80`: Reference day for declination calculations.
-- `iuv::Bool=false`: If `true`, uses the full gamma-function model for diffuse radiation (expensive).
-- `scattered::Bool=true`: If `true`, disables scattered light computations (faster).
-- `amr::Quantity=25.0u"km"`: Mixing ratio height of the atmosphere.
-- `nmax::Integer=111`: Maximum number of wavelength intervals.
-- `Iλ::Vector{Quantity}`: Vector of wavelength bins (e.g. in `nm`).
-- `OZ::Matrix{Float64}`: Ozone column depth table indexed by latitude band and month (size 19×12).
-- `τR`, `τO`, `τA`, `τW`: Vectors of optical depths per wavelength for Rayleigh scattering, ozone, aerosols, and water vapor.
-- `Sλ::Vector{Quantity}`: Solar spectral irradiance per wavelength bin (e.g. in `mW * cm^-2 * nm^-1`).
-- `FD`, `FDQ`: Radiation scattered from the direct solar beam and reflected radiation 
-    rescattered downward as a function of wavelength, from tables in Dave & Furukawa (1966).
-- `s̄`: a function of τR linked to molecular scattering in the UV range (< 360 nm)
+- `longitude_correction::Real=0.0`: Longitude correction in hours (positive west of standard meridian).
+- `year::Real`: Year used for ozone table lookup.
+- `terrain`
+- `albedo::Vector{<:Real}=fill(0.15, length(days))`: Daily ground albedo, fraction [0, 1].
 
 # Returns
+
 A named tuple containing:
 - `λ::Vector`: Wavelengths (typically in µm).
 - `λDirect::Vector`: Spectral direct irradiance [W/m²/µm].
@@ -1228,44 +1221,24 @@ A named tuple containing:
 - Variation of airms with altitude is ignored since it is negligible up to at least 6 km above sea level
 
 # References
+
 FD and FDQ derived from tables in Dave and Furukawa (1967)
 Dave, J. V., & Furukawa, P. M. (1966). Scattered radiation in the ozone 
  absorption bands at selected levels of a terrestrial, Rayleigh atmosphere (Vol. 7).
  Americal Meteorological Society.
-
 """
-function solrad(;
+function solrad(solar_model::SolarRadiation;
     days::Vector{<:Real}=[15, 46, 74, 105, 135, 166, 196, 227, 258, 288, 319, 349],
-    hours::Vector{<:Real}=collect(0.0:23.0),
-    year::Real=2001.0, # needed to determine if a leap year
-    latitude::Quantity=43.1379u"°",
-    lonc::Real=0.0, # longitude correction, hours
-    elevation::Quantity=276.0u"m", # elevation, m
-    P_atmos=atmospheric_pressure(elevation),
-    slope::Quantity=0u"°",
-    aspect::Quantity=0u"°",
-    horizon_angles::Vector{typeof(0.0u"°")}=fill(0.0, 24) .* u"°",
-    albedos::Vector{<:Real}=fill(0.15, length(days)), # substrate albedo (decimal %)
-    cmH2O::Real=1, # precipitable cm H2O in air column, 0.1 = VERY DRY; 1 = MOIST AIR CONDITIONS; 2 = HUMID, TROPICAL CONDITIONS (note this is for the whole atmospheric profile, not just near the ground)
-    ϵ::Real=0.0167238,
-    ω::Real=2π / 365,
-    se::Real=0.39784993, #0.39779,
-    d0::Real=80.0,
-    iuv::Bool=false, # Use gamma function for scattered solar radiation? (computationally intensive)
-    scattered::Bool=true,
-    amr::Quantity=25.0u"km",
-    nmax::Integer=111, # maximum number of wavelengths
-    Iλ::AbstractVector = DEFAULT_Iλ,
-    OZ::Matrix{<:Real} = DEFAULT_OZ,
-    τR::Vector{<:Real} = DEFAULT_τR,
-    τO::Vector{<:Real} = DEFAULT_τO,
-    τA::Vector{<:Real} = DEFAULT_τA,
-    τW::Vector{<:Real} = DEFAULT_τW,
-    Sλ::AbstractVector = DEFAULT_Sλ, 
-    FD::Matrix{<:Real} = DEFAULT_FD,
-    FDQ::Matrix{<:Real} = DEFAULT_FDQ,
-    s̄::Vector{<:Real} = DEFAULT_s̄
+    year::Real=2001, # TODO: this shouldn't have a default
+    latitude::Number,
+    terrain::Terrain,
+    longitude_correction::Real=0.0, # longitude correction, hours
+    hours::AbstractVector{<:Real}=0:1:23,
+    albedo::Vector{<:Real}, # substrate albedo (decimal %)
 )
+    (; solar_geometry_model, cmH2O, iuv, scattered, amr, nmax, Iλ, OZ, τR, τO, τA, τW, Sλ, FD, FDQ, s̄) = solar_model
+    (; elevation, horizon_angles, slope, P_atmos) = terrain
+
     ndays = length(days)    # number of days
     ntimes = length(hours)  # number of times
     nsteps = ndays * ntimes # total time steps
@@ -1304,12 +1277,12 @@ function solrad(;
         DRRλ = GRINT * u"1/nm"              # wavelength-specific direct Rayleigh radiation component
         DRλ = GRINT * u"1/nm"               # wavelength-specific direct radiation component
         SRλ = GRINT * u"1/nm"               # wavelength-specific scattered radiation component
-        albedo = albedos[i]
+        alb = albedo[i]
         for j in 1:ntimes
             d = days[i]
             t = hours[j]
-            h, tsn = hour_angle(t, lonc) # hour angle (radians)
-            (; ζ, δ, z, AR2) = solar_geometry(; d, latitude, h, d0, ω, ϵ, se) # compute ecliptic, declination, zenith angle and (a/r)^2
+            h, tsn = hour_angle(t, longitude_correction) # hour angle (radians)
+            (; ζ, δ, z, AR2) = solar_geometry(solar_geometry_model; latitude, d, h) # compute ecliptic, declination, zenith angle and (a/r)^2
             Z = uconvert(u"°", z)
             Zsl = Z
             amult = 1.0
@@ -1434,15 +1407,16 @@ function solrad(;
                 mon = month(Date(year, 1, 1) + Day(d - 1)) # month from day of year
                 llat = clamp(llat, 1, size(OZ, 1))
                 ozone = OZ[llat, mon]  # ozone thickness (cm) from lookup table
-                ELEVFCT1, ELEVFCT2, ELEVFCT3, ELEVFCT4 = elev_corr(elevation)
+
+                (; molecular_corr, aerosol_corr, ozone_corr, water_vapour_corr) = elevation_correction(elevation)
 
                 P = P_atmos
 
                 for N in 1:nmax
-                    τλ1 = (P / 101300u"Pa") * τR[N] * ELEVFCT1
-                    τλ2 = (25.0u"km" / amr) * τA[N] * ELEVFCT2
-                    τλ3 = (ozone / 0.34) * τO[N] * ELEVFCT3
-                    τλ4 = τW[N] * sqrt(airms * cmH2O * ELEVFCT4)
+                    τλ1 = (P / 101300u"Pa") * τR[N] * molecular_corr
+                    τλ2 = (25.0u"km" / amr) * τA[N] * aerosol_corr
+                    τλ3 = (ozone / 0.34) * τO[N] * ozone_corr
+                    τλ4 = τW[N] * sqrt(airms * cmH2O * water_vapour_corr)
                     τλ = ((float(τλ1) + τλ2 + τλ3) * airms) + τλ4
 
                     if τλ > 80.0 # making sure that at low sun angles air mass doesn't make τλ too large
@@ -1477,7 +1451,7 @@ function solrad(;
                         if τλ1 >= 0.03
                             GAMR, GAML, SBAR = GAMMA!(gamma_buffers, τλ1)
                             SRλ[N] = (
-                                         ((float(GAML[intcz]) + float(GAMR[intcz])) / (2.0 * (1.0 - albedo * float(SBAR))))
+                                         ((float(GAML[intcz]) + float(GAMR[intcz])) / (2.0 * (1.0 - alb * float(SBAR))))
                                          -
                                          exp(-float(τλ1) * airms)
                                      ) * cz * Sλ[N] * AR2 / 1000.0
@@ -1506,7 +1480,7 @@ function solrad(;
                             end
                             FDAV = FD[N, I]
                             FDQDAV = FDQ[N, I]
-                            SRλ[N] = (Sλ[N] / π) * (FDAV + FDQDAV * (albedo / (1.0 - (albedo * s̄[N])))) / 1000.0
+                            SRλ[N] = (Sλ[N] / π) * (FDAV + FDQDAV * (alb / (1.0 - (alb * s̄[N])))) / 1000.0
                             SRλ[N] *= AR2
                         end
                     end
@@ -1552,6 +1526,7 @@ function solrad(;
         HHs[i] = HH     # save today's sunrise hour angle
         tsns[i] = tsn   # save today's time of sunrise
     end
+
     return (
         zenith_angle = Zs,
         zenith_slope_angle = ZSLs,
@@ -1560,7 +1535,8 @@ function solrad(;
         hour_solar_noon = tsns,
         day_of_year = DOYs,
         hour = times,
-        # TODO why is this conversion needed, what is the 10 about
+        # TODO remove all this allocation from broadcasts
+        # why is this conversion needed, what is the 10 about
         rayleigh_total = DRRs .* (10u"W/m^2" / 1u"mW/cm^2"),
         direct_total = DRs .* (10u"W/m^2" / 1u"mW/cm^2"),
         diffuse_total = SRs .* (10u"W/m^2" / 1u"mW/cm^2"),
@@ -1573,34 +1549,43 @@ function solrad(;
     )
 end
 
-function get_longwave(;
-    elevation::Quantity,
-    P_atmos=atmospheric_pressure(elevation),
-    rh::Real,
-    tair::Quantity,
-    tsurf::Quantity,
-    slep::Real,
-    sle::Real,
-    cloud::Real,
-    viewfactor::Real,
-    shade::Real,
-    swinbank::Bool=false
+abstract type AbstractAtmosphericRadiationModel end
+struct SwinbankAtmosphericRadiation <: AbstractAtmosphericRadiationModel end
+struct CampbellNormanAtmosphericRadiation <: AbstractAtmosphericRadiationModel end
+
+function atmospheric_radiation(::SwinbankAtmosphericRadiation, P_vap, tair)
+    # Swinbank, Eq. 10.11 in Campbell and Norman 1998
+    arad = uconvert(u"W*m^-2", ((9.2e-6 * (u"K"(tair))^2) * σ * (u"K"(tair))^4) / 1u"K^2")
+    return P_vap, arad
+end
+function atmospheric_radiation(::CampbellNormanAtmosphericRadiation, P_vap, tair)
+    # Campbell and Norman 1998 eq. 10.10 to get emissivity of sky
+    arad = u"W/m^2"((1.72 * (ustrip(u"kPa", P_vap) / ustrip(u"K", tair + 0.01u"K"))^(1//7)) * σ * (u"K"(tair) + 0.01u"K")^4) 
+    return P_vap, arad
+end
+
+function longwave_radiation(radiation_model=CampbellNormanAtmosphericRadiation(); 
+    terrain, 
+    environment_instant,
+    surface_temperature,
 )
+    # TODO these are not the real names
+    (; elevation, P_atmos, viewfactor) = terrain
+    (; relative_humidity, air_temperature, surface_emissivity, cloud_emissivity, cloud_cover, shade) = environment_instant
+
+    # Short names, hardly worth it
+    tsurf = surface_temperature
+    tair = air_temperature
+    rh = relative_humidity
+    slep = surface_emissivity
+    sle = cloud_emissivity
+    cloud = cloud_cover
+
     # Longwave radiation (handle both IR modes)
-    # Constants
-    P_atmos = atmospheric_pressure(elevation)
     wet_air_out = wet_air_properties(u"K"(tair); rh, P_atmos)
 
     # Atmospheric radiation
-    if swinbank
-        # Swinbank, Eq. 10.11 in Campbell and Norman 1998
-        arad = uconvert(u"W*m^-2", ((9.2e-6 * (u"K"(tair))^2) * σ * (u"K"(tair))^4) / 1u"K^2")
-    else
-        # Campbell and Norman 1998 eq. 10.10 to get emissivity of sky
-        P_vap = wet_air_out.P_vap
-        # TODO: ustrip to what
-        arad = u"W/m^2"((1.72 * (ustrip(u"kPa", P_vap) / ustrip(u"K", tair + 0.01u"K"))^(1//7)) * σ * (u"K"(tair) + 0.01u"K")^4) 
-    end
+    P_vap, arad = atmospheric_radiation(radiation_model, wet_air_out.P_vap, tair)
 
     # Cloud radiation temperature (shade approximation, TAIR - 2°C)
     crad = σ * slep * (u"K"(tair) - 2.0u"K")^4
@@ -1621,9 +1606,11 @@ function get_longwave(;
     qradhl = hrad
     qrad = (qradsk + qradvg) * viewfactor + qradhl * (1.0 - viewfactor) - qradgr
     tsky = (((qradsk + qradvg) * viewfactor + qradhl * (1.0 - viewfactor)) / σ)^(1//4)
-    return (
+
+    return (;
+        # TODO standardise these names with their target uses
         Tsky=tsky,
-        Qrad=qrad,
+        Qrad=qrad, # e.g. this is Q_infrared in `solar_radiation`
         Qrad_sky=qradsk,
         Qrad_veg=qradvg,
         Qrad_ground=qradgr,
@@ -1652,7 +1639,11 @@ Maxwell, E. L., "A Quasi-Physical Model for Converting Hourly
            Report No. SERI/TR-215-3087, Golden, CO: Solar Energy Research
            Institute, 1987.
 """
-function cloud_adjust_radiation(cloud, D_cs, B_cs, zenith, doy; a=0.36, b=0.64, gamma=1.0)
+function cloud_adjust_radiation!(output, cloud::AbstractArray, D_cs, B_cs, zenith::AbstractArray, doy; 
+    a=0.36, b=0.64, gamma=1.0,
+)
+    (; global_solar, diffuse_solar, direct_solar) = output
+    G, D, B = (global_solar, diffuse_solar, direct_solar)
     # Solar geometry
     cosz     = cos.(zenith)
     cosz_pos = max.(cosz, 0.0)
@@ -1669,13 +1660,12 @@ function cloud_adjust_radiation(cloud, D_cs, B_cs, zenith, doy; a=0.36, b=0.64, 
     S     = (1 .- cloud).^gamma                 # approx. sunshine fraction
     T     = a .+ b .* S                         # transmittance
     G_cs  = D_cs .+ B_cs                        # clear-sky global
-    G     = max.(T .* G_cs, 0.0u"W/m^2") #.* (cosz_pos .> 0)  # zero at night
+    G     .= max.(T .* G_cs, 0.0u"W/m^2") #.* (cosz_pos .> 0)  # zero at night
 
     # 3) Split G into diffuse/direct using Erbs diffuse fraction vs clearness index K_t
     ϵ     = 1e-9u"W/m^2"
     Kt    = G ./ max.(G0h, ϵ)
     Kt    = clamp.(Kt, 0.0, 1.2)
-
     Fd = similar(Kt) # diffuse fraction
     for i in eachindex(Kt)
         if Kt[i] <= 0.22
@@ -1686,10 +1676,11 @@ function cloud_adjust_radiation(cloud, D_cs, B_cs, zenith, doy; a=0.36, b=0.64, 
             Fd[i] = 0.165
         end
     end
-    Fd = clamp.(Fd, 0.0, 1.0)
+    # TODO probably this still allocates because of aliasing 
+    Fd .= clamp.(Fd, zero(eltype(Fd)), oneunit(eltype(Fd)))
 
-    D = Fd .* G
-    B = G .- D
+    D .= Fd .* G
+    B .= G .- D
 
     # Zero everything at night
     # night = (cosz_pos .== 0)
@@ -1697,12 +1688,23 @@ function cloud_adjust_radiation(cloud, D_cs, B_cs, zenith, doy; a=0.36, b=0.64, 
     # B[night] .= 0.0u"W/m^2"
     # G[night] .= 0.0u"W/m^2"
 
-    return G, D, B
+    return output
 end
 
+function cloud_adjust_radiation(cloud::AbstractVector, args...; kw...)
+    n = length(cloud)
+    global_solar = fill(0.0u"W/m^2", n)
+    diffuse_solar = fill(0.0u"W/m^2", n)
+    direct_solar = fill(0.0u"W/m^2", n)
+    output = (; global_solar, diffuse_solar, direct_solar)
+    cloud_adjust_radiation!(output, cloud, args...; kw...)
+
+    return output
+end
 
 # Separated out from dchxy for easier optimisation
 # This algorithm is very expensive
+# TODO these argument names are nightmare fuel
 @noinline function _dchxy_converge!(FNX, FNY, AMU, PSI, XA, XB, XD, XE, CHX, CHY, CHXA, CHYA)
     nomitr = 1 # Fortran line 362
     TEMC = 0.0 # Initialize before convergence loop

@@ -1,5 +1,6 @@
 module Microclimate
 
+using ConstructionBase
 using Interpolations, Statistics, Dates
 using SciMLBase, OrdinaryDiffEqTsit5
 using Unitful, UnitfulMoles
@@ -13,20 +14,28 @@ using Unitful: °, rad, °C
 using Interpolations: AbstractInterpolation
 
 
-export MicroParams, MicroForcing, MicroInputs
+export MicroProblem
+
+export CampbelldeVriesSoilThermal, SoilMoistureModel, SolarRadiation
+
+export MonthlyMinMaxEnvironment, DailyTimeseries, HourlyTimeseries, Terrain
 
 export sine_exponential!, vsine, hourly_vars
 
-export hour_angle, solar_geometry, elev_corr, dchxy, solrad, cloud_adjust_radiation
-export get_longwave, init_dchxy_buffers
+export hour_angle, solar_geometry, elevation_correction, solrad, cloud_adjust_radiation, cloud_adjust_radiation!
 
-export get_profile, calc_u_star, calc_convection, calc_ρ_cp
+export longwave_radiation
 
-export soil_props, soil_props_vector, allocate_soil_properties
+export atmospheric_surface_profile, calc_convection
 
-export soil_energy_balance, evap, soil_water_balance!, phase_transition
+export soil_properties, soil_properties!, allocate_soil_properties
 
-export runmicro
+export soil_energy_balance, evaporation, soil_water_balance!, phase_transition
+
+export example_terrain, example_monthly_weather, example_daily_environmental, example_soil_moisture_model, example_soil_thermal_parameters, example_microclimate_problem
+
+# TODO replace this with CommonSolve.jl
+export solve
 
 
 include("constants.jl")
