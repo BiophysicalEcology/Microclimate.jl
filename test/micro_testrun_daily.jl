@@ -42,7 +42,7 @@ terrain = Terrain(;
     roughness_height = microinput[:RUF] * 1.0u"m", # roughness height for standard mode TODO dispatch based on roughness pars
     zh = microinput[:ZH] * 1.0u"m", # heat transfer roughness height for Campbell and Norman mode
     d0 = microinput[:D0] * 1.0u"m", # zero plane displacement correction factor
-    κ = 0.4, # Kármán constant
+    karman_constant = 0.4, # Kármán constant
 )
 
 soil_thermal_model = CampbelldeVriesSoilThermal(;
@@ -103,9 +103,9 @@ environment_daily = DailyTimeseries(;
 )
 
 environment_hourly = HourlyTimeseries(;
-    air_temperature = Float64.(CSV.File("$testdir/data/init_daily/TAIRhr.csv").x[1:hours2do])u"°C",
-    relative_humidity = clamp.(Float64.(CSV.File("$testdir/data/init_daily/RHhr.csv").x[1:hours2do]), 0, 100),
-    wind_speed = clamp.(Float64.(CSV.File("$testdir/data/init_daily/WNhr.csv").x[1:hours2do])u"m/s", 0.1u"m/s", (Inf)u"m/s"),
+    reference_temperature = Float64.(CSV.File("$testdir/data/init_daily/TAIRhr.csv").x[1:hours2do])u"°C",
+    reference_humidity = clamp.(Float64.(CSV.File("$testdir/data/init_daily/RHhr.csv").x[1:hours2do]), 0, 100),
+    reference_wind_speed = clamp.(Float64.(CSV.File("$testdir/data/init_daily/WNhr.csv").x[1:hours2do])u"m/s", 0.1u"m/s", (Inf)u"m/s"),
     solar_radiation = Float64.(CSV.File("$testdir/data/init_daily/SOLRhr.csv").x[1:hours2do])u"W/m^2",
     cloud_cover = clamp.(Float64.(CSV.File("$testdir/data/init_daily/CLDhr.csv").x[1:hours2do]), 0, 100),
     rainfall = clamp.(Float64.(CSV.File("$testdir/data/init_daily/RAINhr.csv").x[1:hours2do])u"kg" / u"m^2", 0u"kg/m^2", Inf * u"kg/m^2"),

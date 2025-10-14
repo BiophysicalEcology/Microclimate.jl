@@ -27,9 +27,9 @@ end
 abstract type AbstractEnvironment end
 
 @kwdef struct MicroResult{AT,WS,RH,CC,GS,DrS,DfS,ZA,SkT,SoT,SM,SWP,SH,STC,SPH,SBD,SW,SR,Pr} <: AbstractEnvironment
-    air_temperature::AT 
-    wind_speed::WS
-    relative_humidity::RH
+    reference_temperature::AT 
+    reference_wind_speed::WS
+    reference_humidity::RH
     cloud_cover::CC
     global_solar::GS
     direct_solar::DrS
@@ -42,7 +42,7 @@ abstract type AbstractEnvironment end
     soil_water_potential::SWP
     soil_humidity::SH 
     soil_thermal_conductivity::STC
-    soil_specific_heat::SPH 
+    soil_heat_capacity::SPH 
     soil_bulk_density::SBD 
     surface_water::SW
     solrad::SR
@@ -50,9 +50,9 @@ abstract type AbstractEnvironment end
 end
 function MicroResult(nsteps::Int, numnodes_a::Int)
     return MicroResult(;
-        air_temperature = Array{typeof(1.0u"K")}(undef, nsteps, numnodes_a),
-        wind_speed = Array{typeof(1.0u"m/s")}(undef, nsteps, numnodes_a),
-        relative_humidity = Array{Float64}(undef, nsteps, numnodes_a),
+        reference_temperature = Array{typeof(1.0u"K")}(undef, nsteps, numnodes_a),
+        reference_wind_speed = Array{typeof(1.0u"m/s")}(undef, nsteps, numnodes_a),
+        reference_humidity = Array{Float64}(undef, nsteps, numnodes_a),
         cloud_cover = Array{Float64}(undef, nsteps, numnodes_a),
         global_solar = Array{typeof(1.0u"W/m^2")}(undef, nsteps, numnodes_a),
         direct_solar = Array{typeof(1.0u"W/m^2")}(undef, nsteps, numnodes_a),
@@ -64,7 +64,7 @@ function MicroResult(nsteps::Int, numnodes_a::Int)
         soil_water_potential = Array{typeof(1.0u"J/kg")}(undef, nsteps, numnodes_a),
         soil_humidity = Array{Float64}(undef, nsteps, numnodes_a),
         soil_thermal_conductivity = Array{typeof(1.0u"W/m/K")}(undef, nsteps, numnodes_a),
-        soil_specific_heat = Array{typeof(1.0u"J/kg/K")}(undef, nsteps, numnodes_a),
+        soil_heat_capacity = Array{typeof(1.0u"J/kg/K")}(undef, nsteps, numnodes_a),
         soil_bulk_density = Array{typeof(1.0u"kg/m^3")}(undef, nsteps, numnodes_a),
         surface_water = Array{typeof(1.0u"kg/m^2")}(undef, nsteps),
         solrad = nothing,
@@ -122,7 +122,7 @@ abstract type AbstractTerrain end
     roughness_height = nothing
     zh = nothing
     d0 = nothing
-    κ = nothing
+    karman_constant = nothing
     P_atmos = atmospheric_pressure(elevation)
     viewfactor = 1 - sum(sin.(horizon_angles)) / length(horizon_angles) # convert horizon angles to radians and calc view factor(s)
 end
@@ -131,12 +131,12 @@ end
 # We could possible make a field type that is either interpolated or indexed
 # so we just mix min-max fields with e.g. daily fields in a single environment object
 @kwdef struct MonthlyMinMaxEnvironment{AT,W,H,C,M}# <: AbstractEnvironment
-    air_temperature_min::AT
-    air_temperature_max::AT
-    wind_min::W
-    wind_max::W
-    humidity_min::H
-    humidity_max::H
+    reference_temperature_min::AT
+    reference_temperature_max::AT
+    reference_wind_min::W
+    reference_wind_max::W
+    reference_humidity_min::H
+    reference_humidity_max::H
     cloud_min::C
     cloud_max::C
     minima_times::M
@@ -152,9 +152,9 @@ end
     leaf_area_index
 end
 @kwdef struct HourlyTimeseries <: AbstractEnvironment
-    air_temperature
-    relative_humidity
-    wind_speed
+    reference_temperature
+    reference_humidity
+    reference_wind_speed
     solar_radiation
     longwave_radiation
     cloud_cover
