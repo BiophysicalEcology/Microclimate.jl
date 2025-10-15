@@ -146,6 +146,7 @@ end
 @kwdef struct DailyTimeseries <: AbstractEnvironment
     albedo
     shade
+    soil_wetness
     surface_emissivity
     rainfall
     deep_soil_temperature

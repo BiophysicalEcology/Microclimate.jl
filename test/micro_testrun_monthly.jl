@@ -52,7 +52,7 @@ soil_thermal_model = CampbelldeVriesSoilThermal(;
     deVries_shape_factor = 0.1, # de Vries shape factor, 0.33 for organic soils, 0.1 for mineral
     mineral_conductivity = (CSV.File("$testdir/data/init_monthly/soilprop.csv")[1, 1][4]) * 1.0u"W/m/K", # soil minerals thermal conductivity (W/mC)
     mineral_heat_capacity = (CSV.File("$testdir/data/init_monthly/soilprop.csv")[1, 1][5]) * 1.0u"J/kg/K", # soil minerals specific heat (J/kg-K)
-    saturation_moisture = (CSV.File("$testdir/data/init_daily/soilprop.csv")[1, 1][3]) * 1.0u"m^3/m^3", # volumetric water content at saturation (0.1 bar matric potential) (m3/m3)
+    saturation_moisture = (CSV.File("$testdir/data/init_monthly/soilprop.csv")[1, 1][3]) * 1.0u"m^3/m^3", # volumetric water content at saturation (0.1 bar matric potential) (m3/m3)
     recirculation_power = 4.0, # power for recirculation function
     return_flow_threshold = 0.162, # return-flow cutoff soil moisture, m^3/m^3
 )
@@ -61,6 +61,7 @@ environment_daily = DailyTimeseries(;
     # daily environmental vectors
     albedo = (DataFrame(CSV.File("$testdir/data/init_monthly/REFLS.csv"))[days2do, 2] * 1.0), # substrate albedo (decimal %)
     shade = (DataFrame(CSV.File("$testdir/data/init_monthly/Minshades.csv"))[days2do, 2] * 1.0), # daily shade from vegetation (%)
+    soil_wetness = (DataFrame(CSV.File("$testdir/data/init_monthly/PCTWET.csv"))[days2do, 2] * 1.0),
     surface_emissivity = (DataFrame(CSV.File("$testdir/data/init_monthly/SLES.csv"))[days2do, 2] * 1.0), # - surface emissivity
     rainfall = ((DataFrame(CSV.File("$testdir/data/init_monthly/rain.csv"))[days2do, 2] * 1.0) / 1000)u"kg/m^2", # monthly total rainfall
     deep_soil_temperature = (DataFrame(CSV.File("$testdir/data/init_monthly/tannulrun.csv"))[days2do, 2] * 1.0)u"°C", # daily deep soil temperatures

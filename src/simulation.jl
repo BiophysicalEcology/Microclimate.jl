@@ -391,7 +391,11 @@ function solve_soil!(output::MicroResult, mp::MicroProblem, solrad_out;
     niter_moist = ustrip(u"s^-1", 3600 / moist_step) # TODO use a solver for soil moisture calc
     ∑phase = zeros(Float64, numnodes_a)u"J"
     infil_out = nothing
-    soil_wetness = 0.0
+    if !runmoist
+        soil_wetness = environment_instant.soil_wetness
+    else
+        soil_wetness = 0.0
+    end
     for j in 1:ndays
         iday = j
         nodes .= nodes_day[:, iday]
@@ -578,6 +582,7 @@ function get_day(environment_daily, iday)
         surface_emissivity,
         # TODO why is this ok
         cloud_emissivity = surface_emissivity, # - cloud emissivity
+        soil_wetness = environment_daily.soil_wetness[iday], # set up vector of soil wetness for each day
         deep_soil_temperature = u"K"(environment_daily.deep_soil_temperature[iday]), # daily deep soil temperature (°C)
         rainfall = environment_daily.rainfall[iday],
     )
