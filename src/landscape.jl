@@ -1,4 +1,4 @@
-@kwdef struct SoilEnergyInputs{F,B,SP,D<:Vector{<:Number},H<:Vector{<:Number},T,EI}
+@kwdef struct SoilEnergyInputs{F,B,SP,D<:Vector{<:Number},H<:Vector{<:Number},T,EI,SW}
     forcing::F
     buffers::B
     soil_thermal_model::SP
@@ -8,6 +8,7 @@
     terrain::T
     environment_instant::EI
     runmoist::Bool
+    soil_wetness::SW
 end
 
 @kwdef struct MicroForcing{
@@ -145,7 +146,6 @@ end
 @kwdef struct DailyTimeseries <: AbstractEnvironment
     albedo
     shade
-    soil_wetness
     surface_emissivity
     rainfall
     deep_soil_temperature

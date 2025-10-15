@@ -15,9 +15,9 @@ function soil_energy_balance(
     #T_K = T .* u"K"  # convert Float64 time back to unitful
     #dT_K = dT .* 60 .* u"K/minute"  # convert Float64 time back to unitful
     # extract prameters
-    (; soil_thermal_model, forcing, buffers, heights, depths, nodes, environment_instant, terrain, runmoist) = p
+    (; soil_thermal_model, forcing, buffers, heights, depths, nodes, environment_instant, terrain, soil_wetness, runmoist) = p
     (; depp, wc, c) = buffers.soil_energy_balance
-    (; soil_moisture, soil_wetness, shade) = environment_instant
+    (; soil_moisture, shade) = environment_instant
     # Get environmental data at time t
     (; tair, vel, zenr, solr, cloud, rh, zslr) = interpolate_forcings(forcing, t)
     (; slope, P_atmos, roughness_height, karman_constant) = terrain
@@ -110,7 +110,6 @@ function soil_energy_balance(
     Q_evaporation, gwsurf = evaporation(; 
         tsurf=u"K"(T[1]), tair=u"K"(tair), rh, rhsurf=100.0, hd, terrain, soil_wetness, saturated=false
     )
-
     # Construct static vector of change in soil temperature, to return
     # Energy balance at surface
     surface = u"K/minute"((Q_solar + Q_infrared + Q_conduction + Q_convection - Q_evaporation) / wc[1])
