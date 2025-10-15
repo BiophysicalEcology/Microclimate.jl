@@ -83,7 +83,7 @@ Returns a named tuple containing:
     environment_daily
     # intial conditions TODO: where to put these?
     initial_soil_temperature = fill(u"K"(7.741667u"°C"), length(depths))
-    initial_soil_moisture = [0.42, 0.42, 0.42, 0.43, 0.44, 0.44, 0.43, 0.42, 0.41, 0.42, 0.42, 0.43]
+    initial_soil_moisture = fill(0.42 * 0.25, length(depths))
     iterate_day = 3 # number of iterations per day
     # TODO: make these types so their code blocks can be removed by the compiler
     daily = false # doing consecutive days?
@@ -408,8 +408,7 @@ function solve_soil!(output::MicroResult, mp::MicroProblem, solrad_out;
             sub2 = (iday*nhours-nhours+1):(iday*nhours) # for getting mean monthly over the 25 hrs as in fortran version
             t = mean(u"K", output.reference_temperature[sub2]) # make initial soil temps equal to mean annual temperature
             T0 = SVector(ntuple(_ -> t, numnodes_a))
-            #T_soils[step, :] = T0
-            θ_soil0_a = collect(fill(initial_soil_moisture[iday], numnodes_a)) # initial soil moisture
+            θ_soil0_a = initial_soil_moisture # initial soil moisture
         end
         T0 = setindex(T0, environment_instant.deep_soil_temperature, numnodes_a) # set deepest node to boundary condition
         for iter = 1:niter
@@ -545,7 +544,7 @@ function forcing_day(solrad_out, output, iday::Int)
 end
 
 function initialise_soil_moisture(initial_soil_moisture, numnodes_a, numnodes_b)
-    θ_soil0_a = collect(fill(initial_soil_moisture[1], numnodes_a)) # initial soil moisture
+    θ_soil0_a = initial_soil_moisture # initial soil moisture
     θ_soil0_b = similar(θ_soil0_a, numnodes_b)  # preallocate vector of length numnodes_b
     jj = 1
     for ii in 1:numnodes_b
