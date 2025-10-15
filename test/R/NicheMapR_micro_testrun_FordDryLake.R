@@ -22,7 +22,7 @@ runshade <- 0 # run the model twice, once for each shade level (1) or just for t
 runmoist <- 1 # run soil moisture model (0 = no, 1 = yes)?
 snowmodel <- 0 # run the snow model (0 = no, 1 = yes)? - note that this runs slower
 hourly <- 1 # run the model with hourly input data
-rainhourly <- 0 # run the model with hourly rainfall input data (irrelevant if hourly = 1)
+rainhourly <- 1 # run the model with hourly rainfall input data (irrelevant if hourly = 1)
 microdaily <- 1 # run microclimate model where one iteration of each day occurs and last day gives initial conditions for present day
 ndmax <- 1 # iterations of each day to get a steady periodic
 IR <- 0 # compute clear-sky longwave radiation using Campbell and Norman (1998) eq. 10.10 (includes humidity)
