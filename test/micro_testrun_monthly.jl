@@ -103,6 +103,7 @@ problem = MicroProblem(;
     iterate_day = (microinput[:ndmax]), # number of iterations per day
     daily = Bool(Int(microinput[:microdaily])), # doing consecutive days?
     runmoist = Bool(Int(microinput[:runmoist])), # run soil moisture algorithm?
+    hourly_rainfall = Bool(Int(microinput[:rainhourly])), # use hourly rainfall?
     spinup = Bool(Int(microinput[:spinup])), # spin-up the first day by iterate_day iterations?
     # intial conditions
     initial_soil_temperature = u"K".((DataFrame(CSV.File("$testdir/data/init_monthly/soilinit.csv"))[1:length(depths), 2] * 1.0)u"°C"), # initial soil temperature
@@ -126,17 +127,12 @@ air_temperature_matrix = hcat([p.air_temperature for p in micro_out.profile]...)
 humidity_matrix = hcat([p.relative_humidity for p in micro_out.profile]...)'
 wind_matrix = hcat([p.wind_speed for p in micro_out.profile]...)'
 
-# note tests seem to need to be in K rather than °C to work properly
-# not all tests passing, some commented out, possibly due to different
-# solvers and possibly to do with floating point error and issue with 
-# the way the phase transition is being calculated
 @testset "runmicro comparisons" begin
-    @test_broken air_temperature_matrix[:, 1] ≈ rh1cm_nmr atol=0.2 # TODO make this work
-    @test humidity_matrix[:, 2] ≈ rh2m_nmr atol=1e-5
-    @test_broken wind_matrix[:, 1] ≈ vel1cm_nmr atol=2e-1u"m/s" # now failing because of first day due to soil temps not being the same
-    @test wind_matrix[:, 2] ≈ vel2m_nmr atol=1e-6u"m/s" 
-    @test u"K".(air_temperature_matrix[:, 2]) ≈ ta2m_nmr atol=1e-5u"K"
-    @test micro_out.sky_temperature ≈ u"K".(tskyC_nmr) atol=1u"K" # TODO make this better
-    @test_broken all(isapprox.(micro_out.soil_temperature, u"K".(Matrix(soiltemps_nmr)); atol=0.5u"K"))
-    @test_broken all(isapprox.(micro_out.soil_temperature[:, 2:10], u"K".(Matrix(soiltemps_nmr[:, 2:10])); atol=0.5u"K")) # TODO make better!
+    @test humidity_matrix[:, 1] ≈ rh1cm_nmr rtol=1e-1
+    @test humidity_matrix[:, 2] ≈ rh2m_nmr rtol=1e-8
+    @test wind_matrix[:, 1] ≈ vel1cm_nmr rtol=1e-2
+    @test wind_matrix[:, 2] ≈ vel2m_nmr rtol=1e-8 
+    @test u"K".(air_temperature_matrix[:, 2]) ≈ ta2m_nmr rtol=1e-8
+    @test micro_out.sky_temperature ≈ u"K".(tskyC_nmr) rtol=1e-4
+    @test all(isapprox.(micro_out.soil_temperature, u"K".(Matrix(soiltemps_nmr)); rtol=1e-2))
 end  

@@ -88,6 +88,7 @@ Returns a named tuple containing:
     # TODO: make these types so their code blocks can be removed by the compiler
     daily = false # doing consecutive days?
     runmoist = false # run soil moisture algorithm?
+    hourly_rainfall = false # use hourly rainfall?
     spinup = false # spin-up the first day by iterate_day iterations?
 end
 
@@ -309,7 +310,7 @@ end
 function solve_soil!(output::MicroResult, mp::MicroProblem, solrad_out; 
     days, hours, depths, heights
 )
-    (; terrain, soil_thermal_model, soil_moisture_model, environment_minmax, environment_daily, daily, initial_soil_temperature, initial_soil_moisture, runmoist) = mp
+    (; terrain, soil_thermal_model, soil_moisture_model, environment_minmax, environment_daily, daily, initial_soil_temperature, initial_soil_moisture, runmoist, hourly_rainfall) = mp
     (; moist_step, Campbells_b_parameter, soil_bulk_density2, soil_mineral_density2, air_entry_water_potential) = soil_moisture_model
     
 
@@ -417,7 +418,11 @@ function solve_soil!(output::MicroResult, mp::MicroProblem, solrad_out;
                 if i == 1 # make first hour of day equal last hour of previous iteration
                     # Then why do we run the soil water balance again??
                     output.soil_temperature[step, :] .= T0
-                    pool += environment_instant.rainfall
+                    if hourly_rainfall
+                        pool =+ mp.environment_hourly.rainfall[step]
+                    else
+                        pool =+ environment_instant.rainfall
+                    end
                     if runmoist
                         infil_out, soil_wetness, pool, θ_soil0_b = get_soil_water_balance!(buffers, soil_moisture_model;
                             depths, heights, terrain, environment_instant, T0, niter_moist, soil_wetness, pool, soil_moisture=θ_soil0_b,
@@ -435,6 +440,9 @@ function solve_soil!(output::MicroResult, mp::MicroProblem, solrad_out;
                         ∑phase, qphase, T0 = phase_transition!(buffers.phase_transition; Ts=soiltemps[2], T_past=soiltemps[1], ∑phase, θ=θ_soil0_a, depths)
                     end
                     output.soil_temperature[step, :] .= T0
+                    if hourly_rainfall
+                        pool =+ mp.environment_hourly.rainfall[step]
+                    end
                     if runmoist
                         infil_out, soil_wetness, pool, θ_soil0_b = get_soil_water_balance!(buffers, soil_moisture_model;
                             depths, heights, terrain, environment_instant, T0, niter_moist, pool, soil_wetness, soil_moisture=θ_soil0_b 
