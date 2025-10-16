@@ -1609,7 +1609,7 @@ function longwave_radiation(radiation_model=CampbellNormanAtmosphericRadiation()
 
     return (;
         # TODO standardise these names with their target uses
-        Tsky=tsky,
+        Tsky=u"K"(tsky),
         Qrad=qrad, # e.g. this is Q_infrared in `solar_radiation`
         Qrad_sky=qradsk,
         Qrad_veg=qradvg,

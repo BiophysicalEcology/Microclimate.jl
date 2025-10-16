@@ -205,7 +205,7 @@ abstract type AbstractSolarRadiation end
     τA = DEFAULT_τA # vector of optical depths per wavelength for aerosols
     τW = DEFAULT_τW # vector of optical depths per wavelength for water vapor
     Sλ = DEFAULT_Sλ # solar spectral irradiance per wavelength bin (e.g. in `mW * cm^-2 * nm^-1`)
-    FD = DEFAULT_FD # interpolated functino of radiation scattered from the direct solar beam
+    FD = DEFAULT_FD # interpolated function of radiation scattered from the direct solar beam
     FDQ = DEFAULT_FDQ # interpolated function of radiation scattered from ground-reflected radiation
     s̄ = DEFAULT_s̄ # a function of τR linked to molecular scattering in the UV range (< 360 nm)
 end
