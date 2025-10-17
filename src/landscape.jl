@@ -15,14 +15,13 @@ end
     S<:AbstractInterpolation,ZE<:AbstractInterpolation,ZS<:AbstractInterpolation,T<:AbstractInterpolation,
     V<:AbstractInterpolation,RH<:AbstractInterpolation,CL<:AbstractInterpolation,
 }
-    # TODO readable names
-    SOLRt::S
-    ZENRt::ZE
-    ZSLt::ZS
-    TAIRt::T
-    VELt::V
-    RHt::RH
-    CLDt::CL
+    interpolate_solar::S
+    interpolate_zenith::ZE
+    interpolate_slope_zenith::ZS
+    interpolate_temperature::T
+    interpolate_wind::V
+    interpolate_humidity::RH
+    interpolate_cloud::CL
 end
 
 abstract type AbstractEnvironment end

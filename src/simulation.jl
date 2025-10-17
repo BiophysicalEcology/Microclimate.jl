@@ -533,34 +533,19 @@ function forcing_day(solrad_out, output, iday::Int)
 
     nhours = 24
     sub1 = (iday*nhours-nhours+1):(iday*nhours)
-    tspan = 0.0:60:(60*nhours)
+    tspan = 0.0:60:(60*(nhours-1))
 
     # get today's weather
-    SOLR = solar_radiation[sub1]
-    ZENR = zenith_angle[sub1]
-    ZSL = zenith_slope_angle[sub1]
-    TAIR = reference_temperature[sub1]
-    VEL = reference_wind_speed[sub1]
-    RH = reference_humidity[sub1]
-    CLD = cloud_cover[sub1]
+    interpolate_solar = scale(interpolate(solar_radiation[sub1], BSpline(Linear())), tspan)
+    interpolate_zenith = scale(interpolate(zenith_angle[sub1], BSpline(Linear())), tspan)
+    interpolate_slope_zenith = scale(interpolate(zenith_slope_angle[sub1], BSpline(Linear())), tspan)
+    interpolate_temperature = scale(interpolate(u"K".(reference_temperature[sub1]), BSpline(Linear())), tspan)
+    interpolate_wind = scale(interpolate(reference_wind_speed[sub1], BSpline(Linear())), tspan)
+    interpolate_humidity = scale(interpolate(reference_humidity[sub1], BSpline(Linear())), tspan)
+    interpolate_cloud = scale(interpolate(cloud_cover[sub1], BSpline(Linear())), tspan)
 
-    interpSOLR = interpolate([SOLR; SOLR[end]], BSpline(Linear()))
-    interpZENR = interpolate([ZENR; ZENR[end]], BSpline(Linear()))
-    interpZSL = interpolate([ZSL; ZSL[end]], BSpline(Linear()))
-    interpTAIR = interpolate(u"K".([TAIR; TAIR[end]]), BSpline(Linear()))
-    interpVEL = interpolate([VEL; VEL[end]], BSpline(Linear()))
-    interpRH = interpolate([RH; RH[end]], BSpline(Linear()))
-    interpCLD = interpolate([CLD; CLD[end]], BSpline(Linear()))
-
-    SOLRt = scale(interpSOLR, tspan)
-    ZENRt = scale(interpZENR, tspan)
-    ZSLt = scale(interpZSL, tspan)
-    TAIRt = scale(interpTAIR, tspan)
-    VELt = scale(interpVEL, tspan)
-    RHt = scale(interpRH, tspan)
-    CLDt = scale(interpCLD, tspan)
-
-    return MicroForcing(; SOLRt, ZENRt, ZSLt, TAIRt, VELt, RHt, CLDt)
+    #return MicroForcing(; SOLRt, ZENRt, ZSLt, TAIRt, VELt, RHt, CLDt)
+    return MicroForcing(; interpolate_solar, interpolate_zenith, interpolate_slope_zenith, interpolate_temperature, interpolate_wind, interpolate_humidity, interpolate_cloud)
 end
 
 function initialise_soil_moisture(initial_soil_moisture, numnodes_a, numnodes_b)
