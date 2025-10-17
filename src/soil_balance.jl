@@ -33,13 +33,13 @@ function soil_energy_balance(
 
     # Get environmental data at time t
     # f = i.forcing
-    # tair = f.TAIRt(ustrip(u"minute", t))
-    # vel = max(0.1u"m/s", f.VELt(ustrip(t)))
-    # zenr = min(90.0u"°", u"°"(round(f.ZENRt(ustrip(t)), digits=3)))
-    # solr = max(0.0u"W/m^2", f.SOLRt(ustrip(t)))
-    # cloud = clamp(f.CLDt(ustrip(t)), 0.0, 100.0)
-    # rh = clamp(f.RHt(ustrip(t)), 0.0, 100.0)
-    # zslr = min(90.0u"°", f.ZSLt(ustrip(t)))
+    # tair = f.interpolate_temperature(ustrip(u"minute", t))
+    # vel = max(0.1u"m/s", f.interpolate_wind(ustrip(t)))
+    # zenr = min(90.0u"°", u"°"(round(f.interpolate_zenith(ustrip(t)), digits=3)))
+    # solr = max(0.0u"W/m^2", f.interpolate_solar(ustrip(t)))
+    # cloud = clamp(f.interpolate_cloud(ustrip(t)), 0.0, 100.0)
+    # rh = clamp(f.interpolate_humidity(ustrip(t)), 0.0, 100.0)
+    # zslr = min(90.0u"°", f.interpolate_slope_zenith(ustrip(t)))
 
     T1m = MVector(T1)
     T2 = SVector(T1m)
@@ -127,13 +127,13 @@ end
 function interpolate_forcings(f, t)
     t_m = ustrip(u"minute", t)
     return (; 
-        tair = f.TAIRt(t_m),
-        vel = max(0.1u"m/s", f.VELt(t_m)),
-        zenr = min(90.0u"°", u"°"(round(f.ZENRt(t_m), digits=3))),
-        solr = max(0.0u"W/m^2", f.SOLRt(t_m)),
-        cloud = clamp(f.CLDt(t_m), 0.0, 100.0),
-        rh = clamp(f.RHt(t_m), 0.0, 100.0),
-        zslr = min(90.0u"°", f.ZSLt(t_m)),
+        tair = f.interpolate_temperature(t_m),
+        vel = max(0.1u"m/s", f.interpolate_wind(t_m)),
+        zenr = min(90.0u"°", u"°"(round(f.interpolate_zenith(t_m), digits=3))),
+        solr = max(0.0u"W/m^2", f.interpolate_solar(t_m)),
+        cloud = clamp(f.interpolate_cloud(t_m), 0.0, 100.0),
+        rh = clamp(f.interpolate_humidity(t_m), 0.0, 100.0),
+        zslr = min(90.0u"°", f.interpolate_slope_zenith(t_m)),
     )
 end
 
