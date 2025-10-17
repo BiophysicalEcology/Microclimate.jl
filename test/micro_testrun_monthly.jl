@@ -105,7 +105,7 @@ problem = MicroProblem(;
     hourly_rainfall = Bool(Int(microinput[:rainhourly])), # use hourly rainfall?
     spinup = Bool(Int(microinput[:spinup])), # spin-up the first day by iterate_day iterations?
     # intial conditions
-    initial_soil_temperature = u"K".((DataFrame(CSV.File("$testdir/data/init_monthly/soilinit.csv"))[1:length(depths), 2] * 1.0)u"°C"), # initial soil temperature
+    initial_soil_temperature = nothing, # initial soil temperature, # initial soil temperature
     initial_soil_moisture = (Array(DataFrame(CSV.File("$testdir/data/init_monthly/moists.csv"))[1:10, 2]) .* 1.0), # initial soil moisture
     #maximum_surface_temperature = u"K"(microinput[:maxsurf]u"°C")
 )
