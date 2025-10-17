@@ -147,6 +147,7 @@ end
     shade
     soil_wetness
     surface_emissivity
+    cloud_emissivity
     rainfall
     deep_soil_temperature
     leaf_area_index

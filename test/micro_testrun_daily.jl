@@ -97,6 +97,7 @@ environment_daily = DailyTimeseries(;
     shade = (DataFrame(CSV.File("$testdir/data/init_daily/Minshades.csv"))[1:days2do, 2] * 1.0), # daily shade (%)
     soil_wetness = (DataFrame(CSV.File("$testdir/data/init_daily/PCTWET.csv"))[1:days2do, 2] * 1.0),
     surface_emissivity = (DataFrame(CSV.File("$testdir/data/init_daily/SLES.csv"))[1:days2do, 2] * 1.0), # - surface emissivity
+    cloud_emissivity = (DataFrame(CSV.File("$testdir/data/init_daily/SLES.csv"))[1:days2do, 2] * 1.0), # - cloud emissivity
     rainfall = ((DataFrame(CSV.File("$testdir/data/init_daily/rain.csv"))[1:days2do, 2] * 1.0))u"kg/m^2",
     deep_soil_temperature = (DataFrame(CSV.File("$testdir/data/init_daily/tannulrun.csv"))[1:days2do, 2] * 1.0)u"°C", # daily deep soil temperatures
     leaf_area_index = (DataFrame(CSV.File("$testdir/data/init_daily/LAI.csv"))[:, 2] * 1.0u"Mg/m^3"), # leaf area indices per day
@@ -149,7 +150,7 @@ problem = MicroProblem(;
 # plot(micro_out)
 
 @testset "runmicro comparisons" begin
-    @test all(isapprox.(micro_out.soil_temperature[:, 1:10], u"K".(Matrix(soil_temperature_nmr[1:hours2do, 1:10])); rtol=1e-1)) # TODO make better!
+    @test all(isapprox.(micro_out.soil_temperature[:, 1:10], u"K".(Matrix(soil_temperature_nmr[1:hours2do, 1:10])); rtol=1e-2)) # TODO make better!
     @test all(isapprox.(micro_out.soil_moisture[:, 1:10], Matrix(soil_moisture_nmr[1:hours2do, 1:10]); rtol=1e1)) # TODO make better!
     @test all(isapprox.(micro_out.soil_thermal_conductivity[:, 1:10], Matrix(soil_conductivity_nmr[1:hours2do, 1:10])u"W * m^-1 * K^-1"; rtol=1e1)) # TODO make better!
 end 

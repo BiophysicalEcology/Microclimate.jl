@@ -99,6 +99,9 @@ function soil_energy_balance(
         Obukhov_out = calc_Obukhov_length(T_ref_height, T_surface, vel, roughness_height, reference_height, ρcpTκg, karman_constant, log_z_ratio, ΔT, ρ_cp)
         L_Obukhov = Obukhov_out.L_Obukhov
         Q_convection = Obukhov_out.Q_convection
+        #@show Q_convection, L_Obukhov, Obukhov_out.u_star
+        #@show u"°C"(T_surface), u"°C"(T_ref_height)
+        #@assert false
     end
     hc = max(abs(Q_convection / (T2[1] - tair)), 0.5u"W/m^2/K")
 
@@ -500,7 +503,9 @@ function get_soil_water_balance!(buffers, soil_moisture_model::SoilMoistureModel
 
     # evaporation
     # TODO: these percentage vs fraction humidities are asking for bugs
-    local_relative_humidity = min(0.99, profile_out.relative_humidity[2] / 100)
+    wet_air_out_ref = wet_air_properties(u"K"(last(profile_out.air_temperature)); rh = last(profile_out.relative_humidity), P_atmos)    
+    wet_air_out_loc = wet_air_properties(u"K"(profile_out.air_temperature[1]); rh = 100.0, P_atmos)    
+    local_relative_humidity = clamp(wet_air_out_ref.P_vap / wet_air_out_loc.P_vap_sat, 0.0, 0.99)
     hc = max(abs(Q_convection / (tsurf - tair)), 0.5u"W/m^2/K")
     wet_air_out = wet_air_properties(tair; rh, P_atmos)
     c_p_air = wet_air_out.c_p
