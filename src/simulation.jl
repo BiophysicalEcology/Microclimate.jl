@@ -321,11 +321,15 @@ function solve_soil!(output::MicroResult, mp::MicroProblem, solrad_out;
     numnodes_b = numnodes_a * 2 - 2 # number of soil nodes for soil moisture calcs
 
     # initial conditions
-    if !daily && !isnothing(initial_soil_temperature)
-        t = mean(u"K", view(output.reference_temperature, 1:nhours))
-        initial_soil_temperature = SVector(ntuple(_ -> t, numnodes_a))
-    end
-    T0 = SVector{length(initial_soil_temperature)}(initial_soil_temperature)
+    if !daily && isnothing(initial_soil_temperature)
+        #t = mean(u"K", view(output.reference_temperature, 1:nhours))
+        # TODO below we add the first value to the other 24 so that it mimics the Fortran 25h day but 
+        # ultimately we should remove that extra value
+        t = mean(u"K", [view(output.reference_temperature, 1:nhours); output.reference_temperature[1]])
+        T0 = SVector(ntuple(_ -> t, numnodes_a))
+    else
+        T0 = SVector{length(initial_soil_temperature)}(initial_soil_temperature)
+    end  
 
     # Soil properties
     # set up a profile of soil properites with depth for each day to be run
@@ -411,8 +415,12 @@ function solve_soil!(output::MicroResult, mp::MicroProblem, solrad_out;
         if !daily
             ∑phase .= 0.0u"J"
             sub2 = (iday*nhours-nhours+1):(iday*nhours) # for getting mean monthly over the 25 hrs as in fortran version
-            t = mean(u"K", output.reference_temperature[sub2]) # make initial soil temps equal to mean annual temperature
-            T0 = SVector(ntuple(_ -> t, numnodes_a))
+            if isnothing(initial_soil_temperature)
+                t = mean(u"K", [output.reference_temperature[sub2]; output.reference_temperature[sub2][1]])
+                T0 = SVector(ntuple(_ -> t, numnodes_a))
+            else
+                T0 = initial_soil_temperature
+            end
             θ_soil0_a = initial_soil_moisture # initial soil moisture
         end
         T0 = setindex(T0, environment_instant.deep_soil_temperature, numnodes_a) # set deepest node to boundary condition
