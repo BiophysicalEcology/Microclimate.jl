@@ -95,7 +95,7 @@ end
 function example_microclimate_problem(;
     latitude = 43.07305u"°",
     terrain=default_terrain(),
-    soil_moisture_model=example_soil_moisture_model(),
+    soil_moisture_model=example_soil_moisture_model(DEFAULT_DEPTHS),
     soil_thermal_model=example_soil_thermal_parameters(),
     environment_minmax=example_monthly_weather(),
     environment_daily=example_daily_environment(),
