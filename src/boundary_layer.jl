@@ -449,15 +449,22 @@ function calc_Obukhov_length(
 
     δ = 1.0
     count = 0
-
+    just_above_zero = 1.0e-6
     while δ > tol && count < max_iter
         count += 1
         φ_m = calc_φ_m(z, γ, L_Obukhov)
         ψ_m = calc_ψ_m(φ_m)
         ψ_h = calc_ψ_h(φ_m)
-        u_star = κ * v_ref_height / (log(z / z0) - ψ_m)
+        dum = log(z / z0) - ψ_m
+        if dum <= 0.0
+            dum = just_above_zero
+        end
+        u_star = κ * v_ref_height / dum
+        if u_star < just_above_zero * 1u"cm/minute"
+            u_star = just_above_zero * 1u"cm/minute"
+        end
         sublayer_stanton_number = sublayer_stanton(z0, u_star)
-        bulk_stanton_number = bulk_stanton(log_z_ratio, z, L_Obukhov)
+        bulk_stanton_number = bulk_stanton(dum, z, L_Obukhov)
         Q_convection = convective_flux(ρ_cp, ΔT, u_star, bulk_stanton_number, sublayer_stanton_number)
         L_Obukhov_new = ρcpTκg * u_star^3 / Q_convection
         δ = abs((L_Obukhov_new - L_Obukhov) / L_Obukhov)

@@ -63,6 +63,7 @@ environment_daily = DailyTimeseries(;
     shade = (DataFrame(CSV.File("$testdir/data/init_monthly/Minshades.csv"))[days2do, 2] * 1.0), # daily shade from vegetation (%)
     soil_wetness = (DataFrame(CSV.File("$testdir/data/init_monthly/PCTWET.csv"))[days2do, 2] * 1.0),
     surface_emissivity = (DataFrame(CSV.File("$testdir/data/init_monthly/SLES.csv"))[days2do, 2] * 1.0), # - surface emissivity
+    cloud_emissivity = (DataFrame(CSV.File("$testdir/data/init_monthly/SLES.csv"))[days2do, 2] * 1.0), # - cloud emissivity
     rainfall = ((DataFrame(CSV.File("$testdir/data/init_monthly/rain.csv"))[days2do, 2] * 1.0) / 1000)u"kg/m^2", # monthly total rainfall
     deep_soil_temperature = (DataFrame(CSV.File("$testdir/data/init_monthly/tannulrun.csv"))[days2do, 2] * 1.0)u"°C", # daily deep soil temperatures
     leaf_area_index = fill(0.1, length(days)),
@@ -131,7 +132,8 @@ wind_matrix = hcat([p.wind_speed for p in micro_out.profile]...)'
     @test humidity_matrix[:, 2] ≈ rh2m_nmr rtol=1e-8
     @test wind_matrix[:, 1] ≈ vel1cm_nmr rtol=1e-2
     @test wind_matrix[:, 2] ≈ vel2m_nmr rtol=1e-8 
+    @test u"K".(air_temperature_matrix[:, 1]) ≈ ta1cm_nmr rtol=1e-3
     @test u"K".(air_temperature_matrix[:, 2]) ≈ ta2m_nmr rtol=1e-8
-    @test micro_out.sky_temperature ≈ u"K".(tskyC_nmr) rtol=1e-4
+    @test micro_out.sky_temperature ≈ u"K".(tskyC_nmr) rtol=1e-7
     @test all(isapprox.(micro_out.soil_temperature, u"K".(Matrix(soiltemps_nmr)); rtol=1e-2))
 end  

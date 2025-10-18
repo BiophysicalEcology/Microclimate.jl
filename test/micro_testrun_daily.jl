@@ -97,6 +97,7 @@ environment_daily = DailyTimeseries(;
     shade = (DataFrame(CSV.File("$testdir/data/init_daily/Minshades.csv"))[1:days2do, 2] * 1.0), # daily shade (%)
     soil_wetness = (DataFrame(CSV.File("$testdir/data/init_daily/PCTWET.csv"))[1:days2do, 2] * 1.0),
     surface_emissivity = (DataFrame(CSV.File("$testdir/data/init_daily/SLES.csv"))[1:days2do, 2] * 1.0), # - surface emissivity
+    cloud_emissivity = (DataFrame(CSV.File("$testdir/data/init_daily/SLES.csv"))[1:days2do, 2] * 1.0), # - cloud emissivity
     rainfall = ((DataFrame(CSV.File("$testdir/data/init_daily/rain.csv"))[1:days2do, 2] * 1.0))u"kg/m^2",
     deep_soil_temperature = (DataFrame(CSV.File("$testdir/data/init_daily/tannulrun.csv"))[1:days2do, 2] * 1.0)u"°C", # daily deep soil temperatures
     leaf_area_index = (DataFrame(CSV.File("$testdir/data/init_daily/LAI.csv"))[:, 2] * 1.0u"Mg/m^3"), # leaf area indices per day
@@ -148,8 +149,27 @@ problem = MicroProblem(;
 # TODO test plotting again at some stage, but it slows down CI a lot
 # plot(micro_out)
 
+# subset NicheMapR predictions
+vel1cm_nmr = collect(metout_nmr[:, 8]) .* 1u"m/s"
+vel2m_nmr = collect(metout_nmr[:, 9]) .* 1u"m/s"
+ta1cm_nmr = collect(metout_nmr[:, 4] .+ 273.15) .* 1u"K"
+ta2m_nmr = collect(metout_nmr[:, 5] .+ 273.15) .* 1u"K"
+rh1cm_nmr = collect(metout_nmr[:, 6])
+rh2m_nmr = collect(metout_nmr[:, 7])
+tskyC_nmr = collect(metout_nmr[:, 15]) .* u"°C"
+
+air_temperature_matrix = hcat([p.air_temperature for p in micro_out.profile]...)'
+humidity_matrix = hcat([p.relative_humidity for p in micro_out.profile]...)'
+wind_matrix = hcat([p.wind_speed for p in micro_out.profile]...)'
+
 @testset "runmicro comparisons" begin
-    @test all(isapprox.(micro_out.soil_temperature[:, 1:10], u"K".(Matrix(soil_temperature_nmr[1:hours2do, 1:10])); rtol=1e-1)) # TODO make better!
+    @test all(isapprox.(micro_out.soil_temperature[:, 1:10], u"K".(Matrix(soil_temperature_nmr[1:hours2do, 1:10])); rtol=1e-2))
     @test all(isapprox.(micro_out.soil_moisture[:, 1:10], Matrix(soil_moisture_nmr[1:hours2do, 1:10]); rtol=1e1)) # TODO make better!
     @test all(isapprox.(micro_out.soil_thermal_conductivity[:, 1:10], Matrix(soil_conductivity_nmr[1:hours2do, 1:10])u"W * m^-1 * K^-1"; rtol=1e1)) # TODO make better!
+    @test humidity_matrix[:, 1] ≈ rh1cm_nmr[1:hours2do] rtol=1e-1
+    @test humidity_matrix[:, 2] ≈ rh2m_nmr[1:hours2do] rtol=1e-8
+    @test wind_matrix[:, 1] ≈ vel1cm_nmr[1:hours2do] rtol=1e-3
+    @test wind_matrix[:, 2] ≈ vel2m_nmr[1:hours2do] rtol=1e-8 
+    @test u"K".(air_temperature_matrix[:, 1]) ≈ ta1cm_nmr[1:hours2do] rtol=1e-3
+    @test u"K".(air_temperature_matrix[:, 2]) ≈ ta2m_nmr[1:hours2do] rtol=1e-8
 end 
