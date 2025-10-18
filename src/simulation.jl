@@ -326,7 +326,7 @@ function solve_soil!(output::MicroResult, mp::MicroProblem, solrad_out;
     # These could also be vectors if we let users specify them
     ∑phase = zeros(typeof(1.0u"J"), numnodes_a) # zero phase transition for liquid water in soil
 
-    (; θ_soil0_a, θ_soil0_b) = initialise_soil_moisture(initial_soil_moisture, numnodes_a, numnodes_b)
+    (; θ_soil0_a, θ_soil0_b) = initialise_soil_moisture(initial_soil_moisture, numnodes_b)
 
     nodes = nodes_day[:, 1]
     M = 18 # soil_water_balance default
