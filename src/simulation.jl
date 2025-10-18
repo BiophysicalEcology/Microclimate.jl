@@ -303,10 +303,8 @@ function solve_soil!(output::MicroResult, mp::MicroProblem, solrad_out;
     (; terrain, soil_thermal_model, soil_moisture_model, environment_minmax, environment_daily, daily, initial_soil_temperature, initial_soil_moisture, runmoist, hourly_rainfall) = mp
     (; moist_step, Campbells_b_parameter, soil_bulk_density2, soil_mineral_density2, air_entry_water_potential) = soil_moisture_model
     
-
     ndays = length(days)
     nhours = length(hours)
-    nsteps = ndays * nhours
     numnodes_a = length(depths) # number of soil nodes for temperature calcs and final output
     numnodes_b = numnodes_a * 2 - 2 # number of soil nodes for soil moisture calcs
 
@@ -416,7 +414,7 @@ function solve_soil!(output::MicroResult, mp::MicroProblem, solrad_out;
                 pool = clamp(pool + rain, 0.0u"kg/m^2", soil_moisture_model.maxpool)
                 if runmoist
                     infil_out, soil_wetness, pool, θ_soil0_b = get_soil_water_balance!(buffers, soil_moisture_model;
-                        depths, heights, terrain, environment_instant, T0, niter_moist, pool, soil_wetness,
+                        depths, terrain, environment_instant, T0, niter_moist, pool, soil_wetness,
                         soil_moisture = θ_soil0_b
                     )
                     update_soil_water!(output, infil_out, sub, step)
@@ -507,7 +505,7 @@ function forcing_day(solrad_out, output, iday::Int)
     return MicroForcing(; interpolate_solar, interpolate_zenith, interpolate_slope_zenith, interpolate_temperature, interpolate_wind, interpolate_humidity, interpolate_cloud)
 end
 
-function initialise_soil_moisture(initial_soil_moisture, numnodes_a, numnodes_b)
+function initialise_soil_moisture(initial_soil_moisture, numnodes_b)
     θ_soil0_a = copy(initial_soil_moisture) # initial soil moisture
     θ_soil0_b = similar(θ_soil0_a, numnodes_b)  # preallocate vector of length numnodes_b
     jj = 1
