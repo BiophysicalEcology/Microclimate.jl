@@ -449,7 +449,7 @@ function calc_Obukhov_length(
 
     δ = 1.0
     count = 0
-
+    just_above_zero = 1.0e-6
     while δ > tol && count < max_iter
         count += 1
         φ_m = calc_φ_m(z, γ, L_Obukhov)
@@ -457,11 +457,11 @@ function calc_Obukhov_length(
         ψ_h = calc_ψ_h(φ_m)
         dum = log(z / z0) - ψ_m
         if dum <= 0.0
-            dum = 1.0e-6
+            dum = just_above_zero
         end
         u_star = κ * v_ref_height / dum
-        if u_star < 1.0e-6u"cm/minute"
-            u_star = 1.0e-6u"cm/minute"
+        if u_star < just_above_zero * 1u"cm/minute"
+            u_star = just_above_zero * 1u"cm/minute"
         end
         sublayer_stanton_number = sublayer_stanton(z0, u_star)
         bulk_stanton_number = bulk_stanton(dum, z, L_Obukhov)

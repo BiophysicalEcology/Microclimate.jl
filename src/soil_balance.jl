@@ -99,9 +99,6 @@ function soil_energy_balance(
         Obukhov_out = calc_Obukhov_length(T_ref_height, T_surface, vel, roughness_height, reference_height, ρcpTκg, karman_constant, log_z_ratio, ΔT, ρ_cp)
         L_Obukhov = Obukhov_out.L_Obukhov
         Q_convection = Obukhov_out.Q_convection
-        #@show Q_convection, L_Obukhov, Obukhov_out.u_star
-        #@show u"°C"(T_surface), u"°C"(T_ref_height)
-        #@assert false
     end
     hc = max(abs(Q_convection / (T2[1] - tair)), 0.5u"W/m^2/K")
 
