@@ -318,7 +318,7 @@ function solve_soil!(output::MicroResult, mp::MicroProblem, solrad_out;
         t = mean(u"K", [view(output.reference_temperature, 1:nhours); output.reference_temperature[1]])
         T0 = SVector(ntuple(_ -> t, numnodes_a))
     else
-        T0 = SVector{length(initial_soil_temperature)}(initial_soil_temperature)
+        T0 = SVector(ntuple(i -> initial_soil_temperature[i], numnodes_a))
     end  
 
     # Soil properties
@@ -361,7 +361,6 @@ function solve_soil!(output::MicroResult, mp::MicroProblem, solrad_out;
     # simulate all days
     pool = 0.0u"kg/m^2" # initialise depth of pooling water TODO make this an init option
     niter_moist = ustrip(u"s^-1", 3600 / moist_step) # TODO use a solver for soil moisture calc
-    ∑phase = zeros(Float64, numnodes_a)u"J"
     infil_out = nothing
     if !runmoist
         soil_wetness = environment_instant.soil_wetness
@@ -373,13 +372,7 @@ function solve_soil!(output::MicroResult, mp::MicroProblem, solrad_out;
         nodes .= nodes_day[:, iday]
         environment_day = get_day(environment_daily, iday)
         forcing = forcing_day(solrad_out, output, iday)
-        step = 1
-        # loop through hours of day
-        if mp.spinup && j == 1 || daily == false
-            niter = mp.iterate_day # number of interations for steady periodic
-        else
-            niter = 1
-        end
+        niter = (mp.spinup && j == 1 || !daily) ? mp.iterate_day : 1
         if !daily
             ∑phase .= 0.0u"J"
             sub2 = (iday*nhours-nhours+1):(iday*nhours) # for getting mean monthly over the 25 hrs as in fortran version
@@ -387,63 +380,63 @@ function solve_soil!(output::MicroResult, mp::MicroProblem, solrad_out;
                 t = mean(u"K", [output.reference_temperature[sub2]; output.reference_temperature[sub2][1]])
                 T0 = SVector(ntuple(_ -> t, numnodes_a))
             else
-                T0 = initial_soil_temperature
+                T0 = copy(initial_soil_temperature)
             end
             θ_soil0_a = initial_soil_moisture # initial soil moisture
         end
         T0 = setindex(T0, environment_instant.deep_soil_temperature, numnodes_a) # set deepest node to boundary condition
         for iter = 1:niter
-            for i in 1:length(hours)
+            ∑phase .= 0.0u"J" # TODO decied whether this should happen and fix in Fortran
+            for i in 1:length(hours) # loop through hours of day
                 step = (j - 1) * length(hours) + i
+                environment_instant = get_instant(environment_day, mp.environment_hourly, output, θ_soil0_a, step)
                 if i == 1 # make first hour of day equal last hour of previous iteration
-                    # Then why do we run the soil water balance again??
-                    environment_instant = get_instant(environment_day, mp.environment_hourly, output, θ_soil0_a, step)
-                    output.soil_temperature[step, :] .= T0
-                    if hourly_rainfall
-                        pool =+ mp.environment_hourly.rainfall[step]
-                    else
-                        pool =+ environment_instant.rainfall
+                    if niter > 1
+                        ∑phase .= 0.0u"J" # TODO decide whether this should happen and fix in Fortran
+                        inputs = SoilEnergyInputs(; forcing, buffers, soil_thermal_model, depths, heights, terrain, runmoist, nodes, environment_instant, soil_wetness)
+                        soiltemps = get_soil_temp_timeline(T0, inputs, i + 1)
+                        T0 = soiltemps[2]
+                        if iter == niter # TODO this should happen every time but at present it doesn't in Fortran version
+                            ∑phase, qphase, T0 = phase_transition!(buffers.phase_transition;
+                                Ts = soiltemps[2], T_past = soiltemps[1], ∑phase, θ = θ_soil0_a, depths
+                            )
+                        end
                     end
-                    if runmoist
-                        infil_out, soil_wetness, pool, θ_soil0_b = get_soil_water_balance!(buffers, soil_moisture_model;
-                            depths, heights, terrain, environment_instant, T0, niter_moist, soil_wetness, pool, soil_moisture=θ_soil0_b,
-                        )
-                        update_soil_water!(output, infil_out, sub, step)
-                    end
-                    pool = clamp(pool, 0.0u"kg/m^2", soil_moisture_model.maxpool)
                 else
-                    environment_instant = get_instant(environment_day, mp.environment_hourly, output, θ_soil0_a, step)
                     inputs = SoilEnergyInputs(; forcing, buffers, soil_thermal_model, depths, heights, terrain, runmoist, nodes, environment_instant, soil_wetness)
                     soiltemps = get_soil_temp_timeline(T0, inputs, i)
-                    # account for any phase transition of water in soil
                     T0 = soiltemps[2]
-                    if iter == niter # this makes it the same as the R version but really this should happen every time
-                        ∑phase, qphase, T0 = phase_transition!(buffers.phase_transition; Ts=soiltemps[2], T_past=soiltemps[1], ∑phase, θ=θ_soil0_a, depths)
-                    end
-                    output.soil_temperature[step, :] .= T0
-                    if hourly_rainfall
-                        pool =+ mp.environment_hourly.rainfall[step]
-                    end
-                    if runmoist
-                        infil_out, soil_wetness, pool, θ_soil0_b = get_soil_water_balance!(buffers, soil_moisture_model;
-                            depths, heights, terrain, environment_instant, T0, niter_moist, pool, soil_wetness, soil_moisture=θ_soil0_b 
+                    if iter == niter # TODO this should happen every time but at present it doesn't in Fortran version
+                        ∑phase, qphase, T0 = phase_transition!(buffers.phase_transition;
+                            Ts = soiltemps[2], T_past = soiltemps[1], ∑phase, θ = θ_soil0_a, depths
                         )
-                        update_soil_water!(output, infil_out, sub, step)
                     end
+                end
+                rain = hourly_rainfall ? mp.environment_hourly.rainfall[step] : environment_instant.rainfall
+                pool = clamp(pool + rain, 0.0u"kg/m^2", soil_moisture_model.maxpool)
+                if runmoist
+                    infil_out, soil_wetness, pool, θ_soil0_b = get_soil_water_balance!(buffers, soil_moisture_model;
+                        depths, heights, terrain, environment_instant, T0, niter_moist, pool, soil_wetness,
+                        soil_moisture = θ_soil0_b
+                    )
+                    update_soil_water!(output, infil_out, sub, step)
                     θ_soil0_a = θ_soil0_b[sub]
                 end
                 # Write to output
-                output.surface_water[step] = pool
-                output.soil_temperature[step, :] .= T0
-                longwave_out = longwave_radiation(; terrain, environment_instant, surface_temperature=T0[1])
-                output.sky_temperature[step] = longwave_out.Tsky
-                update_soil_properties!(output, buffers.soil_properties, soil_thermal_model;
-                    soil_temperature=T0, soil_moisture=θ_soil0_a, terrain, step
-                )
+                if iter == niter
+                    output.surface_water[step] = pool
+                    output.soil_temperature[step, :] .= T0
+                    longwave_out = longwave_radiation(; terrain, environment_instant, surface_temperature=T0[1])
+                    output.sky_temperature[step] = longwave_out.Tsky
+                                    environment_instant = get_instant(environment_day, mp.environment_hourly, output, θ_soil0_a, step)
+
+                                    update_soil_properties!(output, buffers.soil_properties, soil_thermal_model;
+                        soil_temperature=T0, soil_moisture=θ_soil0_a, terrain, step
+                    )
+                end
             end
         end
     end
-
     return output
 end
 
@@ -511,12 +504,11 @@ function forcing_day(solrad_out, output, iday::Int)
     interpolate_humidity = scale(interpolate(reference_humidity[sub1], BSpline(Linear())), tspan)
     interpolate_cloud = scale(interpolate(cloud_cover[sub1], BSpline(Linear())), tspan)
 
-    #return MicroForcing(; SOLRt, ZENRt, ZSLt, TAIRt, VELt, RHt, CLDt)
     return MicroForcing(; interpolate_solar, interpolate_zenith, interpolate_slope_zenith, interpolate_temperature, interpolate_wind, interpolate_humidity, interpolate_cloud)
 end
 
 function initialise_soil_moisture(initial_soil_moisture, numnodes_a, numnodes_b)
-    θ_soil0_a = initial_soil_moisture # initial soil moisture
+    θ_soil0_a = copy(initial_soil_moisture) # initial soil moisture
     θ_soil0_b = similar(θ_soil0_a, numnodes_b)  # preallocate vector of length numnodes_b
     jj = 1
     for ii in 1:numnodes_b
