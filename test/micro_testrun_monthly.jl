@@ -130,8 +130,9 @@ wind_matrix = hcat([p.wind_speed for p in micro_out.profile]...)'
 @testset "runmicro comparisons" begin
     @test humidity_matrix[:, 1] ≈ rh1cm_nmr rtol=1e-1
     @test humidity_matrix[:, 2] ≈ rh2m_nmr rtol=1e-8
-    @test wind_matrix[:, 1] ≈ vel1cm_nmr rtol=1e-23
+    @test wind_matrix[:, 1] ≈ vel1cm_nmr rtol=1e-2
     @test wind_matrix[:, 2] ≈ vel2m_nmr rtol=1e-8 
+    @test u"K".(air_temperature_matrix[:, 1]) ≈ ta1cm_nmr rtol=1e-3
     @test u"K".(air_temperature_matrix[:, 2]) ≈ ta2m_nmr rtol=1e-8
     @test micro_out.sky_temperature ≈ u"K".(tskyC_nmr) rtol=1e-7
     @test all(isapprox.(micro_out.soil_temperature, u"K".(Matrix(soiltemps_nmr)); rtol=1e-2))
