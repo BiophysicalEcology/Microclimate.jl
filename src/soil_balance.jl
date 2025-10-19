@@ -258,7 +258,7 @@ function soil_water_balance!(buffers, smm::SoilMoistureModel;
     DV = 2.4e-5u"m^2/s"      # diffusivity of water vapour, m²/s
 
     # Convert PE to negative absolute value
-    map!(x -> -abs(x), PE, PE) # air entry potential J/kg
+    PE = -abs.(smm.air_entry_water_potential) # air entry potential J/kg
 
     # Initialize PP from PE
     PP .= PE
@@ -466,7 +466,6 @@ get_soil_water_balance(soil_moisture_model; M=18, kw...) =
     get_soil_water_balance!(allocate_soil_water_balance(M), soil_moisture_model; kw...)
 
 function get_soil_water_balance!(buffers, soil_moisture_model::SoilMoistureModel;
-    heights,
     depths,
     terrain,
     environment_instant,
@@ -500,7 +499,9 @@ function get_soil_water_balance!(buffers, soil_moisture_model::SoilMoistureModel
 
     # evaporation
     # TODO: these percentage vs fraction humidities are asking for bugs
-    local_relative_humidity = min(0.99, profile_out.relative_humidity[2] / 100)
+    wet_air_out_ref = wet_air_properties(u"K"(last(profile_out.air_temperature)); rh = last(profile_out.relative_humidity), P_atmos)    
+    wet_air_out_loc = wet_air_properties(u"K"(profile_out.air_temperature[1]); rh = 100.0, P_atmos)    
+    local_relative_humidity = clamp(wet_air_out_ref.P_vap / wet_air_out_loc.P_vap_sat, 0.0, 0.99)
     hc = max(abs(Q_convection / (tsurf - tair)), 0.5u"W/m^2/K")
     wet_air_out = wet_air_properties(tair; rh, P_atmos)
     c_p_air = wet_air_out.c_p
