@@ -317,7 +317,7 @@ function solve_soil!(output::MicroResult, mp::MicroProblem, solrad_out;
         T0 = SVector(ntuple(_ -> t, numnodes_a))
     else
         # TODO move all input-related error messages to MicroProblem constructor
-        if numnodes_a != length(initial_soil_temperatures)
+        if numnodes_a != length(initial_soil_temperature)
             error("Initial soil temperature must match length of 'depths'")
         end
         T0 = SVector(ntuple(i -> initial_soil_temperature[i], numnodes_a))
