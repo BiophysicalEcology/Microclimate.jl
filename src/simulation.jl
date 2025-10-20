@@ -265,6 +265,7 @@ function interpolate_minmax!(output, environment_minmax, environment_daily, envi
     output.reference_temperature .= reference_temperature
     output.reference_wind_speed .= reference_wind_speed
     output.reference_humidity .= reference_humidity
+    output.zenith_angle .= solrad_out.zenith_angle
 
     return 
 end
@@ -273,6 +274,7 @@ function interpolate_minmax!(output, environment_minmax::Nothing, environment_da
     output.reference_temperature .= environment_hourly.reference_temperature
     output.reference_wind_speed .= environment_hourly.reference_wind_speed
     output.reference_humidity .= environment_hourly.reference_humidity
+    output.zenith_angle .= solrad_out.zenith_angle
 
     return 
 end
@@ -302,7 +304,7 @@ function solve_soil!(output::MicroResult, mp::MicroProblem, solrad_out;
 )
     (; terrain, soil_thermal_model, soil_moisture_model, environment_minmax, environment_daily, daily, initial_soil_temperature, initial_soil_moisture, runmoist, hourly_rainfall) = mp
     (; moist_step, Campbells_b_parameter, soil_bulk_density2, soil_mineral_density2, air_entry_water_potential) = soil_moisture_model
-    
+
     ndays = length(days)
     nhours = length(hours)
     numnodes_a = length(depths) # number of soil nodes for temperature calcs and final output

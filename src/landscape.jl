@@ -50,14 +50,14 @@ abstract type AbstractEnvironment end
 end
 function MicroResult(nsteps::Int, numnodes_a::Int)
     return MicroResult(;
-        reference_temperature = Array{typeof(1.0u"K")}(undef, nsteps, numnodes_a),
-        reference_wind_speed = Array{typeof(1.0u"m/s")}(undef, nsteps, numnodes_a),
-        reference_humidity = Array{Float64}(undef, nsteps, numnodes_a),
-        cloud_cover = Array{Float64}(undef, nsteps, numnodes_a),
-        global_solar = Array{typeof(1.0u"W/m^2")}(undef, nsteps, numnodes_a),
-        direct_solar = Array{typeof(1.0u"W/m^2")}(undef, nsteps, numnodes_a),
-        diffuse_solar = Array{typeof(1.0u"W/m^2")}(undef, nsteps, numnodes_a),
-        zenith_angle = Array{Float64}(undef, nsteps, numnodes_a),
+        reference_temperature = Array{typeof(1.0u"K")}(undef, nsteps),
+        reference_wind_speed = Array{typeof(1.0u"m/s")}(undef, nsteps),
+        reference_humidity = Array{Float64}(undef, nsteps),
+        cloud_cover = Array{Float64}(undef, nsteps),
+        global_solar = Array{typeof(1.0u"W/m^2")}(undef, nsteps),
+        direct_solar = Array{typeof(1.0u"W/m^2")}(undef, nsteps),
+        diffuse_solar = Array{typeof(1.0u"W/m^2")}(undef, nsteps),
+        zenith_angle = Array{typeof(1.0u"°")}(undef, nsteps),
         sky_temperature = Array{typeof(1.0u"K")}(undef, nsteps),
         soil_temperature = Array{typeof(1.0u"K")}(undef, nsteps, numnodes_a),
         soil_moisture = Array{Float64}(undef, nsteps, numnodes_a),
