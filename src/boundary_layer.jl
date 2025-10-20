@@ -1,5 +1,4 @@
 function allocate_profile(heights)
-    N_heights = length(heights)
     wind_speed = similar(heights, typeof(0.0u"cm/minute")) # output wind speeds
     height_array = similar(heights, typeof(0.0u"cm"))
     height_array[end:-1:begin] .= heights 
@@ -23,8 +22,6 @@ to assess whether conditions are stable or unstable.
 # Keyword Arguments
 
 - `z0::Quantity=0.004u"m"`: roughness length (surface aerodynamic roughness).
-- `zh::Quantity=0.0u"m"`: heat transfer roughness height
-- `d0::Quantity=0.0u"m"`: zero plane displacement correction factor.
 - `karman_constant::Float64=0.4`: von Kármán constant.
 - `heights::Vector{Quantity}`: Requested heights above the surface, the last being the reference height.
 - `reference_temperature::Quantity=27.78u"°C"`: Air temperature at the reference height.
@@ -88,34 +85,37 @@ function atmospheric_surface_profile!(buffers;
     terrain,
     environment_instant,
     surface_temperature, 
-    γ = 16.0, # coefficient from Dyer and Hicks for Φ_m (momentum), TODO make it available as a user param?
 )
-    (; roughness_height, zh, d0, karman_constant, elevation, P_atmos) = terrain
+    (; roughness_height, karman_constant, dyer_constant, elevation, P_atmos) = terrain
     (; reference_temperature, reference_wind_speed, reference_humidity, zenith_angle) = environment_instant
-
     (; heights, height_array, air_temperature, wind_speed, relative_humidity) = buffers
+    
+    κ = karman_constant
+    γ = dyer_constant
+    T_ref_height = u"K"(reference_temperature)
+    T_surface = u"K"(surface_temperature)
+    z0 = roughness_height
+
+    # define height profile
     N_heights = length(heights)
     if minimum(heights) < roughness_height
+        # TODO put in MicroProblem constructor
         throw(ArgumentError("The minimum height is not greater than the roughness height."))
     end
     reference_height = last(heights)
-
-    T_ref_height = u"K"(reference_temperature)
-    T_surface = u"K"(surface_temperature)
-    κ = karman_constant
-    # Units: m to cm
-    z = u"cm"(reference_height)
-    z0 = u"cm"(roughness_height)
-    zh_cm = u"cm"(zh)
-    d0_cm = u"cm"(d0)
-    v_ref_height = u"cm/minute"(reference_wind_speed)
-
-    # define air heights
-    N_heights = length(heights)
-    height_array = u"cm".(reverse(heights))
-    wind_speed = zeros(Float64, N_heights) .* 1u"cm/minute" # output wind speeds
+    height_array =reverse(heights)
+    wind_speed = zeros(Float64, N_heights) .* 1u"m/s" # output wind speeds
     air_temperature = Vector{typeof(0.0u"K")}(undef, N_heights) # output temperatures, need to do this otherwise get InexactError
     relative_humidity = zeros(Float64, N_heights) # output relative humidities
+    z = reference_height
+
+    ΔT = T_ref_height - T_surface
+    T_mean = (T_surface + T_ref_height) / 2
+    # TODO call calc_ρ_cp method specific to elevation and RH in final version but do it this way for NicheMapR comparison
+    ρ_cp = calc_ρ_cp(T_mean)#, elevation, reference_humidity)
+    log_z_ratio = log(z / z0 + 1)
+    v_ref_height = u"m/s"(reference_wind_speed)
+
     wind_speed[1] = v_ref_height
     air_temperature[1] = T_ref_height
 
@@ -124,42 +124,26 @@ function atmospheric_surface_profile!(buffers;
     # wet_air_out = wet_air_properties(u"K"(reference_temperature); rh=reference_humidity, P_atmos)
     # ρ = dry_air_out.ρ_air
     # c_p = wet_air_out.c_p
-    # TODO make this work with SI units
     #ρcpTκg = u"cal*minute^2/cm^4"(ρ * c_p * T_ref_height / (κ * g_n))
-    ρcpTκg = 6.003e-8u"cal*minute^2/cm^4"
+    ρcpTκg = u"W*s^3/m^4"(6.003e-8u"cal*minute^2/cm^4")
     
-    log_z_ratio = log(z / z0 + 1)
-    T_ref_height = u"K"(reference_temperature)
-    T_surface = u"K"(surface_temperature)
-    ΔT = T_ref_height - T_surface
-    T_mean = (T_surface + T_ref_height) / 2
-    # TODO call calc_ρ_cp method specific to elevation and RH in final version but do it this way for NicheMapR comparison
-    ρ_cp = calc_ρ_cp(T_mean)#, elevation, reference_humidity)
-    u_star = calc_u_star(; reference_wind_speed, log_z_ratio, κ)
-    Q_convection = calc_convection(; u_star, log_z_ratio, ΔT, ρ_cp, z0)
+    # check for free convection (lapse) conditions
+    if T_ref_height ≥ T_surface || zenith_angle ≥ 90° # no free convective enhancement
 
-    if zh > 0.0u"m" # Campbell & Norman canopy displacement approach
-        for i in 2:N_heights
-            A = (T_ref_height - T_surface) / (1 - log((z - d0_cm) / zh_cm))
-            T0 = T_ref_height + A * log((z - d0_cm) / zh_cm)
-            air_temperature[i] = T0 - A * log((height_array[i] - d0_cm) / zh_cm)
-        end
-    end
-    # TODO name and explain this check, why `|| zenith_angle`
-    if T_ref_height ≥ T_surface || zenith_angle ≥ 90°
+        u_star = calc_u_star(; reference_wind_speed, log_z_ratio, κ)
+        Q_convection = calc_convection(; u_star, log_z_ratio, ΔT, ρ_cp, z0)
         for i in 2:N_heights
             wind_speed[i] = calc_wind(height_array[i], z0, κ, u_star, 1.0)
+            # ficticious temperature at top of sublayer
             T_z0 = (T_ref_height * bulk_stanton(log_z_ratio) + T_surface * sublayer_stanton(z0, u_star)) / (bulk_stanton(log_z_ratio) + sublayer_stanton(z0, u_star))
-            if zh <= 0.0u"m"
-                air_temperature[i] = T_z0 + (T_ref_height - T_z0) * log(height_array[i] / z0 + 1.0) / log_z_ratio
-            end
+            air_temperature[i] = T_z0 + (T_ref_height - T_z0) * log(height_array[i] / z0 + 1.0) / log_z_ratio
         end
-    else
-        L_Obukhov = -30.0u"cm" # initialise Obukhov length
+    else # free convective enhancement, find Obukhov length
+        L_Obukhov = -0.3u"m" # initialise Obukhov length
         # TODO just pass the environment_instant through here
         Obukhov_out = calc_Obukhov_length(T_ref_height, T_surface, v_ref_height, z0, z, ρcpTκg, κ, log_z_ratio, ΔT, ρ_cp; max_iter=30, tol=1e-2)
-        L_Obukhov = u"cm"(Obukhov_out.L_Obukhov)
-        T_z0 = Obukhov_out.T_z0
+        L_Obukhov = Obukhov_out.L_Obukhov
+        T_z0 = Obukhov_out.T_z0 # ficticious temperature at top of sublayer
         Q_convection = Obukhov_out.Q_convection
         u_star = Obukhov_out.u_star
         ψ_h = Obukhov_out.ψ_h
@@ -168,9 +152,7 @@ function atmospheric_surface_profile!(buffers;
             ψ_m1 = calc_ψ_m(φ_m1)
             ψ_h2 = calc_ψ_h(φ_m1)
             wind_speed[i] = calc_wind(height_array[i], z0, κ, u_star, -ψ_m1)
-            if zh <= 0.0u"m"
-                air_temperature[i] = T_z0 + (T_ref_height - T_z0) * log(height_array[i] / z0 - ψ_h2) / log(z / z0 - ψ_h)
-            end
+            air_temperature[i] = T_z0 + (T_ref_height - T_z0) * log(height_array[i] / z0 - ψ_h2) / log(z / z0 - ψ_h)
         end
     end
     wind_speed = reverse(wind_speed)
@@ -179,11 +161,11 @@ function atmospheric_surface_profile!(buffers;
     relative_humidity .= clamp.(e ./ vapour_pressure.(air_temperature) .* 100.0, 0.0, 100.0)
 
     return (;
-        wind_speed=u"m/s".(wind_speed),
+        wind_speed,
         air_temperature,
         relative_humidity,
-        Q_convection=u"W/m^2"(Q_convection),
-        ustar=u"m/s"(u_star)
+        Q_convection,
+        ustar=u_star,
     )
 end
 
@@ -429,23 +411,21 @@ function calc_Obukhov_length(
     T_ref_height, T_surface, v_ref_height, z0, z, ρcpTκg, κ, log_z_ratio, ΔT, ρ_cp; 
     γ=16.0, max_iter=30, tol=1e-2
 )
-    L_Obukhov = -30.0u"cm" # initial Monin-Obukhov length cm
+    L_Obukhov = -0.3u"m" # initial Monin-Obukhov length cm
 
     # conversions
-    z = u"cm"(z)
-    z0 = u"cm"(z0)
     T_ref_height = u"K"(T_ref_height)
     T_surface = u"K"(T_surface)
-    v_ref_height = u"cm/minute"(v_ref_height)
+    v_ref_height = v_ref_height
 
     # initialise with zeros
-    Q_convection = 0.0u"cal*cm^-2*minute^-1"
+    Q_convection = 0.0u"W/m^2"
     bulk_stanton_number = 0.0
     sublayer_stanton_number = 0.0 
     ψ_h = 0.0
     φ_m = 0.0
-    u_star = 0.0u"cm*minute^-1"
-    L_Obukhov_new = 0.0u"cm"
+    u_star = 0.0u"m*s^-1"
+    L_Obukhov_new = 0.0u"m"
 
     δ = 1.0
     count = 0
@@ -460,8 +440,8 @@ function calc_Obukhov_length(
             dum = just_above_zero
         end
         u_star = κ * v_ref_height / dum
-        if u_star < just_above_zero * 1u"cm/minute"
-            u_star = just_above_zero * 1u"cm/minute"
+        if u_star < just_above_zero * 1u"m/s"
+            u_star = just_above_zero * 1u"m/s"
         end
         sublayer_stanton_number = sublayer_stanton(z0, u_star)
         bulk_stanton_number = bulk_stanton(dum, z, L_Obukhov)
@@ -470,11 +450,11 @@ function calc_Obukhov_length(
         δ = abs((L_Obukhov_new - L_Obukhov) / L_Obukhov)
         L_Obukhov = L_Obukhov_new
     end
-
+    # ficticious temperature at top of sublayer
     T_z0 = (T_ref_height * bulk_stanton_number + T_surface * sublayer_stanton_number) / (bulk_stanton_number + sublayer_stanton_number)
 
     return (; 
-        L_Obukhov=u"m"(L_Obukhov), 
+        L_Obukhov, 
         sublayer_stanton_number, 
         bulk_stanton_number, 
         u_star, 
