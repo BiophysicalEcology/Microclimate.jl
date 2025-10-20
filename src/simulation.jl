@@ -264,6 +264,7 @@ function interpolate_minmax!(output, environment_minmax, environment_daily, envi
     output.reference_temperature .= reference_temperature
     output.reference_wind_speed .= reference_wind_speed
     output.reference_humidity .= reference_humidity
+    output.zenith_angle .= solrad_out.zenith_angle
 
     return 
 end
@@ -272,6 +273,7 @@ function interpolate_minmax!(output, environment_minmax::Nothing, environment_da
     output.reference_temperature .= environment_hourly.reference_temperature
     output.reference_wind_speed .= environment_hourly.reference_wind_speed
     output.reference_humidity .= environment_hourly.reference_humidity
+    output.zenith_angle .= solrad_out.zenith_angle
 
     return 
 end
