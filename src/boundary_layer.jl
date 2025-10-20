@@ -23,8 +23,6 @@ to assess whether conditions are stable or unstable.
 # Keyword Arguments
 
 - `z0::Quantity=0.004u"m"`: roughness length (surface aerodynamic roughness).
-- `zh::Quantity=0.0u"m"`: heat transfer roughness height
-- `d0::Quantity=0.0u"m"`: zero plane displacement correction factor.
 - `karman_constant::Float64=0.4`: von Kármán constant.
 - `heights::Vector{Quantity}`: Requested heights above the surface, the last being the reference height.
 - `reference_temperature::Quantity=27.78u"°C"`: Air temperature at the reference height.
@@ -90,7 +88,7 @@ function atmospheric_surface_profile!(buffers;
     surface_temperature, 
     γ = 16.0, # coefficient from Dyer and Hicks for Φ_m (momentum), TODO make it available as a user param?
 )
-    (; roughness_height, zh, d0, karman_constant, elevation, P_atmos) = terrain
+    (; roughness_height, karman_constant, elevation, P_atmos) = terrain
     (; reference_temperature, reference_wind_speed, reference_humidity, zenith_angle) = environment_instant
 
     (; heights, height_array, air_temperature, wind_speed, relative_humidity) = buffers
@@ -106,8 +104,6 @@ function atmospheric_surface_profile!(buffers;
     # Units: m to cm
     z = u"cm"(reference_height)
     z0 = u"cm"(roughness_height)
-    zh_cm = u"cm"(zh)
-    d0_cm = u"cm"(d0)
     v_ref_height = u"cm/minute"(reference_wind_speed)
 
     # define air heights
@@ -138,21 +134,12 @@ function atmospheric_surface_profile!(buffers;
     u_star = calc_u_star(; reference_wind_speed, log_z_ratio, κ)
     Q_convection = calc_convection(; u_star, log_z_ratio, ΔT, ρ_cp, z0)
 
-    if zh > 0.0u"m" # Campbell & Norman canopy displacement approach
-        for i in 2:N_heights
-            A = (T_ref_height - T_surface) / (1 - log((z - d0_cm) / zh_cm))
-            T0 = T_ref_height + A * log((z - d0_cm) / zh_cm)
-            air_temperature[i] = T0 - A * log((height_array[i] - d0_cm) / zh_cm)
-        end
-    end
     # TODO name and explain this check, why `|| zenith_angle`
     if T_ref_height ≥ T_surface || zenith_angle ≥ 90°
         for i in 2:N_heights
             wind_speed[i] = calc_wind(height_array[i], z0, κ, u_star, 1.0)
             T_z0 = (T_ref_height * bulk_stanton(log_z_ratio) + T_surface * sublayer_stanton(z0, u_star)) / (bulk_stanton(log_z_ratio) + sublayer_stanton(z0, u_star))
-            if zh <= 0.0u"m"
-                air_temperature[i] = T_z0 + (T_ref_height - T_z0) * log(height_array[i] / z0 + 1.0) / log_z_ratio
-            end
+            air_temperature[i] = T_z0 + (T_ref_height - T_z0) * log(height_array[i] / z0 + 1.0) / log_z_ratio
         end
     else
         L_Obukhov = -30.0u"cm" # initialise Obukhov length
@@ -168,9 +155,7 @@ function atmospheric_surface_profile!(buffers;
             ψ_m1 = calc_ψ_m(φ_m1)
             ψ_h2 = calc_ψ_h(φ_m1)
             wind_speed[i] = calc_wind(height_array[i], z0, κ, u_star, -ψ_m1)
-            if zh <= 0.0u"m"
-                air_temperature[i] = T_z0 + (T_ref_height - T_z0) * log(height_array[i] / z0 - ψ_h2) / log(z / z0 - ψ_h)
-            end
+            air_temperature[i] = T_z0 + (T_ref_height - T_z0) * log(height_array[i] / z0 - ψ_h2) / log(z / z0 - ψ_h)
         end
     end
     wind_speed = reverse(wind_speed)

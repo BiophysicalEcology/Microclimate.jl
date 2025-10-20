@@ -39,9 +39,6 @@ terrain = Terrain(;
     horizon_angles = (DataFrame(CSV.File("$testdir/data/init_daily/hori.csv"))[:, 2]) * 1.0u"°", # enter the horizon angles (degrees) so that they go from 0 degrees azimuth (north) clockwise in 15 degree intervals
     slope = microinput[:slope] * 1.0u"°",
     aspect = microinput[:azmuth] * 1.0u"°",
-    roughness_height = microinput[:RUF] * 1.0u"m", # roughness height for standard mode TODO dispatch based on roughness pars
-    zh = microinput[:ZH] * 1.0u"m", # heat transfer roughness height for Campbell and Norman mode
-    d0 = microinput[:D0] * 1.0u"m", # zero plane displacement correction factor
     karman_constant = 0.4, # Kármán constant
 )
 
