@@ -1,5 +1,4 @@
 function allocate_profile(heights)
-    N_heights = length(heights)
     wind_speed = similar(heights, typeof(0.0u"cm/minute")) # output wind speeds
     height_array = similar(heights, typeof(0.0u"cm"))
     height_array[end:-1:begin] .= heights 
@@ -108,9 +107,6 @@ function atmospheric_surface_profile!(buffers;
 
     # define air heights
     N_heights = length(heights)
-    height_array = u"cm".(reverse(heights))
-    wind_speed = zeros(Float64, N_heights) .* 1u"cm/minute" # output wind speeds
-    air_temperature = Vector{typeof(0.0u"K")}(undef, N_heights) # output temperatures, need to do this otherwise get InexactError
     relative_humidity = zeros(Float64, N_heights) # output relative humidities
     wind_speed[1] = v_ref_height
     air_temperature[1] = T_ref_height
@@ -131,11 +127,12 @@ function atmospheric_surface_profile!(buffers;
     T_mean = (T_surface + T_ref_height) / 2
     # TODO call calc_ρ_cp method specific to elevation and RH in final version but do it this way for NicheMapR comparison
     ρ_cp = calc_ρ_cp(T_mean)#, elevation, reference_humidity)
-    u_star = calc_u_star(; reference_wind_speed, log_z_ratio, κ)
-    Q_convection = calc_convection(; u_star, log_z_ratio, ΔT, ρ_cp, z0)
+
 
     # TODO name and explain this check, why `|| zenith_angle`
     if T_ref_height ≥ T_surface || zenith_angle ≥ 90°
+        u_star = calc_u_star(; reference_wind_speed, log_z_ratio, κ)
+        Q_convection = calc_convection(; u_star, log_z_ratio, ΔT, ρ_cp, z0)
         for i in 2:N_heights
             wind_speed[i] = calc_wind(height_array[i], z0, κ, u_star, 1.0)
             T_z0 = (T_ref_height * bulk_stanton(log_z_ratio) + T_surface * sublayer_stanton(z0, u_star)) / (bulk_stanton(log_z_ratio) + sublayer_stanton(z0, u_star))
