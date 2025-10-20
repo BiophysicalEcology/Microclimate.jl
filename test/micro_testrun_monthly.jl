@@ -39,6 +39,7 @@ terrain = Terrain(;
     aspect = microinput[:azmuth] * 1.0u"°",
     roughness_height = microinput[:RUF] * 1.0u"m", # roughness height for standard mode TODO dispatch based on roughness pars
     karman_constant = 0.4, # Kármán constant
+    dyer_constant = 16.0, # coefficient from Dyer and Hicks for Φ_m (momentum), γ
 )
 
 mineral_density = (CSV.File("$testdir/data/init_monthly/soilprop.csv")[1, 1][6]) * 1.0u"Mg/m^3" # soil minerals density (Mg/m3)

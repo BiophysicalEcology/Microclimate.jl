@@ -40,6 +40,7 @@ terrain = Terrain(;
     slope = microinput[:slope] * 1.0u"°",
     aspect = microinput[:azmuth] * 1.0u"°",
     karman_constant = 0.4, # Kármán constant
+    dyer_constant = 16.0, # coefficient from Dyer and Hicks for Φ_m (momentum), γ
 )
 
 soil_thermal_model = CampbelldeVriesSoilThermal(;

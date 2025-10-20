@@ -20,7 +20,7 @@ function soil_energy_balance(
     (; soil_moisture, shade) = environment_instant
     # Get environmental data at time t
     (; tair, vel, zenr, solr, cloud, rh, zslr) = interpolate_forcings(forcing, t)
-    (; slope, P_atmos, roughness_height, karman_constant) = terrain
+    (; slope, P_atmos, roughness_height, karman_constant, dyer_constant) = terrain
 
     reference_height = last(heights)
     sabnew = 1.0 - environment_instant.albedo

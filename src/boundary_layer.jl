@@ -23,6 +23,7 @@ to assess whether conditions are stable or unstable.
 
 - `z0::Quantity=0.004u"m"`: roughness length (surface aerodynamic roughness).
 - `karman_constant::Float64=0.4`: von Kármán constant.
+- `dyer_constant::Float=16, coefficient from Dyer and Hicks for Φ_m (momentum), γ
 - `heights::Vector{Quantity}`: Requested heights above the surface, the last being the reference height.
 - `reference_temperature::Quantity=27.78u"°C"`: Air temperature at the reference height.
 - `reference_wind_speed::Quantity=2.75u"m/s"`: Wind speed at the reference height.
@@ -85,9 +86,8 @@ function atmospheric_surface_profile!(buffers;
     terrain,
     environment_instant,
     surface_temperature, 
-    γ = 16.0, # coefficient from Dyer and Hicks for Φ_m (momentum), TODO make it available as a user param?
 )
-    (; roughness_height, karman_constant, elevation, P_atmos) = terrain
+    (; roughness_height, karman_constant, dyer_constant, elevation, P_atmos) = terrain
     (; reference_temperature, reference_wind_speed, reference_humidity, zenith_angle) = environment_instant
 
     (; heights, height_array, air_temperature, wind_speed, relative_humidity) = buffers
@@ -100,6 +100,7 @@ function atmospheric_surface_profile!(buffers;
     T_ref_height = u"K"(reference_temperature)
     T_surface = u"K"(surface_temperature)
     κ = karman_constant
+    γ = dyer_constant
     # Units: m to cm
     z = u"cm"(reference_height)
     z0 = u"cm"(roughness_height)

@@ -138,8 +138,9 @@ function example_terrain(;
     # boundary layer parameters
     roughness_height = 0.004u"m", # heat transfer roughness height
     karman_constant = 0.4, # Kármán constant
+    dyer_constant = 16.0, # coefficient from Dyer and Hicks for Φ_m (momentum), γ
 )
-    Terrain(; elevation, horizon_angles, slope, aspect, roughness_height, karman_constant)
+    Terrain(; elevation, horizon_angles, slope, aspect, roughness_height, karman_constant, dyer_constant)
 end
 
 function example_monthly_weather(;
