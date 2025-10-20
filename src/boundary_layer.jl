@@ -103,10 +103,6 @@ function atmospheric_surface_profile!(buffers;
         throw(ArgumentError("The minimum height is not greater than the roughness height."))
     end
     reference_height = last(heights)
-    height_array =reverse(heights)
-    wind_speed = zeros(Float64, N_heights) .* 1u"m/s" # output wind speeds
-    air_temperature = Vector{typeof(0.0u"K")}(undef, N_heights) # output temperatures, need to do this otherwise get InexactError
-    relative_humidity = zeros(Float64, N_heights) # output relative humidities
     z = reference_height
 
     ΔT = T_ref_height - T_surface
