@@ -57,7 +57,7 @@ function MicroResult(nsteps::Int, numnodes_a::Int)
         global_solar = Array{typeof(1.0u"W/m^2")}(undef, nsteps),
         direct_solar = Array{typeof(1.0u"W/m^2")}(undef, nsteps),
         diffuse_solar = Array{typeof(1.0u"W/m^2")}(undef, nsteps),
-        zenith_angle = Array{Float64}(undef, nsteps),
+        zenith_angle = Array{typeof(1.0u"°")}(undef, nsteps),
         sky_temperature = Array{typeof(1.0u"K")}(undef, nsteps),
         soil_temperature = Array{typeof(1.0u"K")}(undef, nsteps, numnodes_a),
         soil_moisture = Array{Float64}(undef, nsteps, numnodes_a),
