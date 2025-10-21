@@ -87,6 +87,7 @@ function solar_geometry(sm::McCulloughPorterSolarGeometry, latitude::Quantity; #
     ζ = (ω * (d - d0)) + 2.0ϵ * (sin(ω * d) - sin(ω * d0))          # Eq.5
     δ = asin(se * sin(ζ))                                         # Eq.4
     cosZ = cos(latitude) * cos(δ) * cos(h) + sin(latitude) * sin(δ)         # Eq.3
+    cosZ = clamp(cosZ, -1.0, 1.0)  # prevent NaN due to rounding
     z = acos(cosZ)u"rad"                                          # Zenith angle
     AR2 = 1.0 + (2.0ϵ) * cos(ω * d)                                   # Eq.2
     δ = δ * u"rad"
