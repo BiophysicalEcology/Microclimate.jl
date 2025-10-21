@@ -77,8 +77,7 @@ McCullough & Porter (1971)
     se::Real = 0.39784993 #0.39779
 end
 
-function solar_geometry(sm::McCulloughPorterSolarGeometry;
-    latitude::Quantity, # =83.07305u"°",
+function solar_geometry(sm::McCulloughPorterSolarGeometry, latitude::Quantity; # =83.07305u"°",
     d::Real, # =1.0,
     h::Quantity, # =-2.87979u"rad",
 )
@@ -1282,7 +1281,7 @@ function solrad(solar_model::SolarRadiation;
             d = days[i]
             t = hours[j]
             h, tsn = hour_angle(t, longitude_correction) # hour angle (radians)
-            (; ζ, δ, z, AR2) = solar_geometry(solar_geometry_model; latitude, d, h) # compute ecliptic, declination, zenith angle and (a/r)^2
+            (; ζ, δ, z, AR2) = solar_geometry(solar_geometry_model, latitude; d, h) # compute ecliptic, declination, zenith angle and (a/r)^2
             Z = uconvert(u"°", z)
             Zsl = Z
             amult = 1.0
