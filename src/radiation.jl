@@ -77,6 +77,7 @@ McCullough & Porter (1971)
     se::Real = 0.39784993 #0.39779
 end
 
+solar_geometry(::McCulloughPorterSolarGeometry, ::Missing, ; kwargs...) = missing
 function solar_geometry(sm::McCulloughPorterSolarGeometry, latitude::Quantity; # =83.07305u"°",
     d::Real, # =1.0,
     h::Quantity, # =-2.87979u"rad",
