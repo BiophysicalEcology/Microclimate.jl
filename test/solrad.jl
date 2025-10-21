@@ -1,13 +1,27 @@
-using Microclimate: McCulloughPorterSolarGeometry
+using Microclimate
+using Microclimate: solar_geometry, McCulloughPorterSolarGeometry, hour_angle, SolarRadiation, solrad
 using Unitful
 using Unitful: °, rad, R, kg, m
 using CSV, DataFrames, Statistics
 using Test
-sm = SolarRadiation()
 sm = McCulloughPorterSolarGeometry()
 h = hour_angle(12.0)[1]
-latitudes = [-29.0u"°", 29.0u"°"]
-results = solar_geometry.(Ref(sm), latitudes; d=1, h=h)
+latitude = [-29.0u"°", 29.0u"°"]
+results = solar_geometry.(Ref(sm), latitude; d=1, h=h)
+solar_model = SolarRadiation()
+latitude = [-29.0u"°", 29.0u"°"]
+elevation = [1000.0u"m", 1.0u"m"]
+horizon_angles = fill(1.0u"°", 24)
+slope = [20.0u"°", 0.0u"°"]
+aspect = [0.0u"°", 0.0u"°"]
+P_atmos = [101325.0u"Pa", 101325.0u"Pa"]
+albedo = [0.2, 0.45]
+solrad_out = solrad.(Ref(solar_model), latitude, elevation, 
+    slope, aspect, P_atmos, albedo;
+    days=1,               # days of year
+    hours=12,              # hours of day
+    horizon_angles, 
+)
 
 # TODO - compare with McCullough and Porter plots and Insolation.jl and CloudScat.jl? 
 # TODO check how CliMA do atmospheric response - looks like it's in RRTMGP.jl

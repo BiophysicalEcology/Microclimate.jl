@@ -1227,7 +1227,11 @@ Dave, J. V., & Furukawa, P. M. (1966). Scattered radiation in the ozone
  absorption bands at selected levels of a terrestrial, Rayleigh atmosphere (Vol. 7).
  Americal Meteorological Society.
 """
-solrad(::McCulloughPorterSolarGeometry, args::Vararg{Missing}; kwargs...) = missing
+#solrad(::McCulloughPorterSolarGeometry, args::Vararg{Missing}; kwargs...) = missing
+function solrad(model::SolarRadiation, args...; kwargs...)
+    any(ismissing, args) && return missing
+    return solrad_core(model, args...; kwargs...)
+end
 function solrad(solar_model::SolarRadiation, latitude::Quantity, elevation::Quantity, 
     slope::Quantity, aspect::Quantity, P_atmos::Quantity, albedo::Number;
     days::Real,#Vector{<:Real}=[15, 46, 74, 105, 135, 166, 196, 227, 258, 288, 319, 349],
