@@ -1227,17 +1227,18 @@ Dave, J. V., & Furukawa, P. M. (1966). Scattered radiation in the ozone
  absorption bands at selected levels of a terrestrial, Rayleigh atmosphere (Vol. 7).
  Americal Meteorological Society.
 """
-function solrad(solar_model::SolarRadiation;
-    days::Vector{<:Real}=[15, 46, 74, 105, 135, 166, 196, 227, 258, 288, 319, 349],
+solrad(::McCulloughPorterSolarGeometry, args::Vararg{Missing}; kwargs...) = missing
+function solrad(solar_model::SolarRadiation, latitude::Quantity, elevation::Quantity, 
+    slope::Quantity, aspect::Quantity, P_atmos::Quantity, albedo::Number;
+    days::Real,#Vector{<:Real}=[15, 46, 74, 105, 135, 166, 196, 227, 258, 288, 319, 349],
     year::Real=2001, # TODO: this shouldn't have a default
-    latitude::Number,
-    terrain::Terrain,
+    #terrain::Terrain,
     longitude_correction::Real=0.0, # longitude correction, hours
-    hours::AbstractVector{<:Real}=0:1:23,
-    albedo::Vector{<:Real}, # substrate albedo (decimal %)
+    hours::Number,#AbstractVector{<:Real}=0:1:23,
+    horizon_angles::AbstractVector{<:Quantity}, #albedo::Vector{<:Real}, # substrate albedo (decimal %)
 )
     (; solar_geometry_model, cmH2O, iuv, scattered, amr, nmax, Iλ, OZ, τR, τO, τA, τW, Sλ, FD, FDQ, s̄) = solar_model
-    (; elevation, horizon_angles, slope, P_atmos) = terrain
+    #(; elevation, horizon_angles, slope, P_atmos) = terrain
 
     ndays = length(days)    # number of days
     ntimes = length(hours)  # number of times
@@ -1277,7 +1278,7 @@ function solrad(solar_model::SolarRadiation;
         DRRλ = GRINT * u"1/nm"              # wavelength-specific direct Rayleigh radiation component
         DRλ = GRINT * u"1/nm"               # wavelength-specific direct radiation component
         SRλ = GRINT * u"1/nm"               # wavelength-specific scattered radiation component
-        alb = albedo[i]
+        alb = albedo#[i]
         for j in 1:ntimes
             d = days[i]
             t = hours[j]
