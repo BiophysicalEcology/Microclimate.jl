@@ -1365,7 +1365,7 @@ function solrad(solar_model::SolarRadiation, latitude::Quantity, elevation::Quan
                 end
 
                 cz = cos(z)
-                intcz = Int(floor(100.0 * cz + 1.0))
+                intcz = floor(Int, 100.0 * cz + 1.0)
                 Z = uconvert(u"°", z)  # zenith angle in degrees
 
                 # horizon angle - check this works when starting at 0 rather than e.g. 15 deg
@@ -1377,7 +1377,7 @@ function solrad(solar_model::SolarRadiation, latitude::Quantity, elevation::Quan
                     czsl = cos(z) * cos(slope) + sin(z) * sin(slope) * cos(dazsun - aspect)
                     zsl = acos(czsl)
                     Zsl = min(uconvert(u"°", zsl), 90u"°") # cap at 90 degrees if sun is below slope horizon
-                    intczsl = Int(floor(100.0 * czsl + 1.0))
+                    intczsl = floor(Int(100.0 * czsl + 1.0))
                 else
                     czsl = cz
                     zsl = z
@@ -1397,13 +1397,13 @@ function solrad(solar_model::SolarRadiation, latitude::Quantity, elevation::Quan
                 # optical air mass (Rozenberg 1966 formula p.159 in book 'Twilight') ---
                 airms = 1.0 / (cos(z) + (0.025 * exp(-11.0 * cos(z))))
                 cz = cos(z)
-                intcz = Int(floor(100.0 * cz + 1.0))
+                intcz = floor(Int(100.0 * cz + 1.0))
                 Z = uconvert(u"°", z)  # zenith angle in degrees
 
                 # atmospheric ozone lookup
                 # convert latitude in degrees to nearest 10-degree index
                 tlat = (latitude + 100.0u"°") / 10.0u"°"
-                llat = Int(floor(tlat))
+                llat = floor(Int(tlat))
                 allat = llat
                 ala = allat + 0.5
                 if tlat > ala
