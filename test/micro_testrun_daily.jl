@@ -1,4 +1,6 @@
 using Microclimate
+using FluidProperties
+using SolarRadiation
 using Unitful
 using CSV, DataFrames
 using Test
@@ -28,20 +30,30 @@ names = [
 # Zip into a NamedTuple
 microinput = (; zip(names, microinput_vec)...)
 
-days = collect(1:Int(length(soil_temperature_nmr[:, 1]) / 24)) # days of year to run (for solrad)
+days = collect(1:Int(length(soil_temperature_nmr[:, 1]) / 24)) # days of year to run (for solar_radiation)
 depths = ((DataFrame(CSV.File("$testdir/data/init_daily/DEP.csv"))[:, 2]) / 100.0)u"m" # Soil nodes (cm) - keep spacing close near the surface, last value is where it is assumed that the soil temperature is at the annual mean air temperature
 heights = [microinput[:Usrhyt], microinput[:Refhyt]]u"m" # air nodes for temperature, wind speed and humidity profile
 days2do = 30
 hours2do = days2do * 24
 
-terrain = Terrain(;
+#TODO make one terrain object via BiophysicalEcologyBase or Habitat
+#TODO make P_atmos time a varying input
+micro_terrain = MicroTerrain(;
     elevation = microinput[:ALTT] * 1.0u"m", # elevation (m)
-    horizon_angles = (DataFrame(CSV.File("$testdir/data/init_daily/hori.csv"))[:, 2]) * 1.0u"°", # enter the horizon angles (degrees) so that they go from 0 degrees azimuth (north) clockwise in 15 degree intervals
-    slope = microinput[:slope] * 1.0u"°",
-    aspect = microinput[:azmuth] * 1.0u"°",
     roughness_height = microinput[:RUF] * 1.0u"m", # roughness height for standard mode TODO dispatch based on roughness pars
     karman_constant = 0.4, # Kármán constant
     dyer_constant = 16.0, # coefficient from Dyer and Hicks for Φ_m (momentum), γ
+    P_atmos = atmospheric_pressure((microinput[:ALTT])*1.0u"m"),
+    viewfactor = 1.0, # view factor to sky
+)
+
+solar_terrain = SolarTerrain(;
+    slope = (microinput[:slope])*1.0u"°",
+    aspect = (microinput[:azmuth])*1.0u"°",
+    elevation = (microinput[:ALTT])*1.0u"m",
+    horizon_angles = (DataFrame(CSV.File("$testdir/data/init_daily/hori.csv"))[:, 2])*1.0u"°",
+    albedo = (DataFrame(CSV.File("$testdir/data/init_daily/REFLS.csv"))[1, 2] * 1.0),
+    P_atmos = atmospheric_pressure((microinput[:ALTT])*1.0u"m"),
 )
 
 soil_thermal_model = CampbelldeVriesSoilThermal(;
@@ -92,7 +104,6 @@ soil_moisture_model = SoilMoistureModel(;
 
 environment_daily = DailyTimeseries(;
     # daily environmental vectors
-    albedo = (DataFrame(CSV.File("$testdir/data/init_daily/REFLS.csv"))[1:days2do, 2] * 1.0), # substrate albedo (decimal %)
     shade = (DataFrame(CSV.File("$testdir/data/init_daily/Minshades.csv"))[1:days2do, 2] * 1.0), # daily shade (%)
     soil_wetness = (DataFrame(CSV.File("$testdir/data/init_daily/PCTWET.csv"))[1:days2do, 2] * 1.0),
     surface_emissivity = (DataFrame(CSV.File("$testdir/data/init_daily/SLES.csv"))[1:days2do, 2] * 1.0), # - surface emissivity
@@ -113,19 +124,20 @@ environment_hourly = HourlyTimeseries(;
     longwave_radiation=nothing,
 )
 
-solar_model = SolarRadiation(; iuv = Bool(Int(microinput[:IUV])))
+solar_model = SolarProblem(; iuv = Bool(Int(microinput[:IUV])))
 
 # now try the simulation function
 problem = MicroProblem(;
     # locations, times, depths and heights
     latitude = (microinput[:ALAT] + microinput[:AMINUT] / 60) * 1.0u"°", # latitude
     days = days[1:days2do], # days of year to simulate - TODO leap years
-    hours = 0:1:23, # hour of day for solrad # TODO how and in what context would users change this
+    hours = 0:1:23, # hour of day for solar_radiation # TODO how and in what context would users change this
     depths, # soil nodes - keep spacing close near the surface
     heights, # air nodes for temperature, wind speed and humidity profile
     # Objects defined above
-    terrain,
     solar_model,
+    solar_terrain,
+    micro_terrain, #TODO combine terrains via a generic terrain in BiophysicalEcologyBase
     soil_moisture_model,
     soil_thermal_model,
     environment_minmax,

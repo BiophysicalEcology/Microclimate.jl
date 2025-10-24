@@ -15,21 +15,22 @@ function soil_energy_balance(
     #T_K = T .* u"K"  # convert Float64 time back to unitful
     #dT_K = dT .* 60 .* u"K/minute"  # convert Float64 time back to unitful
     # extract prameters
-    (; soil_thermal_model, forcing, buffers, heights, depths, nodes, environment_instant, terrain, soil_wetness, runmoist) = p
+    (; soil_thermal_model, forcing, buffers, heights, depths, nodes, environment_instant, solar_terrain, micro_terrain, soil_wetness, runmoist) = p
     (; depp, wc, c) = buffers.soil_energy_balance
     (; soil_moisture, shade) = environment_instant
     # Get environmental data at time t
     (; tair, vel, zenr, solr, cloud, rh, zslr) = interpolate_forcings(forcing, t)
-    (; slope, P_atmos, roughness_height, karman_constant, dyer_constant) = terrain
+    (; P_atmos, roughness_height, karman_constant, dyer_constant) = micro_terrain
+    (; albedo, slope) = solar_terrain
 
     reference_height = last(heights)
-    sabnew = 1.0 - environment_instant.albedo
+    sabnew = 1.0 - albedo
 
     # check for unstable conditions of ground surface temperature
     T1 = map(t -> clamp(t, (-81.0+273.15)u"K", (85.0+273.15)u"K"), T)::U
 
     # get soil properties
-    (; λ_b, cp_b, ρ_b) = soil_properties!(buffers.soil_properties, soil_thermal_model; soil_temperature=T1, soil_moisture, terrain)
+    (; λ_b, cp_b, ρ_b) = soil_properties!(buffers.soil_properties, soil_thermal_model; soil_temperature=T1, soil_moisture, micro_terrain)
 
     # Get environmental data at time t
     # f = i.forcing
@@ -69,7 +70,7 @@ function soil_energy_balance(
     end
 
     # Longwave radiation
-    longwave_out = longwave_radiation(; terrain, surface_temperature=T2[1], environment_instant)
+    longwave_out = longwave_radiation(; micro_terrain, surface_temperature=T2[1], environment_instant)
     Q_infrared = longwave_out.Qrad
 
     # Conduction
@@ -108,7 +109,7 @@ function soil_energy_balance(
     ρ_air = wet_air_out.ρ_air
     hd = (hc / (c_p_air * ρ_air)) * (0.71 / 0.60)^0.666
     Q_evaporation, gwsurf = evaporation(; 
-        tsurf=u"K"(T[1]), tair=u"K"(tair), rh, rhsurf=100.0, hd, terrain, soil_wetness, saturated=false
+        tsurf=u"K"(T[1]), tair=u"K"(tair), rh, rhsurf=100.0, hd, micro_terrain, soil_wetness, saturated=false
     )
     # Construct static vector of change in soil temperature, to return
     # Energy balance at surface
@@ -137,8 +138,8 @@ function interpolate_forcings(f, t)
     )
 end
 
-function evaporation(; terrain, tsurf, tair, rh, rhsurf, hd, soil_wetness, saturated)
-    (; elevation, P_atmos) = terrain
+function evaporation(; micro_terrain, tsurf, tair, rh, rhsurf, hd, soil_wetness, saturated)
+    (; elevation, P_atmos) = micro_terrain
     # Assumes all units are SI (Kelvin, Pascal, meters, seconds, kg, etc.)
 
     # Ground-level variables, shared via global or passed in as needed
@@ -219,7 +220,7 @@ end
 
 function soil_water_balance!(buffers, smm::SoilMoistureModel;
     depths,
-    terrain,
+    micro_terrain,
     soil_moisture,
     local_relative_humidity,
     leaf_area_index,
@@ -246,7 +247,7 @@ function soil_water_balance!(buffers, smm::SoilMoistureModel;
     im = smm.moist_error
     moist_count = smm.moist_count
 
-    (; P_atmos) = terrain
+    (; P_atmos) = micro_terrain
     # TODO: some of these are actually buffers, and some user data??
     (; P, Z, V, W, WN, K, H, T, rh_soil, ψ_soil, ψ_root, PR, PP, B1, N, N1, WS,
        RR, BZ, JV, DJ, CP, A, B, C, C2, F, F2, DP, RS, E) = buffers
@@ -467,7 +468,7 @@ get_soil_water_balance(soil_moisture_model; M=18, kw...) =
 
 function get_soil_water_balance!(buffers, soil_moisture_model::SoilMoistureModel;
     depths,
-    terrain,
+    micro_terrain,
     environment_instant,
     T0,
     pool,
@@ -480,7 +481,7 @@ function get_soil_water_balance!(buffers, soil_moisture_model::SoilMoistureModel
     rh = ei.reference_humidity
     leaf_area_index = ei.leaf_area_index
 
-    P_atmos = terrain.P_atmos
+    P_atmos = micro_terrain.P_atmos
 
     (; maxpool, moist_step, soil_bulk_density2, soil_mineral_density2) = soil_moisture_model
 
@@ -491,7 +492,7 @@ function get_soil_water_balance!(buffers, soil_moisture_model::SoilMoistureModel
 
     # compute scalar profiles
     profile_out = atmospheric_surface_profile!(buffers.profile;
-        terrain, environment_instant, surface_temperature,
+        micro_terrain, environment_instant, surface_temperature,
     )
 
     # convection
@@ -507,14 +508,14 @@ function get_soil_water_balance!(buffers, soil_moisture_model::SoilMoistureModel
     c_p_air = wet_air_out.c_p
     ρ_air = wet_air_out.ρ_air
     hd = (hc / (c_p_air * ρ_air)) * (0.71 / 0.60)^0.666
-    Q_evaporation, gwsurf = evaporation(; tsurf, tair, rh, rhsurf=100.0, hd, terrain, soil_wetness, saturated=true)
+    Q_evaporation, gwsurf = evaporation(; tsurf, tair, rh, rhsurf=100.0, hd, micro_terrain, soil_wetness, saturated=true)
     λ_evap = enthalpy_of_vaporisation(tsurf)
     EP = max(1e-7u"kg/m^2/s", Q_evaporation / λ_evap) # evaporation potential, mm/s (kg/m2/s)
 
     # run infiltration algorithm
     infil_out = soil_water_balance!(buffers.soil_water_balance, soil_moisture_model;
         depths,
-        terrain,
+        micro_terrain,
         local_relative_humidity, 
         leaf_area_index,
         soil_moisture,
@@ -531,7 +532,7 @@ function get_soil_water_balance!(buffers, soil_moisture_model::SoilMoistureModel
     for _ in 1:(niter_moist-1)
         infil_out = soil_water_balance!(buffers.soil_water_balance, soil_moisture_model;
             depths,
-            terrain, 
+            micro_terrain, 
             local_relative_humidity,
             soil_moisture,
             leaf_area_index,

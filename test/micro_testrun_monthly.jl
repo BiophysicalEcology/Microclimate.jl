@@ -1,4 +1,6 @@
 using Microclimate
+using SolarRadiation
+using FluidProperties
 using Unitful
 using CSV, DataFrames
 using Test
@@ -32,14 +34,24 @@ depths = ((DataFrame(CSV.File("$testdir/data/init_monthly/DEP.csv"))[:, 2]) / 10
 heights = [microinput[:Usrhyt], microinput[:Refhyt]]u"m" # air nodes for temperature, wind speed and humidity profile
 days2do = 1:12
 
-terrain = Terrain(;
+#TODO make one terrain object via BiophysicalEcologyBase or Habitat
+#TODO make P_atmos time a varying input
+micro_terrain = MicroTerrain(;
     elevation = microinput[:ALTT] * 1.0u"m", # elevation (m)
-    horizon_angles = horizon_angles = (DataFrame(CSV.File("$testdir/data/init_monthly/hori.csv"))[:, 2]) * 1.0u"°",
-    slope = microinput[:slope] * 1.0u"°",
-    aspect = microinput[:azmuth] * 1.0u"°",
     roughness_height = microinput[:RUF] * 1.0u"m", # roughness height for standard mode TODO dispatch based on roughness pars
     karman_constant = 0.4, # Kármán constant
     dyer_constant = 16.0, # coefficient from Dyer and Hicks for Φ_m (momentum), γ
+    P_atmos = atmospheric_pressure((microinput[:ALTT])*1.0u"m"),
+    viewfactor = 1.0, # view factor to sky
+)
+
+solar_terrain = SolarTerrain(;
+    slope = (microinput[:slope])*1.0u"°",
+    aspect = (microinput[:azmuth])*1.0u"°",
+    elevation = (microinput[:ALTT])*1.0u"m",
+    horizon_angles = (DataFrame(CSV.File("$testdir/data/init_monthly/hori.csv"))[:, 2])*1.0u"°",
+    albedo = (DataFrame(CSV.File("$testdir/data/init_monthly/REFLS.csv"))[1, 2] * 1.0),
+    P_atmos = atmospheric_pressure((microinput[:ALTT])*1.0u"m"),
 )
 
 mineral_density = (CSV.File("$testdir/data/init_monthly/soilprop.csv")[1, 1][6]) * 1.0u"Mg/m^3" # soil minerals density (Mg/m3)
@@ -58,7 +70,6 @@ soil_thermal_model = CampbelldeVriesSoilThermal(;
 
 environment_daily = DailyTimeseries(;
     # daily environmental vectors
-    albedo = (DataFrame(CSV.File("$testdir/data/init_monthly/REFLS.csv"))[days2do, 2] * 1.0), # substrate albedo (decimal %)
     shade = (DataFrame(CSV.File("$testdir/data/init_monthly/Minshades.csv"))[days2do, 2] * 1.0), # daily shade from vegetation (%)
     soil_wetness = (DataFrame(CSV.File("$testdir/data/init_monthly/PCTWET.csv"))[days2do, 2] * 1.0),
     surface_emissivity = (DataFrame(CSV.File("$testdir/data/init_monthly/SLES.csv"))[days2do, 2] * 1.0), # - surface emissivity
@@ -82,19 +93,20 @@ environment_minmax = MonthlyMinMaxEnvironment(;
 )
 
 soil_moisture_model = example_soil_moisture_model(depths; bulk_density, mineral_density)
-solar_model = SolarRadiation(; iuv = Bool(Int(microinput[:IUV])))
+solar_model = SolarProblem(; iuv = Bool(Int(microinput[:IUV])))
 
 # now try the simulation function
 problem = MicroProblem(;
     # locations, times, depths and heights 
     latitude = longlat[2]*1.0u"°",
-    days = days[days2do], # days of year for solrad
-    hours = collect(0.0:1:23.0), # hour of day for solrad
+    days = days[days2do], # days of year for solar_radiation
+    hours = collect(0.0:1:23.0), # hour of day for solar_radiation
     depths,
     heights, # air nodes for temperature, wind speed and humidity profile
     # Objects defined above
-    terrain,
     solar_model,
+    solar_terrain,
+    micro_terrain, #TODO combine terrains via a generic terrain in BiophysicalEcologyBase
     soil_moisture_model,
     soil_thermal_model,
     environment_minmax,
@@ -121,6 +133,7 @@ ta2m_nmr = collect(metout_nmr[:, 5] .+ 273.15) .* 1u"K"
 rh1cm_nmr = collect(metout_nmr[:, 6])
 rh2m_nmr = collect(metout_nmr[:, 7])
 tskyC_nmr = collect(metout_nmr[:, 15]) .* u"°C"
+solr_nmr = collect(metout_nmr[:, 14]) .* u"W/m^2"
 
 air_temperature_matrix = hcat([p.air_temperature for p in micro_out.profile]...)'
 humidity_matrix = hcat([p.relative_humidity for p in micro_out.profile]...)'
@@ -134,5 +147,6 @@ wind_matrix = hcat([p.wind_speed for p in micro_out.profile]...)'
     @test u"K".(air_temperature_matrix[:, 1]) ≈ ta1cm_nmr rtol=1e-3
     @test u"K".(air_temperature_matrix[:, 2]) ≈ ta2m_nmr rtol=1e-8
     @test micro_out.sky_temperature ≈ u"K".(tskyC_nmr) rtol=1e-7
+    @test micro_out.global_solar ≈ solr_nmr rtol=1e-4
     @test all(isapprox.(micro_out.soil_temperature, u"K".(Matrix(soiltemps_nmr)); rtol=1e-2))
 end  

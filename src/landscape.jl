@@ -1,11 +1,12 @@
-@kwdef struct SoilEnergyInputs{F,B,SP,D<:Vector{<:Number},H<:Vector{<:Number},T,EI,SW}
+@kwdef struct SoilEnergyInputs{F,B,SP,D<:Vector{<:Number},H<:Vector{<:Number},ST,MT,EI,SW}
     forcing::F
     buffers::B
     soil_thermal_model::SP
     depths::D
     heights::H
     nodes::Vector{Float64}
-    terrain::T
+    solar_terrain::ST #TODO make just one terrain
+    micro_terrain::MT
     environment_instant::EI
     runmoist::Bool
     soil_wetness::SW
@@ -113,17 +114,13 @@ end
 abstract type AbstractTerrain end
 
 # TODO is there a more specific name for this collection of terrain variables
-@kwdef struct Terrain <: AbstractTerrain
+@kwdef struct MicroTerrain <: AbstractTerrain
     elevation
-    horizon_angles
-    slope
-    aspect
-    # TODO these are not needed in solrad
     roughness_height = nothing
     karman_constant = nothing
     dyer_constant = nothing
     P_atmos = atmospheric_pressure(elevation)
-    viewfactor = 1 - sum(sin.(horizon_angles)) / length(horizon_angles) # convert horizon angles to radians and calc view factor(s)
+    viewfactor = nothing
 end
 
 # TODO: this should be more generic.
@@ -142,7 +139,6 @@ end
     maxima_times::M
 end
 @kwdef struct DailyTimeseries <: AbstractEnvironment
-    albedo
     shade
     soil_wetness
     surface_emissivity
