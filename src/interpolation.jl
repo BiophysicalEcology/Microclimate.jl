@@ -185,7 +185,7 @@ function vsine(VMIN, VMAX, time_sunrise, time_sunset, TIMIN, TIMAX, daily, iday,
     return YA
 end
 
-function hourly_vars(minmax, solrad_out, daily::Bool=false)
+function hourly_vars(minmax, solar_radiation_out, daily::Bool=false)
     (; reference_temperature_min, reference_temperature_max, reference_wind_min, reference_wind_max, reference_humidity_min, 
         reference_humidity_max, cloud_min, cloud_max, minima_times, maxima_times) = minmax
 
@@ -208,8 +208,8 @@ function hourly_vars(minmax, solrad_out, daily::Bool=false)
         humids = fill(initial_humidity, nhours)
         clouds = fill(initial_cloud, nhours)
 
-        HH = solrad_out.hour_angle_sunrise[iday]
-        tsn = solrad_out.hour_solar_noon[iday]
+        HH = solar_radiation_out.hour_angle_sunrise[iday]
+        tsn = solar_radiation_out.hour_solar_noon[iday]
 
         #     Air temperature calculations
         # sunset in military time
@@ -313,7 +313,7 @@ end
 function hourly_vars(
     cloud_min::Vector,
     cloud_max::Vector,
-    solrad_out::Any,
+    solar_radiation_out::Any,
     minima_times::Vector,
     maxima_times::Vector,
     daily::Bool=false
@@ -328,8 +328,8 @@ function hourly_vars(
         times = fill(0.0, 25)
         cloud = fill(initial_cloud,  nhours)
 
-        HH = solrad_out.hour_angle_sunrise[iday]
-        tsn = solrad_out.hour_solar_noon[iday]
+        HH = solar_radiation_out.hour_angle_sunrise[iday]
+        tsn = solar_radiation_out.hour_solar_noon[iday]
 
         #     Air temperature calculations
         #     SUNSET IN MILITARY TIME

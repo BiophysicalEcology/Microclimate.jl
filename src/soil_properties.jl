@@ -1,5 +1,5 @@
 """
-    soil_properties(soil_thermal; soil_temperature, soil_moisture, terrain)
+    soil_properties(soil_thermal; soil_temperature, soil_moisture, micro_terrain)
 
 Compute bulk soil properties — thermal conductivity (`λ_b`), volumetric heat capacity (`cp_b`), 
 and bulk density (`ρ_b`) — for a given soil layer.
@@ -10,7 +10,7 @@ and bulk density (`ρ_b`) — for a given soil layer.
 
 # Keywords
 
-- `terrain`
+- `micro_terrain`
 - `soil_temperature::Quantity`: Soil temperature in Kelvin.
 - `soil_moisture::Real`: Volumetric soil moisture (m³/m³).
 
@@ -53,11 +53,11 @@ Campbell, G. S., & Norman, J. M. (1998). Environmental Biophysics. Springer.
 
 """
 function soil_properties(soil_thermal::CampbelldeVriesSoilThermal;
-    terrain,
+    micro_terrain,
     soil_temperature::Quantity,
     soil_moisture::Number,
 )
-    (; elevation, P_atmos) = terrain
+    (; elevation, P_atmos) = micro_terrain
     # Soil thermal parameters
     # TODO: do we need these short names?
     st = soil_thermal
@@ -139,7 +139,7 @@ function allocate_soil_properties(nodes, soil_thermal)
 end
 
 """
-    soil_props_vector!(buffers, soil_thermal; terrain, soil_temperature, soil_moisture)
+    soil_props_vector!(buffers, soil_thermal; micro_micro_terrain, soil_temperature, soil_moisture)
 
 Compute soil properties for vectors of soil temperature and moisture using broadcasting.
 
@@ -147,13 +147,13 @@ Compute soil properties for vectors of soil temperature and moisture using broad
 Returns three arrays: `λ_b`, `cp_b`, `ρ_b`.
 """
 function soil_properties!(buffers::NamedTuple, soil_thermal; 
-    terrain, soil_temperature::AbstractVector, soil_moisture::AbstractVector
+    micro_terrain, soil_temperature::AbstractVector, soil_moisture::AbstractVector
 )
     N = length(soil_temperature)
     @assert length(soil_moisture) == N
     (; λ_b, cp_b, ρ_b) = buffers
     soil_props_i(i) = soil_properties(soil_thermal;
-        terrain,
+        micro_terrain,
         soil_temperature = soil_temperature[i],
         soil_moisture = soil_moisture[i],
     )

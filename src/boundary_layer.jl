@@ -83,11 +83,11 @@ profile.wind_speed       # vertical profile of wind speeds
 atmospheric_surface_profile(; heights=DEFAULT_HEIGHTS, kw...) =
     atmospheric_surface_profile!(allocate_profile(heights); kw...)
 function atmospheric_surface_profile!(buffers;
-    terrain,
+    micro_terrain,
     environment_instant,
     surface_temperature, 
 )
-    (; roughness_height, karman_constant, dyer_constant, elevation, P_atmos) = terrain
+    (; roughness_height, karman_constant, dyer_constant, elevation, P_atmos) = micro_terrain
     (; reference_temperature, reference_wind_speed, reference_humidity, zenith_angle) = environment_instant
 
     (; heights, height_array, air_temperature, wind_speed, relative_humidity) = buffers
