@@ -120,9 +120,8 @@ abstract type AbstractTerrain end
     aspect
     # TODO these are not needed in solrad
     roughness_height = nothing
-    zh = nothing
-    d0 = nothing
     karman_constant = nothing
+    dyer_constant = nothing
     P_atmos = atmospheric_pressure(elevation)
     viewfactor = 1 - sum(sin.(horizon_angles)) / length(horizon_angles) # convert horizon angles to radians and calc view factor(s)
 end

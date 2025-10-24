@@ -137,11 +137,10 @@ function example_terrain(;
     aspect = 0.0u"°", # aspect (degrees, 0 = North, range 0-360)
     # boundary layer parameters
     roughness_height = 0.004u"m", # heat transfer roughness height
-    zh = 0u"m", #  heat transfer roughness height
-    d0 = 0u"m", # zero plane displacement correction factor
     karman_constant = 0.4, # Kármán constant
+    dyer_constant = 16.0, # coefficient from Dyer and Hicks for Φ_m (momentum), γ
 )
-    Terrain(; elevation, horizon_angles, slope, aspect, roughness_height, zh, d0, karman_constant)
+    Terrain(; elevation, horizon_angles, slope, aspect, roughness_height, karman_constant, dyer_constant)
 end
 
 function example_monthly_weather(;
