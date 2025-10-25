@@ -14,7 +14,7 @@ end
 
 @kwdef struct MicroForcing{
     S<:AbstractInterpolation,ZE<:AbstractInterpolation,ZS<:AbstractInterpolation,T<:AbstractInterpolation,
-    V<:AbstractInterpolation,RH<:AbstractInterpolation,CL<:AbstractInterpolation,
+    V<:AbstractInterpolation,RH<:AbstractInterpolation,CL<:AbstractInterpolation,P<:AbstractInterpolation,
 }
     interpolate_solar::S
     interpolate_zenith::ZE
@@ -23,16 +23,19 @@ end
     interpolate_wind::V
     interpolate_humidity::RH
     interpolate_cloud::CL
+    interpolate_pressure::P
+
 end
 
 abstract type AbstractEnvironment end
 
-@kwdef struct MicroResult{AT,WS,RH,CC,GS,DrS,DfS,ZA,SkT,SoT,SM,SWP,SH,STC,SPH,SBD,SW,SR,Pr} <: AbstractEnvironment
+@kwdef struct MicroResult{P,AT,WS,RH,CC,GS,DrS,DfS,ZA,SkT,SoT,SM,SWP,SH,STC,SPH,SBD,SW,SR,Pr} <: AbstractEnvironment
+    pressure::P 
     reference_temperature::AT 
     reference_wind_speed::WS
     reference_humidity::RH
     cloud_cover::CC
-    global_solar::GS
+    solar_radiation::GS
     direct_solar::DrS
     diffuse_solar::DfS
     zenith_angle::ZA 
@@ -51,11 +54,12 @@ abstract type AbstractEnvironment end
 end
 function MicroResult(nsteps::Int, numnodes_a::Int)
     return MicroResult(;
+        pressure = Array{typeof(1.0u"Pa")}(undef, nsteps),
         reference_temperature = Array{typeof(1.0u"K")}(undef, nsteps),
         reference_wind_speed = Array{typeof(1.0u"m/s")}(undef, nsteps),
         reference_humidity = Array{Float64}(undef, nsteps),
         cloud_cover = Array{Float64}(undef, nsteps),
-        global_solar = Array{typeof(1.0u"W/m^2")}(undef, nsteps),
+        solar_radiation = Array{typeof(1.0u"W/m^2")}(undef, nsteps),
         direct_solar = Array{typeof(1.0u"W/m^2")}(undef, nsteps),
         diffuse_solar = Array{typeof(1.0u"W/m^2")}(undef, nsteps),
         zenith_angle = Array{typeof(1.0u"°")}(undef, nsteps),
@@ -119,7 +123,6 @@ abstract type AbstractTerrain end
     roughness_height = nothing
     karman_constant = nothing
     dyer_constant = nothing
-    P_atmos = atmospheric_pressure(elevation)
     viewfactor = nothing
 end
 
@@ -148,6 +151,7 @@ end
     leaf_area_index
 end
 @kwdef struct HourlyTimeseries <: AbstractEnvironment
+    pressure
     reference_temperature
     reference_humidity
     reference_wind_speed

@@ -41,7 +41,6 @@ micro_terrain = MicroTerrain(;
     roughness_height = microinput[:RUF] * 1.0u"m", # roughness height for standard mode TODO dispatch based on roughness pars
     karman_constant = 0.4, # Kármán constant
     dyer_constant = 16.0, # coefficient from Dyer and Hicks for Φ_m (momentum), γ
-    P_atmos = atmospheric_pressure((microinput[:ALTT])*1.0u"m"),
     viewfactor = 1.0, # view factor to sky
 )
 
@@ -66,6 +65,18 @@ soil_thermal_model = CampbelldeVriesSoilThermal(;
     saturation_moisture = (CSV.File("$testdir/data/init_monthly/soilprop.csv")[1, 1][3]) * 1.0u"m^3/m^3", # volumetric water content at saturation (0.1 bar matric potential) (m3/m3)
     recirculation_power = 4.0, # power for recirculation function
     return_flow_threshold = 0.162, # return-flow cutoff soil moisture, m^3/m^3
+)
+
+environment_hourly = HourlyTimeseries(;
+    pressure = fill(atmospheric_pressure((microinput[:ALTT])*1.0u"m"), length(days2do)*24),
+    reference_temperature = nothing,
+    reference_humidity = nothing,
+    reference_wind_speed = nothing,
+    solar_radiation = nothing,
+    cloud_cover = nothing,
+    rainfall = nothing,
+    zenith_angle = nothing,
+    longwave_radiation = nothing,
 )
 
 environment_daily = DailyTimeseries(;
@@ -111,6 +122,7 @@ problem = MicroProblem(;
     soil_thermal_model,
     environment_minmax,
     environment_daily,
+    environment_hourly,
     iterate_day = (microinput[:ndmax]), # number of iterations per day
     daily = Bool(Int(microinput[:microdaily])), # doing consecutive days?
     runmoist = Bool(Int(microinput[:runmoist])), # run soil moisture algorithm?
@@ -147,6 +159,6 @@ wind_matrix = hcat([p.wind_speed for p in micro_out.profile]...)'
     @test u"K".(air_temperature_matrix[:, 1]) ≈ ta1cm_nmr rtol=1e-3
     @test u"K".(air_temperature_matrix[:, 2]) ≈ ta2m_nmr rtol=1e-8
     @test micro_out.sky_temperature ≈ u"K".(tskyC_nmr) rtol=1e-7
-    @test micro_out.global_solar ≈ solr_nmr rtol=1e-4
+    @test micro_out.solar_radiation ≈ solr_nmr rtol=1e-4
     @test all(isapprox.(micro_out.soil_temperature, u"K".(Matrix(soiltemps_nmr)); rtol=1e-2))
 end  
