@@ -27,15 +27,13 @@ end
 
 abstract type AbstractEnvironment end
 
-@kwdef struct MicroResult{AT,WS,RH,CC,GS,DrS,DfS,ZA,SkT,SoT,SM,SWP,SH,STC,SPH,SBD,SW,SR,Pr} <: AbstractEnvironment
+@kwdef struct MicroResult{AT,WS,RH,CC,GS,DF,SkT,SoT,SM,SWP,SH,STC,SPH,SBD,SW,SR,Pr} <: AbstractEnvironment
     reference_temperature::AT 
     reference_wind_speed::WS
     reference_humidity::RH
     cloud_cover::CC
     global_solar::GS
-    direct_solar::DrS
-    diffuse_solar::DfS
-    zenith_angle::ZA 
+    diffuse_fraction::DF
     sky_temperature::SkT
     # TODO: should things like soil_temperature be sub-components? soil.temperature ?
     soil_temperature::SoT
@@ -46,19 +44,18 @@ abstract type AbstractEnvironment end
     soil_heat_capacity::SPH 
     soil_bulk_density::SBD 
     surface_water::SW
-    solrad::SR
+    solar_radiation::SR
     profile::Pr
 end
-function MicroResult(nsteps::Int, numnodes_a::Int)
+function MicroResult(nsteps::Int, numnodes_a::Int, solar_radiation::NamedTuple)
+
     return MicroResult(;
         reference_temperature = Array{typeof(1.0u"K")}(undef, nsteps),
         reference_wind_speed = Array{typeof(1.0u"m/s")}(undef, nsteps),
         reference_humidity = Array{Float64}(undef, nsteps),
         cloud_cover = Array{Float64}(undef, nsteps),
         global_solar = Array{typeof(1.0u"W/m^2")}(undef, nsteps),
-        direct_solar = Array{typeof(1.0u"W/m^2")}(undef, nsteps),
-        diffuse_solar = Array{typeof(1.0u"W/m^2")}(undef, nsteps),
-        zenith_angle = Array{typeof(1.0u"°")}(undef, nsteps),
+        diffuse_fraction = Array{Float64}(undef, nsteps),
         sky_temperature = Array{typeof(1.0u"K")}(undef, nsteps),
         soil_temperature = Array{typeof(1.0u"K")}(undef, nsteps, numnodes_a),
         soil_moisture = Array{Float64}(undef, nsteps, numnodes_a),
@@ -68,7 +65,7 @@ function MicroResult(nsteps::Int, numnodes_a::Int)
         soil_heat_capacity = Array{typeof(1.0u"J/kg/K")}(undef, nsteps, numnodes_a),
         soil_bulk_density = Array{typeof(1.0u"kg/m^3")}(undef, nsteps, numnodes_a),
         surface_water = Array{typeof(1.0u"kg/m^2")}(undef, nsteps),
-        solrad = nothing,
+        solar_radiation = solar_radiation,
         profile = Array{Any}(undef, nsteps),
     )
 end
@@ -151,7 +148,7 @@ end
     reference_temperature
     reference_humidity
     reference_wind_speed
-    solar_radiation
+    global_radiation
     longwave_radiation
     cloud_cover
     rainfall
