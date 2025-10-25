@@ -53,11 +53,10 @@ Campbell, G. S., & Norman, J. M. (1998). Environmental Biophysics. Springer.
 
 """
 function soil_properties(soil_thermal::CampbelldeVriesSoilThermal;
-    micro_terrain,
+    P_atmos::Quantity,
     soil_temperature::Quantity,
     soil_moisture::Number,
 )
-    (; elevation, P_atmos) = micro_terrain
     # Soil thermal parameters
     # TODO: do we need these short names?
     st = soil_thermal
@@ -147,13 +146,13 @@ Compute soil properties for vectors of soil temperature and moisture using broad
 Returns three arrays: `λ_b`, `cp_b`, `ρ_b`.
 """
 function soil_properties!(buffers::NamedTuple, soil_thermal; 
-    micro_terrain, soil_temperature::AbstractVector, soil_moisture::AbstractVector
+    P_atmos::Quantity, soil_temperature::AbstractVector, soil_moisture::AbstractVector
 )
     N = length(soil_temperature)
     @assert length(soil_moisture) == N
     (; λ_b, cp_b, ρ_b) = buffers
     soil_props_i(i) = soil_properties(soil_thermal;
-        micro_terrain,
+        P_atmos,
         soil_temperature = soil_temperature[i],
         soil_moisture = soil_moisture[i],
     )

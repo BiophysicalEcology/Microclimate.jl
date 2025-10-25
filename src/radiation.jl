@@ -18,8 +18,8 @@ function longwave_radiation(radiation_model=CampbellNormanAtmosphericRadiation()
     surface_temperature,
 )
     # TODO these are not the real names
-    (; elevation, P_atmos, viewfactor) = micro_terrain
-    (; reference_humidity, reference_temperature, surface_emissivity, cloud_emissivity, cloud_cover, shade) = environment_instant
+    (; elevation, viewfactor) = micro_terrain
+    (; P_atmos, reference_humidity, reference_temperature, surface_emissivity, cloud_emissivity, cloud_cover, shade) = environment_instant
 
     # Short names, hardly worth it
     tsurf = surface_temperature
@@ -90,8 +90,8 @@ Maxwell, E. L., "A Quasi-Physical Model for Converting Hourly
 function cloud_adjust_radiation!(output, cloud::AbstractArray, D_cs, B_cs, zenith::AbstractArray, doy; 
     a=0.36, b=0.64, gamma=1.0,
 )
-    (; global_solar, diffuse_solar, direct_solar) = output
-    G, D, B = (global_solar, diffuse_solar, direct_solar)
+    (; solar_radiation, diffuse_solar, direct_solar) = output
+    G, D, B = (solar_radiation, diffuse_solar, direct_solar)
     # Solar geometry
     cosz     = cos.(zenith)
     cosz_pos = max.(cosz, 0.0)
@@ -141,10 +141,10 @@ end
 
 function cloud_adjust_radiation(cloud::AbstractVector, args...; kw...)
     n = length(cloud)
-    global_solar = fill(0.0u"W/m^2", n)
+    solar_radiation = fill(0.0u"W/m^2", n)
     diffuse_solar = fill(0.0u"W/m^2", n)
     direct_solar = fill(0.0u"W/m^2", n)
-    output = (; global_solar, diffuse_solar, direct_solar)
+    output = (; solar_radiation, diffuse_solar, direct_solar)
     cloud_adjust_radiation!(output, cloud, args...; kw...)
 
     return output

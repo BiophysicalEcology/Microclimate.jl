@@ -37,13 +37,11 @@ days2do = 30
 hours2do = days2do * 24
 
 #TODO make one terrain object via BiophysicalEcologyBase or Habitat
-#TODO make P_atmos time a varying input
 micro_terrain = MicroTerrain(;
     elevation = microinput[:ALTT] * 1.0u"m", # elevation (m)
     roughness_height = microinput[:RUF] * 1.0u"m", # roughness height for standard mode TODO dispatch based on roughness pars
     karman_constant = 0.4, # Kármán constant
     dyer_constant = 16.0, # coefficient from Dyer and Hicks for Φ_m (momentum), γ
-    P_atmos = atmospheric_pressure((microinput[:ALTT])*1.0u"m"),
     viewfactor = 1.0, # view factor to sky
 )
 
@@ -114,6 +112,7 @@ environment_daily = DailyTimeseries(;
 )
 
 environment_hourly = HourlyTimeseries(;
+    pressure = fill(atmospheric_pressure((microinput[:ALTT])*1.0u"m"), length(hours2do)),
     reference_temperature = Float64.(CSV.File("$testdir/data/init_daily/TAIRhr.csv").x[1:hours2do])u"°C",
     reference_humidity = clamp.(Float64.(CSV.File("$testdir/data/init_daily/RHhr.csv").x[1:hours2do]), 0, 100),
     reference_wind_speed = clamp.(Float64.(CSV.File("$testdir/data/init_daily/WNhr.csv").x[1:hours2do])u"m/s", 0.1u"m/s", (Inf)u"m/s"),
