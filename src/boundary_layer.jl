@@ -87,8 +87,8 @@ function atmospheric_surface_profile!(buffers;
     environment_instant,
     surface_temperature, 
 )
-    (; roughness_height, karman_constant, dyer_constant, elevation, P_atmos) = micro_terrain
-    (; reference_temperature, reference_wind_speed, reference_humidity, zenith_angle) = environment_instant
+    (; roughness_height, karman_constant, dyer_constant, elevation) = micro_terrain
+    (; P_atmos, reference_temperature, reference_wind_speed, reference_humidity, zenith_angle) = environment_instant
 
     (; heights, height_array, air_temperature, wind_speed, relative_humidity) = buffers
     N_heights = length(heights)
