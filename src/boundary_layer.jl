@@ -1,6 +1,6 @@
 function allocate_profile(heights)
-    wind_speed = similar(heights, typeof(0.0u"cm/minute")) # output wind speeds
-    height_array = similar(heights, typeof(0.0u"cm"))
+    wind_speed = similar(heights, typeof(0.0u"m/s")) # output wind speeds
+    height_array = similar(heights, typeof(0.0u"m"))
     height_array[end:-1:begin] .= heights 
     air_temperature = similar(heights, typeof(0.0u"K")) # output temperatures, need to do this otherwise get InexactError
     relative_humidity = similar(heights, Float64) # output relative humidities
@@ -34,11 +34,11 @@ to assess whether conditions are stable or unstable.
 
 # Returns
 Named tuple with fields:
-- `wind_speed`: Wind speed profile at each height (`cm/min` internally, returned in SI units).
+- `wind_speed`: Wind speed profile at each height (`m/s`).
 - `air_temperature`: Air temperature profile at each height (`K`).
 - `relative_humidity`: Relative humidity (fractional) at each height.
 - `Q_convection`: Convective heat flux (`W/m²`).
-- `ustar`: Friction velocity (`m/s`).
+- `u_star`: Friction velocity (`m/s`).
 
 # Notes
 - Stability corrections use the **Businger–Dyer** formulations for unstable conditions.
@@ -101,10 +101,9 @@ function atmospheric_surface_profile!(buffers;
     T_surface = u"K"(surface_temperature)
     κ = karman_constant
     γ = dyer_constant
-    # Units: m to cm
-    z = u"cm"(reference_height)
-    z0 = u"cm"(roughness_height)
-    v_ref_height = u"cm/minute"(reference_wind_speed)
+    z = reference_height
+    z0 = roughness_height
+    v_ref_height = reference_wind_speed
 
     # define air heights
     N_heights = length(heights)
@@ -119,11 +118,9 @@ function atmospheric_surface_profile!(buffers;
     # c_p = wet_air_out.c_p
     # TODO make this work with SI units
     #ρcpTκg = u"cal*minute^2/cm^4"(ρ * c_p * T_ref_height / (κ * g_n))
-    ρcpTκg = 6.003e-8u"cal*minute^2/cm^4"
+    ρcpTκg = u"J*s^2/m^4"(6.003e-8u"cal*minute^2/cm^4")
     
     log_z_ratio = log(z / z0 + 1)
-    T_ref_height = u"K"(reference_temperature)
-    T_surface = u"K"(surface_temperature)
     ΔT = T_ref_height - T_surface
     T_mean = (T_surface + T_ref_height) / 2
     # TODO call calc_ρ_cp method specific to elevation and RH in final version but do it this way for NicheMapR comparison
@@ -140,10 +137,10 @@ function atmospheric_surface_profile!(buffers;
             air_temperature[i] = T_z0 + (T_ref_height - T_z0) * log(height_array[i] / z0 + 1.0) / log_z_ratio
         end
     else
-        L_Obukhov = -30.0u"cm" # initialise Obukhov length
+        L_Obukhov = -0.3u"m" # initialise Obukhov length
         # TODO just pass the environment_instant through here
         Obukhov_out = calc_Obukhov_length(T_ref_height, T_surface, v_ref_height, z0, z, ρcpTκg, κ, log_z_ratio, ΔT, ρ_cp; max_iter=30, tol=1e-2)
-        L_Obukhov = u"cm"(Obukhov_out.L_Obukhov)
+        L_Obukhov = Obukhov_out.L_Obukhov
         T_z0 = Obukhov_out.T_z0
         Q_convection = Obukhov_out.Q_convection
         u_star = Obukhov_out.u_star
@@ -162,11 +159,11 @@ function atmospheric_surface_profile!(buffers;
     relative_humidity .= clamp.(e ./ vapour_pressure.(air_temperature) .* 1.0, 0.0, 1.0)
 
     return (;
-        wind_speed=u"m/s".(wind_speed),
+        wind_speed,
         air_temperature,
         relative_humidity,
         Q_convection=u"W/m^2"(Q_convection),
-        ustar=u"m/s"(u_star)
+        u_star,
     )
 end
 
@@ -185,7 +182,7 @@ This is a simplified empirical regression based only on temperature,
 without accounting for moisture or elevation effects.
 """
 function calc_ρ_cp(T_mean)
-    return u"(cal*g)/(g*cm^3*K)" * (0.08472 / ustrip(u"K", T_mean))
+    return u"J/m^3/K"(u"(cal*g)/(g*cm^3*K)" * (0.08472 / ustrip(u"K", T_mean)))
 end
 
 """
@@ -210,7 +207,7 @@ function calc_ρ_cp(T_mean, elevation, relative_humidity, P_atmos)
     wet_air_out = wet_air_properties(u"K"(T_mean); rh=relative_humidity, P_atmos)
     ρ = dry_air_out.ρ_air
     c_p = wet_air_out.c_p
-    return u"(cal*g)/(g*cm^3*K)"(ρ * c_p)
+    return ρ * c_p
 end
 
 """
@@ -279,7 +276,7 @@ Uses bulk and sublayer Stanton numbers to account for turbulence near the surfac
 [`calc_u_star`](@ref), [`calc_wind`](@ref), [`sublayer_stanton`](@ref), [`bulk_stanton`](@ref), [`convective_flux`](@ref)
 """
 function calc_convection(; u_star, log_z_ratio, ΔT, ρ_cp, z0)
-    sublayer_stanton_number = sublayer_stanton(u"cm"(z0), u"cm/minute"(u_star))
+    sublayer_stanton_number = sublayer_stanton(z0, u_star)
     bulk_stanton_number = bulk_stanton(log_z_ratio)
     return convective_flux(ρ_cp, ΔT, u_star, bulk_stanton_number, sublayer_stanton_number)
 end
@@ -412,23 +409,21 @@ function calc_Obukhov_length(
     T_ref_height, T_surface, v_ref_height, z0, z, ρcpTκg, κ, log_z_ratio, ΔT, ρ_cp; 
     γ=16.0, max_iter=30, tol=1e-2
 )
-    L_Obukhov = -30.0u"cm" # initial Monin-Obukhov length cm
+    L_Obukhov = -0.3u"m" # initial Monin-Obukhov length
 
     # conversions
-    z = u"cm"(z)
-    z0 = u"cm"(z0)
-    T_ref_height = u"K"(T_ref_height)
-    T_surface = u"K"(T_surface)
-    v_ref_height = u"cm/minute"(v_ref_height)
+    T_ref_height = T_ref_height
+    T_surface = T_surface
+    v_ref_height = v_ref_height
 
     # initialise with zeros
-    Q_convection = 0.0u"cal*cm^-2*minute^-1"
+    Q_convection = 0.0u"W/m^2"
     bulk_stanton_number = 0.0
     sublayer_stanton_number = 0.0 
     ψ_h = 0.0
     φ_m = 0.0
-    u_star = 0.0u"cm*minute^-1"
-    L_Obukhov_new = 0.0u"cm"
+    u_star = 0.0u"m/s"
+    L_Obukhov_new = 0.0u"m"
 
     δ = 1.0
     count = 0
@@ -443,8 +438,8 @@ function calc_Obukhov_length(
             dum = just_above_zero
         end
         u_star = κ * v_ref_height / dum
-        if u_star < just_above_zero * 1u"cm/minute"
-            u_star = just_above_zero * 1u"cm/minute"
+        if u_star < just_above_zero * 1u"m/s"
+            u_star = just_above_zero * 1u"m/s"
         end
         sublayer_stanton_number = sublayer_stanton(z0, u_star)
         bulk_stanton_number = bulk_stanton(dum, z, L_Obukhov)
@@ -462,7 +457,7 @@ function calc_Obukhov_length(
         bulk_stanton_number, 
         u_star, 
         ψ_h, 
-        Q_convection, 
+        Q_convection=u"W/m^2"(Q_convection), 
         T_z0,
     )
 end
