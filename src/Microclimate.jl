@@ -23,7 +23,7 @@ export MonthlyMinMaxEnvironment, DailyTimeseries, HourlyTimeseries, MicroTerrain
 
 export sine_exponential!, vsine, hourly_vars
 
-export cloud_adjust_radiation, cloud_adjust_radiation!, longwave_radiation
+export cloud_adjust_radiation, longwave_radiation
 
 export atmospheric_surface_profile, calc_convection
 
