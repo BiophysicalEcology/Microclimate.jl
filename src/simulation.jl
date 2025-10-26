@@ -198,14 +198,28 @@ function solve(mp::MicroProblem)
     nsteps = ndays * nhours
     numnodes_a = length(depths) # number of soil nodes for temperature calcs and final output
 
-    # Solar
+    # Calculate clear sky solar
     solar_radiation_out = solve_solar(mp)
     # Define the output
-    output = MicroResult(nsteps, numnodes_a)
+    output = MicroResult(nsteps, numnodes_a, solar_radiation_out)
     # Interpolate minmax weather
     interpolate_minmax!(output, environment_minmax, environment_daily, environment_hourly, solar_radiation_out)
-    # Adjust solar_radiation given cloud cover
-    adjust_for_cloud_cover!(output, solar_radiation_out, days, hours, environment_hourly)
+    # Adjust solar_radiation given cloud cover to get diffuse fraction
+    (; global_solar, diffuse_fraction) = adjust_for_cloud_cover(output, solar_radiation_out, days, hours)
+    output.diffuse_fraction .= diffuse_fraction
+    # Check if cloud-adjusted solar was originally provided
+    if !isnothing(environment_hourly)
+        if !isnothing(environment_hourly.global_radiation)
+            # Output the original input values
+            output.global_solar .= environment_hourly.global_radiation
+        else
+            # Output the cloud-adjusted clear-sky values
+            output.global_solar .= global_solar
+        end
+    else
+        # Output the cloud-adjusted clear-sky values
+        output.global_solar .= global_solar
+    end
     # Solve soil temperature and moisture
     solve_soil!(output, mp, solar_radiation_out; days, hours, depths, heights)
     # Solve air temperatures, windspeed and humidity
@@ -237,7 +251,6 @@ function interpolate_minmax!(output, environment_minmax, environment_daily, envi
     output.pressure .= environment_hourly.pressure
     output.reference_wind_speed .= reference_wind_speed
     output.reference_humidity .= reference_humidity
-    output.zenith_angle .= solar_radiation_out.zenith_angle
 
     return 
 end
@@ -247,27 +260,18 @@ function interpolate_minmax!(output, environment_minmax::Nothing, environment_da
     output.pressure .= environment_hourly.pressure
     output.reference_wind_speed .= environment_hourly.reference_wind_speed
     output.reference_humidity .= environment_hourly.reference_humidity
-    output.zenith_angle .= solar_radiation_out.zenith_angle
 
     return 
 end
 
-function adjust_for_cloud_cover!(output, solar_radiation_out, days, hours, environment_hourly)
-    # vector for removing extra interpolated hour TODO: this feels like a hack, there must be a better way
-    zenith_angle = solar_radiation_out.zenith_angle # remove every 25th output
-    zenith_slope_angle = solar_radiation_out.zenith_slope_angle # remove every 25th output
+function adjust_for_cloud_cover(output, solar_radiation_out, days, hours)
     # adjust for cloud using Angstrom formula (formula 5.33 on P. 177 of "Climate Data and Resources" by Edward Linacre 1992
     day_of_year = repeat(days, inner=length(hours))
-    direct_total = solar_radiation_out.direct_total # remove every 25th output
-    diffuse_total = solar_radiation_out.diffuse_total # remove every 25th output
-    cloud_adjust_radiation!(output, output.cloud_cover ./ 100.0, diffuse_total, direct_total, zenith_angle, day_of_year)
-
-    # TODO: this is awful, output.global_solar was also set above in `cloud_adjust_radiation!`
-    if !isnothing(environment_hourly.solar_radiation)
-        output.solar_radiation .= environment_hourly.solar_radiation
-    end
-
-    return output
+    zenith_angle = solar_radiation_out.zenith_angle
+    direct_total = solar_radiation_out.direct_total
+    diffuse_total = solar_radiation_out.diffuse_total
+    cloud = output.cloud_cover ./ 100.0
+    return (; global_solar, diffuse_fraction) = cloud_adjust_radiation(output, cloud, diffuse_total, direct_total, zenith_angle, day_of_year)
 end
 
 # Solves soil temperature and moisture
@@ -465,7 +469,7 @@ end
 function forcing_day(solar_radiation_out, output, iday::Int)
     (; pressure, reference_temperature, reference_wind_speed, reference_humidity, cloud_cover) = output
     # TODO: rename this
-    solar_radiation = output.solar_radiation
+    global_solar = output.global_solar
     (; zenith_angle, zenith_slope_angle) = solar_radiation_out
 
     nhours = 24
@@ -473,7 +477,7 @@ function forcing_day(solar_radiation_out, output, iday::Int)
     tspan = 0.0:60:(60*(nhours-1))
 
     # get today's weather
-    interpolate_solar = scale(interpolate(solar_radiation[sub1], BSpline(Linear())), tspan)
+    interpolate_solar = scale(interpolate(global_solar[sub1], BSpline(Linear())), tspan)
     interpolate_zenith = scale(interpolate(zenith_angle[sub1], BSpline(Linear())), tspan)
     interpolate_slope_zenith = scale(interpolate(zenith_slope_angle[sub1], BSpline(Linear())), tspan)
     interpolate_temperature = scale(interpolate(u"K".(reference_temperature[sub1]), BSpline(Linear())), tspan)
@@ -523,9 +527,9 @@ function get_instant(environment_day, environment_hourly, output, θ_soil0_a, i)
         reference_temperature = output.reference_temperature[i],
         reference_wind_speed = output.reference_wind_speed[i],
         reference_humidity = output.reference_humidity[i],
-        zenith_angle = output.zenith_angle[i],
+        zenith_angle = output.solar_radiation.zenith_angle[i],
         cloud_cover = output.cloud_cover[i],
-        solar_radiation = output.solar_radiation[i],
+        global_solar = output.global_solar[i],
         soil_moisture=θ_soil0_a,
     )
 end

@@ -78,7 +78,7 @@ solar zenith angle `zenith` (radians), and day-of-year `doy`.
     a clearness index (Maxwwell 1987) which is the ratio of global to extraterrestrial
     irradiance on a horizontal plane
 
-Returns `(G, D, B)`; works with arrays but needs to not use 'similar' if to work with
+Returns `(global_solar, diffuse_fraction)`; works with arrays but needs to not use 'similar' if to work with
     scalars.
 
 Reference
@@ -87,11 +87,11 @@ Maxwell, E. L., "A Quasi-Physical Model for Converting Hourly
            Report No. SERI/TR-215-3087, Golden, CO: Solar Energy Research
            Institute, 1987.
 """
-function cloud_adjust_radiation!(output, cloud::AbstractArray, D_cs, B_cs, zenith::AbstractArray, doy; 
+function cloud_adjust_radiation(output, cloud::AbstractArray, D_cs, B_cs, zenith::AbstractArray, doy; 
     a=0.36, b=0.64, gamma=1.0,
 )
-    (; solar_radiation, diffuse_solar, direct_solar) = output
-    G, D, B = (solar_radiation, diffuse_solar, direct_solar)
+    (; global_total, diffuse_total, direct_total) = output.solar_radiation
+    G, D, B = (global_total, diffuse_total, direct_total)
     # Solar geometry
     cosz     = cos.(zenith)
     cosz_pos = max.(cosz, 0.0)
@@ -127,8 +127,8 @@ function cloud_adjust_radiation!(output, cloud::AbstractArray, D_cs, B_cs, zenit
     # TODO probably this still allocates because of aliasing 
     Fd .= clamp.(Fd, zero(eltype(Fd)), oneunit(eltype(Fd)))
 
-    D .= Fd .* G
-    B .= G .- D
+    #D .= Fd .* G
+    #B .= G .- D
 
     # Zero everything at night
     # night = (cosz_pos .== 0)
@@ -136,16 +136,8 @@ function cloud_adjust_radiation!(output, cloud::AbstractArray, D_cs, B_cs, zenit
     # B[night] .= 0.0u"W/m^2"
     # G[night] .= 0.0u"W/m^2"
 
-    return output
-end
-
-function cloud_adjust_radiation(cloud::AbstractVector, args...; kw...)
-    n = length(cloud)
-    solar_radiation = fill(0.0u"W/m^2", n)
-    diffuse_solar = fill(0.0u"W/m^2", n)
-    direct_solar = fill(0.0u"W/m^2", n)
-    output = (; solar_radiation, diffuse_solar, direct_solar)
-    cloud_adjust_radiation!(output, cloud, args...; kw...)
-
-    return output
+    return (;
+        global_solar=G,
+        diffuse_fraction=Fd,
+    )
 end

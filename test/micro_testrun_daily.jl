@@ -116,14 +116,14 @@ environment_hourly = HourlyTimeseries(;
     reference_temperature = Float64.(CSV.File("$testdir/data/init_daily/TAIRhr.csv").x[1:hours2do])u"°C",
     reference_humidity = clamp.(Float64.(CSV.File("$testdir/data/init_daily/RHhr.csv").x[1:hours2do]), 0, 100),
     reference_wind_speed = clamp.(Float64.(CSV.File("$testdir/data/init_daily/WNhr.csv").x[1:hours2do])u"m/s", 0.1u"m/s", (Inf)u"m/s"),
-    solar_radiation = Float64.(CSV.File("$testdir/data/init_daily/SOLRhr.csv").x[1:hours2do])u"W/m^2",
+    global_radiation = Float64.(CSV.File("$testdir/data/init_daily/SOLRhr.csv").x[1:hours2do])u"W/m^2",
     cloud_cover = clamp.(Float64.(CSV.File("$testdir/data/init_daily/CLDhr.csv").x[1:hours2do]), 0, 100),
     rainfall = clamp.(Float64.(CSV.File("$testdir/data/init_daily/RAINhr.csv").x[1:hours2do])u"kg/m^2", 0u"kg/m^2", Inf * u"kg/m^2"),
     zenith_angle=nothing,
     longwave_radiation=nothing,
 )
 
-solar_model = SolarProblem(; iuv = Bool(Int(microinput[:IUV])))
+solar_model = SolarProblem(; scattered_uv = Bool(Int(microinput[:IUV])))
 
 # now try the simulation function
 problem = MicroProblem(;

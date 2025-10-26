@@ -72,7 +72,7 @@ environment_hourly = HourlyTimeseries(;
     reference_temperature = nothing,
     reference_humidity = nothing,
     reference_wind_speed = nothing,
-    solar_radiation = nothing,
+    global_radiation = nothing,
     cloud_cover = nothing,
     rainfall = nothing,
     zenith_angle = nothing,
@@ -104,7 +104,7 @@ environment_minmax = MonthlyMinMaxEnvironment(;
 )
 
 soil_moisture_model = example_soil_moisture_model(depths; bulk_density, mineral_density)
-solar_model = SolarProblem(; iuv = Bool(Int(microinput[:IUV])))
+solar_model = SolarProblem(; scattered_uv = Bool(Int(microinput[:IUV])))
 
 # now try the simulation function
 problem = MicroProblem(;
@@ -159,6 +159,6 @@ wind_matrix = hcat([p.wind_speed for p in micro_out.profile]...)'
     @test u"K".(air_temperature_matrix[:, 1]) ≈ ta1cm_nmr rtol=1e-3
     @test u"K".(air_temperature_matrix[:, 2]) ≈ ta2m_nmr rtol=1e-8
     @test micro_out.sky_temperature ≈ u"K".(tskyC_nmr) rtol=1e-7
-    @test micro_out.solar_radiation ≈ solr_nmr rtol=1e-4
+    @test micro_out.global_solar ≈ solr_nmr rtol=1e-4
     @test all(isapprox.(micro_out.soil_temperature, u"K".(Matrix(soiltemps_nmr)); rtol=1e-2))
 end  
