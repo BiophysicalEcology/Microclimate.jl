@@ -122,10 +122,10 @@ function example_monthly_weather(;
     reference_temperature_max = [-3.2, 0.1, 6.8, 14.6, 21.3, 26.4, 29, 27.7, 23.3, 16.6, 7.8, -0.4]u"°C",
     reference_wind_min = [4.9, 4.8, 5.2, 5.3, 4.6, 4.3, 3.8, 3.7, 4, 4.6, 4.9, 4.8] * 0.1u"m/s",
     reference_wind_max = [4.9, 4.8, 5.2, 5.3, 4.6, 4.3, 3.8, 3.7, 4, 4.6, 4.9, 4.8]u"m/s",
-    reference_humidity_min = [50.2, 48.4, 48.7, 40.8, 40, 42.1, 45.5, 47.3, 47.6, 45, 51.3, 52.8],
-    reference_humidity_max = [100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100],
-    cloud_min = [50.3, 47, 48.2, 47.5, 40.9, 35.7, 34.1, 36.6, 42.6, 48.4, 61.1, 60.1],
-    cloud_max = [50.3, 47, 48.2, 47.5, 40.9, 35.7, 34.1, 36.6, 42.6, 48.4, 61.1, 60.1],
+    reference_humidity_min = [50.2, 48.4, 48.7, 40.8, 40, 42.1, 45.5, 47.3, 47.6, 45, 51.3, 52.8] ./ 100.0,
+    reference_humidity_max = [100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100] ./ 100.0,
+    cloud_min = [50.3, 47, 48.2, 47.5, 40.9, 35.7, 34.1, 36.6, 42.6, 48.4, 61.1, 60.1] ./ 100.0,
+    cloud_max = [50.3, 47, 48.2, 47.5, 40.9, 35.7, 34.1, 36.6, 42.6, 48.4, 61.1, 60.1] ./ 100.0,
     minima_times = (temp=0, wind=0, humidity=1, cloud=1), # time of minima for air temp, wind, humidity and cloud cover (h), air & wind mins relative to sunrise, humidity and cloud cover mins relative to solar noon
     maxima_times = (temp=1, wind=1, humidiy=0, cloud=0), # time of maxima for air temp, wind, humidity and cloud cover (h), air temp & wind maxs relative to solar noon, humidity and cloud cover maxs relative to sunrise
 )
@@ -180,8 +180,8 @@ function example_soil_moisture_model(depths=DEFAULT_DEPTHS;
     )
 end
 function example_daily_environmental(;
-    shade = fill(0.0, length(days)), # % shade cast by vegetation
-    soil_wetness = fill(0.0, length(days)), # % surface wetness
+    shade = fill(0.0, length(days)), # fractional shade cast by vegetation
+    soil_wetness = fill(0.0, length(days)), # fractional surface wetness
     surface_emissivity = fill(0.96, length(days)), # - surface emissivity
     cloud_emissivity = fill(0.96, length(days)), # - cloud emissivity
     rainfall = ([28, 28.2, 54.6, 79.7, 81.3, 100.1, 101.3, 102.5, 89.7, 62.4, 54.9, 41.2])u"kg/m^2",
@@ -243,8 +243,8 @@ function interpolate_minmax!(output, environment_minmax, environment_daily, envi
     # interpolate daily min/max forcing variables to hourly
     reference_temperature, reference_wind_speed, reference_humidity, cloud_cover = hourly_vars(environment_minmax, solar_radiation_out)
     # TODO just use loops for these this allocates
-    reference_humidity[reference_humidity .> 100] .= 100
-    cloud_cover[cloud_cover .> 100] .= 100
+    reference_humidity[reference_humidity .> 1.0] .= 1.0
+    cloud_cover[cloud_cover .> 1.0] .= 1.0
 
     output.cloud_cover .= cloud_cover
     output.reference_temperature .= reference_temperature
@@ -270,7 +270,7 @@ function adjust_for_cloud_cover(output, solar_radiation_out, days, hours)
     zenith_angle = solar_radiation_out.zenith_angle
     direct_total = solar_radiation_out.direct_total
     diffuse_total = solar_radiation_out.diffuse_total
-    cloud = output.cloud_cover ./ 100.0
+    cloud = output.cloud_cover
     return (; global_solar, diffuse_fraction) = cloud_adjust_radiation(output, cloud, diffuse_total, direct_total, zenith_angle, day_of_year)
 end
 
@@ -510,7 +510,7 @@ function get_day(environment_daily, iday)
     # TODO: standardise all these names
     environment_day = (;
         leaf_area_index = environment_daily.leaf_area_index[iday],
-        shade = environment_daily.shade[iday], # daily shade (%)
+        shade = environment_daily.shade[iday], # daily shade (fractional)
         surface_emissivity = environment_daily.surface_emissivity[iday],
         cloud_emissivity = environment_daily.cloud_emissivity[iday], # - cloud emissivity
         soil_wetness = environment_daily.soil_wetness[iday], # set up vector of soil wetness for each day

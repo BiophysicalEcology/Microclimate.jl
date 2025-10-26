@@ -27,7 +27,7 @@ to assess whether conditions are stable or unstable.
 - `heights::Vector{Quantity}`: Requested heights above the surface, the last being the reference height.
 - `reference_temperature::Quantity=27.78u"°C"`: Air temperature at the reference height.
 - `reference_wind_speed::Quantity=2.75u"m/s"`: Wind speed at the reference height.
-- `relative_humidity::Float64=49.0`: Relative humidity at the reference height (%).
+- `relative_humidity::Float64=49.0`: Relative humidity at the reference height (fractional).
 - `surface_temperature::Quantity=48.59u"°C"`: Soil or surface temperature.
 - `zenith_angle::Quantity=21.5u"°"`: Solar zenith angle.
 - `elevation::Quantity=0.0u"m"`: Elevation above sea level.
@@ -36,7 +36,7 @@ to assess whether conditions are stable or unstable.
 Named tuple with fields:
 - `wind_speed`: Wind speed profile at each height (`cm/min` internally, returned in SI units).
 - `air_temperature`: Air temperature profile at each height (`K`).
-- `relative_humidity`: Relative humidity (%) at each height.
+- `relative_humidity`: Relative humidity (fractional) at each height.
 - `Q_convection`: Convective heat flux (`W/m²`).
 - `ustar`: Friction velocity (`m/s`).
 
@@ -71,7 +71,7 @@ that handles canopy displacement, invoked if `zh > 0` and otherwise
 profile = atmospheric_surface_profile(
     reference_temperature = 25u"°C",
     reference_wind_speed = 2.0u"m/s",
-    relative_humidity = 60.0,
+    relative_humidity = 0.6,
     surface_temperature = 35u"°C",
     zenith_angle = 45u"°"
 )
@@ -159,7 +159,7 @@ function atmospheric_surface_profile!(buffers;
     wind_speed = reverse(wind_speed)
     air_temperature = reverse(air_temperature)
     e = wet_air_properties(T_ref_height; rh = reference_humidity).P_vap
-    relative_humidity .= clamp.(e ./ vapour_pressure.(air_temperature) .* 100.0, 0.0, 100.0)
+    relative_humidity .= clamp.(e ./ vapour_pressure.(air_temperature) .* 1.0, 0.0, 1.0)
 
     return (;
         wind_speed=u"m/s".(wind_speed),

@@ -90,7 +90,7 @@ soil_moisture_model = SoilMoistureModel(;
     root_density = DataFrame(CSV.File("$testdir/data/init_daily/L.csv"))[:, 2] * u"m/m^3", # root density at each node, mm/m3 (from Campell 1985 Soil Physics with Basic, p. 131) # max depth for water pooling on the surface, mm (to account for runoff)
     root_resistance = microinput[:RW] * u"m^3/kg/s", # resistance per unit length of root, m3 kg-1 s-1
     stomatal_closure_potential = -microinput[:PC] * u"J/kg", # critical leaf water potential for stomatal closure, J kg-1
-    leaf_resistance = microinput[:RL] * u"m^4/kg/s", # resistance per unit length of leaf, m3 kg-1 s-1
+    leaf_resistance = microinput[:RL] * u"m^4/kg/s", # resistance per unit length of leaf, m4 kg-1 s-1
     stomatal_stability_parameter = microinput[:SP], # stability parameter, -
     root_radius = microinput[:R1]u"m", # root radius, m    
     # soil moisture simulation controls
@@ -102,8 +102,8 @@ soil_moisture_model = SoilMoistureModel(;
 
 environment_daily = DailyTimeseries(;
     # daily environmental vectors
-    shade = (DataFrame(CSV.File("$testdir/data/init_daily/Minshades.csv"))[1:days2do, 2] * 1.0), # daily shade (%)
-    soil_wetness = (DataFrame(CSV.File("$testdir/data/init_daily/PCTWET.csv"))[1:days2do, 2] * 1.0),
+    shade = (DataFrame(CSV.File("$testdir/data/init_daily/Minshades.csv"))[1:days2do, 2] * 1.0) ./ 100.0, # daily shade (fractional)
+    soil_wetness = (DataFrame(CSV.File("$testdir/data/init_daily/PCTWET.csv"))[1:days2do, 2] * 1.0) ./ 100.0, # daily soil wetness (fractional)
     surface_emissivity = (DataFrame(CSV.File("$testdir/data/init_daily/SLES.csv"))[1:days2do, 2] * 1.0), # - surface emissivity
     cloud_emissivity = (DataFrame(CSV.File("$testdir/data/init_daily/SLES.csv"))[1:days2do, 2] * 1.0), # - cloud emissivity
     rainfall = ((DataFrame(CSV.File("$testdir/data/init_daily/rain.csv"))[1:days2do, 2] * 1.0))u"kg/m^2",
@@ -114,10 +114,10 @@ environment_daily = DailyTimeseries(;
 environment_hourly = HourlyTimeseries(;
     pressure = fill(atmospheric_pressure((microinput[:ALTT])*1.0u"m"), length(hours2do)),
     reference_temperature = Float64.(CSV.File("$testdir/data/init_daily/TAIRhr.csv").x[1:hours2do])u"°C",
-    reference_humidity = clamp.(Float64.(CSV.File("$testdir/data/init_daily/RHhr.csv").x[1:hours2do]), 0, 100),
+    reference_humidity = clamp.(Float64.(CSV.File("$testdir/data/init_daily/RHhr.csv").x[1:hours2do]), 0, 100) ./ 100.0,
     reference_wind_speed = clamp.(Float64.(CSV.File("$testdir/data/init_daily/WNhr.csv").x[1:hours2do])u"m/s", 0.1u"m/s", (Inf)u"m/s"),
     global_radiation = Float64.(CSV.File("$testdir/data/init_daily/SOLRhr.csv").x[1:hours2do])u"W/m^2",
-    cloud_cover = clamp.(Float64.(CSV.File("$testdir/data/init_daily/CLDhr.csv").x[1:hours2do]), 0, 100),
+    cloud_cover = clamp.(Float64.(CSV.File("$testdir/data/init_daily/CLDhr.csv").x[1:hours2do]), 0, 100) ./ 100.0,
     rainfall = clamp.(Float64.(CSV.File("$testdir/data/init_daily/RAINhr.csv").x[1:hours2do])u"kg/m^2", 0u"kg/m^2", Inf * u"kg/m^2"),
     zenith_angle=nothing,
     longwave_radiation=nothing,
@@ -164,8 +164,8 @@ vel1cm_nmr = collect(metout_nmr[:, 8]) .* 1u"m/s"
 vel2m_nmr = collect(metout_nmr[:, 9]) .* 1u"m/s"
 ta1cm_nmr = collect(metout_nmr[:, 4] .+ 273.15) .* 1u"K"
 ta2m_nmr = collect(metout_nmr[:, 5] .+ 273.15) .* 1u"K"
-rh1cm_nmr = collect(metout_nmr[:, 6])
-rh2m_nmr = collect(metout_nmr[:, 7])
+rh1cm_nmr = collect(metout_nmr[:, 6]) ./ 100.0
+rh2m_nmr = collect(metout_nmr[:, 7]) ./ 100.0
 tskyC_nmr = collect(metout_nmr[:, 15]) .* u"°C"
 
 air_temperature_matrix = hcat([p.air_temperature for p in micro_out.profile]...)'
