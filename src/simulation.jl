@@ -208,9 +208,14 @@ function solve(mp::MicroProblem)
     (; global_solar, diffuse_fraction) = adjust_for_cloud_cover(output, solar_radiation_out, days, hours)
     output.diffuse_fraction .= diffuse_fraction
     # Check if cloud-adjusted solar was originally provided
-    if !isnothing(environment_hourly) && !isnothing(environment_hourly.global_radiation)
-        # Output the original input values
-        output.global_solar .= environment_hourly.global_radiation
+    if !isnothing(environment_hourly)
+        if !isnothing(environment_hourly.global_radiation)
+            # Output the original input values
+            output.global_solar .= environment_hourly.global_radiation
+        else
+            # Output the cloud-adjusted clear-sky values
+            output.global_solar .= global_solar
+        end
     else
         # Output the cloud-adjusted clear-sky values
         output.global_solar .= global_solar
