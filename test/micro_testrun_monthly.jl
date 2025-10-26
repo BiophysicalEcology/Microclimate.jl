@@ -81,7 +81,7 @@ environment_hourly = HourlyTimeseries(;
 
 environment_daily = DailyTimeseries(;
     # daily environmental vectors
-    shade = (DataFrame(CSV.File("$testdir/data/init_monthly/Minshades.csv"))[days2do, 2] * 1.0), # daily shade from vegetation (%)
+    shade = (DataFrame(CSV.File("$testdir/data/init_monthly/Minshades.csv"))[days2do, 2] * 1.0) ./ 100.0, # daily shade from vegetation (fractional)
     soil_wetness = (DataFrame(CSV.File("$testdir/data/init_monthly/PCTWET.csv"))[days2do, 2] * 1.0),
     surface_emissivity = (DataFrame(CSV.File("$testdir/data/init_monthly/SLES.csv"))[days2do, 2] * 1.0), # - surface emissivity
     cloud_emissivity = (DataFrame(CSV.File("$testdir/data/init_monthly/SLES.csv"))[days2do, 2] * 1.0), # - cloud emissivity

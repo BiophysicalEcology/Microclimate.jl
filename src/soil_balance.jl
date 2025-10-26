@@ -62,7 +62,7 @@ function soil_energy_balance(
     end
 
     # Solar radiation
-    Q_solar = sabnew * solr * ((100.0 - shade) / 100.0)
+    Q_solar = sabnew * solr * (1.0 - shade)
     if slope > 0 && zenr < 90u"°"
         cz = cosd(zenr)
         czsl = cosd(zslr)

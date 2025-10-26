@@ -102,7 +102,7 @@ soil_moisture_model = SoilMoistureModel(;
 
 environment_daily = DailyTimeseries(;
     # daily environmental vectors
-    shade = (DataFrame(CSV.File("$testdir/data/init_daily/Minshades.csv"))[1:days2do, 2] * 1.0), # daily shade (%)
+    shade = (DataFrame(CSV.File("$testdir/data/init_daily/Minshades.csv"))[1:days2do, 2] * 1.0) ./ 100.0, # daily shade (fractional)
     soil_wetness = (DataFrame(CSV.File("$testdir/data/init_daily/PCTWET.csv"))[1:days2do, 2] * 1.0),
     surface_emissivity = (DataFrame(CSV.File("$testdir/data/init_daily/SLES.csv"))[1:days2do, 2] * 1.0), # - surface emissivity
     cloud_emissivity = (DataFrame(CSV.File("$testdir/data/init_daily/SLES.csv"))[1:days2do, 2] * 1.0), # - cloud emissivity

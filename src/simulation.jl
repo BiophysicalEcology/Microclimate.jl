@@ -180,7 +180,7 @@ function example_soil_moisture_model(depths=DEFAULT_DEPTHS;
     )
 end
 function example_daily_environmental(;
-    shade = fill(0.0, length(days)), # % shade cast by vegetation
+    shade = fill(0.0, length(days)), # fractional shade cast by vegetation
     soil_wetness = fill(0.0, length(days)), # % surface wetness
     surface_emissivity = fill(0.96, length(days)), # - surface emissivity
     cloud_emissivity = fill(0.96, length(days)), # - cloud emissivity
@@ -510,7 +510,7 @@ function get_day(environment_daily, iday)
     # TODO: standardise all these names
     environment_day = (;
         leaf_area_index = environment_daily.leaf_area_index[iday],
-        shade = environment_daily.shade[iday], # daily shade (%)
+        shade = environment_daily.shade[iday], # daily shade (fractional)
         surface_emissivity = environment_daily.surface_emissivity[iday],
         cloud_emissivity = environment_daily.cloud_emissivity[iday], # - cloud emissivity
         soil_wetness = environment_daily.soil_wetness[iday], # set up vector of soil wetness for each day
