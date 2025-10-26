@@ -104,7 +104,7 @@ environment_minmax = MonthlyMinMaxEnvironment(;
 )
 
 soil_moisture_model = example_soil_moisture_model(depths; bulk_density, mineral_density)
-solar_model = SolarProblem(; iuv = Bool(Int(microinput[:IUV])))
+solar_model = SolarProblem(; scattered_uv = Bool(Int(microinput[:IUV])))
 
 # now try the simulation function
 problem = MicroProblem(;
