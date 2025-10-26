@@ -29,7 +29,8 @@ end
 
 abstract type AbstractEnvironment end
 
-@kwdef struct MicroResult{AT,WS,RH,CC,GS,DF,SkT,SoT,SM,SWP,SH,STC,SPH,SBD,SW,SR,Pr} <: AbstractEnvironment
+@kwdef struct MicroResult{P,AT,WS,RH,CC,GS,DF,SkT,SoT,SM,SWP,SH,STC,SPH,SBD,SW,SR,Pr} <: AbstractEnvironment
+    pressure::P
     reference_temperature::AT 
     reference_wind_speed::WS
     reference_humidity::RH
