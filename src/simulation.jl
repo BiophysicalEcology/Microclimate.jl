@@ -87,7 +87,7 @@ Returns a named tuple containing:
     initial_soil_moisture = fill(0.42 * 0.25, length(depths))
     iterate_day = 3 # number of iterations per day
     # TODO: make these types so their code blocks can be removed by the compiler
-    daily = false # doing consecutive days?
+    daily = false # doing consecutive days? Only used in hourly interpolator from min/max data
     runmoist = false # run soil moisture algorithm?
     hourly_rainfall = false # use hourly rainfall?
     spinup = false # spin-up the first day by iterate_day iterations?
@@ -243,6 +243,7 @@ function interpolate_minmax!(output, environment_minmax, environment_daily, envi
 
     output.cloud_cover .= cloud_cover
     output.reference_temperature .= reference_temperature
+    output.pressure .= environment_hourly.pressure
     output.reference_wind_speed .= reference_wind_speed
     output.reference_humidity .= reference_humidity
 
@@ -251,6 +252,7 @@ end
 function interpolate_minmax!(output, environment_minmax::Nothing, environment_daily, environment_hourly, solar_radiation_out)
     output.cloud_cover .= environment_hourly.cloud_cover
     output.reference_temperature .= environment_hourly.reference_temperature
+    output.pressure .= environment_hourly.pressure
     output.reference_wind_speed .= environment_hourly.reference_wind_speed
     output.reference_humidity .= environment_hourly.reference_humidity
 
@@ -313,7 +315,7 @@ function solve_soil!(output::MicroResult, mp::MicroProblem, solar_radiation_out;
         soil_water_balance = allocate_soil_water_balance(numnodes_b),  # only once
     )
     update_soil_properties!(output, buffers.soil_properties, soil_thermal_model;
-        soil_temperature=T0, soil_moisture=θ_soil0_a, micro_terrain, step=1
+        soil_temperature=T0, soil_moisture=θ_soil0_a, P_atmos=101325.0u"Pa", step=1
     )
     sub = vcat(findall(isodd, 1:numnodes_b), numnodes_b)
 
@@ -404,7 +406,7 @@ function solve_soil!(output::MicroResult, mp::MicroProblem, solar_radiation_out;
                                     environment_instant = get_instant(environment_day, mp.environment_hourly, output, θ_soil0_a, step)
 
                                     update_soil_properties!(output, buffers.soil_properties, soil_thermal_model;
-                        soil_temperature=T0, soil_moisture=θ_soil0_a, micro_terrain, step
+                        soil_temperature=T0, soil_moisture=θ_soil0_a, P_atmos=environment_instant.P_atmos, step
                     )
                 end
             end
@@ -421,6 +423,7 @@ function solve_air!(output::MicroResult, solar_radiation_out, mp::MicroProblem)
         # TODO standardise these names
         surface_temperature=u"°C"(output.soil_temperature[i][1])
         environment_instant = (;
+            P_atmos=output.pressure[i],
             reference_temperature=output.reference_temperature[i],
             reference_wind_speed=output.reference_wind_speed[i],
             reference_humidity=output.reference_humidity[i],
@@ -459,7 +462,7 @@ end
 # TODO eventually make environment a type,
 # and this can just be `getindex` on that type.
 function forcing_day(solar_radiation_out, output, iday::Int)
-    (; reference_temperature, reference_wind_speed, reference_humidity, cloud_cover) = output
+    (; pressure, reference_temperature, reference_wind_speed, reference_humidity, cloud_cover) = output
     # TODO: rename this
     global_solar = output.global_solar
     (; zenith_angle, zenith_slope_angle) = solar_radiation_out
@@ -476,8 +479,9 @@ function forcing_day(solar_radiation_out, output, iday::Int)
     interpolate_wind = scale(interpolate(reference_wind_speed[sub1], BSpline(Linear())), tspan)
     interpolate_humidity = scale(interpolate(reference_humidity[sub1], BSpline(Linear())), tspan)
     interpolate_cloud = scale(interpolate(cloud_cover[sub1], BSpline(Linear())), tspan)
+    interpolate_pressure = scale(interpolate(pressure[sub1], BSpline(Linear())), tspan)
 
-    return MicroForcing(; interpolate_solar, interpolate_zenith, interpolate_slope_zenith, interpolate_temperature, interpolate_wind, interpolate_humidity, interpolate_cloud)
+    return MicroForcing(; interpolate_solar, interpolate_zenith, interpolate_slope_zenith, interpolate_temperature, interpolate_wind, interpolate_humidity, interpolate_cloud, interpolate_pressure)
 end
 
 function initialise_soil_moisture(initial_soil_moisture, numnodes_b)
@@ -514,6 +518,7 @@ function get_instant(environment_day, environment_hourly, output, θ_soil0_a, i)
         environment_day...,
         # TODO getting data from output means it being correct depends on
         # order of operations in the solve. We need an itermediate object instead
+        P_atmos = output.pressure[i],
         reference_temperature = output.reference_temperature[i],
         reference_wind_speed = output.reference_wind_speed[i],
         reference_humidity = output.reference_humidity[i],

@@ -14,7 +14,7 @@ end
 
 @kwdef struct MicroForcing{
     S<:AbstractInterpolation,ZE<:AbstractInterpolation,ZS<:AbstractInterpolation,T<:AbstractInterpolation,
-    V<:AbstractInterpolation,RH<:AbstractInterpolation,CL<:AbstractInterpolation,
+    V<:AbstractInterpolation,RH<:AbstractInterpolation,CL<:AbstractInterpolation,P<:AbstractInterpolation,
 }
     interpolate_solar::S
     interpolate_zenith::ZE
@@ -23,6 +23,8 @@ end
     interpolate_wind::V
     interpolate_humidity::RH
     interpolate_cloud::CL
+    interpolate_pressure::P
+
 end
 
 abstract type AbstractEnvironment end
@@ -50,6 +52,7 @@ end
 function MicroResult(nsteps::Int, numnodes_a::Int, solar_radiation::NamedTuple)
 
     return MicroResult(;
+        pressure = Array{typeof(1.0u"Pa")}(undef, nsteps),
         reference_temperature = Array{typeof(1.0u"K")}(undef, nsteps),
         reference_wind_speed = Array{typeof(1.0u"m/s")}(undef, nsteps),
         reference_humidity = Array{Float64}(undef, nsteps),
@@ -116,7 +119,6 @@ abstract type AbstractTerrain end
     roughness_height = nothing
     karman_constant = nothing
     dyer_constant = nothing
-    P_atmos = atmospheric_pressure(elevation)
     viewfactor = nothing
 end
 
@@ -145,6 +147,7 @@ end
     leaf_area_index
 end
 @kwdef struct HourlyTimeseries <: AbstractEnvironment
+    pressure
     reference_temperature
     reference_humidity
     reference_wind_speed
