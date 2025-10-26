@@ -39,7 +39,7 @@ function soil_energy_balance(
     # zenr = min(90.0u"°", u"°"(round(f.interpolate_zenith(ustrip(t)), digits=3)))
     # solr = max(0.0u"W/m^2", f.interpolate_solar(ustrip(t)))
     # cloud = clamp(f.interpolate_cloud(ustrip(t)), 0.0, 100.0)
-    # rh = clamp(f.interpolate_humidity(ustrip(t)), 0.0, 100.0)
+    # rh = clamp(f.interpolate_humidity(ustrip(t)), 0.0, 1.0)
     # zslr = min(90.0u"°", f.interpolate_slope_zenith(ustrip(t)))
 
     T1m = MVector(T1)
@@ -109,7 +109,7 @@ function soil_energy_balance(
     ρ_air = wet_air_out.ρ_air
     hd = (hc / (c_p_air * ρ_air)) * (0.71 / 0.60)^0.666
     Q_evaporation, gwsurf = evaporation(; 
-        tsurf=u"K"(T[1]), tair=u"K"(tair), rh, rhsurf=100.0, hd, P_atmos, soil_wetness, saturated=false
+        tsurf=u"K"(T[1]), tair=u"K"(tair), rh, rhsurf=1.0, hd, P_atmos, soil_wetness, saturated=false
     )
     # Construct static vector of change in soil temperature, to return
     # Energy balance at surface
@@ -134,7 +134,7 @@ function interpolate_forcings(f, t)
         zenr = min(90.0u"°", u"°"(round(f.interpolate_zenith(t_m), digits=3))),
         solr = max(0.0u"W/m^2", f.interpolate_solar(t_m)),
         cloud = clamp(f.interpolate_cloud(t_m), 0.0, 100.0),
-        rh = clamp(f.interpolate_humidity(t_m), 0.0, 100.0),
+        rh = clamp(f.interpolate_humidity(t_m), 0.0, 1.0),
         zslr = min(90.0u"°", f.interpolate_slope_zenith(t_m)),
     )
 end
@@ -388,7 +388,7 @@ function soil_water_balance!(buffers, smm::SoilMoistureModel;
         DJ[1] = EP * MW * H[2] / (R * T[1] * (1.0 - rh_loc)) # derivative of vapour flux at soil surface, combination of EQ9.14 and EQ5.14
 
         for i in 2:M
-            VP = wet_air_properties(u"K"(T[i]); rh=100.0, P_atmos).ρ_vap # VP is vapour density = c'_v in EQ9.7
+            VP = wet_air_properties(u"K"(T[i]); rh=1.0, P_atmos).ρ_vap # VP is vapour density = c'_v in EQ9.7
             KV = 0.66 * DV * VP * (WS[i] - (WN[i] + WN[i+1]) / 2.0) / (Z[i+1] - Z[i]) # vapour conductivity, EQ9.7, assuming epsilon(psi_g) = b*psi_g^m (eq. 3.10) where b = 0.66 and m = 1 (p.99)
             JV[i] = KV * (H[i+1] - H[i]) # fluxes of vapour within soil, EQ9.14
             DJ[i] = MW * H[i] * KV / (R * T[i-1]) # derivatives of vapour fluxes within soil, combination of EQ9.14 and EQ5.14
@@ -497,16 +497,15 @@ function get_soil_water_balance!(buffers, soil_moisture_model::SoilMoistureModel
     Q_convection = profile_out.Q_convection
 
     # evaporation
-    # TODO: these percentage vs fraction humidities are asking for bugs
     wet_air_out_ref = wet_air_properties(u"K"(last(profile_out.air_temperature)); rh = last(profile_out.relative_humidity), P_atmos)    
-    wet_air_out_loc = wet_air_properties(u"K"(profile_out.air_temperature[1]); rh = 100.0, P_atmos)    
+    wet_air_out_loc = wet_air_properties(u"K"(profile_out.air_temperature[1]); rh = 1.0, P_atmos)    
     local_relative_humidity = clamp(wet_air_out_ref.P_vap / wet_air_out_loc.P_vap_sat, 0.0, 0.99)
     hc = max(abs(Q_convection / (tsurf - tair)), 0.5u"W/m^2/K")
     wet_air_out = wet_air_properties(tair; rh, P_atmos)
     c_p_air = wet_air_out.c_p
     ρ_air = wet_air_out.ρ_air
     hd = (hc / (c_p_air * ρ_air)) * (0.71 / 0.60)^0.666
-    Q_evaporation, gwsurf = evaporation(; tsurf, tair, rh, rhsurf=100.0, hd, P_atmos, soil_wetness, saturated=true)
+    Q_evaporation, gwsurf = evaporation(; tsurf, tair, rh, rhsurf=1.0, hd, P_atmos, soil_wetness, saturated=true)
     λ_evap = enthalpy_of_vaporisation(tsurf)
     EP = max(1e-7u"kg/m^2/s", Q_evaporation / λ_evap) # evaporation potential, mm/s (kg/m2/s)
 
