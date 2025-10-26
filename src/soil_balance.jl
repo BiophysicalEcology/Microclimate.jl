@@ -156,7 +156,7 @@ function evaporation(; tsurf, tair, rh, rhsurf, hd, P_atmos, soil_wetness, satur
     ρ_vap_air = wet_air_properties(u"K"(tair); rh, P_atmos).ρ_vap
 
     # Effective wet surface fraction
-    effsur = saturated ? 1.0 : soil_wetness / 100.0
+    effsur = saturated ? 1.0 : soil_wetness
 
     # Water evaporated from surface (kg/s/m^2)
     water = effsur * hd * (ρ_vap_surf - ρ_vap_air)
@@ -544,7 +544,7 @@ function get_soil_water_balance!(buffers, soil_moisture_model::SoilMoistureModel
             θ_soil0_b[1] = 1 - BD[1] / DD[1]
         end
     end
-    soil_wetness = clamp(abs(surf_evap / (EP * moist_step) * 100), 0, 100)
+    soil_wetness = clamp(abs(surf_evap / (EP * moist_step) * 1.0), 0, 1.0)
 
     return (; infil_out, soil_wetness, pool, θ_soil0_b)
 end

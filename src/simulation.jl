@@ -181,7 +181,7 @@ function example_soil_moisture_model(depths=DEFAULT_DEPTHS;
 end
 function example_daily_environmental(;
     shade = fill(0.0, length(days)), # fractional shade cast by vegetation
-    soil_wetness = fill(0.0, length(days)), # % surface wetness
+    soil_wetness = fill(0.0, length(days)), # fractional surface wetness
     surface_emissivity = fill(0.96, length(days)), # - surface emissivity
     cloud_emissivity = fill(0.96, length(days)), # - cloud emissivity
     rainfall = ([28, 28.2, 54.6, 79.7, 81.3, 100.1, 101.3, 102.5, 89.7, 62.4, 54.9, 41.2])u"kg/m^2",
