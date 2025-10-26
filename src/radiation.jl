@@ -45,9 +45,9 @@ function longwave_radiation(radiation_model=CampbellNormanAtmosphericRadiation()
     srad = σ * sle * (u"K"(tsurf))^4
 
     # Clear sky fraction
-    clr = 1.0 - cloud / 100.0
+    clr = 1.0 - cloud
     clear = arad * clr
-    clod = crad * (cloud / 100.0)
+    clod = crad * cloud
     qradsk = (clear + clod) * ((100 - shade) / 100.0)
     qradvg = (shade / 100.0) * hrad
     qradgr = ((100.0 - shade) / 100.0) * srad + (shade / 100.0) * hrad

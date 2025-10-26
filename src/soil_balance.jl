@@ -38,7 +38,7 @@ function soil_energy_balance(
     # vel = max(0.1u"m/s", f.interpolate_wind(ustrip(t)))
     # zenr = min(90.0u"°", u"°"(round(f.interpolate_zenith(ustrip(t)), digits=3)))
     # solr = max(0.0u"W/m^2", f.interpolate_solar(ustrip(t)))
-    # cloud = clamp(f.interpolate_cloud(ustrip(t)), 0.0, 100.0)
+    # cloud = clamp(f.interpolate_cloud(ustrip(t)), 0.0, 1.0)
     # rh = clamp(f.interpolate_humidity(ustrip(t)), 0.0, 1.0)
     # zslr = min(90.0u"°", f.interpolate_slope_zenith(ustrip(t)))
 
@@ -133,7 +133,7 @@ function interpolate_forcings(f, t)
         vel = max(0.1u"m/s", f.interpolate_wind(t_m)),
         zenr = min(90.0u"°", u"°"(round(f.interpolate_zenith(t_m), digits=3))),
         solr = max(0.0u"W/m^2", f.interpolate_solar(t_m)),
-        cloud = clamp(f.interpolate_cloud(t_m), 0.0, 100.0),
+        cloud = clamp(f.interpolate_cloud(t_m), 0.0, 1.0),
         rh = clamp(f.interpolate_humidity(t_m), 0.0, 1.0),
         zslr = min(90.0u"°", f.interpolate_slope_zenith(t_m)),
     )

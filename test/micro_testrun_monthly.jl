@@ -97,8 +97,8 @@ environment_minmax = MonthlyMinMaxEnvironment(;
     reference_wind_max = (DataFrame(CSV.File("$testdir/data/init_monthly/WNMAXX.csv"))[days2do, 2] * 1.0)u"m/s", # max wind speed (m/s)
     reference_humidity_min = (DataFrame(CSV.File("$testdir/data/init_monthly/RHMINN.csv"))[days2do, 2] * 1.0) ./ 100.0, # min relative humidity (fractional)
     reference_humidity_max = (DataFrame(CSV.File("$testdir/data/init_monthly/RHMAXX.csv"))[days2do, 2] * 1.0) ./ 100.0, # max relative humidity (fractional)
-    cloud_min = (DataFrame(CSV.File("$testdir/data/init_monthly/CCMINN.csv"))[days2do, 2] * 1.0), # min cloud cover (%)
-    cloud_max = (DataFrame(CSV.File("$testdir/data/init_monthly/CCMAXX.csv"))[days2do, 2] * 1.0), # max cloud cover (%)
+    cloud_min = (DataFrame(CSV.File("$testdir/data/init_monthly/CCMINN.csv"))[days2do, 2] * 1.0) ./ 100.0, # min cloud cover (fractional)
+    cloud_max = (DataFrame(CSV.File("$testdir/data/init_monthly/CCMAXX.csv"))[days2do, 2] * 1.0) ./ 100.0, # max cloud cover (fractional)
     minima_times = [microinput[:TIMINS1], microinput[:TIMINS2], microinput[:TIMINS3], microinput[:TIMINS4]], # time of minima for air temp, wind, humidity and cloud cover (h), air & wind mins relative to sunrise, humidity and cloud cover mins relative to solar noon
     maxima_times = [microinput[:TIMAXS1], microinput[:TIMAXS2], microinput[:TIMAXS3], microinput[:TIMAXS4]], # time of maxima for air temp, wind, humidity and cloud cover (h), air temp & wind maxs relative to solar noon, humidity and cloud cover maxs relative to sunrise
 )
