@@ -89,8 +89,8 @@ function soil_energy_balance(
         Q_convection = calc_convection(; u_star, log_z_ratio, ΔT, ρ_cp, z0=roughness_height)
     else
         # compute ρcpTκg (was a constant in original Fortran version)
-        # dry_air_out = dry_air_properties(u"K"(reference_temperature), elevation=elevation)
-        # wet_air_out = wet_air_properties(u"K"(reference_temperature), rh = rh)
+        # dry_air_out = dry_air_properties(u"K"(reference_temperature), P_atmos)
+        # wet_air_out = wet_air_properties(u"K"(reference_temperature), rh, P_atmos)
         #ρ = dry_air_out.ρ_air
         #c_p = wet_air_out.c_p
         # TODO make this work with SI units
@@ -104,7 +104,7 @@ function soil_energy_balance(
     hc = max(abs(Q_convection / (T2[1] - tair)), 0.5u"W/m^2/K")
 
     # Evaporation
-    wet_air_out = wet_air_properties(u"K"(tair); rh, P_atmos)
+    wet_air_out = wet_air_properties(u"K"(tair), rh, P_atmos)
     c_p_air = wet_air_out.c_p
     ρ_air = wet_air_out.ρ_air
     hd = (hc / (c_p_air * ρ_air)) * (0.71 / 0.60)^0.666
@@ -152,8 +152,8 @@ function evaporation(; tsurf, tair, rh, rhsurf, hd, P_atmos, soil_wetness, satur
     tsurf = tsurf < u"K"(-81.0u"°C") ? u"K"(-81.0u"°C") : tsurf
 
     # surface and air vapor densities
-    ρ_vap_surf = wet_air_properties(u"K"(tsurf); rh=rhsurf, P_atmos).ρ_vap
-    ρ_vap_air = wet_air_properties(u"K"(tair); rh, P_atmos).ρ_vap
+    ρ_vap_surf = wet_air_properties(u"K"(tsurf), rhsurf, P_atmos).ρ_vap
+    ρ_vap_air = wet_air_properties(u"K"(tair), rh, P_atmos).ρ_vap
 
     # Effective wet surface fraction
     effsur = saturated ? 1.0 : soil_wetness
@@ -388,7 +388,7 @@ function soil_water_balance!(buffers, smm::SoilMoistureModel;
         DJ[1] = EP * MW * H[2] / (R * T[1] * (1.0 - rh_loc)) # derivative of vapour flux at soil surface, combination of EQ9.14 and EQ5.14
 
         for i in 2:M
-            VP = wet_air_properties(u"K"(T[i]); rh=1.0, P_atmos).ρ_vap # VP is vapour density = c'_v in EQ9.7
+            VP = wet_air_properties(u"K"(T[i]), 1.0, P_atmos).ρ_vap # VP is vapour density = c'_v in EQ9.7
             KV = 0.66 * DV * VP * (WS[i] - (WN[i] + WN[i+1]) / 2.0) / (Z[i+1] - Z[i]) # vapour conductivity, EQ9.7, assuming epsilon(psi_g) = b*psi_g^m (eq. 3.10) where b = 0.66 and m = 1 (p.99)
             JV[i] = KV * (H[i+1] - H[i]) # fluxes of vapour within soil, EQ9.14
             DJ[i] = MW * H[i] * KV / (R * T[i-1]) # derivatives of vapour fluxes within soil, combination of EQ9.14 and EQ5.14
@@ -497,11 +497,11 @@ function get_soil_water_balance!(buffers, soil_moisture_model::SoilMoistureModel
     Q_convection = profile_out.Q_convection
 
     # evaporation
-    wet_air_out_ref = wet_air_properties(u"K"(last(profile_out.air_temperature)); rh = last(profile_out.relative_humidity), P_atmos)    
-    wet_air_out_loc = wet_air_properties(u"K"(profile_out.air_temperature[1]); rh = 1.0, P_atmos)    
-    local_relative_humidity = clamp(wet_air_out_ref.P_vap / wet_air_out_loc.P_vap_sat, 0.0, 0.99)
+    wet_air_out_ref = wet_air_properties(u"K"(last(profile_out.air_temperature)), last(profile_out.relative_humidity), P_atmos)    
+    wet_air_out_loc = wet_air_properties(u"K"(profile_out.air_temperature[1]), 1.0, P_atmos)    
+    local_relative_humidity = clamp(wet_air_out_ref.P_vap / wet_air_out_loc.P_vap, 0.0, 0.99)
     hc = max(abs(Q_convection / (tsurf - tair)), 0.5u"W/m^2/K")
-    wet_air_out = wet_air_properties(tair; rh, P_atmos)
+    wet_air_out = wet_air_properties(tair, rh, P_atmos)
     c_p_air = wet_air_out.c_p
     ρ_air = wet_air_out.ρ_air
     hd = (hc / (c_p_air * ρ_air)) * (0.71 / 0.60)^0.666

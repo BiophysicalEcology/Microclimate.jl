@@ -112,8 +112,8 @@ function atmospheric_surface_profile!(buffers;
     air_temperature[1] = T_ref_height
 
     # compute rcptkg (was a constant in original Fortran version)
-    # dry_air_out = dry_air_properties(u"K"(reference_temperature); elevation, P_atmos)
-    # wet_air_out = wet_air_properties(u"K"(reference_temperature); rh=reference_humidity, P_atmos)
+    # dry_air_out = dry_air_properties(u"K"(reference_temperature), P_atmos)
+    # wet_air_out = wet_air_properties(u"K"(reference_temperature), rh=reference_humidity, P_atmos)
     # ρ = dry_air_out.ρ_air
     # c_p = wet_air_out.c_p
     # TODO make this work with SI units
@@ -155,7 +155,7 @@ function atmospheric_surface_profile!(buffers;
     end
     wind_speed = reverse(wind_speed)
     air_temperature = reverse(air_temperature)
-    e = wet_air_properties(T_ref_height; rh = reference_humidity).P_vap
+    e = wet_air_properties(T_ref_height, reference_humidity, P_atmos).P_vap
     relative_humidity .= clamp.(e ./ vapour_pressure.(air_temperature) .* 1.0, 0.0, 1.0)
 
     return (;
@@ -203,8 +203,8 @@ Uses `dry_air_properties` to compute air density (ρ) and
 `wet_air_properties` to compute specific heat capacity (cₚ).
 """
 function calc_ρ_cp(T_mean, elevation, relative_humidity, P_atmos)
-    dry_air_out = dry_air_properties(u"K"(T_mean); elevation, P_atmos)
-    wet_air_out = wet_air_properties(u"K"(T_mean); rh=relative_humidity, P_atmos)
+    dry_air_out = dry_air_properties(u"K"(T_mean), P_atmos)
+    wet_air_out = wet_air_properties(u"K"(T_mean), relative_humidity, P_atmos)
     ρ = dry_air_out.ρ_air
     c_p = wet_air_out.c_p
     return ρ * c_p
