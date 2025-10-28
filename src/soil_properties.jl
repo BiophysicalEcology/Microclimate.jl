@@ -98,9 +98,9 @@ function soil_properties(soil_thermal::CampbelldeVriesSoilThermal;
     ################################################################ 
     # This is some of the most expensive code in the package 
     # its inlined so most of the work in wet_air_properties is ignored 
-    e_a = wet_air_properties(T_K; rh=0.99, P_atmos).P_vap 
-    e_a1 = wet_air_properties(T_K - 1u"K"; rh=0.99, P_atmos).P_vap 
-    e_a2 = wet_air_properties(T_K + 1u"K"; rh=0.99, P_atmos).P_vap 
+    e_a = wet_air_properties(T_K, 0.99, P_atmos).P_vap 
+    e_a1 = wet_air_properties(T_K - 1u"K", 0.99, P_atmos).P_vap 
+    e_a2 = wet_air_properties(T_K + 1u"K", 0.99, P_atmos).P_vap 
     ################################################################
 
     ∇x = (e_a2 - e_a1) / 2.0

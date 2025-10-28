@@ -30,7 +30,7 @@ function longwave_radiation(radiation_model=CampbellNormanAtmosphericRadiation()
     cloud = cloud_cover
 
     # Longwave radiation (handle both IR modes)
-    wet_air_out = wet_air_properties(u"K"(tair); rh, P_atmos)
+    wet_air_out = wet_air_properties(u"K"(tair), rh, P_atmos)
 
     # Atmospheric radiation
     P_vap, arad = atmospheric_radiation(radiation_model, wet_air_out.P_vap, tair)
