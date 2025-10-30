@@ -35,6 +35,11 @@ depths = ((DataFrame(CSV.File("$testdir/data/init_daily/DEP.csv"))[:, 2]) / 100.
 heights = [microinput[:Usrhyt], microinput[:Refhyt]]u"m" # air nodes for temperature, wind speed and humidity profile
 days2do = 30
 hours2do = days2do * 24
+slope = (microinput[:slope])*1.0u"°"
+aspect = (microinput[:azmuth])*1.0u"°"
+elevation = (microinput[:ALTT])*1.0u"m"
+albedo = (DataFrame(CSV.File("$testdir/data/init_daily/REFLS.csv"))[1, 2] * 1.0)
+P_atmos = atmospheric_pressure((microinput[:ALTT])*1.0u"m")
 
 #TODO make one terrain object via BiophysicalEcologyBase or Habitat
 micro_terrain = MicroTerrain(;
@@ -46,12 +51,7 @@ micro_terrain = MicroTerrain(;
 )
 
 solar_terrain = SolarTerrain(;
-    slope = (microinput[:slope])*1.0u"°",
-    aspect = (microinput[:azmuth])*1.0u"°",
-    elevation = (microinput[:ALTT])*1.0u"m",
     horizon_angles = (DataFrame(CSV.File("$testdir/data/init_daily/hori.csv"))[:, 2])*1.0u"°",
-    albedo = (DataFrame(CSV.File("$testdir/data/init_daily/REFLS.csv"))[1, 2] * 1.0),
-    P_atmos = atmospheric_pressure((microinput[:ALTT])*1.0u"m"),
 )
 
 soil_thermal_model = CampbelldeVriesSoilThermal(;
@@ -134,8 +134,11 @@ problem = MicroProblem(;
     depths, # soil nodes - keep spacing close near the surface
     heights, # air nodes for temperature, wind speed and humidity profile
     # Objects defined above
-    solar_model,
+    slope,
+    aspect,
+    albedo,
     solar_terrain,
+    solar_model,
     micro_terrain, #TODO combine terrains via a generic terrain in BiophysicalEcologyBase
     soil_moisture_model,
     soil_thermal_model,

@@ -74,8 +74,11 @@ Returns a named tuple containing:
     # TODO: this should be mandatory with no default??
     latitude
     # Objects defined above
-    solar_model = SolarProblem()
+    slope
+    aspect
+    albedo
     solar_terrain
+    solar_model = SolarProblem()
     micro_terrain
     soil_moisture_model
     soil_thermal_model
@@ -103,7 +106,7 @@ function example_microclimate_problem(;
     kw...
 )
     MicroProblem(; 
-         latitude, micro_terrain, solar_terrain, soil_moisture_model, soil_thermal_model, environment_minmax, environment_daily, kw...
+         latitude, micro_terrain, slope, aspect, albedo, solar_terrain, soil_moisture_model, soil_thermal_model, environment_minmax, environment_daily, kw...
     )
 end
 
@@ -229,9 +232,11 @@ function solve(mp::MicroProblem)
 end
 
 function solve_solar(mp::MicroProblem)
-    (; solar_model, days, hours, latitude, solar_terrain) = mp
+    (; micro_terrain, solar_model, days, hours, latitude, slope, aspect, albedo, environment_hourly, solar_terrain) = mp
+    P_atmos = environment_hourly.pressure[1] # TODO constant for now, ideally broadcast it across pressure
+    elevation = micro_terrain.elevation
     # compute clear sky solar radiation
-    solar_radiation_out = solar_radiation(solar_model; days, hours, latitude, solar_terrain)
+    solar_radiation_out = solar_radiation(solar_model, latitude, elevation, slope, aspect, albedo, P_atmos; days, hours, solar_terrain=solar_terrain)
     # limit max zenith angles to 90°
     solar_radiation_out.zenith_angle[solar_radiation_out.zenith_angle .> 90u"°"] .= 90u"°"
     solar_radiation_out.zenith_slope_angle[solar_radiation_out.zenith_slope_angle .> 90u"°"] .= 90u"°"
@@ -268,23 +273,24 @@ function adjust_for_cloud_cover(output, solar_radiation_out, days, hours)
     # adjust for cloud using Angstrom formula (formula 5.33 on P. 177 of "Climate Data and Resources" by Edward Linacre 1992
     day_of_year = repeat(days, inner=length(hours))
     zenith_angle = solar_radiation_out.zenith_angle
-    direct_total = solar_radiation_out.direct_total
-    diffuse_total = solar_radiation_out.diffuse_total
+    direct_horizontal = solar_radiation_out.direct_horizontal
+    diffuse_horizontal = solar_radiation_out.diffuse_horizontal
     cloud = output.cloud_cover
-    return (; global_solar, diffuse_fraction) = cloud_adjust_radiation(output, cloud, diffuse_total, direct_total, zenith_angle, day_of_year)
+    return (; global_solar, diffuse_fraction) = cloud_adjust_radiation(output, cloud, diffuse_horizontal, direct_horizontal, zenith_angle, day_of_year)
 end
 
 # Solves soil temperature and moisture
 function solve_soil!(output::MicroResult, mp::MicroProblem, solar_radiation_out; 
     days, hours, depths, heights
 )
-    (; solar_terrain, micro_terrain, soil_thermal_model, soil_moisture_model, environment_minmax, environment_daily, daily, initial_soil_temperature, initial_soil_moisture, runmoist, hourly_rainfall) = mp
+    (; micro_terrain, soil_thermal_model, soil_moisture_model, environment_minmax, environment_daily, environment_hourly, daily, initial_soil_temperature, initial_soil_moisture, runmoist, hourly_rainfall, slope, albedo) = mp
     (; moist_step, Campbells_b_parameter, soil_bulk_density2, soil_mineral_density2, air_entry_water_potential) = soil_moisture_model
-
     ndays = length(days)
     nhours = length(hours)
     numnodes_a = length(depths) # number of soil nodes for temperature calcs and final output
     numnodes_b = numnodes_a * 2 - 2 # number of soil nodes for soil moisture calcs
+    P_atmos = environment_hourly.pressure[1] # TODO constant for now, ideally broadcast it across pressure
+    elevation = micro_terrain.elevation
 
     # initial conditions
     if !daily && isnothing(initial_soil_temperature)
@@ -373,7 +379,7 @@ function solve_soil!(output::MicroResult, mp::MicroProblem, solar_radiation_out;
                 if i == 1 # make first hour of day equal last hour of previous iteration
                     if niter > 1
                         ∑phase .= 0.0u"J" # TODO decide whether this should happen and fix in Fortran
-                        inputs = SoilEnergyInputs(; forcing, buffers, soil_thermal_model, depths, heights, solar_terrain, micro_terrain, runmoist, nodes, environment_instant, soil_wetness)
+                        inputs = SoilEnergyInputs(; forcing, buffers, soil_thermal_model, depths, heights, slope, albedo, micro_terrain, runmoist, nodes, environment_instant, soil_wetness)
                         soiltemps = get_soil_temp_timeline(T0, inputs, i + 1)
                         T0 = soiltemps[2]
                         if iter == niter # TODO this should happen every time but at present it doesn't in Fortran version
@@ -383,7 +389,7 @@ function solve_soil!(output::MicroResult, mp::MicroProblem, solar_radiation_out;
                         end
                     end
                 else
-                    inputs = SoilEnergyInputs(; forcing, buffers, soil_thermal_model, depths, heights, solar_terrain, micro_terrain, runmoist, nodes, environment_instant, soil_wetness)
+                    inputs = SoilEnergyInputs(; forcing, buffers, soil_thermal_model, depths, heights, slope, albedo, micro_terrain, runmoist, nodes, environment_instant, soil_wetness)
                     soiltemps = get_soil_temp_timeline(T0, inputs, i)
                     T0 = soiltemps[2]
                     if iter == niter # TODO this should happen every time but at present it doesn't in Fortran version

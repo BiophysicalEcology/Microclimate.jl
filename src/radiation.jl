@@ -90,8 +90,8 @@ Maxwell, E. L., "A Quasi-Physical Model for Converting Hourly
 function cloud_adjust_radiation(output, cloud::AbstractArray, D_cs, B_cs, zenith::AbstractArray, doy; 
     a=0.36, b=0.64, gamma=1.0,
 )
-    (; global_total, diffuse_total, direct_total) = output.solar_radiation
-    G, D, B = (global_total, diffuse_total, direct_total)
+    (; global_horizontal, diffuse_horizontal, direct_horizontal) = output.solar_radiation
+    G, D, B = (global_horizontal, diffuse_horizontal, direct_horizontal)
     # Solar geometry
     cosz     = cos.(zenith)
     cosz_pos = max.(cosz, 0.0)
