@@ -1,11 +1,12 @@
-@kwdef struct SoilEnergyInputs{F,B,SP,D<:Vector{<:Number},H<:Vector{<:Number},ST,MT,EI,SW}
+@kwdef struct SoilEnergyInputs{F,B,SP,D<:Vector{<:Number},H<:Vector{<:Number},A,MT,EI,SW}
     forcing::F
     buffers::B
     soil_thermal_model::SP
     depths::D
     heights::H
+    slope::Quantity
+    albedo::A
     nodes::Vector{Float64}
-    solar_terrain::ST #TODO make just one terrain
     micro_terrain::MT
     environment_instant::EI
     runmoist::Bool
@@ -14,7 +15,7 @@ end
 
 @kwdef struct MicroForcing{
     S<:AbstractInterpolation,ZE<:AbstractInterpolation,ZS<:AbstractInterpolation,T<:AbstractInterpolation,
-    V<:AbstractInterpolation,RH<:AbstractInterpolation,CL<:AbstractInterpolation,P<:AbstractInterpolation,
+    V<:AbstractInterpolation,RH<:AbstractInterpolation,CL<:AbstractInterpolation,P<:AbstractInterpolation
 }
     interpolate_solar::S
     interpolate_zenith::ZE

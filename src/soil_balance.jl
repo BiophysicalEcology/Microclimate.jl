@@ -15,13 +15,12 @@ function soil_energy_balance(
     #T_K = T .* u"K"  # convert Float64 time back to unitful
     #dT_K = dT .* 60 .* u"K/minute"  # convert Float64 time back to unitful
     # extract prameters
-    (; soil_thermal_model, forcing, buffers, heights, depths, nodes, environment_instant, solar_terrain, micro_terrain, soil_wetness, runmoist) = p
+    (; soil_thermal_model, slope, albedo, forcing, buffers, heights, depths, nodes, environment_instant, micro_terrain, soil_wetness, runmoist) = p
     (; depp, wc, c) = buffers.soil_energy_balance
     (; soil_moisture, shade) = environment_instant
     # Get environmental data at time t
     (; P_atmos, tair, vel, zenr, solr, cloud, rh, zslr) = interpolate_forcings(forcing, t)
     (; roughness_height, karman_constant, dyer_constant) = micro_terrain
-    (; albedo, slope) = solar_terrain
 
     reference_height = last(heights)
     sabnew = 1.0 - albedo

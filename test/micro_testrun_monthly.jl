@@ -33,9 +33,13 @@ LAIs = fill(0.1, length(days))
 depths = ((DataFrame(CSV.File("$testdir/data/init_monthly/DEP.csv"))[:, 2]) / 100.0)u"m"
 heights = [microinput[:Usrhyt], microinput[:Refhyt]]u"m" # air nodes for temperature, wind speed and humidity profile
 days2do = 1:12
+slope = (microinput[:slope])*1.0u"°"
+aspect = (microinput[:azmuth])*1.0u"°"
+elevation = (microinput[:ALTT])*1.0u"m"
+albedo = (DataFrame(CSV.File("$testdir/data/init_monthly/REFLS.csv"))[1, 2] * 1.0)
+P_atmos = atmospheric_pressure((microinput[:ALTT])*1.0u"m")
 
 #TODO make one terrain object via BiophysicalEcologyBase or Habitat
-#TODO make P_atmos time a varying input
 micro_terrain = MicroTerrain(;
     elevation = microinput[:ALTT] * 1.0u"m", # elevation (m)
     roughness_height = microinput[:RUF] * 1.0u"m", # roughness height for standard mode TODO dispatch based on roughness pars
@@ -45,12 +49,7 @@ micro_terrain = MicroTerrain(;
 )
 
 solar_terrain = SolarTerrain(;
-    slope = (microinput[:slope])*1.0u"°",
-    aspect = (microinput[:azmuth])*1.0u"°",
-    elevation = (microinput[:ALTT])*1.0u"m",
     horizon_angles = (DataFrame(CSV.File("$testdir/data/init_monthly/hori.csv"))[:, 2])*1.0u"°",
-    albedo = (DataFrame(CSV.File("$testdir/data/init_monthly/REFLS.csv"))[1, 2] * 1.0),
-    P_atmos = atmospheric_pressure((microinput[:ALTT])*1.0u"m"),
 )
 
 mineral_density = (CSV.File("$testdir/data/init_monthly/soilprop.csv")[1, 1][6]) * 1.0u"Mg/m^3" # soil minerals density (Mg/m3)
@@ -115,8 +114,11 @@ problem = MicroProblem(;
     depths,
     heights, # air nodes for temperature, wind speed and humidity profile
     # Objects defined above
-    solar_model,
+    slope,
+    aspect,
+    albedo,
     solar_terrain,
+    solar_model,
     micro_terrain, #TODO combine terrains via a generic terrain in BiophysicalEcologyBase
     soil_moisture_model,
     soil_thermal_model,
