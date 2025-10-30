@@ -21,7 +21,7 @@ export CampbelldeVriesSoilThermal, SoilMoistureModel
 
 export MonthlyMinMaxEnvironment, DailyTimeseries, HourlyTimeseries, MicroTerrain
 
-export sine_exponential!, vsine, hourly_vars
+export daily_cycle_sine_exponential, daily_cycle_linear, hourly_from_min_max
 
 export cloud_adjust_radiation, longwave_radiation
 

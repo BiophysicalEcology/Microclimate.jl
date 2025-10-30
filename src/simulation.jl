@@ -241,7 +241,7 @@ end
 
 function interpolate_minmax!(output, environment_minmax, environment_daily, environment_hourly, solar_radiation_out)
     # interpolate daily min/max forcing variables to hourly
-    reference_temperature, reference_wind_speed, reference_humidity, cloud_cover = hourly_vars(environment_minmax, solar_radiation_out)
+    reference_temperature, reference_wind_speed, reference_humidity, cloud_cover = hourly_from_min_max(environment_minmax, solar_radiation_out)
     # TODO just use loops for these this allocates
     reference_humidity[reference_humidity .> 1.0] .= 1.0
     cloud_cover[cloud_cover .> 1.0] .= 1.0
