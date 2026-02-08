@@ -1,16 +1,37 @@
+"""
+    sine_exponential!(args...)
+
+Interpolates hourly temperature between a minimum and maximum. 
+
+# Arguments
+
+- `times`: output vector of times
+- `temperatures`: output vector of temperatures
+
+- `initial_temperature`: the starting boundary condition
+- `minimum_temperature`: the lowest temperature of the day
+- `maximum_temperature`: the highest temperature of the day
+- `next_minimum_temperature`: the minimum temperature the next day?
+- `next_maximum_temperature`: the maximum temperature the next day?
+- `time_sunrise`: time of sunrise on the day
+- `time_sunset`: time of sunset on the day
+- `time_maximum_temperature`: time on maximum_temperature
+- `daily`: is there data for each day
+- `iday`: the Int number of the day
+"""
 function sine_exponential!(
-    initial_temperature,
-    times,
-    temperatures,
-    minimum_temperature,
-    maximum_temperature,
-    next_minimum_temperature,
-    next_maximum_temperature,
-    time_sunrise,
-    time_sunset,
-    time_maximum_temperature,
-    daily,
-    iday
+    initial_temperature::Quantity,
+    times::AbstractVector,
+    temperatures::AbstractVector{<:Quantity},
+    minimum_temperature::Quantity,
+    maximum_temperature::Quantity,
+    next_minimum_temperature::Quantity,
+    next_maximum_temperature::Quantity,
+    time_sunrise::Real, # ?
+    time_sunset::Real, # ?
+    time_maximum_temperature::Real, # ?
+    daily::Bool,
+    iday::Int, # ?
 )
     nhours = 24
     minimum_temperature = u"K"(minimum_temperature)
@@ -28,6 +49,7 @@ function sine_exponential!(
     
     # Temperature at sunset
     sunset_angle = 360 * (time_sunset - reference_time) / (2 * (time_maximum_temperature - time_sunrise))
+    # TODO: what is this magic number 57.29577
     sunset_temperature = amplitude * sin(sunset_angle / 57.29577) + minimum_temperature + amplitude
     
     # Nighttime exponential decay constant
@@ -35,11 +57,10 @@ function sine_exponential!(
 
     for i in 1:nhours
         j = i + 1
-        time = i * 100
+        time = i * 100 # TODO: why 100?
         if time == time_sunrise # sunrise
             temperature = minimum_temperature
-        end
-        if time < time_sunrise
+        elseif time < time_sunrise
             TI = (2400 - time_sunset) + time
             if daily && iday > 1
                 temperature = ((minimum_temperature - initial_temperature) / time_sunrise) * time + initial_temperature   
@@ -47,8 +68,7 @@ function sine_exponential!(
                 E = TI * decay_rate
                 temperature = (sunset_temperature - sunrise_temperature) / exp(E) + sunrise_temperature
             end
-        end
-        if time > time_sunrise
+        else # time > time_sunrise
             if time <= time_sunset # before or at sunset, sine wave
                 angle = 360 * (time - reference_time) / (2 * (time_maximum_temperature - time_sunrise))
                 temperature = amplitude * sin(angle / 57.29577) + minimum_temperature + amplitude
@@ -62,8 +82,9 @@ function sine_exponential!(
             end
         end
 
+        # TODO: Why change to °C here?
         temperature = u"°C"(temperature)
-        ITIME = Int(floor(time / 100))
+        ITIME = floor(Int, time / 100)
         FRMIN = time / 100 - ITIME
         ITIME *= 60
         FRMIN *= 100
@@ -77,15 +98,32 @@ function sine_exponential!(
 
     # Set first time step
     times[1] = 0
-    if daily == 1 && iday > 1
-        temperatures[1] = initial_temperature
+    temperatures[1] = if daily == 1 && iday > 1
+        initial_temperature
     else
-        temperatures[1] = temperature
+        temperature
     end
 
     return nothing
 end
 
+"""
+    vsine(args...)
+
+Interpolates hourly temperature between a minimum and maximum. 
+
+# Arguments
+
+- `VMIN`: minimum wind speed
+- `VMAX`: maxiomum wind speed
+- `time_sunrise`: time of sunrise on the day
+- `time_sunset`: time of sunset on the day
+- `TIMIN`: time of minimum wind speed
+- `TIMAX`: time of maximum wind speed
+- `daily`: is there data for each day
+- `iday`: the Int number of the day
+- `IVAR`: initial wind speed
+"""
 function vsine(VMIN, VMAX, time_sunrise, time_sunset, TIMIN, TIMAX, daily, iday, IVAR)
     nhours = 24
     vinit = 0.0 * VMIN[1]
@@ -98,20 +136,21 @@ function vsine(VMIN, VMAX, time_sunrise, time_sunset, TIMIN, TIMAX, daily, iday,
         vinit = IVAR
     end
 
+    # TODO what is vsm
     vsmIN = VMIN + 0.01 * vave
     vsmAX = VMAX - 0.01 * vave
 
     if TIMIN < TIMAX
         # morning min, afternoon max
-        ITEST1 = Int(floor(TIMIN / 100))
-        ITEST2 = Int(floor(TIMAX / 100))
+        ITEST1 = floor(Int, TIMIN / 100) # TODO name ITEST what its testing !!!!
+        ITEST2 = floor(Int, TIMAX / 100)
         slope1 = (vave - vsmIN) / (100.0 - TIMIN)
         slope2 = (vsmIN - vsmAX) / (TIMIN - TIMAX)
         slope3 = (vsmAX - vave) / (TIMAX - 2400.0)
     else
         # morning max, afternoon min
-        ITEST1 = Int(floor(TIMAX / 100))
-        ITEST2 = Int(floor(TIMIN / 100))
+        ITEST1 = floor(Int, TIMAX / 100)
+        ITEST2 = floor(Int, TIMIN / 100)
         slope1 = (vave - vsmAX) / (100.0 - TIMAX)
         slope2 = (vsmAX - vsmIN) / (TIMAX - TIMIN)
         slope3 = (vsmIN - vave) / (TIMIN - 2400.0)
@@ -119,10 +158,11 @@ function vsine(VMIN, VMAX, time_sunrise, time_sunset, TIMIN, TIMAX, daily, iday,
 
 
     for i in 1:nhours
+        # TODO what are all thes 100.0s for 
         XA[i] = i * 100.0 - 100.0
         time = XA[i]
 
-        ITIME = Int(floor(time / 100.0))
+        ITIME = floor(Int, time / 100.0)
         FRMIN = (time / 100.0) - ITIME
         ITIME *= 60
         FRMIN *= 100.0
@@ -137,9 +177,7 @@ function vsine(VMIN, VMAX, time_sunrise, time_sunset, TIMIN, TIMAX, daily, iday,
         if i < ITEST1
             YA[i] = YA[1] - slope1 * (XA[1] - XA[i])
             continue
-        end
-
-        if i == ITEST1
+        elseif i == ITEST1
             YA[i] = (TIMIN < TIMAX) ? vsmIN : vsmAX
             continue
         end
@@ -153,15 +191,9 @@ function vsine(VMIN, VMAX, time_sunrise, time_sunset, TIMIN, TIMAX, daily, iday,
                     YA[i] = vsmAX
                 end
             end
-            continue
-        end
-
-        if i == ITEST2
+        elseif i == ITEST2
             YA[i] = (TIMIN < TIMAX) ? vsmAX : vsmIN
-            continue
-        end
-
-        if i > ITEST2
+        else # i > ITEST2
             if TIMIN < TIMAX
                 YA[i] = vsmAX - slope3 * (TIMAX - XA[i])
             else
@@ -185,6 +217,12 @@ function vsine(VMIN, VMAX, time_sunrise, time_sunset, TIMIN, TIMAX, daily, iday,
     return YA
 end
 
+"""
+    hourly_vars!(minmax, solar_radiation_out, daily::Bool)
+
+Interpolates hourly variables from montyly or daily minmax variables
+
+"""
 function hourly_vars(minmax, solar_radiation_out, daily::Bool=false)
     (; reference_temperature_min, reference_temperature_max, reference_wind_min, reference_wind_max, reference_humidity_min, 
         reference_humidity_max, cloud_min, cloud_max, minima_times, maxima_times) = minmax
@@ -240,7 +278,7 @@ function hourly_vars(minmax, solar_radiation_out, daily::Bool=false)
         maximum_temperature = reference_temperature_max[iday]
         if iday < ndays & ndays > 1
             next_minimum_temperature = reference_temperature_min[iday+1]
-            next_maximum_temperature = reference_temperature_max[iday+1]
+            next_maximucompressed = transcode(GzipCompressor, text)m_temperature = reference_temperature_max[iday+1]
         else
             next_minimum_temperature = minimum_temperature
             next_maximum_temperature = maximum_temperature
@@ -249,7 +287,11 @@ function hourly_vars(minmax, solar_radiation_out, daily::Bool=false)
         # setting time of minimum and maximum (hours before sunrise or after solar noon)     #     AFTER SOLAR NOON)
         TIMIN = time_sunrise
         TIMAX = time_maximum_temperature
-        sine_exponential!(initial_temperature, times, temperatures, minimum_temperature, maximum_temperature, next_minimum_temperature, next_maximum_temperature, time_sunrise, time_sunset, time_maximum_temperature, daily, iday)
+        sine_exponential!(
+            initial_temperature, times, temperatures, minimum_temperature, maximum_temperature, 
+            next_minimum_temperature, next_maximum_temperature, time_sunrise, time_sunset, 
+            time_maximum_temperature, daily, iday
+        )
 
         # wind speed
         VMIN = reference_wind_min[iday]
@@ -276,8 +318,8 @@ function hourly_vars(minmax, solar_radiation_out, daily::Bool=false)
         #      TIME OF MAXIMUM at sunrise for relative humidities
         TSNHR = maxima_times[3] #+ TIMCOR
         time_maximum_temperature = (HSINT * 100.0 + FRACTS) + (TSNHR * 100.0)
-        TIMIN = time_maximum_temperature
         TIMAX = time_sunrise
+        TIMIN = time_maximum_temperature
         IVAR = initial_humidity
         humids = vsine(VMIN, VMAX, time_sunrise, time_sunset, TIMIN, TIMAX, daily, iday, IVAR)
 
@@ -308,7 +350,6 @@ function hourly_vars(minmax, solar_radiation_out, daily::Bool=false)
             reference_humidity=humidities,
             cloud_cover=cloud_covers)
 end
-
 # TODO this does just cloud_cover but should generalise first version better down the track
 function hourly_vars(
     cloud_min::Vector,
@@ -333,14 +374,14 @@ function hourly_vars(
 
         #     Air temperature calculations
         #     SUNSET IN MILITARY TIME
-        HHINT = trunc(HH)
+        HHINT = trunc(Int, HH)
         FRACT = (HH - HHINT) * 60.0
-        HSINT = trunc(tsn)
+        HSINT = trunc(Int, tsn)
         FRACTS = (tsn - HSINT) * 60.0
         time_sunset = (HSINT * 100.0 + FRACTS) + (HHINT * 100.0 + FRACT)
         #     SUNRISE IN MILITARY TIME
         DELT = tsn - HH
-        HRINT = trunc(DELT)
+        HRINT = trunc(Int, DELT)
         FRACTR = (DELT - HRINT) * 60.0
 
         # cloud_covers cover
