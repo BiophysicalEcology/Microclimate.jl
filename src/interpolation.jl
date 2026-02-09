@@ -278,7 +278,7 @@ function hourly_vars(minmax, solar_radiation_out, daily::Bool=false)
         maximum_temperature = reference_temperature_max[iday]
         if iday < ndays & ndays > 1
             next_minimum_temperature = reference_temperature_min[iday+1]
-            next_maximucompressed = transcode(GzipCompressor, text)m_temperature = reference_temperature_max[iday+1]
+            next_maximum_temperature = reference_temperature_max[iday+1]
         else
             next_minimum_temperature = minimum_temperature
             next_maximum_temperature = maximum_temperature
