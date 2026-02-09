@@ -155,8 +155,8 @@ function atmospheric_surface_profile!(buffers;
     end
     wind_speed = reverse(wind_speed)
     air_temperature = reverse(air_temperature)
-    e = wet_air_properties(T_ref_height, reference_humidity, P_atmos).P_vap
-    relative_humidity .= clamp.(e ./ vapour_pressure.(air_temperature) .* 1.0, 0.0, 1.0)
+    reference_vapor_pressure = wet_air_properties(T_ref_height, reference_humidity, P_atmos).P_vap
+    relative_humidity .= clamp.(reference_vapor_pressure ./ vapour_pressure.(air_temperature) .* 1.0, 0.0, 1.0)
 
     return (;
         wind_speed,
@@ -425,27 +425,27 @@ function calc_Obukhov_length(
     u_star = 0.0u"m/s"
     L_Obukhov_new = 0.0u"m"
 
-    δ = 1.0
+    relative_error = 1.0
     count = 0
     just_above_zero = 1.0e-6
-    while δ > tol && count < max_iter
+    while relative_error > tol && count < max_iter
         count += 1
         φ_m = calc_φ_m(z, γ, L_Obukhov)
         ψ_m = calc_ψ_m(φ_m)
         ψ_h = calc_ψ_h(φ_m)
-        dum = log(z / z0) - ψ_m
-        if dum <= 0.0
-            dum = just_above_zero
+        log_ratio_corrected = log(z / z0) - ψ_m
+        if log_ratio_corrected <= 0.0
+            log_ratio_corrected = just_above_zero
         end
-        u_star = κ * v_ref_height / dum
+        u_star = κ * v_ref_height / log_ratio_corrected
         if u_star < just_above_zero * 1u"m/s"
             u_star = just_above_zero * 1u"m/s"
         end
         sublayer_stanton_number = sublayer_stanton(z0, u_star)
-        bulk_stanton_number = bulk_stanton(dum, z, L_Obukhov)
+        bulk_stanton_number = bulk_stanton(log_ratio_corrected, z, L_Obukhov)
         Q_convection = convective_flux(ρ_cp, ΔT, u_star, bulk_stanton_number, sublayer_stanton_number)
         L_Obukhov_new = ρcpTκg * u_star^3 / Q_convection
-        δ = abs((L_Obukhov_new - L_Obukhov) / L_Obukhov)
+        relative_error = abs((L_Obukhov_new - L_Obukhov) / L_Obukhov)
         L_Obukhov = L_Obukhov_new
     end
 

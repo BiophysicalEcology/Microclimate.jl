@@ -311,7 +311,6 @@ function solve_soil!(output::MicroResult, mp::MicroProblem, solar_radiation_out;
     (; θ_soil0_a, θ_soil0_b) = initialise_soil_moisture(initial_soil_moisture, numnodes_b)
 
     nodes = nodes_day[:, 1]
-    M = 18 # soil_water_balance default
     buffers = (;
         profile = allocate_profile(heights),
         soil_energy_balance = allocate_soil_energy_balance(numnodes_b),  # only once
@@ -330,8 +329,8 @@ function solve_soil!(output::MicroResult, mp::MicroProblem, solar_radiation_out;
     output.soil_moisture[1, :] = θ_soil0_a
 
     if runmoist
-        MW = 0.01801528u"kg/mol" # molar mass of water, kg/mol # TODO use UnitfulMoles
-        output.soil_humidity[1, :] = clamp.(exp.(MW .* output.soil_water_potential[1, :] ./ (R .* T0)), 0, 1)
+        water_molar_mass = 0.01801528u"kg/mol" # TODO use UnitfulMoles
+        output.soil_humidity[1, :] = clamp.(exp.(water_molar_mass .* output.soil_water_potential[1, :] ./ (R .* T0)), 0, 1)
     end
 
     environment_day = get_day(environment_daily, 1)
@@ -377,9 +376,11 @@ function solve_soil!(output::MicroResult, mp::MicroProblem, solar_radiation_out;
                         soiltemps = get_soil_temp_timeline(T0, inputs, i + 1)
                         T0 = soiltemps[2]
                         if iter == niter # TODO this should happen every time but at present it doesn't in Fortran version
-                            ∑phase, qphase, T0 = phase_transition!(buffers.phase_transition;
-                                Ts = soiltemps[2], T_past = soiltemps[1], ∑phase, θ = θ_soil0_a, depths
+                            (; accumulated_latent_heat, phase_change_heat, temperature) = phase_transition!(buffers.phase_transition;
+                                temperatures=soiltemps[2], temperatures_past=soiltemps[1], accumulated_latent_heat=∑phase, soil_moisture=θ_soil0_a, depths
                             )
+                            ∑phase = accumulated_latent_heat
+                            T0 = temperature
                         end
                     end
                 else
@@ -387,9 +388,11 @@ function solve_soil!(output::MicroResult, mp::MicroProblem, solar_radiation_out;
                     soiltemps = get_soil_temp_timeline(T0, inputs, i)
                     T0 = soiltemps[2]
                     if iter == niter # TODO this should happen every time but at present it doesn't in Fortran version
-                        ∑phase, qphase, T0 = phase_transition!(buffers.phase_transition;
-                            Ts = soiltemps[2], T_past = soiltemps[1], ∑phase, θ = θ_soil0_a, depths
+                        (; accumulated_latent_heat, phase_change_heat, temperature) = phase_transition!(buffers.phase_transition;
+                            temperatures=soiltemps[2], temperatures_past=soiltemps[1], accumulated_latent_heat=∑phase, soil_moisture=θ_soil0_a, depths
                         )
+                        ∑phase = accumulated_latent_heat
+                        T0 = temperature
                     end
                 end
                 rain = hourly_rainfall ? mp.environment_hourly.rainfall[step] : environment_instant.rainfall
