@@ -51,7 +51,9 @@ solar_terrain = SolarTerrain(;
     elevation = (microinput[:ALTT])*1.0u"m",
     horizon_angles = (DataFrame(CSV.File("$testdir/data/init_daily/hori.csv"))[:, 2])*1.0u"°",
     albedo = (DataFrame(CSV.File("$testdir/data/init_daily/REFLS.csv"))[1, 2] * 1.0),
-    P_atmos = atmospheric_pressure((microinput[:ALTT])*1.0u"m"),
+    atmospheric_pressure = atmospheric_pressure((microinput[:ALTT])*1.0u"m"),
+    latitude = (microinput[:ALAT] + microinput[:AMINUT] / 60) * 1.0u"°",
+    longitude = (microinput[:ALONG] + microinput[:ALMINT] / 60) * 1.0u"°",
 )
 
 soil_thermal_model = CampbelldeVriesSoilThermal(;

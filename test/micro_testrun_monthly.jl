@@ -50,7 +50,9 @@ solar_terrain = SolarTerrain(;
     elevation = (microinput[:ALTT])*1.0u"m",
     horizon_angles = (DataFrame(CSV.File("$testdir/data/init_monthly/hori.csv"))[:, 2])*1.0u"°",
     albedo = (DataFrame(CSV.File("$testdir/data/init_monthly/REFLS.csv"))[1, 2] * 1.0),
-    P_atmos = atmospheric_pressure((microinput[:ALTT])*1.0u"m"),
+    atmospheric_pressure = atmospheric_pressure((microinput[:ALTT])*1.0u"m"),
+    latitude = longlat[2]*1.0u"°",
+    longitude = longlat[1]*1.0u"°",
 )
 
 mineral_density = (CSV.File("$testdir/data/init_monthly/soilprop.csv")[1, 1][6]) * 1.0u"Mg/m^3" # soil minerals density (Mg/m3)

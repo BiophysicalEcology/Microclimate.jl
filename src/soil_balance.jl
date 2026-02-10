@@ -16,7 +16,7 @@ function soil_energy_balance(
     (; layer_depths, heat_capacity, thermal_conductance) = buffers.soil_energy_balance
     (; soil_moisture, shade) = environment_instant
     # Get environmental data at time t
-    (; P_atmos, tair, vel, zenr, solr, cloud, rh, zslr) = interpolate_forcings(forcing, t)
+    (; P_atmos, air_temperature, wind_speed, zenith_angle, solar_radiation, cloud_cover, relative_humidity, slope_zenith_angle) = interpolate_forcings(forcing, t)
     (; roughness_height, karman_constant, dyer_constant) = micro_terrain
     (; albedo, slope) = solar_terrain
 
@@ -27,7 +27,7 @@ function soil_energy_balance(
     clamped_temperature = map(t -> clamp(t, (-81.0+273.15)u"K", (85.0+273.15)u"K"), temperature_state)::U
 
     # get soil properties
-    (; λ_b, cp_b, ρ_b) = soil_properties!(buffers.soil_properties, soil_thermal_model; soil_temperature=clamped_temperature, soil_moisture, P_atmos)
+    (; bulk_thermal_conductivity, bulk_heat_capacity, bulk_density) = soil_properties!(buffers.soil_properties, soil_thermal_model; soil_temperature=clamped_temperature, soil_moisture, P_atmos)
 
     temperature_vector = SVector(MVector(clamped_temperature))
 
@@ -35,23 +35,21 @@ function soil_energy_balance(
     layer_depths[1:N] = depths
     # Compute soil layer properties
     for i in 1:N
-        volumetric_heat_capacity = ρ_b[i] * cp_b[i]
+        volumetric_heat_capacity = bulk_density[i] * bulk_heat_capacity[i]
         if i == 1
             heat_capacity[i] = volumetric_heat_capacity * layer_depths[2] / 2.0
-            thermal_conductivity = λ_b[1]
-            thermal_conductance[i] = thermal_conductivity / layer_depths[2]
+            thermal_conductance[i] = bulk_thermal_conductivity[1] / layer_depths[2]
         else
             heat_capacity[i] = volumetric_heat_capacity * (layer_depths[i+1] - layer_depths[i-1]) / 2.0
-            thermal_conductivity = λ_b[i]
-            thermal_conductance[i] = thermal_conductivity / (layer_depths[i+1] - layer_depths[i])
+            thermal_conductance[i] = bulk_thermal_conductivity[i] / (layer_depths[i+1] - layer_depths[i])
         end
     end
 
     # Solar radiation
-    Q_solar = absorptivity * solr * (1.0 - shade)
-    if slope > 0 && zenr < 90u"°"
-        cos_zenith = cosd(zenr)
-        cos_slope_zenith = cosd(zslr)
+    Q_solar = absorptivity * solar_radiation * (1.0 - shade)
+    if slope > 0 && zenith_angle < 90u"°"
+        cos_zenith = cosd(zenith_angle)
+        cos_slope_zenith = cosd(slope_zenith_angle)
         Q_solar = (Q_solar / cos_zenith) * cos_slope_zenith
     end
 
@@ -64,30 +62,36 @@ function soil_energy_balance(
 
     # Convection
     log_z_ratio = log(reference_height / roughness_height + 1)
-    T_ref_height = tair
     T_surface = temperature_vector[1]
-    ΔT = T_ref_height - T_surface
-    T_mean = (T_surface + T_ref_height) / 2
+    ΔT = air_temperature - T_surface
+    T_mean = (T_surface + air_temperature) / 2
     # TODO call calc_ρ_cp method specific to elevation and RH in final version but do it this way for NicheMapR comparison
     ρ_cp = calc_ρ_cp(T_mean)
-    if T_ref_height ≥ T_surface || zenr ≥ 90°
-        u_star = calc_u_star(; reference_wind_speed=vel, log_z_ratio, κ=karman_constant)
+    if air_temperature ≥ T_surface || zenith_angle ≥ 90°
+        u_star = calc_u_star(; reference_wind_speed=wind_speed, log_z_ratio, κ=karman_constant)
         Q_convection = calc_convection(; u_star, log_z_ratio, ΔT, ρ_cp, z0=roughness_height)
     else
         # compute ρcpTκg (was a constant in original Fortran version)
         ρcpTκg = 6.003e-8u"cal*minute^2/cm^4"
-        Obukhov_out = calc_Obukhov_length(T_ref_height, T_surface, vel, roughness_height, reference_height, ρcpTκg, karman_constant, log_z_ratio, ΔT, ρ_cp)
+        Obukhov_out = calc_Obukhov_length(air_temperature, T_surface, wind_speed, roughness_height, reference_height, ρcpTκg, karman_constant, log_z_ratio, ΔT, ρ_cp)
         Q_convection = Obukhov_out.Q_convection
     end
-    heat_transfer_coefficient = max(abs(Q_convection / (temperature_vector[1] - tair)), 0.5u"W/m^2/K")
+    heat_transfer_coefficient = max(abs(Q_convection / (temperature_vector[1] - air_temperature)), 0.5u"W/m^2/K")
 
     # Evaporation
-    wet_air_out = wet_air_properties(u"K"(tair), rh, P_atmos)
-    c_p_air = wet_air_out.c_p
-    ρ_air = wet_air_out.ρ_air
+    wet_air_out = wet_air_properties(u"K"(air_temperature), relative_humidity, P_atmos)
+    c_p_air = wet_air_out.specific_heat
+    ρ_air = wet_air_out.density
     mass_transfer_coefficient = (heat_transfer_coefficient / (c_p_air * ρ_air)) * (0.71 / 0.60)^0.666
-    Q_evaporation, gwsurf = evaporation(;
-        tsurf=u"K"(temperature_state[1]), tair=u"K"(tair), rh, rhsurf=1.0, hd=mass_transfer_coefficient, P_atmos, soil_wetness, saturated=false
+    Q_evaporation, evaporation_mass_flux = evaporation(;
+        surface_temperature=u"K"(temperature_state[1]),
+        air_temperature=u"K"(air_temperature),
+        relative_humidity,
+        surface_relative_humidity=1.0,
+        mass_transfer_coefficient,
+        P_atmos,
+        soil_wetness,
+        saturated=false,
     )
     # Construct static vector of change in soil temperature, to return
     # Energy balance at surface
@@ -105,35 +109,44 @@ end
 
 function interpolate_forcings(f, t)
     t_m = ustrip(u"minute", t)
-    return (; 
+    return (;
         P_atmos = f.interpolate_pressure(t_m),
-        tair = f.interpolate_temperature(t_m),
-        vel = max(0.1u"m/s", f.interpolate_wind(t_m)),
-        zenr = min(90.0u"°", u"°"(round(f.interpolate_zenith(t_m), digits=3))),
-        solr = max(0.0u"W/m^2", f.interpolate_solar(t_m)),
-        cloud = clamp(f.interpolate_cloud(t_m), 0.0, 1.0),
-        rh = clamp(f.interpolate_humidity(t_m), 0.0, 1.0),
-        zslr = min(90.0u"°", f.interpolate_slope_zenith(t_m)),
+        air_temperature = f.interpolate_temperature(t_m),
+        wind_speed = max(0.1u"m/s", f.interpolate_wind(t_m)),
+        zenith_angle = min(90.0u"°", u"°"(round(f.interpolate_zenith(t_m), digits=3))),
+        solar_radiation = max(0.0u"W/m^2", f.interpolate_solar(t_m)),
+        cloud_cover = clamp(f.interpolate_cloud(t_m), 0.0, 1.0),
+        relative_humidity = clamp(f.interpolate_humidity(t_m), 0.0, 1.0),
+        slope_zenith_angle = min(90.0u"°", f.interpolate_slope_zenith(t_m)),
     )
 end
 
-function evaporation(; tsurf, tair, rh, rhsurf, hd, P_atmos, soil_wetness, saturated)
+function evaporation(;
+    surface_temperature,
+    air_temperature,
+    relative_humidity,
+    surface_relative_humidity,
+    mass_transfer_coefficient,
+    P_atmos,
+    soil_wetness,
+    saturated,
+)
     # Assumes all units are SI (Kelvin, Pascal, meters, seconds, kg, etc.)
 
-    surface_temperature = tsurf < u"K"(-81.0u"°C") ? u"K"(-81.0u"°C") : tsurf
+    clamped_surface_temperature = surface_temperature < u"K"(-81.0u"°C") ? u"K"(-81.0u"°C") : surface_temperature
 
     # surface and air vapor densities
-    ρ_vap_surf = wet_air_properties(u"K"(surface_temperature), rhsurf, P_atmos).ρ_vap
-    ρ_vap_air = wet_air_properties(u"K"(tair), rh, P_atmos).ρ_vap
+    ρ_vap_surf = wet_air_properties(u"K"(clamped_surface_temperature), surface_relative_humidity, P_atmos).vapour_density
+    ρ_vap_air = wet_air_properties(u"K"(air_temperature), relative_humidity, P_atmos).vapour_density
 
     # Effective wet surface fraction
     effective_wet_fraction = saturated ? 1.0 : soil_wetness
 
     # Water evaporated from surface (kg/s/m^2)
-    water_flux = effective_wet_fraction * hd * (ρ_vap_surf - ρ_vap_air)
+    water_flux = effective_wet_fraction * mass_transfer_coefficient * (ρ_vap_surf - ρ_vap_air)
 
     # Latent heat of vaporization (J/kg)
-    λ_evap = enthalpy_of_vaporisation(surface_temperature)
+    λ_evap = enthalpy_of_vaporisation(clamped_surface_temperature)
 
     # Energy flux due to evaporation (W/m²)
     Q_evaporation = water_flux * λ_evap
@@ -361,7 +374,7 @@ function soil_water_balance!(buffers, smm::SoilMoistureModel;
         vapor_flux_derivative[1] = evaporation_potential * water_molar_mass * fractional_humidity[2] / (R * soil_temperature[1] * (1.0 - relative_humidity_local)) # derivative of vapour flux at soil surface, combination of EQ9.14 and EQ5.14
 
         for i in 2:num_layers
-            vapor_density = wet_air_properties(u"K"(soil_temperature[i]), 1.0, P_atmos).ρ_vap # vapor_density is vapour density = c'_v in EQ9.7
+            vapor_density = wet_air_properties(u"K"(soil_temperature[i]), 1.0, P_atmos).vapour_density # vapor_density is vapour density = c'_v in EQ9.7
             vapor_conductivity = 0.66 * vapor_diffusivity * vapor_density * (saturation_water_content[i] - (water_content_new[i] + water_content_new[i+1]) / 2.0) / (depth[i+1] - depth[i]) # vapour conductivity, EQ9.7, assuming epsilon(psi_g) = b*psi_g^m (eq. 3.10) where b = 0.66 and m = 1 (p.99)
             vapor_flux[i] = vapor_conductivity * (fractional_humidity[i+1] - fractional_humidity[i]) # fluxes of vapour within soil, EQ9.14
             vapor_flux_derivative[i] = water_molar_mass * fractional_humidity[i] * vapor_conductivity / (R * soil_temperature[i-1]) # derivatives of vapour fluxes within soil, combination of EQ9.14 and EQ5.14
@@ -446,18 +459,17 @@ function get_soil_water_balance!(buffers, soil_moisture_model::SoilMoistureModel
     soil_wetness,
     soil_moisture,
 )
-    ei = environment_instant
-    tair = ei.reference_temperature
-    P_atmos = ei.P_atmos
-    relative_humidity = ei.reference_humidity
-    leaf_area_index = ei.leaf_area_index
+    air_temperature = environment_instant.reference_temperature
+    P_atmos = environment_instant.P_atmos
+    relative_humidity = environment_instant.reference_humidity
+    leaf_area_index = environment_instant.leaf_area_index
 
     (; maxpool, moist_step, soil_bulk_density2, soil_mineral_density2) = soil_moisture_model
 
     bulk_density = soil_bulk_density2
     mineral_density = soil_mineral_density2
     θ_soil = soil_moisture
-    surface_temperature = tsurf = T0[1]
+    surface_temperature = T0[1]
 
     # compute scalar profiles
     profile_out = atmospheric_surface_profile!(buffers.profile;
@@ -470,14 +482,23 @@ function get_soil_water_balance!(buffers, soil_moisture_model::SoilMoistureModel
     # evaporation
     wet_air_out_ref = wet_air_properties(u"K"(last(profile_out.air_temperature)), last(profile_out.relative_humidity), P_atmos)
     wet_air_out_loc = wet_air_properties(u"K"(profile_out.air_temperature[1]), 1.0, P_atmos)
-    local_relative_humidity = clamp(wet_air_out_ref.P_vap / wet_air_out_loc.P_vap, 0.0, 0.99)
-    hc = max(abs(Q_convection / (tsurf - tair)), 0.5u"W/m^2/K")
-    wet_air_out = wet_air_properties(tair, relative_humidity, P_atmos)
-    c_p_air = wet_air_out.c_p
-    ρ_air = wet_air_out.ρ_air
-    hd = (hc / (c_p_air * ρ_air)) * (0.71 / 0.60)^0.666
-    Q_evaporation, gwsurf = evaporation(; tsurf, tair, rh=relative_humidity, rhsurf=1.0, hd, P_atmos, soil_wetness, saturated=true)
-    λ_evap = enthalpy_of_vaporisation(tsurf)
+    local_relative_humidity = clamp(wet_air_out_ref.vapour_pressure / wet_air_out_loc.vapour_pressure, 0.0, 0.99)
+    heat_transfer_coefficient = max(abs(Q_convection / (surface_temperature - air_temperature)), 0.5u"W/m^2/K")
+    wet_air_out = wet_air_properties(air_temperature, relative_humidity, P_atmos)
+    c_p_air = wet_air_out.specific_heat
+    ρ_air = wet_air_out.density
+    mass_transfer_coefficient = (heat_transfer_coefficient / (c_p_air * ρ_air)) * (0.71 / 0.60)^0.666
+    Q_evaporation, evaporation_mass_flux = evaporation(;
+        surface_temperature,
+        air_temperature,
+        relative_humidity,
+        surface_relative_humidity=1.0,
+        mass_transfer_coefficient,
+        P_atmos,
+        soil_wetness,
+        saturated=true,
+    )
+    λ_evap = enthalpy_of_vaporisation(surface_temperature)
     evaporation_potential = max(1e-7u"kg/m^2/s", Q_evaporation / λ_evap)
 
     # run infiltration algorithm
@@ -490,12 +511,12 @@ function get_soil_water_balance!(buffers, soil_moisture_model::SoilMoistureModel
         evapotranspiration=evaporation_potential,
         input_soil_temperature=T0,
     )
-    θ_soil0_b = infil_out.θ_soil
+    soil_moisture_fine = infil_out.θ_soil
     surf_evap = max(0.0u"kg/m^2", infil_out.evap)
     Δ_H2O = max(0.0u"kg/m^2", infil_out.Δ_H2O)
     pool = clamp(pool - Δ_H2O - surf_evap, 0.0u"kg/m^2", maxpool) # pooling surface water
     if pool > 0.0u"kg/m^2" # surface is wet - saturate it for infiltration
-        θ_soil0_b[1] = 1 - bulk_density[1] / mineral_density[1]
+        soil_moisture_fine[1] = 1 - bulk_density[1] / mineral_density[1]
     end
     for _ in 1:(niter_moist-1)
         infil_out = soil_water_balance!(buffers.soil_water_balance, soil_moisture_model;
@@ -507,17 +528,17 @@ function get_soil_water_balance!(buffers, soil_moisture_model::SoilMoistureModel
             evapotranspiration=evaporation_potential,
             input_soil_temperature=T0,
         )
-        θ_soil0_b = infil_out.θ_soil
+        soil_moisture_fine = infil_out.θ_soil
         surf_evap = max(0.0u"kg/m^2", infil_out.evap)
         Δ_H2O = max(0.0u"kg/m^2", infil_out.Δ_H2O)
         pool = clamp(pool - Δ_H2O - surf_evap, 0.0u"kg/m^2", maxpool)
         if pool > 0.0u"kg/m^2"
-            θ_soil0_b[1] = 1 - bulk_density[1] / mineral_density[1]
+            soil_moisture_fine[1] = 1 - bulk_density[1] / mineral_density[1]
         end
     end
     soil_wetness = clamp(abs(surf_evap / (evaporation_potential * moist_step) * 1.0), 0, 1.0)
 
-    return (; infil_out, soil_wetness, pool, θ_soil0_b)
+    return (; infil_out, soil_wetness, pool, soil_moisture_fine)
 end
 
 function allocate_phase_transition(num_nodes)

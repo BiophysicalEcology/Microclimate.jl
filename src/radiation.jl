@@ -2,15 +2,15 @@ abstract type AbstractAtmosphericRadiationModel end
 struct SwinbankAtmosphericRadiation <: AbstractAtmosphericRadiationModel end
 struct CampbellNormanAtmosphericRadiation <: AbstractAtmosphericRadiationModel end
 
-function atmospheric_radiation(::SwinbankAtmosphericRadiation, P_vap, tair)
+function atmospheric_radiation(::SwinbankAtmosphericRadiation, P_vap, air_temperature)
     # Swinbank, Eq. 10.11 in Campbell and Norman 1998
-    arad = uconvert(u"W*m^-2", ((9.2e-6 * (u"K"(tair))^2) * σ * (u"K"(tair))^4) / 1u"K^2")
-    return P_vap, arad
+    atmospheric_rad = uconvert(u"W*m^-2", ((9.2e-6 * (u"K"(air_temperature))^2) * σ * (u"K"(air_temperature))^4) / 1u"K^2")
+    return P_vap, atmospheric_rad
 end
-function atmospheric_radiation(::CampbellNormanAtmosphericRadiation, P_vap, tair)
+function atmospheric_radiation(::CampbellNormanAtmosphericRadiation, P_vap, air_temperature)
     # Campbell and Norman 1998 eq. 10.10 to get emissivity of sky
-    arad = u"W/m^2"((1.72 * (ustrip(u"kPa", P_vap) / ustrip(u"K", tair + 0.01u"K"))^(1//7)) * σ * (u"K"(tair) + 0.01u"K")^4) 
-    return P_vap, arad
+    atmospheric_rad = u"W/m^2"((1.72 * (ustrip(u"kPa", P_vap) / ustrip(u"K", air_temperature + 0.01u"K"))^(1//7)) * σ * (u"K"(air_temperature) + 0.01u"K")^4)
+    return P_vap, atmospheric_rad
 end
 function longwave_radiation(radiation_model=CampbellNormanAtmosphericRadiation();
     micro_terrain,
@@ -24,7 +24,7 @@ function longwave_radiation(radiation_model=CampbellNormanAtmosphericRadiation()
     wet_air_out = wet_air_properties(u"K"(reference_temperature), reference_humidity, P_atmos)
 
     # Atmospheric radiation
-    P_vap, atmospheric_rad = atmospheric_radiation(radiation_model, wet_air_out.P_vap, reference_temperature)
+    vapour_pressure, atmospheric_rad = atmospheric_radiation(radiation_model, wet_air_out.vapour_pressure, reference_temperature)
 
     # Cloud radiation temperature (shade approximation, air temp - 2°C)
     cloud_radiation = σ * surface_emissivity * (u"K"(reference_temperature) - 2.0u"K")^4
@@ -80,8 +80,8 @@ Maxwell, E. L., "A Quasi-Physical Model for Converting Hourly
 function cloud_adjust_radiation(output, cloud::AbstractArray, diffuse_clear_sky, direct_clear_sky, zenith::AbstractArray, doy;
     a=0.36, b=0.64, gamma=1.0,
 )
-    (; global_total, diffuse_total, direct_total) = output.solar_radiation
-    global_radiation = global_total
+    (; global_horizontal, diffuse_horizontal, direct_horizontal) = output.solar_radiation
+    global_radiation = global_horizontal
     # Solar geometry
     cos_zenith = cos.(zenith)
     cos_zenith_positive = max.(cos_zenith, 0.0)

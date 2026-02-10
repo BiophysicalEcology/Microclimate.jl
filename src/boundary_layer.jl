@@ -115,7 +115,7 @@ function atmospheric_surface_profile!(buffers;
     # dry_air_out = dry_air_properties(u"K"(reference_temperature), P_atmos)
     # wet_air_out = wet_air_properties(u"K"(reference_temperature), rh=reference_humidity, P_atmos)
     # ρ = dry_air_out.ρ_air
-    # c_p = wet_air_out.c_p
+    # c_p = wet_air_out.specific_heat
     # TODO make this work with SI units
     #ρcpTκg = u"cal*minute^2/cm^4"(ρ * c_p * T_ref_height / (κ * g_n))
     ρcpTκg = u"J*s^2/m^4"(6.003e-8u"cal*minute^2/cm^4")
@@ -155,7 +155,7 @@ function atmospheric_surface_profile!(buffers;
     end
     wind_speed = reverse(wind_speed)
     air_temperature = reverse(air_temperature)
-    reference_vapor_pressure = wet_air_properties(T_ref_height, reference_humidity, P_atmos).P_vap
+    reference_vapor_pressure = wet_air_properties(T_ref_height, reference_humidity, P_atmos).vapour_pressure
     relative_humidity .= clamp.(reference_vapor_pressure ./ vapour_pressure.(air_temperature) .* 1.0, 0.0, 1.0)
 
     return (;
@@ -205,8 +205,8 @@ Uses `dry_air_properties` to compute air density (ρ) and
 function calc_ρ_cp(T_mean, elevation, relative_humidity, P_atmos)
     dry_air_out = dry_air_properties(u"K"(T_mean), P_atmos)
     wet_air_out = wet_air_properties(u"K"(T_mean), relative_humidity, P_atmos)
-    ρ = dry_air_out.ρ_air
-    c_p = wet_air_out.c_p
+    ρ = dry_air_out.density
+    c_p = wet_air_out.specific_heat
     return ρ * c_p
 end
 
