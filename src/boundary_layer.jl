@@ -37,7 +37,7 @@ Named tuple with fields:
 - `wind_speed`: Wind speed profile at each height (`m/s`).
 - `air_temperature`: Air temperature profile at each height (`K`).
 - `relative_humidity`: Relative humidity (fractional) at each height.
-- `Q_convection`: Convective heat flux (`W/m²`).
+- `convective_heat_flux`: Convective heat flux (`W/m²`).
 - `u_star`: Friction velocity (`m/s`).
 
 # Notes
@@ -88,7 +88,7 @@ function atmospheric_surface_profile!(buffers;
     surface_temperature, 
 )
     (; roughness_height, karman_constant, dyer_constant, elevation) = micro_terrain
-    (; P_atmos, reference_temperature, reference_wind_speed, reference_humidity, zenith_angle) = environment_instant
+    (; atmospheric_pressure, reference_temperature, reference_wind_speed, reference_humidity, zenith_angle) = environment_instant
 
     (; heights, height_array, air_temperature, wind_speed, relative_humidity) = buffers
     N_heights = length(heights)
@@ -97,8 +97,8 @@ function atmospheric_surface_profile!(buffers;
     end
     reference_height = last(heights)
 
-    T_ref_height = u"K"(reference_temperature)
-    T_surface = u"K"(surface_temperature)
+    reference_temp = u"K"(reference_temperature)
+    surface_temp = u"K"(surface_temperature)
     κ = karman_constant
     γ = dyer_constant
     z = reference_height
@@ -109,71 +109,71 @@ function atmospheric_surface_profile!(buffers;
     N_heights = length(heights)
     relative_humidity = zeros(Float64, N_heights) # output relative humidities
     wind_speed[1] = v_ref_height
-    air_temperature[1] = T_ref_height
+    air_temperature[1] = reference_temp
 
     # compute rcptkg (was a constant in original Fortran version)
     # dry_air_out = dry_air_properties(u"K"(reference_temperature), P_atmos)
     # wet_air_out = wet_air_properties(u"K"(reference_temperature), rh=reference_humidity, P_atmos)
     # ρ = dry_air_out.ρ_air
-    # c_p = wet_air_out.c_p
+    # c_p = wet_air_out.specific_heat
     # TODO make this work with SI units
     #ρcpTκg = u"cal*minute^2/cm^4"(ρ * c_p * T_ref_height / (κ * g_n))
     ρcpTκg = u"J*s^2/m^4"(6.003e-8u"cal*minute^2/cm^4")
     
     log_z_ratio = log(z / z0 + 1)
-    ΔT = T_ref_height - T_surface
-    T_mean = (T_surface + T_ref_height) / 2
+    ΔT = reference_temp - surface_temp
+    mean_temp = (surface_temp + reference_temp) / 2
     # TODO call calc_ρ_cp method specific to elevation and RH in final version but do it this way for NicheMapR comparison
-    ρ_cp = calc_ρ_cp(T_mean)#, elevation, reference_humidity)
+    ρ_cp = calc_ρ_cp(mean_temp)#, elevation, reference_humidity)
 
 
     # TODO name and explain this check, why `|| zenith_angle`
-    if T_ref_height ≥ T_surface || zenith_angle ≥ 90°
+    if reference_temp ≥ surface_temp || zenith_angle ≥ 90°
         u_star = calc_u_star(; reference_wind_speed, log_z_ratio, κ)
-        Q_convection = calc_convection(; u_star, log_z_ratio, ΔT, ρ_cp, z0)
+        convective_heat_flux = calc_convection(; u_star, log_z_ratio, ΔT, ρ_cp, z0)
         for i in 2:N_heights
             wind_speed[i] = calc_wind(height_array[i], z0, κ, u_star, 1.0)
-            T_z0 = (T_ref_height * bulk_stanton(log_z_ratio) + T_surface * sublayer_stanton(z0, u_star)) / (bulk_stanton(log_z_ratio) + sublayer_stanton(z0, u_star))
-            air_temperature[i] = T_z0 + (T_ref_height - T_z0) * log(height_array[i] / z0 + 1.0) / log_z_ratio
+            roughness_height_temp = (reference_temp * bulk_stanton(log_z_ratio) + surface_temp * sublayer_stanton(z0, u_star)) / (bulk_stanton(log_z_ratio) + sublayer_stanton(z0, u_star))
+            air_temperature[i] = roughness_height_temp + (reference_temp - roughness_height_temp) * log(height_array[i] / z0 + 1.0) / log_z_ratio
         end
     else
-        L_Obukhov = -0.3u"m" # initialise Obukhov length
+        obukhov_length = -0.3u"m" # initialise Obukhov length
         # TODO just pass the environment_instant through here
-        Obukhov_out = calc_Obukhov_length(T_ref_height, T_surface, v_ref_height, z0, z, ρcpTκg, κ, log_z_ratio, ΔT, ρ_cp; max_iter=30, tol=1e-2)
-        L_Obukhov = Obukhov_out.L_Obukhov
-        T_z0 = Obukhov_out.T_z0
-        Q_convection = Obukhov_out.Q_convection
+        Obukhov_out = calc_Obukhov_length(reference_temp, surface_temp, v_ref_height, z0, z, ρcpTκg, κ, log_z_ratio, ΔT, ρ_cp; max_iter=30, tol=1e-2)
+        obukhov_length = Obukhov_out.obukhov_length
+        roughness_height_temp = Obukhov_out.roughness_height_temperature
+        convective_heat_flux = Obukhov_out.convective_heat_flux
         u_star = Obukhov_out.u_star
         ψ_h = Obukhov_out.ψ_h
         for i in 2:N_heights
-            φ_m1 = calc_φ_m(height_array[i], γ, L_Obukhov)
+            φ_m1 = calc_φ_m(height_array[i], γ, obukhov_length)
             ψ_m1 = calc_ψ_m(φ_m1)
             ψ_h2 = calc_ψ_h(φ_m1)
             wind_speed[i] = calc_wind(height_array[i], z0, κ, u_star, -ψ_m1)
-            air_temperature[i] = T_z0 + (T_ref_height - T_z0) * log(height_array[i] / z0 - ψ_h2) / log(z / z0 - ψ_h)
+            air_temperature[i] = roughness_height_temp + (reference_temp - roughness_height_temp) * log(height_array[i] / z0 - ψ_h2) / log(z / z0 - ψ_h)
         end
     end
     wind_speed = reverse(wind_speed)
     air_temperature = reverse(air_temperature)
-    e = wet_air_properties(T_ref_height, reference_humidity, P_atmos).P_vap
-    relative_humidity .= clamp.(e ./ vapour_pressure.(air_temperature) .* 1.0, 0.0, 1.0)
+    reference_vapor_pressure = wet_air_properties(reference_temp, reference_humidity, atmospheric_pressure).vapour_pressure
+    relative_humidity .= clamp.(reference_vapor_pressure ./ vapour_pressure.(air_temperature) .* 1.0, 0.0, 1.0)
 
     return (;
         wind_speed,
         air_temperature,
         relative_humidity,
-        Q_convection=u"W/m^2"(Q_convection),
+        convective_heat_flux=u"W/m^2"(convective_heat_flux),
         u_star,
     )
 end
 
 """
-    calc_ρ_cp(T_mean)
+    calc_ρ_cp(mean_temperature)
 
 Compute the volumetric heat capacity of air (ρ·cₚ) as a function of mean temperature.
 
 # Arguments
-- `T_mean`: Mean air temperature (`Unitful.Temperature`), in Kelvin.
+- `mean_temperature`: Mean air temperature (`Unitful.Temperature`), in Kelvin.
 
 # Returns
 - Volumetric heat capacity (`cal / (cm³·K)`).
@@ -181,33 +181,34 @@ Compute the volumetric heat capacity of air (ρ·cₚ) as a function of mean tem
 This is a simplified empirical regression based only on temperature,
 without accounting for moisture or elevation effects.
 """
-function calc_ρ_cp(T_mean)
-    return u"J/m^3/K"(u"(cal*g)/(g*cm^3*K)" * (0.08472 / ustrip(u"K", T_mean)))
+function calc_ρ_cp(mean_temperature)
+    return u"J/m^3/K"(u"(cal*g)/(g*cm^3*K)" * (0.08472 / ustrip(u"K", mean_temperature)))
 end
 
 """
-    calc_ρ_cp(T_mean, elevation, relative_humidity)
+    calc_ρ_cp(mean_temperature, elevation, relative_humidity, atmospheric_pressure)
 
 Compute the volumetric heat capacity of moist air (ρ·cₚ) given temperature,
 elevation, and relative humidity.
 
 # Arguments
-- `T_mean`: Mean air temperature (`Unitful.Temperature`), in Kelvin.
+- `mean_temperature`: Mean air temperature (`Unitful.Temperature`), in Kelvin.
 - `elevation`: Elevation above sea level (with units of length).
 - `relative_humidity`: Relative humidity (fraction between 0 and 1).
+- `atmospheric_pressure`: Atmospheric pressure.
 
 # Returns
 - Volumetric heat capacity (`cal / (cm³·K)`).
 
-Uses `dry_air_properties` to compute air density (ρ) and 
+Uses `dry_air_properties` to compute air density (ρ) and
 `wet_air_properties` to compute specific heat capacity (cₚ).
 """
-function calc_ρ_cp(T_mean, elevation, relative_humidity, P_atmos)
-    dry_air_out = dry_air_properties(u"K"(T_mean), P_atmos)
-    wet_air_out = wet_air_properties(u"K"(T_mean), relative_humidity, P_atmos)
-    ρ = dry_air_out.ρ_air
-    c_p = wet_air_out.c_p
-    return ρ * c_p
+function calc_ρ_cp(mean_temperature, elevation, relative_humidity, atmospheric_pressure)
+    dry_air_out = dry_air_properties(u"K"(mean_temperature), atmospheric_pressure)
+    wet_air_out = wet_air_properties(u"K"(mean_temperature), relative_humidity, atmospheric_pressure)
+    air_density = dry_air_out.density
+    air_heat_capacity = wet_air_out.specific_heat
+    return air_density * air_heat_capacity
 end
 
 """
@@ -310,24 +311,24 @@ function bulk_stanton(log_z_ratio)
 end
 
 """
-    bulk_stanton(log_z_ratio, z, L_Obukhov)
+    bulk_stanton(log_z_ratio, z, obukhov_length)
 
 Compute the bulk Stanton number for unstable conditions.
 """
-function bulk_stanton(log_z_ratio, z, L_Obukhov)
-    return (0.64 / log_z_ratio) * (1 - 0.1 * z / L_Obukhov)
+function bulk_stanton(log_z_ratio, z, obukhov_length)
+    return (0.64 / log_z_ratio) * (1 - 0.1 * z / obukhov_length)
 end
 
 
 """
-    calc_φ_m(z, γ, L_Obukhov)
+    calc_φ_m(z, γ, obukhov_length)
 
 Stability correction function φ for momentum in Monin–Obukhov similarity theory (MOST).
 
 # Arguments
 - `z`: Height above surface (with units of length).
 - `γ`: Empirical constant (dimensionless, often ≈16).
-- `L_Obukhov`: Monin–Obukhov length (with units of length).
+- `obukhov_length`: Monin–Obukhov length (with units of length).
 
 # Returns
 - Dimensionless stability correction factor φ.
@@ -343,9 +344,9 @@ This corresponds to the Businger–Dyer formulation for unstable stratification:
 - Dyer, A. J. (1974). A review of flux–profile relationships.
   *Boundary-Layer Meteorology*, 7(3), 363–372.
 """
-function calc_φ_m(z, γ, L_Obukhov)
-    #return (1.0 - min(1.0, γ * (z / L_Obukhov)))^(1//4)
-    return (1.0 - γ * z / L_Obukhov)^(1//4)
+function calc_φ_m(z, γ, obukhov_length)
+    #return (1.0 - min(1.0, γ * (z / obukhov_length)))^(1//4)
+    return (1.0 - γ * z / obukhov_length)^(1//4)
 end
 
 
@@ -400,65 +401,60 @@ end
 
 
 """
-    calc_Obukhov_length(T_ref_height, T_surface, v_ref_height, z, z0, ρcpTκg, κ, log_z_ratio, ΔT, ρ_cp, 
+    calc_Obukhov_length(reference_temp, surface_temp, v_ref_height, z, z0, ρcpTκg, κ, log_z_ratio, ΔT, ρ_cp,
                          γ=16.0, max_iter=500, tol=1e-2)
 
 Iteratively solve for Monin-Obukhov length and convective heat flux.
 """
 function calc_Obukhov_length(
-    T_ref_height, T_surface, v_ref_height, z0, z, ρcpTκg, κ, log_z_ratio, ΔT, ρ_cp; 
+    reference_temp, surface_temp, v_ref_height, z0, z, ρcpTκg, κ, log_z_ratio, ΔT, ρ_cp;
     γ=16.0, max_iter=30, tol=1e-2
 )
-    L_Obukhov = -0.3u"m" # initial Monin-Obukhov length
-
-    # conversions
-    T_ref_height = T_ref_height
-    T_surface = T_surface
-    v_ref_height = v_ref_height
+    obukhov_length = -0.3u"m" # initial Monin-Obukhov length
 
     # initialise with zeros
-    Q_convection = 0.0u"W/m^2"
+    convective_heat_flux = 0.0u"W/m^2"
     bulk_stanton_number = 0.0
-    sublayer_stanton_number = 0.0 
+    sublayer_stanton_number = 0.0
     ψ_h = 0.0
     φ_m = 0.0
     u_star = 0.0u"m/s"
-    L_Obukhov_new = 0.0u"m"
+    obukhov_length_new = 0.0u"m"
 
-    δ = 1.0
+    relative_error = 1.0
     count = 0
     just_above_zero = 1.0e-6
-    while δ > tol && count < max_iter
+    while relative_error > tol && count < max_iter
         count += 1
-        φ_m = calc_φ_m(z, γ, L_Obukhov)
+        φ_m = calc_φ_m(z, γ, obukhov_length)
         ψ_m = calc_ψ_m(φ_m)
         ψ_h = calc_ψ_h(φ_m)
-        dum = log(z / z0) - ψ_m
-        if dum <= 0.0
-            dum = just_above_zero
+        log_ratio_corrected = log(z / z0) - ψ_m
+        if log_ratio_corrected <= 0.0
+            log_ratio_corrected = just_above_zero
         end
-        u_star = κ * v_ref_height / dum
+        u_star = κ * v_ref_height / log_ratio_corrected
         if u_star < just_above_zero * 1u"m/s"
             u_star = just_above_zero * 1u"m/s"
         end
         sublayer_stanton_number = sublayer_stanton(z0, u_star)
-        bulk_stanton_number = bulk_stanton(dum, z, L_Obukhov)
-        Q_convection = convective_flux(ρ_cp, ΔT, u_star, bulk_stanton_number, sublayer_stanton_number)
-        L_Obukhov_new = ρcpTκg * u_star^3 / Q_convection
-        δ = abs((L_Obukhov_new - L_Obukhov) / L_Obukhov)
-        L_Obukhov = L_Obukhov_new
+        bulk_stanton_number = bulk_stanton(log_ratio_corrected, z, obukhov_length)
+        convective_heat_flux = convective_flux(ρ_cp, ΔT, u_star, bulk_stanton_number, sublayer_stanton_number)
+        obukhov_length_new = ρcpTκg * u_star^3 / convective_heat_flux
+        relative_error = abs((obukhov_length_new - obukhov_length) / obukhov_length)
+        obukhov_length = obukhov_length_new
     end
 
-    T_z0 = (T_ref_height * bulk_stanton_number + T_surface * sublayer_stanton_number) / (bulk_stanton_number + sublayer_stanton_number)
+    roughness_height_temperature = (reference_temp * bulk_stanton_number + surface_temp * sublayer_stanton_number) / (bulk_stanton_number + sublayer_stanton_number)
 
-    return (; 
-        L_Obukhov=u"m"(L_Obukhov), 
-        sublayer_stanton_number, 
-        bulk_stanton_number, 
-        u_star, 
-        ψ_h, 
-        Q_convection=u"W/m^2"(Q_convection), 
-        T_z0,
+    return (;
+        obukhov_length=u"m"(obukhov_length),
+        sublayer_stanton_number,
+        bulk_stanton_number,
+        u_star,
+        ψ_h,
+        convective_heat_flux=u"W/m^2"(convective_heat_flux),
+        roughness_height_temperature,
     )
 end
 

@@ -51,11 +51,13 @@ solar_terrain = SolarTerrain(;
     elevation = (microinput[:ALTT])*1.0u"m",
     horizon_angles = (DataFrame(CSV.File("$testdir/data/init_daily/hori.csv"))[:, 2])*1.0u"°",
     albedo = (DataFrame(CSV.File("$testdir/data/init_daily/REFLS.csv"))[1, 2] * 1.0),
-    P_atmos = atmospheric_pressure((microinput[:ALTT])*1.0u"m"),
+    atmospheric_pressure = atmospheric_pressure((microinput[:ALTT])*1.0u"m"),
+    latitude = (microinput[:ALAT] + microinput[:AMINUT] / 60) * 1.0u"°",
+    longitude = (microinput[:ALONG] + microinput[:ALMINT] / 60) * 1.0u"°",
 )
 
 soil_thermal_model = CampbelldeVriesSoilThermal(;
-    deVries_shape_factor = 0.1, # de Vries shape factor, 0.33 for organic soils, 0.1 for mineral
+    de_vries_shape_factor = 0.1, # de Vries shape factor, 0.33 for organic soils, 0.1 for mineral
     mineral_conductivity = (CSV.File("$testdir/data/init_daily/soilprop.csv")[1, 1][4]) * 1.0u"W/m/K", # soil minerals thermal conductivity (W/mC)
     mineral_density = (CSV.File("$testdir/data/init_daily/soilprop.csv")[1, 1][6]) * 1.0u"Mg/m^3", # soil minerals density (Mg/m3)
     mineral_heat_capacity = (CSV.File("$testdir/data/init_daily/soilprop.csv")[1, 1][5]) * 1.0u"J/kg/K", # soil minerals specific heat (J/kg-K)
@@ -83,7 +85,7 @@ soil_moisture_model = SoilMoistureModel(;
     # soil moisture model soil parameters
     air_entry_water_potential = (DataFrame(CSV.File("$testdir/data/init_daily/PE.csv"))[:, 2] * 1.0u"J/kg"), # set up vector of ground emissivities for each day
     saturated_hydraulic_conductivity = (DataFrame(CSV.File("$testdir/data/init_daily/KS.csv"))[:, 2] * 1.0u"kg*s/m^3"), # set up vector of ground emissivities for each day
-    Campbells_b_parameter = (DataFrame(CSV.File("$testdir/data/init_daily/BB.csv"))[:, 2] * 1.0), # set up vector of ground emissivities for each day
+    campbell_b_parameter = (DataFrame(CSV.File("$testdir/data/init_daily/BB.csv"))[:, 2] * 1.0), # set up vector of ground emissivities for each day
     soil_bulk_density2 = (DataFrame(CSV.File("$testdir/data/init_daily/BD.csv"))[:, 2] * 1.0u"Mg/m^3"), # set up vector of ground emissivities for each day
     soil_mineral_density2 = (DataFrame(CSV.File("$testdir/data/init_daily/DD.csv"))[:, 2] * 1.0u"Mg/m^3"), # set up vector of ground emissivities for each day
     # soil moisture plant parameters
