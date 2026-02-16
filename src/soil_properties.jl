@@ -1,5 +1,5 @@
 """
-    soil_properties(soil_thermal; P_atmos, soil_temperature, soil_moisture)
+    soil_properties(soil_thermal; atmospheric_pressure, soil_temperature, soil_moisture)
 
 Compute bulk soil properties — thermal conductivity, volumetric heat capacity,
 and bulk density — for a given soil layer.
@@ -10,7 +10,7 @@ and bulk density — for a given soil layer.
 
 # Keywords
 
-- `P_atmos::Quantity`: Atmospheric pressure.
+- `atmospheric_pressure::Quantity`: Atmospheric pressure.
 - `soil_temperature::Quantity`: Soil temperature in Kelvin.
 - `soil_moisture::Real`: Volumetric soil moisture (m³/m³).
 
@@ -53,24 +53,24 @@ Campbell, G. S., & Norman, J. M. (1998). Environmental Biophysics. Springer.
 
 """
 function soil_properties(soil_thermal::CampbelldeVriesSoilThermal;
-    P_atmos::Quantity,
+    atmospheric_pressure::Quantity,
     soil_temperature::Quantity,
     soil_moisture::Number,
 )
     (; bulk_density, mineral_conductivity, mineral_heat_capacity, mineral_density,
-       recirculation_power, return_flow_threshold, deVries_shape_factor) = soil_thermal
+       recirculation_power, return_flow_threshold, de_vries_shape_factor) = soil_thermal
 
     standard_pressure = Unitful.atm
-    shape_factor_c = 1.0 - 2.0 * deVries_shape_factor
+    shape_factor_c = 1.0 - 2.0 * de_vries_shape_factor
 
     # generalisation of eq. 8.20, Campbell and Norman (1991)
-    weighting_factor(λ_component, λ_fluid) = 2.0 / (3.0 * (1.0 + deVries_shape_factor * (λ_component / λ_fluid - 1.0))) +
+    weighting_factor(λ_component, λ_fluid) = 2.0 / (3.0 * (1.0 + de_vries_shape_factor * (λ_component / λ_fluid - 1.0))) +
                       1.0 / (3.0 * (1.0 + shape_factor_c * (λ_component / λ_fluid - 1.0)))
 
     temperature_celsius = ustrip(u"°C", soil_temperature)
 
-    bulk_heat_capacity = bulk_density / mineral_density * mineral_heat_capacity + soil_moisture * cp_water
-    bulk_density_total = soil_moisture * ρ_water + bulk_density
+    bulk_heat_capacity = bulk_density / mineral_density * mineral_heat_capacity + soil_moisture * water_heat_capacity
+    bulk_density_total = soil_moisture * water_density + bulk_density
 
     # eq. 8 Campbell et al. 1994
     water_thermal_conductivity = (0.554 + 2.24e-3 * temperature_celsius - 9.87e-6 * temperature_celsius^2)u"W/m/K"
@@ -78,17 +78,17 @@ function soil_properties(soil_thermal::CampbelldeVriesSoilThermal;
     dry_air_thermal_conductivity = (0.024 + 7.73e-5 * temperature_celsius - 2.6e-8 * temperature_celsius^2)u"W/m/K"
 
     # p. 309 Campbell et al. 1994
-    vapor_diffusivity = D_v0 * (standard_pressure / P_atmos) * (soil_temperature / 273.15u"K")^1.75
+    vapor_diffusivity = water_vapour_diffusivity_stp * (standard_pressure / atmospheric_pressure) * (soil_temperature / 273.15u"K")^1.75
     # p. 309 Campbell et al. 1994
-    molar_density = ρ_hat0 * (P_atmos / standard_pressure) * (273.15 / soil_temperature)
+    molar_density = water_vapour_molar_density_stp * (atmospheric_pressure / standard_pressure) * (273.15 / soil_temperature)
     vapor_enthalpy = molar_enthalpy_of_vaporisation(soil_temperature)
 
     ################################################################
     # This is some of the most expensive code in the package
     # its inlined so most of the work in wet_air_properties is ignored
-    vapor_pressure = wet_air_properties(soil_temperature, 0.99, P_atmos).vapour_pressure
-    vapor_pressure_minus = wet_air_properties(soil_temperature - 1u"K", 0.99, P_atmos).vapour_pressure
-    vapor_pressure_plus = wet_air_properties(soil_temperature + 1u"K", 0.99, P_atmos).vapour_pressure
+    vapor_pressure = wet_air_properties(soil_temperature, 0.99, atmospheric_pressure).vapour_pressure
+    vapor_pressure_minus = wet_air_properties(soil_temperature - 1u"K", 0.99, atmospheric_pressure).vapour_pressure
+    vapor_pressure_plus = wet_air_properties(soil_temperature + 1u"K", 0.99, atmospheric_pressure).vapour_pressure
     ################################################################
 
     vapor_pressure_gradient = (vapor_pressure_plus - vapor_pressure_minus) / 2.0
@@ -99,7 +99,7 @@ function soil_properties(soil_thermal::CampbelldeVriesSoilThermal;
     water_recirculation_factor = 1.0 / (1.0 + (soil_moisture / return_flow_threshold)^(-recirculation_power))
 
     # eq. 8.18, Campbell and Norman (1991)
-    gas_thermal_conductivity = dry_air_thermal_conductivity + vapor_enthalpy * vapor_pressure_gradient * water_recirculation_factor * molar_density * vapor_diffusivity / (P_atmos - vapor_pressure)
+    gas_thermal_conductivity = dry_air_thermal_conductivity + vapor_enthalpy * vapor_pressure_gradient * water_recirculation_factor * molar_density * vapor_diffusivity / (atmospheric_pressure - vapor_pressure)
     # eq. 8.19, Campbell and Norman (1991)
     fluid_thermal_conductivity = gas_thermal_conductivity + water_recirculation_factor * (water_thermal_conductivity - gas_thermal_conductivity)
 
@@ -125,20 +125,20 @@ function allocate_soil_properties(nodes, soil_thermal)
 end
 
 """
-    soil_properties!(buffers, soil_thermal; P_atmos, soil_temperature, soil_moisture)
+    soil_properties!(buffers, soil_thermal; atmospheric_pressure, soil_temperature, soil_moisture)
 
 Compute soil properties for vectors of soil temperature and moisture using broadcasting.
 
 Returns three arrays: `bulk_thermal_conductivity`, `bulk_heat_capacity`, `bulk_density`.
 """
 function soil_properties!(buffers::NamedTuple, soil_thermal;
-    P_atmos::Quantity, soil_temperature::AbstractVector, soil_moisture::AbstractVector
+    atmospheric_pressure::Quantity, soil_temperature::AbstractVector, soil_moisture::AbstractVector
 )
     num_layers = length(soil_temperature)
     @assert length(soil_moisture) == num_layers
     (; bulk_thermal_conductivity, bulk_heat_capacity, bulk_density) = buffers
     soil_props_i(i) = soil_properties(soil_thermal;
-        P_atmos,
+        atmospheric_pressure,
         soil_temperature = soil_temperature[i],
         soil_moisture = soil_moisture[i],
     )

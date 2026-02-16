@@ -31,11 +31,11 @@ abstract type AbstractEnvironment end
 
 @kwdef struct MicroResult{P,AT,WS,RH,CC,GS,DF,SkT,SoT,SM,SWP,SH,STC,SPH,SBD,SW,SR,Pr} <: AbstractEnvironment
     pressure::P
-    reference_temperature::AT 
+    reference_temperature::AT
     reference_wind_speed::WS
     reference_humidity::RH
     cloud_cover::CC
-    global_solar::GS
+    global_radiation::GS
     diffuse_fraction::DF
     sky_temperature::SkT
     # TODO: should things like soil_temperature be sub-components? soil.temperature ?
@@ -58,7 +58,7 @@ function MicroResult(nsteps::Int, num_coarse_nodes::Int, solar_radiation::NamedT
         reference_wind_speed = Array{typeof(1.0u"m/s")}(undef, nsteps),
         reference_humidity = Array{Float64}(undef, nsteps),
         cloud_cover = Array{Float64}(undef, nsteps),
-        global_solar = Array{typeof(1.0u"W/m^2")}(undef, nsteps),
+        global_radiation = Array{typeof(1.0u"W/m^2")}(undef, nsteps),
         diffuse_fraction = Array{Float64}(undef, nsteps),
         sky_temperature = Array{typeof(1.0u"K")}(undef, nsteps),
         soil_temperature = Array{typeof(1.0u"K")}(undef, nsteps, num_coarse_nodes),
@@ -80,8 +80,8 @@ Base.show(io::IO, mr::MicroResult) = print(io, "MicroResult")
 abstract type AbstractSoilThermalModel end
 
 # TODO are these parameters for a specific named model
-@kwdef struct CampbelldeVriesSoilThermal <: AbstractSoilThermalModel 
-    deVries_shape_factor
+@kwdef struct CampbelldeVriesSoilThermal <: AbstractSoilThermalModel
+    de_vries_shape_factor
     mineral_conductivity
     mineral_density
     mineral_heat_capacity
@@ -97,7 +97,7 @@ abstract type AbstractSoilMoistureModel end
 @kwdef struct SoilMoistureModel <: AbstractSoilMoistureModel
     air_entry_water_potential
     saturated_hydraulic_conductivity
-    Campbells_b_parameter
+    campbell_b_parameter
     soil_bulk_density2
     soil_mineral_density2
     root_density

@@ -133,7 +133,7 @@ function example_monthly_weather(;
 end
 
 function example_soil_thermal_parameters(;
-    deVries_shape_factor = 0.1, # de Vries shape factor, 0.33 for organic soils, 0.1 for mineral
+    de_vries_shape_factor = 0.1, # de Vries shape factor, 0.33 for organic soils, 0.1 for mineral
     soil_mineral_conductivity = 1.25u"W/m/K", # soil minerals thermal conductivity
     soil_mineral_density = 2.560u"Mg/m^3", # soil minerals density
     soil_mineral_heat_capacity = 870.0u"J/kg/K", # soil minerals specific heat
@@ -144,7 +144,7 @@ function example_soil_thermal_parameters(;
     return_flow_threshold = 0.162, # return-flow cutoff soil moisture, m^3/m^3
 )
     CampbelldeVriesSoilThermal(
-        deVries_shape_factor, soil_mineral_conductivity, soil_mineral_density, soil_mineral_heat_capacity,
+        de_vries_shape_factor, soil_mineral_conductivity, soil_mineral_density, soil_mineral_heat_capacity,
         soil_bulk_density, soil_saturation_moisture, recirculation_power, return_flow_threshold
     )
 end
@@ -156,7 +156,7 @@ function example_soil_moisture_model(depths=DEFAULT_DEPTHS;
     # soil moisture model soil parameters
     air_entry_water_potential = fill(0.7, length(depths) * 2 - 2)u"J/kg", #air entry potential
     saturated_hydraulic_conductivity = fill(0.0058, length(depths) * 2 - 2)u"kg*s/m^3", #saturated conductivity
-    Campbells_b_parameter = fill(1.7, length(depths) * 2 - 2), #soil 'b' parameter
+    campbell_b_parameter = fill(1.7, length(depths) * 2 - 2), #soil 'b' parameter
     soil_bulk_density2 = fill(bulk_density, length(depths) * 2 - 2)u"Mg/m^3", # soil bulk density
     # TODO what is this why are they different
     soil_mineral_density2 = fill(mineral_density, length(depths) * 2 - 2)u"Mg/m^3", # soil mineral density
@@ -174,7 +174,7 @@ function example_soil_moisture_model(depths=DEFAULT_DEPTHS;
     maxpool = 1.0e4u"kg/m^2", # maximum depth of pooling water
 )
     SoilMoistureModel(
-        air_entry_water_potential, saturated_hydraulic_conductivity, Campbells_b_parameter, soil_bulk_density2,
+        air_entry_water_potential, saturated_hydraulic_conductivity, campbell_b_parameter, soil_bulk_density2,
         soil_mineral_density2, root_density, root_resistance, stomatal_closure_potential, leaf_resistance, stomatal_stability_parameter,
         root_radius, moist_error, moist_count, moist_step, maxpool
     )
@@ -205,20 +205,20 @@ function solve(mp::MicroProblem)
     # Interpolate minmax weather
     interpolate_minmax!(output, environment_minmax, environment_daily, environment_hourly, solar_radiation_out)
     # Adjust solar_radiation given cloud cover to get diffuse fraction
-    (; global_solar, diffuse_fraction) = adjust_for_cloud_cover(output, solar_radiation_out, days, hours)
+    (; global_radiation, diffuse_fraction) = adjust_for_cloud_cover(output, solar_radiation_out, days, hours)
     output.diffuse_fraction .= diffuse_fraction
     # Check if cloud-adjusted solar was originally provided
     if !isnothing(environment_hourly)
         if !isnothing(environment_hourly.global_radiation)
             # Output the original input values
-            output.global_solar .= environment_hourly.global_radiation
+            output.global_radiation .= environment_hourly.global_radiation
         else
             # Output the cloud-adjusted clear-sky values
-            output.global_solar .= global_solar
+            output.global_radiation .= global_radiation
         end
     else
         # Output the cloud-adjusted clear-sky values
-        output.global_solar .= global_solar
+        output.global_radiation .= global_radiation
     end
     # Solve soil temperature and moisture
     solve_soil!(output, mp, solar_radiation_out; days, hours, depths, heights)
@@ -271,7 +271,7 @@ function adjust_for_cloud_cover(output, solar_radiation_out, days, hours)
     direct_horizontal = solar_radiation_out.direct_horizontal
     diffuse_horizontal = solar_radiation_out.diffuse_horizontal
     cloud = output.cloud_cover
-    return (; global_solar, diffuse_fraction) = cloud_adjust_radiation(output, cloud, diffuse_horizontal, direct_horizontal, zenith_angle, day_of_year)
+    return (; global_radiation, diffuse_fraction) = cloud_adjust_radiation(output, cloud, diffuse_horizontal, direct_horizontal, zenith_angle, day_of_year)
 end
 
 # Solves soil temperature and moisture
@@ -279,7 +279,7 @@ function solve_soil!(output::MicroResult, mp::MicroProblem, solar_radiation_out;
     days, hours, depths, heights
 )
     (; solar_terrain, micro_terrain, soil_thermal_model, soil_moisture_model, environment_minmax, environment_daily, daily, initial_soil_temperature, initial_soil_moisture, runmoist, hourly_rainfall) = mp
-    (; moist_step, Campbells_b_parameter, soil_bulk_density2, soil_mineral_density2, air_entry_water_potential) = soil_moisture_model
+    (; moist_step, campbell_b_parameter, soil_bulk_density2, soil_mineral_density2, air_entry_water_potential) = soil_moisture_model
 
     ndays = length(days)
     nhours = length(hours)
@@ -319,12 +319,12 @@ function solve_soil!(output::MicroResult, mp::MicroProblem, solar_radiation_out;
         soil_water_balance = allocate_soil_water_balance(num_fine_nodes),  # only once
     )
     update_soil_properties!(output, buffers.soil_properties, soil_thermal_model;
-        soil_temperature=T0, soil_moisture=soil_moisture_coarse, P_atmos=101325.0u"Pa", step=1
+        soil_temperature=T0, soil_moisture=soil_moisture_coarse, atmospheric_pressure=101325.0u"Pa", step=1
     )
     sub = vcat(findall(isodd, 1:num_fine_nodes), num_fine_nodes)
 
     soil_saturation_moisture = 1.0 .- soil_bulk_density2 ./ soil_mineral_density2
-    output.soil_water_potential[1, :] .= air_entry_water_potential[sub] .* (soil_saturation_moisture[sub] ./ soil_moisture_coarse) .^ Campbells_b_parameter[sub]
+    output.soil_water_potential[1, :] .= air_entry_water_potential[sub] .* (soil_saturation_moisture[sub] ./ soil_moisture_coarse) .^ campbell_b_parameter[sub]
     output.soil_temperature[1, :] .= T0
     output.soil_moisture[1, :] = soil_moisture_coarse
 
@@ -410,11 +410,11 @@ function solve_soil!(output::MicroResult, mp::MicroProblem, solar_radiation_out;
                     output.surface_water[step] = pool
                     output.soil_temperature[step, :] .= T0
                     longwave_out = longwave_radiation(; micro_terrain, environment_instant, surface_temperature=T0[1])
-                    output.sky_temperature[step] = longwave_out.Tsky
+                    output.sky_temperature[step] = longwave_out.sky_temperature
                                     environment_instant = get_instant(environment_day, mp.environment_hourly, output, soil_moisture_coarse, step)
 
                                     update_soil_properties!(output, buffers.soil_properties, soil_thermal_model;
-                        soil_temperature=T0, soil_moisture=soil_moisture_coarse, P_atmos=environment_instant.P_atmos, step
+                        soil_temperature=T0, soil_moisture=soil_moisture_coarse, atmospheric_pressure=environment_instant.atmospheric_pressure, step
                     )
                 end
             end
@@ -431,7 +431,7 @@ function solve_air!(output::MicroResult, solar_radiation_out, mp::MicroProblem)
         # TODO standardise these names
         surface_temperature=u"°C"(output.soil_temperature[i][1])
         environment_instant = (;
-            P_atmos=output.pressure[i],
+            atmospheric_pressure=output.pressure[i],
             reference_temperature=output.reference_temperature[i],
             reference_wind_speed=output.reference_wind_speed[i],
             reference_humidity=output.reference_humidity[i],
@@ -460,9 +460,9 @@ function update_soil_properties!(output, soil_properties_buffers, soil_thermal_m
 end
 
 function update_soil_water!(output, infil_out, sub, step)
-    output.soil_moisture[step, :] .= infil_out.θ_soil[sub]
-    output.soil_water_potential[step, :] .= infil_out.ψ_soil[sub]
-    output.soil_humidity[step, :] .= infil_out.rh_soil[sub]
+    output.soil_moisture[step, :] .= infil_out.soil_moisture[sub]
+    output.soil_water_potential[step, :] .= infil_out.soil_water_potential[sub]
+    output.soil_humidity[step, :] .= infil_out.soil_humidity[sub]
 
     return output
 end
@@ -471,8 +471,7 @@ end
 # and this can just be `getindex` on that type.
 function forcing_day(solar_radiation_out, output, iday::Int)
     (; pressure, reference_temperature, reference_wind_speed, reference_humidity, cloud_cover) = output
-    # TODO: rename this
-    global_solar = output.global_solar
+    global_radiation = output.global_radiation
     (; zenith_angle, zenith_slope_angle) = solar_radiation_out
 
     nhours = 24
@@ -480,7 +479,7 @@ function forcing_day(solar_radiation_out, output, iday::Int)
     tspan = 0.0:60:(60*(nhours-1))
 
     # get today's weather
-    interpolate_solar = scale(interpolate(global_solar[sub1], BSpline(Linear())), tspan)
+    interpolate_solar = scale(interpolate(global_radiation[sub1], BSpline(Linear())), tspan)
     interpolate_zenith = scale(interpolate(zenith_angle[sub1], BSpline(Linear())), tspan)
     interpolate_slope_zenith = scale(interpolate(zenith_slope_angle[sub1], BSpline(Linear())), tspan)
     interpolate_temperature = scale(interpolate(u"K".(reference_temperature[sub1]), BSpline(Linear())), tspan)
@@ -526,13 +525,13 @@ function get_instant(environment_day, environment_hourly, output, soil_moisture_
         environment_day...,
         # TODO getting data from output means it being correct depends on
         # order of operations in the solve. We need an itermediate object instead
-        P_atmos = output.pressure[i],
+        atmospheric_pressure = output.pressure[i],
         reference_temperature = output.reference_temperature[i],
         reference_wind_speed = output.reference_wind_speed[i],
         reference_humidity = output.reference_humidity[i],
         zenith_angle = output.solar_radiation.zenith_angle[i],
         cloud_cover = output.cloud_cover[i],
-        global_solar = output.global_solar[i],
+        global_radiation = output.global_radiation[i],
         soil_moisture=soil_moisture_coarse,
     )
 end

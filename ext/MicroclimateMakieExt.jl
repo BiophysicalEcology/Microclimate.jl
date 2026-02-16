@@ -7,7 +7,7 @@ using Makie
 function Makie.plot(mr::Microclimate.MicroResult; alpha=0.7)
     fig = Figure()
     solar_ax = Axis(fig[1, 1])
-    lines!(solar_ax, mr.global_solar; label="Global Solar Radiation", alpha)
+    lines!(solar_ax, mr.global_radiation; label="Global Solar Radiation", alpha)
     lines!(solar_ax, mr.diffuse_solar; label="Difuse Solar Radiation", alpha)
     lines!(solar_ax, mr.direct_solar; label="Direct Solar Radiation", alpha)
     axislegend(solar_ax)

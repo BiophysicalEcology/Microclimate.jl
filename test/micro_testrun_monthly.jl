@@ -61,7 +61,7 @@ bulk_density = (CSV.File("$testdir/data/init_monthly/soilprop.csv")[1, 1][2]) * 
 soil_thermal_model = CampbelldeVriesSoilThermal(;
     bulk_density, 
     mineral_density,
-    deVries_shape_factor = 0.1, # de Vries shape factor, 0.33 for organic soils, 0.1 for mineral
+    de_vries_shape_factor = 0.1, # de Vries shape factor, 0.33 for organic soils, 0.1 for mineral
     mineral_conductivity = (CSV.File("$testdir/data/init_monthly/soilprop.csv")[1, 1][4]) * 1.0u"W/m/K", # soil minerals thermal conductivity (W/mC)
     mineral_heat_capacity = (CSV.File("$testdir/data/init_monthly/soilprop.csv")[1, 1][5]) * 1.0u"J/kg/K", # soil minerals specific heat (J/kg-K)
     saturation_moisture = (CSV.File("$testdir/data/init_monthly/soilprop.csv")[1, 1][3]) * 1.0u"m^3/m^3", # volumetric water content at saturation (0.1 bar matric potential) (m3/m3)
@@ -161,6 +161,6 @@ wind_matrix = hcat([p.wind_speed for p in micro_out.profile]...)'
     @test u"K".(air_temperature_matrix[:, 1]) ≈ ta1cm_nmr rtol=1e-3
     @test u"K".(air_temperature_matrix[:, 2]) ≈ ta2m_nmr rtol=1e-8
     @test micro_out.sky_temperature ≈ u"K".(tskyC_nmr) rtol=1e-7
-    @test micro_out.global_solar ≈ solr_nmr rtol=1e-4
+    @test micro_out.global_radiation ≈ solr_nmr rtol=1e-4
     @test all(isapprox.(micro_out.soil_temperature, u"K".(Matrix(soiltemps_nmr)); rtol=1e-2))
 end  
