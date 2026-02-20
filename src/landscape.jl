@@ -29,7 +29,8 @@ end
 
 abstract type AbstractEnvironment end
 
-@kwdef struct MicroResult{P,AT,WS,RH,CC,GS,DF,SkT,SoT,SM,SWP,SH,STC,SPH,SBD,SW,SR,Pr} <: AbstractEnvironment
+@kwdef struct MicroResult{P,AT,WS,RH,CC,GS,DF,SkT,SoT,SM,SWP,SH,STC,SPH,SBD,SW,SR,Pr,
+        SnD,SnW,SnDe,SnA,SnT} <: AbstractEnvironment
     pressure::P
     reference_temperature::AT
     reference_wind_speed::WS
@@ -42,13 +43,19 @@ abstract type AbstractEnvironment end
     soil_temperature::SoT
     soil_moisture::SM
     soil_water_potential::SWP
-    soil_humidity::SH 
+    soil_humidity::SH
     soil_thermal_conductivity::STC
-    soil_heat_capacity::SPH 
-    soil_bulk_density::SBD 
+    soil_heat_capacity::SPH
+    soil_bulk_density::SBD
     surface_water::SW
     solar_radiation::SR
     profile::Pr
+    # Snow state
+    snow_depth::SnD
+    snow_water_equivalent::SnW
+    snow_density::SnDe
+    snow_albedo::SnA
+    snow_temperature::SnT
 end
 function MicroResult(nsteps::Int, num_coarse_nodes::Int, solar_radiation::NamedTuple)
 
@@ -71,6 +78,12 @@ function MicroResult(nsteps::Int, num_coarse_nodes::Int, solar_radiation::NamedT
         surface_water = Array{typeof(1.0u"kg/m^2")}(undef, nsteps),
         solar_radiation = solar_radiation,
         profile = Array{Any}(undef, nsteps),
+        # Snow state
+        snow_depth = Array{typeof(1.0u"m")}(undef, nsteps),
+        snow_water_equivalent = Array{typeof(1.0u"m")}(undef, nsteps),
+        snow_density = Array{typeof(1.0u"kg/m^3")}(undef, nsteps),
+        snow_albedo = Array{Float64}(undef, nsteps),
+        snow_temperature = Array{typeof(1.0u"°C")}(undef, nsteps),
     )
 end
 

@@ -22,6 +22,16 @@ Grid-based state for spatial microclimate simulation.
 - `surface_water`: Pooled water depth from infiltration excess (m)
 - `cold_air_depth`: Cold air pool depth from drainage (m)
 - `soil_wetness`: Surface wetness fraction for evaporation (0-1)
+
+## 2D fields (nx, ny) - snow
+- `snow_water_equivalent`: Snow water equivalent depth (m)
+- `snow_depth`: Physical snow depth (m)
+- `snow_density`: Snow density (kg/m³)
+- `snow_temperature`: Snow surface temperature (°C)
+- `snow_albedo`: Snow albedo (0-1)
+- `snow_age`: Days since last significant snowfall
+- `snow_liquid_water`: Liquid water held in snowpack (m)
+- `snow_cold_content`: Cold content / heat deficit (mm melt equivalent)
 """
 struct SpatialMicroState{T,A3<:AbstractArray{T,3},A2<:AbstractArray{T,2}}
     # 3D: soil layers (nx, ny, nz)
@@ -34,6 +44,16 @@ struct SpatialMicroState{T,A3<:AbstractArray{T,3},A2<:AbstractArray{T,2}}
     surface_water::A2
     cold_air_depth::A2
     soil_wetness::A2
+
+    # 2D: snow (nx, ny)
+    snow_water_equivalent::A2
+    snow_depth::A2
+    snow_density::A2
+    snow_temperature::A2
+    snow_albedo::A2
+    snow_age::A2
+    snow_liquid_water::A2
+    snow_cold_content::A2
 end
 
 function SpatialMicroState(
@@ -42,6 +62,8 @@ function SpatialMicroState(
     initial_soil_temperature = 280.0,  # K
     initial_soil_moisture = 0.3,       # m³/m³
     initial_water_potential = -10.0,   # J/kg
+    initial_snow_density = 100.0,      # kg/m³
+    initial_snow_albedo = 0.85,        # fresh snow
 )
     SpatialMicroState(
         fill(T(initial_soil_temperature), nx, ny, nz),
@@ -51,6 +73,15 @@ function SpatialMicroState(
         zeros(T, nx, ny),      # surface_water
         zeros(T, nx, ny),      # cold_air_depth
         zeros(T, nx, ny),      # soil_wetness
+        # Snow fields - initialized to no snow
+        zeros(T, nx, ny),                          # snow_water_equivalent
+        zeros(T, nx, ny),                          # snow_depth
+        fill(T(initial_snow_density), nx, ny),     # snow_density
+        zeros(T, nx, ny),                          # snow_temperature
+        fill(T(initial_snow_albedo), nx, ny),      # snow_albedo
+        zeros(T, nx, ny),                          # snow_age
+        zeros(T, nx, ny),                          # snow_liquid_water
+        zeros(T, nx, ny),                          # snow_cold_content
     )
 end
 
@@ -63,6 +94,13 @@ function SpatialMicroState(dem::AbstractMatrix; nz::Int = 10, kw...)
     nx, ny = size(dem)
     SpatialMicroState(nx, ny, nz; kw...)
 end
+
+# Check if snow is present at a location
+has_snow(state::SpatialMicroState, i, j) = state.snow_water_equivalent[i, j] > 0.001  # > 1mm SWE
+
+# Get snow cover fraction (for albedo blending, etc.)
+snow_cover_fraction(state::SpatialMicroState, i, j) =
+    min(1.0, state.snow_depth[i, j] / 0.05)  # full cover at 5cm depth
 
 Base.size(s::SpatialMicroState) = size(s.soil_temperature)
 

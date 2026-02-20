@@ -91,6 +91,9 @@ Returns a named tuple containing:
     runmoist = false # run soil moisture algorithm?
     hourly_rainfall = false # use hourly rainfall?
     spinup = false # spin-up the first day by iterate_day iterations?
+    # Snow model (NoSnow() to disable, or DegreeDaySnow, Snow17, UtahEnergyBalance, KearneySnow)
+    snow_model = NoSnow()
+    initial_snow_state = SnowState()  # initial snow state
 end
 
 function example_microclimate_problem(;
@@ -346,6 +349,11 @@ function solve_soil!(output::MicroResult, mp::MicroProblem, solar_radiation_out;
     else
         soil_wetness = 0.0
     end
+
+    # Initialize snow state
+    snow_state = copy(mp.initial_snow_state)
+    snow_model = mp.snow_model
+
     for j in 1:ndays
         iday = j
         nodes .= nodes_day[:, iday]
@@ -396,6 +404,22 @@ function solve_soil!(output::MicroResult, mp::MicroProblem, solar_radiation_out;
                     end
                 end
                 rain = hourly_rainfall ? mp.environment_hourly.rainfall[step] : environment_instant.rainfall
+
+                # Snow accumulation and melt
+                # Create snow environment with precipitation in water depth (m)
+                snow_environment = (;
+                    environment_instant...,
+                    precipitation = rain / 1000.0u"kg/m^3",  # kg/m² → m
+                    longwave_radiation = longwave_out.longwave_radiation_sky,
+                    net_energy_flux = 0.0u"W/m^2",  # TODO: compute properly for KearneySnow
+                )
+
+                # Update snow state and get water output (melt + rain through pack)
+                snow_state, water_output = update_snow_state(snow_model, snow_state, snow_environment, 1.0u"hr")
+
+                # Convert water output back to kg/m² for pool routing
+                rain = water_output * 1000.0u"kg/m^3"
+
                 pool = clamp(pool + rain, 0.0u"kg/m^2", soil_moisture_model.maxpool)
                 if runmoist
                     infil_out, soil_wetness, pool, soil_moisture_fine = get_soil_water_balance!(buffers, soil_moisture_model;
@@ -409,6 +433,12 @@ function solve_soil!(output::MicroResult, mp::MicroProblem, solar_radiation_out;
                 if iter == niter
                     output.surface_water[step] = pool
                     output.soil_temperature[step, :] .= T0
+                    # Write snow state
+                    output.snow_depth[step] = snow_state.depth
+                    output.snow_water_equivalent[step] = snow_state.water_equivalent
+                    output.snow_density[step] = snow_state.density
+                    output.snow_albedo[step] = snow_state.albedo
+                    output.snow_temperature[step] = snow_state.temperature
                     longwave_out = longwave_radiation(; micro_terrain, environment_instant, surface_temperature=T0[1])
                     output.sky_temperature[step] = longwave_out.sky_temperature
                                     environment_instant = get_instant(environment_day, mp.environment_hourly, output, soil_moisture_coarse, step)
