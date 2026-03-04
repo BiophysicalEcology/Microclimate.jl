@@ -36,8 +36,21 @@ export example_micro_terrain, example_monthly_weather, example_daily_environment
 # TODO replace this with CommonSolve.jl
 export solve
 
+export cold_air_pooling, ColdAirPoolingMethod, ColdAirFlow
+export ColdAirCouplingMethod, ExponentialMixingCoupling, LinearCoolingCoupling, apply_cold_air_coupling!
+export surface_water_flow, surface_water_event, SurfaceWaterMethod, SurfaceWaterFlow
+export InfiltrationMethod, SimpleInfiltration, apply_infiltration!, apply_evaporation!, check_saturation!
+
+# Spatial simulation
+export SpatialMicroState, SpatialMicroTerrain, SpatialMicroProblem
+export surface_temperature, surface_moisture
 
 include("constants.jl")
+include("spatial/cold_air.jl")
+include("spatial/surface_water.jl")
+include("spatial/state.jl")
+include("spatial/terrain.jl")
+include("spatial/solve.jl")
 include("landscape.jl")   
 include("interpolation.jl")
 include("soil_properties.jl")
