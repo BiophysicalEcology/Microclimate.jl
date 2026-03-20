@@ -149,8 +149,13 @@ function atmospheric_surface_profile!(buffers;
             φ_m1 = calc_φ_m(height_array[i], γ, obukhov_length)
             ψ_m1 = calc_ψ_m(φ_m1)
             ψ_h2 = calc_ψ_h(φ_m1)
-            wind_speed[i] = calc_wind(height_array[i], z0, κ, u_star, -ψ_m1)
-            air_temperature[i] = roughness_height_temp + (reference_temp - roughness_height_temp) * log(height_array[i] / z0 - ψ_h2) / log(z / z0 - ψ_h)
+            h_ratio = height_array[i] / z0  # dimensionless h/z0
+            # Clamp log arguments to a small positive value to prevent NaN when
+            # stability corrections exceed h/z0 at near-surface heights (e.g. 0.01 m).
+            wind_log_arg = max(h_ratio - ψ_m1, 1e-6)
+            wind_speed[i] = (u_star / κ) * log(wind_log_arg)
+            temp_log_arg = max(h_ratio - ψ_h2, 1e-6)
+            air_temperature[i] = roughness_height_temp + (reference_temp - roughness_height_temp) * log(temp_log_arg) / log(z / z0 - ψ_h)
         end
     end
     wind_speed = reverse(wind_speed)

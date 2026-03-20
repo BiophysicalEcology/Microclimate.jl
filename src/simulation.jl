@@ -359,7 +359,7 @@ function solve_soil!(output::MicroResult, mp::MicroProblem, solar_radiation_out;
                 t = mean(u"K", [output.reference_temperature[sub2]; output.reference_temperature[sub2][1]])
                 T0 = SVector(ntuple(_ -> t, num_coarse_nodes))
             else
-                T0 = copy(initial_soil_temperature)
+                T0 = SVector(ntuple(i -> initial_soil_temperature[i], num_coarse_nodes))
             end
             soil_moisture_coarse = initial_soil_moisture # initial soil moisture
         end
