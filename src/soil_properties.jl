@@ -137,7 +137,7 @@ function soil_properties!(buffers::NamedTuple, soil_thermal;
     num_layers = length(soil_temperature)
     @assert length(soil_moisture) == num_layers
     (; bulk_thermal_conductivity, bulk_heat_capacity, bulk_density) = buffers
-    soil_props_i(i) = soil_properties(soil_thermal;
+    soil_props_i(i) = soil_properties(maybegetindex(soil_thermal, i);
         atmospheric_pressure,
         soil_temperature = soil_temperature[i],
         soil_moisture = soil_moisture[i],

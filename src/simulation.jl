@@ -89,6 +89,10 @@ Returns a named tuple containing:
     runmoist = false # run soil moisture algorithm?
     hourly_rainfall = false # use hourly rainfall?
     spinup = false # spin-up the first day by iterate_day iterations?
+    # Optional (ndepths × ndays) matrix of pre-specified soil moisture values.
+    # When provided and runmoist=false, overrides initial_soil_moisture each day.
+    # Allows external soil moisture data (e.g. TerraClimate) to drive the simulation.
+    precomputed_soil_moisture = nothing
 end
 
 function example_microclimate_problem(;
@@ -276,7 +280,7 @@ end
 function solve_soil!(output::MicroResult, mp::MicroProblem, solar_radiation_out; 
     days, hours, depths, heights
 )
-    (; solar_terrain, micro_terrain, soil_thermal_model, soil_moisture_model, environment_minmax, environment_daily, daily, initial_soil_temperature, initial_soil_moisture, runmoist, hourly_rainfall) = mp
+    (; solar_terrain, micro_terrain, soil_thermal_model, soil_moisture_model, environment_minmax, environment_daily, daily, initial_soil_temperature, initial_soil_moisture, runmoist, hourly_rainfall, precomputed_soil_moisture) = mp
     (; moist_step, campbell_b_parameter, soil_bulk_density2, soil_mineral_density2, air_entry_water_potential) = soil_moisture_model
 
     ndays = length(days)
@@ -357,7 +361,11 @@ function solve_soil!(output::MicroResult, mp::MicroProblem, solar_radiation_out;
             else
                 T0 = SVector(ntuple(i -> initial_soil_temperature[i], num_nodes))
             end
-            soil_moisture .= initial_soil_moisture # initial soil moisture
+            if !isnothing(precomputed_soil_moisture) && !runmoist
+                soil_moisture .= precomputed_soil_moisture[:, j]
+            else
+                soil_moisture .= initial_soil_moisture
+            end
         end
         T0 = setindex(T0, environment_instant.deep_soil_temperature, num_nodes) # set deepest node to boundary condition
         for iter = 1:niter
