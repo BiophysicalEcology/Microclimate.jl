@@ -214,7 +214,6 @@ function soil_water_balance!(buffers, smm::SoilMoistureModel;
     relative_humidity_local = local_relative_humidity
 
     dt = smm.moist_step
-    air_entry_potential_param = smm.air_entry_water_potential
     saturated_conductivity = smm.saturated_hydraulic_conductivity
     campbell_b = smm.campbell_b_parameter
     bulk_density = smm.soil_bulk_density2
@@ -244,48 +243,34 @@ function soil_water_balance!(buffers, smm::SoilMoistureModel;
     water_density = 1000.0u"kg/m^3"
     vapor_diffusivity = 2.4e-5u"m^2/s"
 
-    # Convert to negative absolute value
-    air_entry_potential_param = -abs.(smm.air_entry_water_potential)
+    # Convert to negative absolute value; fill positions 1..num_layers, extend boundary
+    air_entry_potential[1:num_layers] .= -abs.(smm.air_entry_water_potential)
+    air_entry_potential[num_layers+1] = air_entry_potential[num_layers]
 
-    # Initialize air_entry_potential from parameter
-    air_entry_potential .= air_entry_potential_param
+    # Saturation water content, m3/m3; extend boundary
+    saturation_water_content[1:num_layers] .= 1.0 .- bulk_density ./ mineral_density
+    saturation_water_content[num_layers+1] = saturation_water_content[num_layers]
 
-    # Saturation water content, m3/m3
-    saturation_water_content .= 1.0 .- bulk_density ./ mineral_density
+    # Soil hydraulic properties; extend boundary
+    campbell_b_inverse[1:num_layers] .= 1.0 ./ campbell_b
+    campbell_b_inverse[num_layers+1] = campbell_b_inverse[num_layers]
+    campbell_exponent[1:num_layers] .= 2.0 .+ 3.0 ./ campbell_b
+    campbell_exponent[num_layers+1] = campbell_exponent[num_layers]
+    campbell_exponent_complement[1:num_layers] .= 1.0 .- campbell_exponent[1:num_layers]
+    campbell_exponent_complement[num_layers+1] = campbell_exponent_complement[num_layers]
 
-    # Depth to lower boundary (m)
-    depth[num_layers+1] = depths[div(num_layers+2, 2)]
-
-    # Soil hydraulic properties
-    campbell_b_inverse .= 1.0 ./ campbell_b
-    campbell_exponent .= 2.0 .+ 3.0 ./ campbell_b
-    campbell_exponent_complement .= 1.0 .- campbell_exponent
-
-    # Fill depth using provided depth vector
-    j = 2
-    for i in 3:num_layers
-        if isodd(i)
-            depth[i] = depths[j]
-            j += 1
-        else
-            depth[i] = depth[i-1] + (depths[j] - depth[i-1]) / 2
-        end
+    # Fill depth directly from user-provided fine-resolution depths vector
+    for i in 1:num_layers
+        depth[i+1] = uconvert(u"m", depths[i])
     end
-
-    # Interpolate soil_temperature from input
-    j = 1
-    for i in 1:num_layers+1
-        if isodd(i)
-            soil_temperature[i] = input_soil_temperature[j]
-            j += 1
-        else
-            soil_temperature[i] = soil_temperature[i-1] + (input_soil_temperature[j] - soil_temperature[i-1]) / 2
-        end
-    end
-
-    # Set depth[1] and depth[2] to 0 m
     depth[1] = 0.0u"m"
     depth[2] = 0.0u"m"
+
+    # Copy soil temperature directly (depths already at fine resolution)
+    for i in 1:num_layers
+        soil_temperature[i] = input_soil_temperature[i]
+    end
+    soil_temperature[num_layers+1] = input_soil_temperature[num_layers]
 
     # Set initial water content and related variables
     for i in 2:num_layers
@@ -511,12 +496,12 @@ function get_soil_water_balance!(buffers, soil_moisture_model::SoilMoistureModel
         evapotranspiration=evaporation_potential,
         input_soil_temperature=T0,
     )
-    soil_moisture_fine = infil_out.soil_moisture
+    soil_moisture = infil_out.soil_moisture
     surf_evap = max(0.0u"kg/m^2", infil_out.evaporation)
     water_flux = max(0.0u"kg/m^2", infil_out.surface_water_flux)
     pool = clamp(pool - water_flux - surf_evap, 0.0u"kg/m^2", maxpool) # pooling surface water
     if pool > 0.0u"kg/m^2" # surface is wet - saturate it for infiltration
-        soil_moisture_fine[1] = 1 - bulk_density[1] / mineral_density[1]
+        soil_moisture[1] = 1 - bulk_density[1] / mineral_density[1]
     end
     for _ in 1:(niter_moist-1)
         infil_out = soil_water_balance!(buffers.soil_water_balance, soil_moisture_model;
@@ -528,17 +513,17 @@ function get_soil_water_balance!(buffers, soil_moisture_model::SoilMoistureModel
             evapotranspiration=evaporation_potential,
             input_soil_temperature=T0,
         )
-        soil_moisture_fine = infil_out.soil_moisture
+        soil_moisture = infil_out.soil_moisture
         surf_evap = max(0.0u"kg/m^2", infil_out.evaporation)
         water_flux = max(0.0u"kg/m^2", infil_out.surface_water_flux)
         pool = clamp(pool - water_flux - surf_evap, 0.0u"kg/m^2", maxpool)
         if pool > 0.0u"kg/m^2"
-            soil_moisture_fine[1] = 1 - bulk_density[1] / mineral_density[1]
+            soil_moisture[1] = 1 - bulk_density[1] / mineral_density[1]
         end
     end
     soil_wetness = clamp(abs(surf_evap / (evaporation_potential * moist_step) * 1.0), 0, 1.0)
 
-    return (; infil_out, soil_wetness, pool, soil_moisture_fine)
+    return (; infil_out, soil_wetness, pool, soil_moisture)
 end
 
 function allocate_phase_transition(num_nodes)

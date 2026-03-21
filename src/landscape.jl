@@ -50,7 +50,7 @@ abstract type AbstractEnvironment end
     solar_radiation::SR
     profile::Pr
 end
-function MicroResult(nsteps::Int, num_coarse_nodes::Int, solar_radiation::NamedTuple)
+function MicroResult(nsteps::Int, num_nodes::Int, solar_radiation::NamedTuple)
 
     return MicroResult(;
         pressure = Array{typeof(1.0u"Pa")}(undef, nsteps),
@@ -61,13 +61,13 @@ function MicroResult(nsteps::Int, num_coarse_nodes::Int, solar_radiation::NamedT
         global_radiation = Array{typeof(1.0u"W/m^2")}(undef, nsteps),
         diffuse_fraction = Array{Float64}(undef, nsteps),
         sky_temperature = Array{typeof(1.0u"K")}(undef, nsteps),
-        soil_temperature = Array{typeof(1.0u"K")}(undef, nsteps, num_coarse_nodes),
-        soil_moisture = Array{Float64}(undef, nsteps, num_coarse_nodes),
-        soil_water_potential = Array{typeof(1.0u"J/kg")}(undef, nsteps, num_coarse_nodes),
-        soil_humidity = Array{Float64}(undef, nsteps, num_coarse_nodes),
-        soil_thermal_conductivity = Array{typeof(1.0u"W/m/K")}(undef, nsteps, num_coarse_nodes),
-        soil_heat_capacity = Array{typeof(1.0u"J/kg/K")}(undef, nsteps, num_coarse_nodes),
-        soil_bulk_density = Array{typeof(1.0u"kg/m^3")}(undef, nsteps, num_coarse_nodes),
+        soil_temperature = Array{typeof(1.0u"K")}(undef, nsteps, num_nodes),
+        soil_moisture = Array{Float64}(undef, nsteps, num_nodes),
+        soil_water_potential = Array{typeof(1.0u"J/kg")}(undef, nsteps, num_nodes),
+        soil_humidity = Array{Float64}(undef, nsteps, num_nodes),
+        soil_thermal_conductivity = Array{typeof(1.0u"W/m/K")}(undef, nsteps, num_nodes),
+        soil_heat_capacity = Array{typeof(1.0u"J/kg/K")}(undef, nsteps, num_nodes),
+        soil_bulk_density = Array{typeof(1.0u"kg/m^3")}(undef, nsteps, num_nodes),
         surface_water = Array{typeof(1.0u"kg/m^2")}(undef, nsteps),
         solar_radiation = solar_radiation,
         profile = Array{Any}(undef, nsteps),

@@ -1,7 +1,7 @@
 name = "Microclimate"
 uuid = "fa5d2a79-de00-40ba-a9f4-ff140fbe07ba"
-authors = ["m.kearney@unimelb.edu.au", "rafaelschouten@gmail.com"]
 version = "0.1.0"
+authors = ["m.kearney@unimelb.edu.au", "rafaelschouten@gmail.com"]
 
 [deps]
 ConstructionBase = "187b0558-2788-49d3-abe0-74a17ed4e7c9"
