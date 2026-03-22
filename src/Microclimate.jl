@@ -7,15 +7,18 @@ using Unitful, UnitfulMoles
 using ModelParameters, DelimitedFiles
 using SpecialFunctions, StaticArrays
 
-using FluidProperties: atmospheric_pressure, wet_air_properties, dry_air_properties, vapour_pressure 
+using FluidProperties: atmospheric_pressure, wet_air_properties, dry_air_properties, vapour_pressure
 using FluidProperties: enthalpy_of_vaporisation, molar_enthalpy_of_vaporisation, water_properties
 using FluidProperties: g_n, σ, atm, R
+using FluidProperties: GoffGratch, Teten, Huang
 using Unitful: °, rad, °C
 using Interpolations: AbstractInterpolation
 using SolarRadiation
 
 
 export MicroProblem
+
+export GoffGratch, Teten, Huang
 
 export CampbelldeVriesSoilThermal, SoilMoistureModel
 

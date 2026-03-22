@@ -84,6 +84,7 @@ Returns a named tuple containing:
     initial_soil_temperature = fill(u"K"(7.741667u"°C"), length(depths))
     initial_soil_moisture = fill(0.42 * 0.25, length(depths))
     iterate_day = 3 # number of iterations per day
+    vapour_pressure_equation = GoffGratch() # formula for saturated vapour pressure: GoffGratch(), Teten(), or Huang()
     # TODO: make these types so their code blocks can be removed by the compiler
     daily = false # doing consecutive days? Only used in hourly interpolator from min/max data
     runmoist = false # run soil moisture algorithm?
@@ -280,7 +281,7 @@ end
 function solve_soil!(output::MicroResult, mp::MicroProblem, solar_radiation_out; 
     days, hours, depths, heights
 )
-    (; solar_terrain, micro_terrain, soil_thermal_model, soil_moisture_model, environment_minmax, environment_daily, daily, initial_soil_temperature, initial_soil_moisture, runmoist, hourly_rainfall, precomputed_soil_moisture) = mp
+    (; solar_terrain, micro_terrain, soil_thermal_model, soil_moisture_model, environment_minmax, environment_daily, daily, initial_soil_temperature, initial_soil_moisture, runmoist, hourly_rainfall, precomputed_soil_moisture, vapour_pressure_equation) = mp
     (; moist_step, campbell_b_parameter, soil_bulk_density2, soil_mineral_density2, air_entry_water_potential) = soil_moisture_model
 
     ndays = length(days)
@@ -335,7 +336,7 @@ function solve_soil!(output::MicroResult, mp::MicroProblem, solar_radiation_out;
 
     environment_day = get_day(environment_daily, 1)
     environment_instant = get_instant(environment_day, mp.environment_hourly, output, soil_moisture, 1)
-    longwave_out = longwave_radiation(; micro_terrain, surface_temperature=T0[1], environment_instant)
+    longwave_out = longwave_radiation(; micro_terrain, surface_temperature=T0[1], environment_instant, vapour_pressure_equation)
 
     # simulate all days
     pool = 0.0u"kg/m^2" # initialise depth of pooling water TODO make this an init option
@@ -376,7 +377,7 @@ function solve_soil!(output::MicroResult, mp::MicroProblem, solar_radiation_out;
                 if i == 1 # make first hour of day equal last hour of previous iteration
                     if niter > 1
                         ∑phase .= 0.0u"J" # TODO decide whether this should happen and fix in Fortran
-                        inputs = SoilEnergyInputs(; forcing, buffers, soil_thermal_model, depths, heights, solar_terrain, micro_terrain, runmoist, nodes, environment_instant, soil_wetness)
+                        inputs = SoilEnergyInputs(; forcing, buffers, soil_thermal_model, depths, heights, solar_terrain, micro_terrain, runmoist, nodes, environment_instant, soil_wetness, vapour_pressure_equation)
                         soiltemps = get_soil_temp_timeline(T0, inputs, i + 1)
                         T0 = soiltemps[2]
                         if iter == niter # TODO this should happen every time but at present it doesn't in Fortran version
@@ -404,7 +405,7 @@ function solve_soil!(output::MicroResult, mp::MicroProblem, solar_radiation_out;
                 if runmoist
                     infil_out, soil_wetness, pool, soil_moisture = get_soil_water_balance!(buffers, soil_moisture_model;
                         depths, micro_terrain, environment_instant, T0, niter_moist, pool, soil_wetness,
-                        soil_moisture
+                        soil_moisture, vapour_pressure_equation
                     )
                     update_soil_water!(output, infil_out, step)
                 end
@@ -412,12 +413,12 @@ function solve_soil!(output::MicroResult, mp::MicroProblem, solar_radiation_out;
                 if iter == niter
                     output.surface_water[step] = pool
                     output.soil_temperature[step, :] .= T0
-                    longwave_out = longwave_radiation(; micro_terrain, environment_instant, surface_temperature=T0[1])
+                    longwave_out = longwave_radiation(; micro_terrain, environment_instant, surface_temperature=T0[1], vapour_pressure_equation)
                     output.sky_temperature[step] = longwave_out.sky_temperature
                                     environment_instant = get_instant(environment_day, mp.environment_hourly, output, soil_moisture, step)
 
                                     update_soil_properties!(output, buffers.soil_properties, soil_thermal_model;
-                        soil_temperature=T0, soil_moisture=soil_moisture, atmospheric_pressure=environment_instant.atmospheric_pressure, step
+                        soil_temperature=T0, soil_moisture=soil_moisture, atmospheric_pressure=environment_instant.atmospheric_pressure, step, vapour_pressure_equation
                     )
                 end
             end
@@ -428,7 +429,7 @@ end
 
 # compute air temperature, wind speed and relative humidity profiles
 function solve_air!(output::MicroResult, solar_radiation_out, mp::MicroProblem)
-    (; heights, micro_terrain) = mp
+    (; heights, micro_terrain, vapour_pressure_equation) = mp
     profile_buffers = allocate_profile(heights)
     for i in 1:length(output.profile)
         # TODO standardise these names
@@ -441,7 +442,7 @@ function solve_air!(output::MicroResult, solar_radiation_out, mp::MicroProblem)
             zenith_angle=solar_radiation_out.zenith_angle[i],
         )
         # compute scalar profiles
-        output.profile[i] = atmospheric_surface_profile!(profile_buffers; micro_terrain, environment_instant, surface_temperature)
+        output.profile[i] = atmospheric_surface_profile!(profile_buffers; micro_terrain, environment_instant, surface_temperature, vapour_pressure_equation)
     end
 end
 
