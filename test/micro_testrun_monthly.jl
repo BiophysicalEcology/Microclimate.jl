@@ -34,7 +34,7 @@ depths = ((DataFrame(CSV.File("$testdir/data/init_monthly/DEP.csv"))[:, 2]) / 10
 heights = [microinput[:Usrhyt], microinput[:Refhyt]]u"m" # air nodes for temperature, wind speed and humidity profile
 days2do = 1:12
 
-#TODO make one terrain object via BiophysicalEcologyBase or Habitat
+#TODO make one terrain object via BiophysicalEcologyBase or BiophysicalGrids
 #TODO make P_atmos time a varying input
 micro_terrain = MicroTerrain(;
     elevation = microinput[:ALTT] * 1.0u"m", # elevation (m)
@@ -105,7 +105,8 @@ environment_minmax = MonthlyMinMaxEnvironment(;
     maxima_times = [microinput[:TIMAXS1], microinput[:TIMAXS2], microinput[:TIMAXS3], microinput[:TIMAXS4]], # time of maxima for air temp, wind, humidity and cloud cover (h), air temp & wind maxs relative to solar noon, humidity and cloud cover maxs relative to sunrise
 )
 
-soil_moisture_model = example_soil_moisture_model(depths; bulk_density, mineral_density)
+soil_moisture_model = example_soil_moisture_model(depths; bulk_density, mineral_density,
+    root_density = fill(0.0, length(depths))u"m/m^3")
 solar_model = SolarProblem(; scattered_uv = Bool(Int(microinput[:IUV])))
 
 # now try the simulation function
@@ -157,10 +158,41 @@ wind_matrix = hcat([p.wind_speed for p in micro_out.profile]...)'
     @test humidity_matrix[:, 1] ≈ rh1cm_nmr rtol=1e-1
     @test humidity_matrix[:, 2] ≈ rh2m_nmr rtol=1e-8
     @test wind_matrix[:, 1] ≈ vel1cm_nmr rtol=1e-2
-    @test wind_matrix[:, 2] ≈ vel2m_nmr rtol=1e-8 
+    @test wind_matrix[:, 2] ≈ vel2m_nmr rtol=1e-8
     @test u"K".(air_temperature_matrix[:, 1]) ≈ ta1cm_nmr rtol=1e-3
     @test u"K".(air_temperature_matrix[:, 2]) ≈ ta2m_nmr rtol=1e-8
     @test micro_out.sky_temperature ≈ u"K".(tskyC_nmr) rtol=1e-7
     @test micro_out.global_radiation ≈ solr_nmr rtol=1e-4
     @test all(isapprox.(micro_out.soil_temperature, u"K".(Matrix(soiltemps_nmr)); rtol=1e-2))
-end  
+end
+
+# Visual comparisons — run manually (not in CI)
+# using Plots
+# let
+#     t = 1:length(days2do)*24
+#     depth_labels = ["$(round(ustrip(u"cm", depths[i]); digits=1)) cm" for i in 1:length(depths)]
+
+#     # Soil temperature (°C)
+#     p_st = plot(layout=(2, 5), size=(1400, 600), title=reshape(depth_labels, 1, :))
+#     for col in 1:length(depths)
+#         plot!(p_st, t, ustrip.(u"°C", micro_out.soil_temperature[t, col]); sp=col, label="Julia",     color=:red,   ylabel="°C")
+#         plot!(p_st, t, collect(soiltemps_nmr[t, col]);                     sp=col, label="NicheMapR", color=:black)
+#     end
+#     display(p_st)
+
+#     # Atmospheric profiles
+#     p_atm = plot(layout=(3, 2), size=(900, 700))
+#     plot!(p_atm, t, humidity_matrix[t, 1];                               sp=1, label="Julia",     color=:red,   title="RH 1cm",       ylabel="–")
+#     plot!(p_atm, t, rh1cm_nmr[t];                                        sp=1, label="NicheMapR", color=:black)
+#     plot!(p_atm, t, humidity_matrix[t, 2];                               sp=2, label="Julia",     color=:red,   title="RH 2m")
+#     plot!(p_atm, t, rh2m_nmr[t];                                         sp=2, label="NicheMapR", color=:black)
+#     plot!(p_atm, t, ustrip.(u"m/s", wind_matrix[t, 1]);                  sp=3, label="Julia",     color=:red,   title="Wind 1cm",     ylabel="m/s")
+#     plot!(p_atm, t, ustrip.(u"m/s", vel1cm_nmr[t]);                      sp=3, label="NicheMapR", color=:black)
+#     plot!(p_atm, t, ustrip.(u"m/s", wind_matrix[t, 2]);                  sp=4, label="Julia",     color=:red,   title="Wind 2m")
+#     plot!(p_atm, t, ustrip.(u"m/s", vel2m_nmr[t]);                       sp=4, label="NicheMapR", color=:black)
+#     plot!(p_atm, t, ustrip.(u"°C", u"K".(air_temperature_matrix[t, 1])); sp=5, label="Julia",     color=:red,   title="Air temp 1cm", ylabel="°C")
+#     plot!(p_atm, t, ustrip.(u"°C", ta1cm_nmr[t]);                        sp=5, label="NicheMapR", color=:black)
+#     plot!(p_atm, t, ustrip.(u"°C", u"K".(air_temperature_matrix[t, 2])); sp=6, label="Julia",     color=:red,   title="Air temp 2m")
+#     plot!(p_atm, t, ustrip.(u"°C", ta2m_nmr[t]);                         sp=6, label="NicheMapR", color=:black)
+#     display(p_atm)
+# end

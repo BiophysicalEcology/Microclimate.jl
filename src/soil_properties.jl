@@ -56,6 +56,7 @@ function soil_properties(soil_thermal::CampbelldeVriesSoilThermal;
     atmospheric_pressure::Quantity,
     soil_temperature::Quantity,
     soil_moisture::Number,
+    vapour_pressure_equation=GoffGratch(),
 )
     (; bulk_density, mineral_conductivity, mineral_heat_capacity, mineral_density,
        recirculation_power, return_flow_threshold, de_vries_shape_factor) = soil_thermal
@@ -86,9 +87,9 @@ function soil_properties(soil_thermal::CampbelldeVriesSoilThermal;
     ################################################################
     # This is some of the most expensive code in the package
     # its inlined so most of the work in wet_air_properties is ignored
-    vapor_pressure = wet_air_properties(soil_temperature, 0.99, atmospheric_pressure).vapour_pressure
-    vapor_pressure_minus = wet_air_properties(soil_temperature - 1u"K", 0.99, atmospheric_pressure).vapour_pressure
-    vapor_pressure_plus = wet_air_properties(soil_temperature + 1u"K", 0.99, atmospheric_pressure).vapour_pressure
+    vapor_pressure = wet_air_properties(soil_temperature, 0.99, atmospheric_pressure; vapour_pressure_equation).vapour_pressure
+    vapor_pressure_minus = wet_air_properties(soil_temperature - 1u"K", 0.99, atmospheric_pressure; vapour_pressure_equation).vapour_pressure
+    vapor_pressure_plus = wet_air_properties(soil_temperature + 1u"K", 0.99, atmospheric_pressure; vapour_pressure_equation).vapour_pressure
     ################################################################
 
     vapor_pressure_gradient = (vapor_pressure_plus - vapor_pressure_minus) / 2.0
@@ -132,15 +133,17 @@ Compute soil properties for vectors of soil temperature and moisture using broad
 Returns three arrays: `bulk_thermal_conductivity`, `bulk_heat_capacity`, `bulk_density`.
 """
 function soil_properties!(buffers::NamedTuple, soil_thermal;
-    atmospheric_pressure::Quantity, soil_temperature::AbstractVector, soil_moisture::AbstractVector
+    atmospheric_pressure::Quantity, soil_temperature::AbstractVector, soil_moisture::AbstractVector,
+    vapour_pressure_equation=GoffGratch(),
 )
     num_layers = length(soil_temperature)
     @assert length(soil_moisture) == num_layers
     (; bulk_thermal_conductivity, bulk_heat_capacity, bulk_density) = buffers
-    soil_props_i(i) = soil_properties(soil_thermal;
+    soil_props_i(i) = soil_properties(maybegetindex(soil_thermal, i);
         atmospheric_pressure,
         soil_temperature = soil_temperature[i],
         soil_moisture = soil_moisture[i],
+        vapour_pressure_equation,
     )
 
     results = soil_props_i.(1:num_layers)

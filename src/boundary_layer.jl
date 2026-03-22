@@ -85,7 +85,8 @@ atmospheric_surface_profile(; heights=DEFAULT_HEIGHTS, kw...) =
 function atmospheric_surface_profile!(buffers;
     micro_terrain,
     environment_instant,
-    surface_temperature, 
+    surface_temperature,
+    vapour_pressure_equation=GoffGratch(),
 )
     (; roughness_height, karman_constant, dyer_constant, elevation) = micro_terrain
     (; atmospheric_pressure, reference_temperature, reference_wind_speed, reference_humidity, zenith_angle) = environment_instant
@@ -160,8 +161,8 @@ function atmospheric_surface_profile!(buffers;
     end
     wind_speed = reverse(wind_speed)
     air_temperature = reverse(air_temperature)
-    reference_vapor_pressure = wet_air_properties(reference_temp, reference_humidity, atmospheric_pressure).vapour_pressure
-    relative_humidity .= clamp.(reference_vapor_pressure ./ vapour_pressure.(air_temperature) .* 1.0, 0.0, 1.0)
+    reference_vapor_pressure = wet_air_properties(reference_temp, reference_humidity, atmospheric_pressure; vapour_pressure_equation).vapour_pressure
+    relative_humidity .= clamp.(reference_vapor_pressure ./ vapour_pressure.(Ref(vapour_pressure_equation), air_temperature) .* 1.0, 0.0, 1.0)
 
     return (;
         wind_speed,
@@ -208,9 +209,9 @@ elevation, and relative humidity.
 Uses `dry_air_properties` to compute air density (ρ) and
 `wet_air_properties` to compute specific heat capacity (cₚ).
 """
-function calc_ρ_cp(mean_temperature, elevation, relative_humidity, atmospheric_pressure)
+function calc_ρ_cp(mean_temperature, elevation, relative_humidity, atmospheric_pressure; vapour_pressure_equation=GoffGratch())
     dry_air_out = dry_air_properties(u"K"(mean_temperature), atmospheric_pressure)
-    wet_air_out = wet_air_properties(u"K"(mean_temperature), relative_humidity, atmospheric_pressure)
+    wet_air_out = wet_air_properties(u"K"(mean_temperature), relative_humidity, atmospheric_pressure; vapour_pressure_equation)
     air_density = dry_air_out.density
     air_heat_capacity = wet_air_out.specific_heat
     return air_density * air_heat_capacity

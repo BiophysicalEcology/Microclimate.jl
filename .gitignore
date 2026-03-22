@@ -4,3 +4,5 @@ tests/R/.Rhistory
 Manifest.toml
 /docs/build
 docs/Manifest.toml
+.claude/settings.local.json
+.claude/settings.json
