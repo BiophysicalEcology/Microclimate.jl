@@ -12,7 +12,7 @@ function soil_energy_balance(
     t::Quantity,           # timestep
 ) where U <: SVector{N} where N
     # extract parameters
-    (; soil_thermal_model, forcing, buffers, heights, depths, nodes, environment_instant, solar_terrain, micro_terrain, soil_wetness, runmoist, vapour_pressure_equation) = p
+    (; soil_thermal_model, forcing, buffers, heights, depths, nodes, environment_instant, solar_terrain, micro_terrain, soil_wetness, runmoist, vapour_pressure_equation, longwave_sky) = p
     (; layer_depths, heat_capacity, thermal_conductance) = buffers.soil_energy_balance
     (; soil_moisture, shade) = environment_instant
     # Get environmental data at time t
@@ -53,9 +53,9 @@ function soil_energy_balance(
         Q_solar = (Q_solar / cos_zenith) * cos_slope_zenith
     end
 
-    # Longwave radiation
-    longwave_out = longwave_radiation(; micro_terrain, surface_temperature=temperature_vector[1], environment_instant, vapour_pressure_equation)
-    Q_infrared = longwave_out.net_longwave_radiation
+    # Longwave radiation — use precomputed sky terms; only surface emission varies with ODE state
+    (; incoming_longwave, outgoing_coeff, ground_shade_term) = longwave_sky
+    Q_infrared = incoming_longwave - outgoing_coeff * (u"K"(temperature_vector[1]))^4 - ground_shade_term
 
     # Conduction
     Q_conduction = thermal_conductance[1] * (temperature_vector[2] - temperature_vector[1])

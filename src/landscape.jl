@@ -1,4 +1,4 @@
-@kwdef struct SoilEnergyInputs{F,B,SP,D<:Vector{<:Number},H<:Vector{<:Number},ST,MT,EI,SW,VP}
+@kwdef struct SoilEnergyInputs{F,B,SP,D<:Vector{<:Number},H<:Vector{<:Number},ST,MT,EI,SW,VP,LW}
     forcing::F
     buffers::B
     soil_thermal_model::SP
@@ -11,6 +11,7 @@
     runmoist::Bool
     soil_wetness::SW
     vapour_pressure_equation::VP = GoffGratch()
+    longwave_sky::LW
 end
 
 @kwdef struct MicroForcing{
