@@ -12,9 +12,9 @@ function soil_energy_balance(
     t::Quantity,           # timestep
 ) where U <: SVector{N} where N
     # extract parameters
-    (; soil_thermal_model, forcing, buffers, heights, depths, nodes, environment_instant, solar_terrain, micro_terrain, soil_wetness, runmoist, vapour_pressure_equation, longwave_sky) = p
+    (; forcing, buffers, heights, depths, environment_instant, solar_terrain, micro_terrain, soil_wetness, vapour_pressure_equation, longwave_sky) = p
     (; layer_depths, heat_capacity, thermal_conductance) = buffers.soil_energy_balance
-    (; soil_moisture, shade) = environment_instant
+    (; shade) = environment_instant
     # Get environmental data at time t
     (; atmospheric_pressure, air_temperature, wind_speed, zenith_angle, solar_radiation, cloud_cover, relative_humidity, slope_zenith_angle) = interpolate_forcings(forcing, t)
     (; roughness_height, karman_constant, dyer_constant) = micro_terrain
@@ -26,8 +26,8 @@ function soil_energy_balance(
     # check for unstable conditions of ground surface temperature
     clamped_temperature = map(t -> clamp(t, (-81.0+273.15)u"K", (85.0+273.15)u"K"), temperature_state)::U
 
-    # get soil properties
-    (; bulk_thermal_conductivity, bulk_heat_capacity, bulk_density) = soil_properties!(buffers.soil_properties, soil_thermal_model; soil_temperature=clamped_temperature, soil_moisture, atmospheric_pressure, vapour_pressure_equation)
+    # soil properties are precomputed once per hour in simulation.jl before the ODE solve
+    (; bulk_thermal_conductivity, bulk_heat_capacity, bulk_density) = buffers.soil_properties
 
     temperature_vector = SVector(MVector(clamped_temperature))
 

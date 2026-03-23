@@ -3,6 +3,7 @@ module Microclimate
 using ConstructionBase
 using Interpolations, Statistics, Dates
 using SciMLBase, OrdinaryDiffEqTsit5
+using OrdinaryDiffEqTsit5: Tsit5
 using Unitful, UnitfulMoles
 using ModelParameters, DelimitedFiles
 using SpecialFunctions, StaticArrays
@@ -19,6 +20,7 @@ using SolarRadiation
 export MicroProblem
 
 export GoffGratch, Teten, Huang
+export Tsit5
 
 export CampbelldeVriesSoilThermal, SoilMoistureModel
 
