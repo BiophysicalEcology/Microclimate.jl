@@ -24,7 +24,7 @@ export Tsit5
 
 export CampbelldeVriesSoilThermal, SoilMoistureModel
 
-export MonthlyMinMaxEnvironment, DailyTimeseries, HourlyTimeseries, MicroTerrain
+export MonthlyMinMaxEnvironment, DailyMinMaxEnvironment, DailyTimeseries, HourlyTimeseries, MicroTerrain
 
 export daily_cycle_sine_exponential, daily_cycle_linear, hourly_from_min_max
 
