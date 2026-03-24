@@ -8,9 +8,9 @@ using Test
 testdir = realpath(joinpath(dirname(pathof(Microclimate)), "../test"))
 
 # read in output from NicheMapR and input variables
-soiltemps_nmr = (DataFrame(CSV.File("$testdir/data/soil_monthly.csv"))[:, 4:13]) .* u"°C"
-metout_nmr = DataFrame(CSV.File("$testdir/data/metout_monthly.csv"))
-microinput_vec = DataFrame(CSV.File("$testdir/data/init_monthly/microinput.csv"))[:, 2]
+soiltemps_nmr = (DataFrame(CSV.File("$testdir/data/soil_monthly_snow.csv"))[:, 4:13]) .* u"°C"
+metout_nmr = DataFrame(CSV.File("$testdir/data/metout_monthly_snow.csv"))
+microinput_vec = DataFrame(CSV.File("$testdir/data/init_monthly_snow/microinput.csv"))[:, 2]
 
 names = [
     :doynum, :RUF, :ERR, :Usrhyt, :Refhyt, :Numtyps, :Z01, :Z02, :ZH1, :ZH2,
@@ -27,10 +27,10 @@ names = [
 # Zip into a NamedTuple
 microinput = (; zip(names, microinput_vec)...)
 
-longlat = (DataFrame(CSV.File("$testdir/data/init_monthly/longlat.csv"))[:, 2] * 1.0)
+longlat = (DataFrame(CSV.File("$testdir/data/init_monthly_snow/longlat.csv"))[:, 2] * 1.0)
 days = [15, 46, 74, 105, 135, 166, 196, 227, 258, 288, 319, 349]
 LAIs = fill(0.1, length(days))
-depths = ((DataFrame(CSV.File("$testdir/data/init_monthly/DEP.csv"))[:, 2]) / 100.0)u"m"
+depths = ((DataFrame(CSV.File("$testdir/data/init_monthly_snow/DEP.csv"))[:, 2]) / 100.0)u"m"
 heights = [microinput[:Usrhyt], microinput[:Refhyt]]u"m" # air nodes for temperature, wind speed and humidity profile
 days2do = 1:12
 
@@ -48,23 +48,23 @@ solar_terrain = SolarTerrain(;
     slope = (microinput[:slope])*1.0u"°",
     aspect = (microinput[:azmuth])*1.0u"°",
     elevation = (microinput[:ALTT])*1.0u"m",
-    horizon_angles = (DataFrame(CSV.File("$testdir/data/init_monthly/hori.csv"))[:, 2])*1.0u"°",
-    albedo = (DataFrame(CSV.File("$testdir/data/init_monthly/REFLS.csv"))[1, 2] * 1.0),
+    horizon_angles = (DataFrame(CSV.File("$testdir/data/init_monthly_snow/hori.csv"))[:, 2])*1.0u"°",
+    albedo = (DataFrame(CSV.File("$testdir/data/init_monthly_snow/REFLS.csv"))[1, 2] * 1.0),
     atmospheric_pressure = atmospheric_pressure((microinput[:ALTT])*1.0u"m"),
     latitude = longlat[2]*1.0u"°",
     longitude = longlat[1]*1.0u"°",
 )
 
-mineral_density = (CSV.File("$testdir/data/init_monthly/soilprop.csv")[1, 1][6]) * 1.0u"Mg/m^3" # soil minerals density (Mg/m3)
-bulk_density = (CSV.File("$testdir/data/init_monthly/soilprop.csv")[1, 1][2]) * 1.0u"Mg/m^3" # dry soil bulk density (Mg/m3)
+mineral_density = (CSV.File("$testdir/data/init_monthly_snow/soilprop.csv")[1, 1][6]) * 1.0u"Mg/m^3" # soil minerals density (Mg/m3)
+bulk_density = (CSV.File("$testdir/data/init_monthly_snow/soilprop.csv")[1, 1][2]) * 1.0u"Mg/m^3" # dry soil bulk density (Mg/m3)
 
 soil_thermal_model = CampbelldeVriesSoilThermal(;
     bulk_density, 
     mineral_density,
     de_vries_shape_factor = 0.1, # de Vries shape factor, 0.33 for organic soils, 0.1 for mineral
-    mineral_conductivity = (CSV.File("$testdir/data/init_monthly/soilprop.csv")[1, 1][4]) * 1.0u"W/m/K", # soil minerals thermal conductivity (W/mC)
-    mineral_heat_capacity = (CSV.File("$testdir/data/init_monthly/soilprop.csv")[1, 1][5]) * 1.0u"J/kg/K", # soil minerals specific heat (J/kg-K)
-    saturation_moisture = (CSV.File("$testdir/data/init_monthly/soilprop.csv")[1, 1][3]) * 1.0u"m^3/m^3", # volumetric water content at saturation (0.1 bar matric potential) (m3/m3)
+    mineral_conductivity = (CSV.File("$testdir/data/init_monthly_snow/soilprop.csv")[1, 1][4]) * 1.0u"W/m/K", # soil minerals thermal conductivity (W/mC)
+    mineral_heat_capacity = (CSV.File("$testdir/data/init_monthly_snow/soilprop.csv")[1, 1][5]) * 1.0u"J/kg/K", # soil minerals specific heat (J/kg-K)
+    saturation_moisture = (CSV.File("$testdir/data/init_monthly_snow/soilprop.csv")[1, 1][3]) * 1.0u"m^3/m^3", # volumetric water content at saturation (0.1 bar matric potential) (m3/m3)
     recirculation_power = 4.0, # power for recirculation function
     return_flow_threshold = 0.162, # return-flow cutoff soil moisture, m^3/m^3
 )
@@ -83,24 +83,24 @@ environment_hourly = HourlyTimeseries(;
 
 environment_daily = DailyTimeseries(;
     # daily environmental vectors
-    shade = (DataFrame(CSV.File("$testdir/data/init_monthly/Minshades.csv"))[days2do, 2] * 1.0) ./ 100.0, # daily shade from vegetation (fractional)
-    soil_wetness = (DataFrame(CSV.File("$testdir/data/init_monthly/PCTWET.csv"))[days2do, 2] * 1.0) ./ 100.0, # daily soil wetness (fractional)
-    surface_emissivity = (DataFrame(CSV.File("$testdir/data/init_monthly/SLES.csv"))[days2do, 2] * 1.0), # - surface emissivity
-    cloud_emissivity = (DataFrame(CSV.File("$testdir/data/init_monthly/SLES.csv"))[days2do, 2] * 1.0), # - cloud emissivity
-    rainfall = ((DataFrame(CSV.File("$testdir/data/init_monthly/rain.csv"))[days2do, 2] * 1.0) / 1000)u"kg/m^2", # monthly total rainfall
-    deep_soil_temperature = (DataFrame(CSV.File("$testdir/data/init_monthly/tannulrun.csv"))[days2do, 2] * 1.0)u"°C", # daily deep soil temperatures
+    shade = (DataFrame(CSV.File("$testdir/data/init_monthly_snow/Minshades.csv"))[days2do, 2] * 1.0) ./ 100.0, # daily shade from vegetation (fractional)
+    soil_wetness = (DataFrame(CSV.File("$testdir/data/init_monthly_snow/PCTWET.csv"))[days2do, 2] * 1.0) ./ 100.0, # daily soil wetness (fractional)
+    surface_emissivity = (DataFrame(CSV.File("$testdir/data/init_monthly_snow/SLES.csv"))[days2do, 2] * 1.0), # - surface emissivity
+    cloud_emissivity = (DataFrame(CSV.File("$testdir/data/init_monthly_snow/SLES.csv"))[days2do, 2] * 1.0), # - cloud emissivity
+    rainfall = ((DataFrame(CSV.File("$testdir/data/init_monthly_snow/rain.csv"))[days2do, 2] * 1.0) / 1000)u"kg/m^2", # monthly total rainfall
+    deep_soil_temperature = (DataFrame(CSV.File("$testdir/data/init_monthly_snow/tannulrun.csv"))[days2do, 2] * 1.0)u"°C", # daily deep soil temperatures
     leaf_area_index = fill(0.1, length(days)),
 )
 
 environment_minmax = MonthlyMinMaxEnvironment(;
-    reference_temperature_min = (DataFrame(CSV.File("$testdir/data/init_monthly/TMINN.csv"))[days2do, 2] * 1.0)u"°C", # minimum air temperatures
-    reference_temperature_max = (DataFrame(CSV.File("$testdir/data/init_monthly/TMAXX.csv"))[days2do, 2] * 1.0)u"°C", # maximum air temperatures
-    reference_wind_min = (DataFrame(CSV.File("$testdir/data/init_monthly/WNMINN.csv"))[days2do, 2] * 1.0)u"m/s", # min wind speed (m/s)
-    reference_wind_max = (DataFrame(CSV.File("$testdir/data/init_monthly/WNMAXX.csv"))[days2do, 2] * 1.0)u"m/s", # max wind speed (m/s)
-    reference_humidity_min = (DataFrame(CSV.File("$testdir/data/init_monthly/RHMINN.csv"))[days2do, 2] * 1.0) ./ 100.0, # min relative humidity (fractional)
-    reference_humidity_max = (DataFrame(CSV.File("$testdir/data/init_monthly/RHMAXX.csv"))[days2do, 2] * 1.0) ./ 100.0, # max relative humidity (fractional)
-    cloud_min = (DataFrame(CSV.File("$testdir/data/init_monthly/CCMINN.csv"))[days2do, 2] * 1.0) ./ 100.0, # min cloud cover (fractional)
-    cloud_max = (DataFrame(CSV.File("$testdir/data/init_monthly/CCMAXX.csv"))[days2do, 2] * 1.0) ./ 100.0, # max cloud cover (fractional)
+    reference_temperature_min = (DataFrame(CSV.File("$testdir/data/init_monthly_snow/TMINN.csv"))[days2do, 2] * 1.0)u"°C", # minimum air temperatures
+    reference_temperature_max = (DataFrame(CSV.File("$testdir/data/init_monthly_snow/TMAXX.csv"))[days2do, 2] * 1.0)u"°C", # maximum air temperatures
+    reference_wind_min = (DataFrame(CSV.File("$testdir/data/init_monthly_snow/WNMINN.csv"))[days2do, 2] * 1.0)u"m/s", # min wind speed (m/s)
+    reference_wind_max = (DataFrame(CSV.File("$testdir/data/init_monthly_snow/WNMAXX.csv"))[days2do, 2] * 1.0)u"m/s", # max wind speed (m/s)
+    reference_humidity_min = (DataFrame(CSV.File("$testdir/data/init_monthly_snow/RHMINN.csv"))[days2do, 2] * 1.0) ./ 100.0, # min relative humidity (fractional)
+    reference_humidity_max = (DataFrame(CSV.File("$testdir/data/init_monthly_snow/RHMAXX.csv"))[days2do, 2] * 1.0) ./ 100.0, # max relative humidity (fractional)
+    cloud_min = (DataFrame(CSV.File("$testdir/data/init_monthly_snow/CCMINN.csv"))[days2do, 2] * 1.0) ./ 100.0, # min cloud cover (fractional)
+    cloud_max = (DataFrame(CSV.File("$testdir/data/init_monthly_snow/CCMAXX.csv"))[days2do, 2] * 1.0) ./ 100.0, # max cloud cover (fractional)
     minima_times = [microinput[:TIMINS1], microinput[:TIMINS2], microinput[:TIMINS3], microinput[:TIMINS4]], # time of minima for air temp, wind, humidity and cloud cover (h), air & wind mins relative to sunrise, humidity and cloud cover mins relative to solar noon
     maxima_times = [microinput[:TIMAXS1], microinput[:TIMAXS2], microinput[:TIMAXS3], microinput[:TIMAXS4]], # time of maxima for air temp, wind, humidity and cloud cover (h), air temp & wind maxs relative to solar noon, humidity and cloud cover maxs relative to sunrise
 )
@@ -131,10 +131,10 @@ problem = MicroProblem(;
     runmoist = Bool(Int(microinput[:runmoist])), # run soil moisture algorithm?
     hourly_rainfall = Bool(Int(microinput[:rainhourly])), # use hourly rainfall?
     spinup = Bool(Int(microinput[:spinup])), # spin-up the first day by iterate_day iterations?
-    convergence_tolerance = nothing, # number of iterations per day
+    # convergence_tolerance = 0.1u"K", # number of iterations per day
     # intial conditions
     initial_soil_temperature = nothing, # initial soil temperature, # initial soil temperature
-    initial_soil_moisture = (Array(DataFrame(CSV.File("$testdir/data/init_monthly/moists.csv"))[1:10, 2]) .* 1.0), # initial soil moisture
+    initial_soil_moisture = (Array(DataFrame(CSV.File("$testdir/data/init_monthly_snow/moists.csv"))[1:10, 2]) .* 1.0), # initial soil moisture
     #maximum_surface_temperature = u"K"(microinput[:maxsurf]u"°C")
 )
 
@@ -150,21 +150,28 @@ rh1cm_nmr = collect(metout_nmr[:, 6]) ./ 100.0
 rh2m_nmr = collect(metout_nmr[:, 7]) ./ 100.0
 tskyC_nmr = collect(metout_nmr[:, 15]) .* u"°C"
 solr_nmr = collect(metout_nmr[:, 14]) .* u"W/m^2"
+snowfall_nmr = collect(metout_nmr[:, 18]) .* u"cm/hr"
+snowdepth_nmr = collect(metout_nmr[:, 19]) .* u"cm"
+snowdensity_nmr = collect(metout_nmr[:, 20]) .* u"g/cm^3"
 
 air_temperature_matrix = hcat([p.air_temperature for p in micro_out.profile]...)'
 humidity_matrix = hcat([p.relative_humidity for p in micro_out.profile]...)'
 wind_matrix = hcat([p.wind_speed for p in micro_out.profile]...)'
 
+# TODO uncomment tests once snow model implemented
 @testset "runmicro comparisons" begin
-    @test humidity_matrix[:, 1] ≈ rh1cm_nmr rtol=1e-1
+    #@test humidity_matrix[:, 1] ≈ rh1cm_nmr rtol=1e-1
     @test humidity_matrix[:, 2] ≈ rh2m_nmr rtol=1e-8
-    @test wind_matrix[:, 1] ≈ vel1cm_nmr rtol=1e-2
+    #@test wind_matrix[:, 1] ≈ vel1cm_nmr rtol=1e-2
     @test wind_matrix[:, 2] ≈ vel2m_nmr rtol=1e-8
-    @test u"K".(air_temperature_matrix[:, 1]) ≈ ta1cm_nmr rtol=1e-3
-    @test u"K".(air_temperature_matrix[:, 2]) ≈ ta2m_nmr rtol=1e-8
+    #@test u"K".(air_temperature_matrix[:, 1]) ≈ ta1cm_nmr rtol=1e-3
+    #@test u"K".(air_temperature_matrix[:, 2]) ≈ ta2m_nmr rtol=1e-8
     @test micro_out.sky_temperature ≈ u"K".(tskyC_nmr) rtol=1e-7
     @test micro_out.global_radiation ≈ solr_nmr rtol=1e-4
-    @test all(isapprox.(micro_out.soil_temperature, u"K".(Matrix(soiltemps_nmr)); rtol=1e-2))
+    #@test all(isapprox.(micro_out.soil_temperature, u"K".(Matrix(soiltemps_nmr)); rtol=1e-2))
+    #@test micro_out.snow_fall ≈ snowfall_nmr rtol=1e-4
+    #@test micro_out.snow_depth ≈ snowdepth_nmr rtol=1e-4
+    #@test micro_out.snow_density ≈ snowdensity_nmr rtol=1e-4
 end
 
 # Visual comparisons — run manually (not in CI)
@@ -195,5 +202,7 @@ end
 #     plot!(p_atm, t, ustrip.(u"°C", ta1cm_nmr[t]);                        sp=5, label="NicheMapR", color=:black)
 #     plot!(p_atm, t, ustrip.(u"°C", u"K".(air_temperature_matrix[t, 2])); sp=6, label="Julia",     color=:red,   title="Air temp 2m")
 #     plot!(p_atm, t, ustrip.(u"°C", ta2m_nmr[t]);                         sp=6, label="NicheMapR", color=:black)
+#     plot!(p_atm, t, ustrip.(u"cm", snowdepth_nmr[t]);                    sp=6, label="Julia",     color=:red,   title="Snow depth")
+#     plot!(p_atm, t, ustrip.(u"cm", snowdensity_nmr[t]);                  sp=6, label="NicheMapR", color=:black)
 #     display(p_atm)
 # end
