@@ -173,9 +173,9 @@ problem = MicroProblem(;
 
 # now try the simulation function
 @time micro_out = Microclimate.solve(problem);
-#using Profile, ProfileView
-#@profile Microclimate.solve(problem)
-#ProfileView.view()
+# using Profile, ProfileView
+# @profile Microclimate.solve(problem)
+# ProfileView.view()
 
 # TODO test plotting again at some stage, but it slows down CI a lot
 # plot(micro_out)
