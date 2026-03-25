@@ -293,7 +293,7 @@ end
 
 Compute convective heat flux given bulk and sublayer Stanton numbers.
 """
-function convective_flux(ρ_cp, ΔT, u_star, bulk_stanton_number, sublayer_stanton_number)
+@inline function convective_flux(ρ_cp, ΔT, u_star, bulk_stanton_number, sublayer_stanton_number)
     return ρ_cp * ΔT * u_star * bulk_stanton_number / (1 + bulk_stanton_number / sublayer_stanton_number)
 end
 
@@ -303,7 +303,7 @@ end
 
 Compute the Stanton number for the viscous sublayer.
 """
-function sublayer_stanton(z0, u_star)
+@inline function sublayer_stanton(z0, u_star)
     return 0.62 / (ustrip(u"cm", z0) * ustrip(u"cm/minute", u_star) / 12)^(9//20)
 end
 
@@ -312,7 +312,7 @@ end
 
 Compute the bulk Stanton number for stable conditions.
 """
-function bulk_stanton(log_z_ratio)
+@inline function bulk_stanton(log_z_ratio)
     return 0.64 / log_z_ratio
 end
 
@@ -321,7 +321,7 @@ end
 
 Compute the bulk Stanton number for unstable conditions.
 """
-function bulk_stanton(log_z_ratio, z, obukhov_length)
+@inline function bulk_stanton(log_z_ratio, z, obukhov_length)
     return (0.64 / log_z_ratio) * (1 - 0.1 * z / obukhov_length)
 end
 
@@ -350,9 +350,10 @@ This corresponds to the Businger–Dyer formulation for unstable stratification:
 - Dyer, A. J. (1974). A review of flux–profile relationships.
   *Boundary-Layer Meteorology*, 7(3), 363–372.
 """
-function calc_φ_m(z, γ, obukhov_length)
-    #return (1.0 - min(1.0, γ * (z / obukhov_length)))^(1//4)
-    return (1.0 - γ * z / obukhov_length)^(1//4)
+@inline function calc_φ_m(z, γ, obukhov_length)
+    # return (1.0 - min(1.0, γ * (z / obukhov_length)))^(1//4)
+    # sqrt is faster than ^1/4
+    return sqrt(sqrt(1.0 - γ * z / obukhov_length))
 end
 
 
@@ -376,7 +377,7 @@ This is the Businger–Dyer form for momentum:
 - Businger et al. (1971).
 - Dyer (1974).
 """
-function calc_ψ_m(x)
+@inline function calc_ψ_m(x)
     return 2.0 * log((1.0 + x) / 2.0) + log((1.0 + x^2) / 2.0) - 2.0 * atan(x) + π / 2.0
 end
 
@@ -401,7 +402,7 @@ This is the Businger–Dyer form for scalars:
 - Businger et al. (1971).
 - Dyer (1974).
 """
-function calc_ψ_h(x)
+@inline function calc_ψ_h(x)
     return 2.0 * log((1.0 + x^2.0) / 2.0)
 end
 
@@ -412,7 +413,7 @@ end
 
 Iteratively solve for Monin-Obukhov length and convective heat flux.
 """
-function calc_Obukhov_length(
+@inline function calc_Obukhov_length(
     reference_temp, surface_temp, v_ref_height, z0, z, ρcpTκg, κ, log_z_ratio, ΔT, ρ_cp;
     γ=16.0, max_iter=30, tol=1e-2
 )

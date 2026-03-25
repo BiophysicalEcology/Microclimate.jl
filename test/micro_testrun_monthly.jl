@@ -126,7 +126,7 @@ problem = MicroProblem(;
     environment_minmax,
     environment_daily,
     environment_hourly,
-    iterate_day = (microinput[:ndmax]), # number of iterations per day
+    iterate_day = Int(microinput[:ndmax]), # number of iterations per day
     daily = Bool(Int(microinput[:microdaily])), # doing consecutive days?
     runmoist = Bool(Int(microinput[:runmoist])), # run soil moisture algorithm?
     hourly_rainfall = Bool(Int(microinput[:rainhourly])), # use hourly rainfall?
