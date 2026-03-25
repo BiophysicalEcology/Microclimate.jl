@@ -87,9 +87,9 @@ function soil_properties(soil_thermal::CampbelldeVriesSoilThermal;
     ################################################################
     # This is some of the most expensive code in the package
     # its inlined so most of the work in wet_air_properties is ignored
-    wet_air_properties(soil_temperature, 0.99, atmospheric_pressure; vapour_pressure_equation).vapour_pressure
-    wet_air_properties(soil_temperature - 1u"K", 0.99, atmospheric_pressure; vapour_pressure_equation).vapour_pressure
-    wet_air_properties(soil_temperature + 1u"K", 0.99, atmospheric_pressure; vapour_pressure_equation).vapour_pressure
+    vapor_pressure = wet_air_properties(soil_temperature, 0.99, atmospheric_pressure; vapour_pressure_equation).vapour_pressure
+    vapor_pressure_minus = wet_air_properties(soil_temperature - 1u"K", 0.99, atmospheric_pressure; vapour_pressure_equation).vapour_pressure
+    vapor_pressure_plus = wet_air_properties(soil_temperature + 1u"K", 0.99, atmospheric_pressure; vapour_pressure_equation).vapour_pressure
     ################################################################
 
     vapor_pressure_gradient = (vapor_pressure_plus - vapor_pressure_minus) / 2.0
