@@ -24,12 +24,11 @@ function soil_energy_balance(
     absorptivity = 1.0 - albedo
 
     # check for unstable conditions of ground surface temperature
-    clamped_temperature = map(t -> clamp(t, (-81.0+273.15)u"K", (85.0+273.15)u"K"), temperature_state)::U
+    soil_temperature = clamped_temperature = map(t -> clamp(t, (-81.0+273.15)u"K", (85.0+273.15)u"K"), temperature_state)::U
 
     # soil properties are precomputed once per hour in simulation.jl before the ODE solve
     (; bulk_thermal_conductivity, bulk_heat_capacity, bulk_density) = buffers.soil_properties
 
-    temperature_vector = SVector(MVector(clamped_temperature))
 
     # set boundary condition of deep soil temperature
     layer_depths[1:N] = depths
@@ -55,14 +54,14 @@ function soil_energy_balance(
 
     # Longwave radiation — use precomputed sky terms; only surface emission varies with ODE state
     (; incoming_longwave, outgoing_coeff, ground_shade_term) = longwave_sky
-    Q_infrared = incoming_longwave - outgoing_coeff * (u"K"(temperature_vector[1]))^4 - ground_shade_term
+    Q_infrared = incoming_longwave - outgoing_coeff * (u"K"(soil_temperature[1]))^4 - ground_shade_term
 
     # Conduction
-    Q_conduction = thermal_conductance[1] * (temperature_vector[2] - temperature_vector[1])
+    Q_conduction = thermal_conductance[1] * (soil_temperature[2] - soil_temperature[1])
 
     # Convection
     log_z_ratio = log(reference_height / roughness_height + 1)
-    surface_temperature = temperature_vector[1]
+    surface_temperature = soil_temperature[1]
     ΔT = air_temperature - surface_temperature
     mean_temperature = (surface_temperature + air_temperature) / 2
     # TODO call calc_ρ_cp method specific to elevation and RH in final version but do it this way for NicheMapR comparison
@@ -76,7 +75,7 @@ function soil_energy_balance(
         Obukhov_out = calc_Obukhov_length(air_temperature, surface_temperature, wind_speed, roughness_height, reference_height, ρcpTκg, karman_constant, log_z_ratio, ΔT, ρ_cp)
         convective_heat_flux = Obukhov_out.convective_heat_flux
     end
-    heat_transfer_coefficient = max(abs(convective_heat_flux / (temperature_vector[1] - air_temperature)), 0.5u"W/m^2/K")
+    heat_transfer_coefficient = max(abs(convective_heat_flux / (soil_temperature[1] - air_temperature)), 0.5u"W/m^2/K")
 
     # Evaporation
     wet_air_out = wet_air_properties(u"K"(air_temperature), relative_humidity, atmospheric_pressure; vapour_pressure_equation)
@@ -97,16 +96,17 @@ function soil_energy_balance(
     # Construct static vector of change in soil temperature, to return
     # Energy balance at surface
     surface = u"K/minute"((Q_solar + Q_infrared + Q_conduction + convective_heat_flux - Q_evaporation) / heat_capacity[1])
-    # Soil conduction for internal nodes
-    internal = ntuple(Val{N-2}()) do i
-        u"K/minute".((thermal_conductance[i] * (temperature_vector[i] - temperature_vector[i+1]) + thermal_conductance[i+1] * (temperature_vector[i+2] - temperature_vector[i+1])) / heat_capacity[i+1])
-    end
     # Lower boundary condition
     lower_boundary = 0.0u"K/minute"
-    dT = SVector{N}((surface, internal..., lower_boundary))
+    # Soil conduction for internal nodes
+    internal = ntuple(Val{N-2}()) do i
+        u"K/minute"((thermal_conductance[i] * (soil_temperature[i] - soil_temperature[i+1]) + thermal_conductance[i+1] * (soil_temperature[i+2] - soil_temperature[i+1])) / heat_capacity[i+1])
+    end
+    dt = SVector{N}((surface, internal..., lower_boundary))
 
-    return dT
+    return dt
 end
+
 
 function interpolate_forcings(f, t)
     t_m = ustrip(u"minute", t)

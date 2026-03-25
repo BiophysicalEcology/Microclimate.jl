@@ -62,52 +62,52 @@ Returns a named tuple containing:
   `i == 1` or `i < length(hours)`; confirm
   matches Fortran/R logic.
 """
-@kwdef struct MicroProblem
+@kwdef struct MicroProblem{D,H,Dep,Ht,Lat,SM,ST,MT,SMM,STM,EMM,EH,ED,IST,ISM,VP,PSM,SOS,SOK,CT}
     # locations, times, depths and heights
     # These are fine to keep as defaults, theyre generic
-    days = [15, 46, 74, 105, 135, 166, 196, 227, 258, 288, 319, 349] # days of year to simulate - TODO leap years - why not use real dates?
-    hours = collect(0.0:1:23.0) # hour of day for solar_radiation
-    depths = DEFAULT_DEPTHS # soil nodes - keep spacing close near the surface
-    heights = [0.01, 2]u"m" # air nodes for temperature, wind speed and humidity profile, last height is reference height for weather data
+    days::D = [15, 46, 74, 105, 135, 166, 196, 227, 258, 288, 319, 349] # days of year to simulate - TODO leap years - why not use real dates?
+    hours::H = collect(0.0:1:23.0) # hour of day for solar_radiation
+    depths::Dep = DEFAULT_DEPTHS # soil nodes - keep spacing close near the surface
+    heights::Ht = [0.01, 2]u"m" # air nodes for temperature, wind speed and humidity profile, last height is reference height for weather data
     # TODO: this should be mandatory with no default??
-    latitude
+    latitude::Lat
     # Objects defined above
-    solar_model = SolarProblem()
-    solar_terrain
-    micro_terrain
-    soil_moisture_model
-    soil_thermal_model
-    environment_minmax
-    environment_hourly = nothing
-    environment_daily
+    solar_model::SM = SolarProblem()
+    solar_terrain::ST
+    micro_terrain::MT
+    soil_moisture_model::SMM
+    soil_thermal_model::STM
+    environment_minmax::EMM
+    environment_hourly::EH = nothing
+    environment_daily::ED
     # intial conditions TODO: where to put these?
-    initial_soil_temperature = fill(u"K"(7.741667u"°C"), length(depths))
-    initial_soil_moisture = fill(0.42 * 0.25, length(depths))
-    iterate_day = 3 # number of iterations per day
-    vapour_pressure_equation = GoffGratch() # formula for saturated vapour pressure: GoffGratch(), Teten(), or Huang()
+    initial_soil_temperature::IST = fill(u"K"(7.741667u"°C"), length(depths))
+    initial_soil_moisture::ISM = fill(0.42 * 0.25, length(depths))
+    iterate_day::Int = 3 # number of iterations per day
+    vapour_pressure_equation::VP = GoffGratch() # formula for saturated vapour pressure: GoffGratch(), Teten(), or Huang()
     # ODE solver for soil temperature integration. Any SciML algorithm works, e.g.:
     #   Tsit5()           — adaptive 5th-order Runge-Kutta (default, accurate)
     #   RK4()             — fixed-step 4th-order RK; set soil_ode_kwargs=(; dt=6u"minute", adaptive=false)
     #   Euler()           — fixed-step Euler; fastest but least accurate
     # Note: RK4/Euler require OrdinaryDiffEqLowOrderRK to be loaded by the caller.
-    soil_ode_solver = Tsit5()
+    soil_ode_solver::SOS = Tsit5()
     # Extra keyword arguments forwarded to SciMLBase.solve. For adaptive solvers use
     # reltol/abstol; for fixed-step solvers use dt and adaptive=false.
-    soil_ode_kwargs = (; reltol=1e-6u"K", abstol=1e-8u"K")
+    soil_ode_kwargs::SOK = (; reltol=1e-6u"K", abstol=1e-8u"K")
     # When nothing: always run exactly iterate_day iterations (existing behaviour).
     # When a Quantity (e.g. 0.1u"K"): iterate until the maximum nodal temperature
     # change between successive full-day passes is below this value, using
     # iterate_day as the maximum number of passes.
-    convergence_tolerance = nothing
+    convergence_tolerance::CT = nothing
     # TODO: make these types so their code blocks can be removed by the compiler
-    daily = false # doing consecutive days? Only used in hourly interpolator from min/max data
-    runmoist = false # run soil moisture algorithm?
-    hourly_rainfall = false # use hourly rainfall?
-    spinup = false # spin-up the first day by iterate_day iterations?
+    daily::Bool = false # doing consecutive days? Only used in hourly interpolator from min/max data
+    runmoist::Bool = false # run soil moisture algorithm?
+    hourly_rainfall::Bool = false # use hourly rainfall?
+    spinup::Bool = false # spin-up the first day by iterate_day iterations?
     # Optional (ndepths × ndays) matrix of pre-specified soil moisture values.
     # When provided and runmoist=false, overrides initial_soil_moisture each day.
     # Allows external soil moisture data (e.g. TerraClimate) to drive the simulation.
-    precomputed_soil_moisture = nothing
+    precomputed_soil_moisture::PSM = nothing
 end
 
 function example_microclimate_problem(;
