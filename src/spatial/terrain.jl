@@ -1,11 +1,13 @@
 """
 Spatial terrain for grid-based microclimate simulation.
 
-Holds DEM and precomputed terrain metrics from Geomorphometry.jl.
+Holds elevation (DEM) and precomputed terrain metrics from Geomorphometry.jl.
 These are static (read-only) during simulation.
 """
 
-using Geomorphometry: slope, aspect, sky_view_factor, filldepressions, basin_depth
+using Geomorphometry: Geomorphometry
+using Geomorphometry: slope as geo_slope, aspect as geo_aspect, filldepressions, depression_depth
+using Unitful: Unitful, ustrip, @u_str
 
 """
     SpatialMicroTerrain
@@ -13,50 +15,61 @@ using Geomorphometry: slope, aspect, sky_view_factor, filldepressions, basin_dep
 Static terrain data for spatial microclimate simulation.
 
 # Fields
-- `dem`: Digital elevation model (m)
+- `dem`: Digital elevation model / elevation grid (m)
 - `slope`: Terrain slope (radians)
 - `aspect`: Terrain aspect (radians from north)
-- `sky_view_factor`: Fraction of sky visible (0-1)
-- `filled_dem`: Depression-filled DEM for flow routing
+- `sky_view_factor`: Fraction of sky visible (0-1, dimensionless)
+- `filled_dem`: Depression-filled elevation for flow routing (m)
 - `basin_depth`: Depth below pour point (m) - identifies pooling zones
-- `cellsize`: Grid cell dimensions (dx, dy) in meters
+- `cellsize`: Grid cell dimensions (dx, dy) with length units
 
 # Constructor
-    SpatialMicroTerrain(dem; cellsize=(30.0, 30.0))
+    SpatialMicroTerrain(elevation; cellsize=(30.0u"m", 30.0u"m"))
 
-Computes all derived terrain metrics from the DEM.
+Computes all derived terrain metrics from the elevation grid.
 """
-struct SpatialMicroTerrain{T,A<:AbstractArray{T,2},B<:AbstractArray{<:Real,2}}
-    dem::A
-    slope::B
-    aspect::B
-    sky_view_factor::B
-    filled_dem::A
-    basin_depth::A
-    cellsize::Tuple{T,T}
+struct SpatialMicroTerrain{E,S,A,V,F,B,C}
+    dem::E              # elevation (m)
+    slope::S            # radians
+    aspect::A           # radians
+    sky_view_factor::V  # dimensionless (0-1)
+    filled_dem::F       # elevation (m)
+    basin_depth::B      # depth (m)
+    cellsize::C         # (dx, dy) with units
 end
 
+"""
+    SpatialMicroTerrain(elevation; cellsize=(30.0u"m", 30.0u"m"))
+
+Create terrain from an elevation grid with units.
+Computes slope, aspect, sky view factor, and depression metrics.
+"""
 function SpatialMicroTerrain(
-    dem::AbstractMatrix{T};
-    cellsize::Tuple{Real,Real} = (30.0, 30.0),
-) where T
-    cs = T.(cellsize)
+    elevation::AbstractMatrix;
+    cellsize = (30.0u"m", 30.0u"m"),
+)
+    # Strip units for Geomorphometry.jl (it expects Float64)
+    elev_stripped = ustrip.(u"m", elevation)
+    cs_stripped = (ustrip(u"m", cellsize[1]), ustrip(u"m", cellsize[2]))
 
     # Compute terrain metrics using Geomorphometry.jl
-    s = slope(dem; cellsize=cs)
-    a = aspect(dem; cellsize=cs)
-    svf = sky_view_factor(dem; cellsize=cs)
-    filled = filldepressions(dem)
-    bd = basin_depth(dem; filled=filled)
+    s = geo_slope(elev_stripped; cellsize=cs_stripped)
+    a = geo_aspect(elev_stripped; cellsize=cs_stripped)
+    # Sky view factor: simplified approximation from slope
+    # svf ≈ cos(slope/2)² for unobstructed terrain
+    svf = cos.(s ./ 2).^2
+    filled = filldepressions(elev_stripped)
+    bd = depression_depth(elev_stripped; filled=filled)
 
+    # Add units back where appropriate
     SpatialMicroTerrain(
-        dem,
-        s,
-        a,
-        svf,
-        filled,
-        bd,
-        cs,
+        elevation,           # keep original with units
+        s,                   # radians (dimensionless in Geomorphometry)
+        a,                   # radians
+        svf,                 # dimensionless
+        filled .* u"m",      # add units back
+        bd .* u"m",          # add units back
+        cellsize,            # keep units
     )
 end
 

@@ -10,6 +10,7 @@ Similar to cold air flow but with:
 - Evaporation as secondary sink
 """
 
+using Base.Threads: @threads
 using Stencils: Stencils, Moore, StencilArray,
     center, neighbors, offsets, mapstencil!, scatterstencil!, Remove, Wrap
 using Geomorphometry: Geomorphometry
@@ -18,38 +19,37 @@ using StaticArrays: SVector
 abstract type SurfaceWaterMethod end
 
 """
-    SurfaceWaterFlow(; infiltration_rate=0.001, friction=0.1, timesteps=100)
+    SurfaceWaterFlow()
 
 Stencil-based surface water flow simulation.
 
 Simulates surface water runoff that flows downslope, with losses to
-infiltration. Uses iterative stencil operations with `SwitchingStencilArray`.
+infiltration. Uses iterative stencil operations.
 
-# Parameters
-- `infiltration_rate::Float64=0.001`: Infiltration rate (m/timestep)
-- `friction::Float64=0.1`: Flow friction coefficient (0-1)
-- `timesteps::Int=100`: Number of simulation timesteps
+Parameters are passed to the `surface_water_flow` function:
+- `infiltration_rate`: Infiltration rate (from environment, soil-dependent)
+- `friction`: Flow friction coefficient (from environment, land cover dependent)
+- `timesteps`: Number of simulation timesteps (solver control)
 
 # Returns
 Surface water depth field (m).
 """
-Base.@kwdef struct SurfaceWaterFlow <: SurfaceWaterMethod
-    infiltration_rate::Float64 = 0.001
-    friction::Float64 = 0.1
-    timesteps::Int = 100
-end
+struct SurfaceWaterFlow <: SurfaceWaterMethod end
 
 """
-    surface_water_flow(method, dem, precipitation; cellsize=(1,1), soil_moisture=nothing)
+    surface_water_flow(method, dem, precipitation; infiltration_rate, friction, timesteps, cellsize, ...)
 
 Compute surface water distribution for a DEM given precipitation input.
 
 # Arguments
 - `method::SurfaceWaterMethod`: The method to use
 - `dem::AbstractMatrix`: Digital elevation model (m)
-- `precipitation::AbstractMatrix`: Precipitation depth (m) - can be uniform or spatially varying
+- `precipitation`: Precipitation depth (m) - scalar or grid
 
 # Keywords
+- `infiltration_rate`: Infiltration rate (m/timestep) - scalar or grid from environment
+- `friction`: Flow friction coefficient (0-1) - scalar or grid from environment
+- `timesteps::Int`: Number of simulation timesteps (solver control)
 - `cellsize`: Cell dimensions (dx, dy) in meters
 - `soil_moisture`: Optional soil moisture grid for variable infiltration
 
@@ -59,25 +59,28 @@ Surface water depth field (m).
 function surface_water_flow end
 
 function surface_water_flow(
-    method::SurfaceWaterFlow,
+    ::SurfaceWaterFlow,
     dem::AbstractMatrix{T},
     precipitation::Union{AbstractMatrix,Real};
+    infiltration_rate,
+    friction,
+    timesteps::Int,
     cellsize = Geomorphometry.cellsize(dem),
     soil_moisture = nothing,
     boundary = Remove(zero(Float32)),
 ) where T
     precip_grid = precipitation isa Real ? fill(Float32(precipitation), size(dem)) : Float32.(precipitation)
     _surface_water_flow(
-        dem, precip_grid, method.infiltration_rate, method.friction,
-        method.timesteps, cellsize, soil_moisture, boundary
+        dem, precip_grid, infiltration_rate, friction,
+        timesteps, cellsize, soil_moisture, boundary
     )
 end
 
 function _surface_water_flow(
     dem::AbstractMatrix{T},
     precipitation::AbstractMatrix,
-    infiltration_rate::Float64,
-    friction::Float64,
+    infiltration_rate,
+    friction,
     timesteps::Int,
     cellsize,
     soil_moisture,
@@ -89,12 +92,13 @@ function _surface_water_flow(
     water = Float32.(precipitation)
     water_next = similar(water)
 
+    # Convert to grids if scalar
+    infil_grid = infiltration_rate isa Real ? fill(Float32(infiltration_rate), rows, cols) : Float32.(infiltration_rate)
+    fric_grid = friction isa Real ? fill(Float32(friction), rows, cols) : Float32.(friction)
+
     # Precompute distances
     δx, δy = Float64.(abs.(cellsize))
     δxy = sqrt(δx^2 + δy^2)
-
-    flow_coef = Float32(1.0 - friction)
-    infil_rate = Float32(infiltration_rate)
 
     hood = Moore{1}()
     dists = SVector{8,Float32}(δxy, δy, δxy, δx, δx, δxy, δy, δxy)
@@ -102,15 +106,20 @@ function _surface_water_flow(
     for _ in 1:timesteps
         water_sa = StencilArray(water, hood; boundary)
         dem_sa = StencilArray(dem, hood; boundary)
+        infil_sa = StencilArray(infil_grid, hood; boundary)
+        fric_sa = StencilArray(fric_grid, hood; boundary)
 
         # Step 1: Compute residuals (water remaining after outflow)
         # Each cell computes how much it keeps after sending water to lower neighbors
-        mapstencil!(water_next, water_sa, dem_sa) do water_hood, dem_hood
+        mapstencil!(water_next, water_sa, dem_sa, infil_sa, fric_sa) do water_hood, dem_hood, infil_hood, fric_hood
             c_water = center(water_hood)
             c_dem = center(dem_hood)
+            c_infil = center(infil_hood)
+            c_fric = center(fric_hood)
+            flow_coef = Float32(1.0) - c_fric
 
             # Apply infiltration
-            c_water = max(zero(Float32), c_water - infil_rate)
+            c_water = max(zero(Float32), c_water - c_infil)
 
             # Water surface elevation = terrain + water depth
             c_surface = c_dem + c_water
@@ -144,12 +153,15 @@ function _surface_water_flow(
 
         # Step 2: Scatter outflows to neighbors
         # Each cell sends water to lower neighbors based on water surface gradient
-        scatterstencil!(+, water_next, water_sa, dem_sa) do water_hood, dem_hood
+        scatterstencil!(+, water_next, water_sa, dem_sa, infil_sa, fric_sa) do water_hood, dem_hood, infil_hood, fric_hood
             c_water = center(water_hood)
             c_dem = center(dem_hood)
+            c_infil = center(infil_hood)
+            c_fric = center(fric_hood)
+            flow_coef = Float32(1.0) - c_fric
 
             # Same infiltration as above
-            c_water = max(zero(Float32), c_water - infil_rate)
+            c_water = max(zero(Float32), c_water - c_infil)
             c_surface = c_dem + c_water
 
             water_neighbors = neighbors(water_hood)
@@ -197,9 +209,9 @@ Convenience function for simulating a single precipitation event.
 - `precipitation`: Total precipitation (m), uniform or grid
 
 # Keywords
-- `infiltration_rate=0.001`: Infiltration rate (m/timestep)
-- `friction=0.1`: Flow friction
-- `duration=100`: Event duration in timesteps
+- `infiltration_rate=0.001`: Infiltration rate (m/timestep), scalar or grid
+- `friction=0.1`: Flow friction, scalar or grid
+- `timesteps=100`: Event duration in timesteps (solver control)
 - `cellsize=(1,1)`: Cell size
 
 # Returns
@@ -210,15 +222,11 @@ function surface_water_event(
     precipitation::Union{AbstractMatrix,Real};
     infiltration_rate = 0.001,
     friction = 0.1,
-    duration = 100,
+    timesteps = 100,
     cellsize = Geomorphometry.cellsize(dem),
 )
-    method = SurfaceWaterFlow(;
-        infiltration_rate,
-        friction,
-        timesteps = duration,
-    )
-    surface_water_flow(method, dem, precipitation; cellsize)
+    surface_water_flow(SurfaceWaterFlow(), dem, precipitation;
+                       infiltration_rate, friction, timesteps, cellsize)
 end
 
 # =============================================================================
@@ -272,7 +280,6 @@ function apply_infiltration!(
 )
     nx, ny, nz = size(state)
     (; k_sat, θ_sat) = method
-    total_infiltrated = Threads.Atomic{Float64}(0.0)
 
     # Compute top layer depth
     layer_depth = nz > 1 ? depths[2] - depths[1] : 0.1
@@ -289,13 +296,9 @@ function apply_infiltration!(
                 state.surface_water[i, j] -= infiltrated
                 state.soil_moisture[i, j, 1] += infiltrated / layer_depth
                 state.soil_moisture[i, j, 1] = clamp(state.soil_moisture[i, j, 1], 0.0, θ_sat)
-
-                Threads.atomic_add!(total_infiltrated, infiltrated)
             end
         end
     end
-
-    return total_infiltrated[]
 end
 
 # =============================================================================
@@ -323,7 +326,6 @@ function apply_evaporation!(
     dt::Float64,
 )
     nx, ny, _ = size(state)
-    total_evaporated = Threads.Atomic{Float64}(0.0)
 
     @threads for j in 1:ny
         for i in 1:nx
@@ -331,12 +333,9 @@ function apply_evaporation!(
             if pool > 0
                 evap = min(pool, potential_evap[i, j] * dt)
                 state.surface_water[i, j] -= evap
-                Threads.atomic_add!(total_evaporated, evap)
             end
         end
     end
-
-    return total_evaporated[]
 end
 
 # =============================================================================

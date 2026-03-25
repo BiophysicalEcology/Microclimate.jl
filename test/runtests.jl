@@ -8,7 +8,7 @@ using Microclimate, Test, Aqua, SafeTestsets, Statistics
 end
 
 # Tests
-@safetestset "cold air pooling" begin include("cold_air_test.jl") end
+@safetestset "cold air drainage" begin include("cold_air_test.jl") end
 @safetestset "surface water flow" begin include("surface_water_test.jl") end
 @safetestset "monthly simulation" begin include("micro_testrun_monthly.jl") end
 @safetestset "daily simulation" begin include("micro_testrun_daily.jl") end

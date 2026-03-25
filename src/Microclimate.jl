@@ -36,20 +36,30 @@ export example_micro_terrain, example_monthly_weather, example_daily_environment
 # TODO replace this with CommonSolve.jl
 export solve
 
-export cold_air_pooling, ColdAirPoolingMethod, ColdAirFlow
-export ColdAirCouplingMethod, ExponentialMixingCoupling, LinearCoolingCoupling, apply_cold_air_coupling!
+export ColdAirCouplingMethod, KLAM21Coupling, apply_cold_air_coupling!
 export surface_water_flow, surface_water_event, SurfaceWaterMethod, SurfaceWaterFlow
 export InfiltrationMethod, SimpleInfiltration, apply_infiltration!, apply_evaporation!, check_saturation!
 
 # Spatial simulation
 export SpatialMicroState, SpatialMicroTerrain, SpatialMicroProblem
-export surface_temperature, surface_moisture
+export SpatialEnvironment, SpatialWeather, LandSurface, SpatialSoilProperties
+export vapor_pressure, regional_wind, cell_value
+export ColdAirModel, KLAM21, KLAM21State, cold_air_step!
+export MacleanColdAirDrainage, MacleanColdAirState
+# Cold air drainage components (composable)
+export DrainageConditions, AlwaysDraining, KlokOerlemansConditions, SimpleWindConditions
+export LapseRateMethod, FixedLapseRate, HessLapseRate, lapse_rate
+export TemperatureProfile, ParabolicProfile, LinearProfile, temperature_disturbance
+export FlowWeighting, LogFlowWeighting, LinearFlowWeighting, NoFlowWeighting, flow_weight
+export sky_emissivity, mixing_ratio, normalize_flow_by_basin, basin_max_elevation
+export surface_temperature, surface_moisture, cold_air_depth
 
 include("constants.jl")
+include("spatial/terrain.jl")
+include("spatial/environment.jl")
+include("spatial/state.jl")
 include("spatial/cold_air.jl")
 include("spatial/surface_water.jl")
-include("spatial/state.jl")
-include("spatial/terrain.jl")
 include("spatial/solve.jl")
 include("landscape.jl")   
 include("interpolation.jl")
