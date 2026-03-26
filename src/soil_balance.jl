@@ -2,7 +2,8 @@ function allocate_soil_energy_balance(num_nodes::Int)
     layer_depths = fill(0.0u"cm", num_nodes + 1)
     heat_capacity = fill(1.0u"J/K/m^2", num_nodes)
     thermal_conductance = fill(1.0u"W/K/m^2", num_nodes)
-    return (; layer_depths, heat_capacity, thermal_conductance)
+    obukhov_length_prev = Ref(-0.3u"m")  # warm-start across ODE evaluations
+    return (; layer_depths, heat_capacity, thermal_conductance, obukhov_length_prev)
 end
 
 # This is a 3-parameters OrdinaryDiffEq function
@@ -13,7 +14,7 @@ function soil_energy_balance(
 ) where U <: SVector{N} where N
     # extract parameters
     (; forcing, buffers, heights, depths, environment_instant, solar_terrain, micro_terrain, soil_wetness, vapour_pressure_equation, longwave_sky) = p
-    (; layer_depths, heat_capacity, thermal_conductance) = buffers.soil_energy_balance
+    (; layer_depths, heat_capacity, thermal_conductance, obukhov_length_prev) = buffers.soil_energy_balance
     (; shade) = environment_instant
     # Get environmental data at time t
     (; atmospheric_pressure, air_temperature, wind_speed, zenith_angle, solar_radiation, cloud_cover, relative_humidity, slope_zenith_angle) = interpolate_forcings(forcing, t)
@@ -72,7 +73,8 @@ function soil_energy_balance(
     else
         # compute ρcpTκg (was a constant in original Fortran version)
         ρcpTκg = 6.003e-8u"cal*minute^2/cm^4"
-        Obukhov_out = calc_Obukhov_length(air_temperature, surface_temperature, wind_speed, roughness_height, reference_height, ρcpTκg, karman_constant, log_z_ratio, ΔT, ρ_cp)
+        Obukhov_out = calc_Obukhov_length(air_temperature, surface_temperature, wind_speed, roughness_height, reference_height, ρcpTκg, karman_constant, log_z_ratio, ΔT, ρ_cp; initial_obukhov_length=obukhov_length_prev[])
+        obukhov_length_prev[] = Obukhov_out.obukhov_length
         convective_heat_flux = Obukhov_out.convective_heat_flux
     end
     heat_transfer_coefficient = max(abs(convective_heat_flux / (soil_temperature[1] - air_temperature)), 0.5u"W/m^2/K")
