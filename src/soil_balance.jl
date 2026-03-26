@@ -2,7 +2,7 @@ function allocate_soil_energy_balance(num_nodes::Int)
     layer_depths = fill(0.0u"cm", num_nodes + 1)
     heat_capacity = fill(1.0u"J/K/m^2", num_nodes)
     thermal_conductance = fill(1.0u"W/K/m^2", num_nodes)
-    obukhov_length_prev = Ref(-0.3u"m")  # warm-start across ODE evaluations
+    obukhov_length_prev = Ref(-0.3u"m")  # warm-start across hourly ODE solves
     return (; layer_depths, heat_capacity, thermal_conductance, obukhov_length_prev)
 end
 
@@ -14,7 +14,7 @@ function soil_energy_balance(
 ) where U <: SVector{N} where N
     # extract parameters
     (; forcing, buffers, heights, depths, environment_instant, solar_terrain, micro_terrain, soil_wetness, vapour_pressure_equation, longwave_sky) = p
-    (; layer_depths, heat_capacity, thermal_conductance, obukhov_length_prev) = buffers.soil_energy_balance
+    (; layer_depths, heat_capacity, thermal_conductance) = buffers.soil_energy_balance
     (; shade) = environment_instant
     # Get environmental data at time t
     (; atmospheric_pressure, air_temperature, wind_speed, zenith_angle, solar_radiation, cloud_cover, relative_humidity, slope_zenith_angle) = interpolate_forcings(forcing, t)
@@ -71,10 +71,7 @@ function soil_energy_balance(
         u_star = calc_u_star(; reference_wind_speed=wind_speed, log_z_ratio, κ=karman_constant)
         convective_heat_flux = calc_convection(; u_star, log_z_ratio, ΔT, ρ_cp, z0=roughness_height)
     else
-        # compute ρcpTκg (was a constant in original Fortran version)
-        ρcpTκg = 6.003e-8u"cal*minute^2/cm^4"
-        Obukhov_out = calc_Obukhov_length(air_temperature, surface_temperature, wind_speed, roughness_height, reference_height, ρcpTκg, karman_constant, log_z_ratio, ΔT, ρ_cp; initial_obukhov_length=obukhov_length_prev[])
-        obukhov_length_prev[] = Obukhov_out.obukhov_length
+        Obukhov_out = calc_soil_obukhov(air_temperature, surface_temperature, wind_speed, roughness_height, reference_height, karman_constant; initial_obukhov_length=buffers.soil_energy_balance.obukhov_length_prev[])
         convective_heat_flux = Obukhov_out.convective_heat_flux
     end
     heat_transfer_coefficient = max(abs(convective_heat_flux / (soil_temperature[1] - air_temperature)), 0.5u"W/m^2/K")
@@ -109,6 +106,26 @@ function soil_energy_balance(
     return dt
 end
 
+
+function calc_soil_obukhov(air_temperature, surface_temperature, wind_speed, roughness_height, reference_height, karman_constant; initial_obukhov_length)
+    log_z_ratio = log(reference_height / roughness_height + 1)
+    ΔT = air_temperature - surface_temperature
+    ρ_cp = calc_ρ_cp((surface_temperature + air_temperature) / 2)
+    ρcpTκg = 6.003e-8u"cal*minute^2/cm^4"
+    return calc_Obukhov_length(air_temperature, surface_temperature, wind_speed, roughness_height, reference_height, ρcpTκg, karman_constant, log_z_ratio, ΔT, ρ_cp; initial_obukhov_length)
+end
+
+function init_soil_obukhov!(buffers, forcing, micro_terrain, heights, T0, i)
+    t_next = ((i - 1) * 60)u"minute"
+    (; air_temperature, wind_speed, zenith_angle) = interpolate_forcings(forcing, t_next)
+    surface_temperature = T0[1]
+    if air_temperature < surface_temperature && zenith_angle < 90u"°"
+        (; roughness_height, karman_constant) = micro_terrain
+        reference_height = last(heights)
+        Obukhov_out = calc_soil_obukhov(air_temperature, surface_temperature, wind_speed, roughness_height, reference_height, karman_constant; initial_obukhov_length=buffers.soil_energy_balance.obukhov_length_prev[])
+        buffers.soil_energy_balance.obukhov_length_prev[] = Obukhov_out.obukhov_length
+    end
+end
 
 function interpolate_forcings(f, t)
     t_m = ustrip(u"minute", t)

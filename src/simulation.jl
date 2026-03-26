@@ -442,6 +442,7 @@ function solve_soil!(output::MicroResult, mp::MicroProblem, solar_radiation_out;
                         T0 = temperature
                     end
                 end
+                init_soil_obukhov!(buffers, forcing, micro_terrain, heights, T0, i)
                 rain = hourly_rainfall ? mp.environment_hourly.rainfall[step] : environment_instant.rainfall
                 pool = clamp(pool + rain, 0.0u"kg/m^2", soil_moisture_model.maxpool)
                 if runmoist
@@ -456,9 +457,8 @@ function solve_soil!(output::MicroResult, mp::MicroProblem, solar_radiation_out;
                     output.surface_water[step] = pool
                     output.soil_temperature[step, :] .= T0
                     output.sky_temperature[step] = longwave_sky.sky_temperature
-                                    environment_instant = get_instant(environment_day, mp.environment_hourly, output, soil_moisture, step)
-
-                                    update_soil_properties!(output, buffers.soil_properties, soil_thermal_model;
+                    environment_instant = get_instant(environment_day, mp.environment_hourly, output, soil_moisture, step)
+                    update_soil_properties!(output, buffers.soil_properties, soil_thermal_model;
                         soil_temperature=T0, soil_moisture, atmospheric_pressure=environment_instant.atmospheric_pressure, step, vapour_pressure_equation
                     )
                 end
