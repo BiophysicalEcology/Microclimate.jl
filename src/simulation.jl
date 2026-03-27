@@ -218,7 +218,7 @@ function solve(mp::MicroProblem)
     # Calculate clear sky solar
     solar_radiation_out = solve_solar(mp)
     # Define the output
-    output = MicroResult(nsteps, num_nodes, solar_radiation_out)
+    output = MicroResult(nsteps, num_nodes, length(heights), solar_radiation_out)
     # Interpolate minmax weather
     interpolate_minmax!(output, environment_minmax, environment_daily, environment_hourly, solar_radiation_out)
     # Adjust solar_radiation given cloud cover to get diffuse fraction
@@ -361,6 +361,10 @@ function solve_soil!(output::MicroResult, mp::MicroProblem, solar_radiation_out;
     else
         soil_wetness = 0.0
     end
+    # Allocate the ODE integrator once; reused via reinit!(... p=inputs) each hour to avoid
+    # repeated ODEIntegrator construction and auto_dt_reset! overhead.
+    inputs_proto = SoilEnergyInputs(; forcing=forcing_day(solar_radiation_out, output, 1), buffers, soil_thermal_model, depths, heights, solar_terrain, micro_terrain, runmoist, nodes, environment_instant, soil_wetness, vapour_pressure_equation, longwave_sky)
+    ode_integrator = allocate_ode_integrator(T0, inputs_proto, soil_ode_solver, soil_ode_kwargs)
     for j in 1:ndays
         iday = j
         nodes .= nodes_day[:, iday]
@@ -410,6 +414,7 @@ function solve_soil!(output::MicroResult, mp::MicroProblem, solar_radiation_out;
                 step = (j - 1) * length(hours) + i
                 environment_instant = get_instant(environment_day, mp.environment_hourly, output, soil_moisture, step)
                 longwave_sky = precompute_longwave_sky(; micro_terrain, environment_instant, vapour_pressure_equation)
+                inputs = SoilEnergyInputs(; forcing, buffers, soil_thermal_model, depths, heights, solar_terrain, micro_terrain, runmoist, nodes, environment_instant, soil_wetness, vapour_pressure_equation, longwave_sky)
                 # Precompute soil properties once per hour using T0; ODE reads buffers directly
                 soil_properties!(buffers.soil_properties, soil_thermal_model;
                     soil_temperature=T0, soil_moisture,
@@ -419,24 +424,22 @@ function solve_soil!(output::MicroResult, mp::MicroProblem, solar_radiation_out;
                 if i == 1 # make first hour of day equal last hour of previous iteration
                     if use_multi_iter
                         ∑phase .= 0.0u"J" # TODO decide whether this should happen and fix in Fortran
-                        inputs = SoilEnergyInputs(; forcing, buffers, soil_thermal_model, depths, heights, solar_terrain, micro_terrain, runmoist, nodes, environment_instant, soil_wetness, vapour_pressure_equation, longwave_sky)
-                        soiltemps = get_soil_temp_timeline(T0, inputs, i + 1, soil_ode_solver, soil_ode_kwargs)
-                        T0 = soiltemps[2]
+                        T0_before = T0
+                        T0 = get_soil_temp_timeline!(ode_integrator, T0, i + 1, inputs)
                         if is_last_iter # TODO this should happen every time but at present it doesn't in Fortran version
                             (; accumulated_latent_heat, phase_change_heat, temperature) = phase_transition!(buffers.phase_transition;
-                                temperatures=soiltemps[2], temperatures_past=soiltemps[1], accumulated_latent_heat=∑phase, soil_moisture, depths
+                                temperatures=T0, temperatures_past=T0_before, accumulated_latent_heat=∑phase, soil_moisture, depths
                             )
                             ∑phase = accumulated_latent_heat
                             T0 = temperature
                         end
                     end
                 else
-                    inputs = SoilEnergyInputs(; forcing, buffers, soil_thermal_model, depths, heights, solar_terrain, micro_terrain, runmoist, nodes, environment_instant, soil_wetness, vapour_pressure_equation, longwave_sky)
-                    soiltemps = get_soil_temp_timeline(T0, inputs, i, soil_ode_solver, soil_ode_kwargs)
-                    T0 = soiltemps[2]
+                    T0_before = T0
+                    T0 = get_soil_temp_timeline!(ode_integrator, T0, i, inputs)
                     if is_last_iter # TODO this should happen every time but at present it doesn't in Fortran version
                         (; accumulated_latent_heat, phase_change_heat, temperature) = phase_transition!(buffers.phase_transition;
-                            temperatures=soiltemps[2], temperatures_past=soiltemps[1], accumulated_latent_heat=∑phase, soil_moisture, depths
+                            temperatures=T0, temperatures_past=T0_before, accumulated_latent_heat=∑phase, soil_moisture, depths
                         )
                         ∑phase = accumulated_latent_heat
                         T0 = temperature
@@ -472,9 +475,8 @@ end
 function solve_air!(output::MicroResult, solar_radiation_out, mp::MicroProblem)
     (; heights, micro_terrain, vapour_pressure_equation) = mp
     profile_buffers = allocate_profile(heights)
-    for i in 1:length(output.profile)
-        # TODO standardise these names
-        surface_temperature=u"°C"(output.soil_temperature[i][1])
+    for i in 1:size(output.profile.air_temperature, 1)
+        surface_temperature = u"°C"(output.soil_temperature[i, 1])
         environment_instant = (;
             atmospheric_pressure=output.pressure[i],
             reference_temperature=output.reference_temperature[i],
@@ -482,16 +484,28 @@ function solve_air!(output::MicroResult, solar_radiation_out, mp::MicroProblem)
             reference_humidity=output.reference_humidity[i],
             zenith_angle=solar_radiation_out.zenith_angle[i],
         )
-        # compute scalar profiles
-        output.profile[i] = atmospheric_surface_profile!(profile_buffers; micro_terrain, environment_instant, surface_temperature, vapour_pressure_equation)
+        result = atmospheric_surface_profile!(profile_buffers; micro_terrain, environment_instant, surface_temperature, vapour_pressure_equation)
+        output.profile.air_temperature[i, :]   .= result.air_temperature
+        output.profile.wind_speed[i, :]        .= result.wind_speed
+        output.profile.relative_humidity[i, :] .= result.relative_humidity
+        output.profile.convective_heat_flux[i]  = result.convective_heat_flux
+        output.profile.u_star[i]               = result.u_star
     end
 end
 
-function get_soil_temp_timeline(T0, input, i, solver=Tsit5(), solver_kwargs=(; reltol=1e-6u"K", abstol=1e-8u"K"))
-    tspan = ((0.0 + (i - 2) * 60)u"minute", (60.0 + (i - 2) * 60)u"minute")  # 1 hour
-    prob = ODEProblem{false}(soil_energy_balance, T0, tspan, input)
-    sol = SciMLBase.solve(prob, solver; saveat=60.0u"minute", solver_kwargs...)
-    return sol.u
+function allocate_ode_integrator(T0, inputs_proto, solver, solver_kwargs)
+    tspan = (0.0u"minute", 60.0u"minute")
+    prob = ODEProblem{false}(soil_energy_balance, T0, tspan, inputs_proto)
+    return SciMLBase.init(prob, solver; save_everystep=false, save_start=false, save_end=false, solver_kwargs...)
+end
+
+function get_soil_temp_timeline!(integrator, T0, i, inputs)
+    t0 = (0.0 + (i - 2) * 60)u"minute"
+    tf = (60.0 + (i - 2) * 60)u"minute"
+    integrator.p = inputs
+    SciMLBase.reinit!(integrator, T0; t0, tf, reset_dt=false)
+    SciMLBase.solve!(integrator)
+    return integrator.u
 end
 
 function update_soil_properties!(output, soil_properties_buffers, soil_thermal_model; step, kw...)
@@ -524,14 +538,14 @@ function forcing_day(solar_radiation_out, output, iday::Int)
     tspan = 0.0:60:(60*(nhours-1))
 
     # get today's weather
-    interpolate_solar = scale(interpolate(global_radiation[sub1], BSpline(Linear())), tspan)
-    interpolate_zenith = scale(interpolate(zenith_angle[sub1], BSpline(Linear())), tspan)
-    interpolate_slope_zenith = scale(interpolate(zenith_slope_angle[sub1], BSpline(Linear())), tspan)
-    interpolate_temperature = scale(interpolate(u"K".(reference_temperature[sub1]), BSpline(Linear())), tspan)
-    interpolate_wind = scale(interpolate(reference_wind_speed[sub1], BSpline(Linear())), tspan)
-    interpolate_humidity = scale(interpolate(reference_humidity[sub1], BSpline(Linear())), tspan)
-    interpolate_cloud = scale(interpolate(cloud_cover[sub1], BSpline(Linear())), tspan)
-    interpolate_pressure = scale(interpolate(pressure[sub1], BSpline(Linear())), tspan)
+    interpolate_solar = scale(interpolate(view(global_radiation, sub1), BSpline(Linear())), tspan)
+    interpolate_zenith = scale(interpolate(view(zenith_angle, sub1), BSpline(Linear())), tspan)
+    interpolate_slope_zenith = scale(interpolate(view(zenith_slope_angle, sub1), BSpline(Linear())), tspan)
+    interpolate_temperature = scale(interpolate(u"K".(view(reference_temperature, sub1)), BSpline(Linear())), tspan)
+    interpolate_wind = scale(interpolate(view(reference_wind_speed, sub1), BSpline(Linear())), tspan)
+    interpolate_humidity = scale(interpolate(view(reference_humidity, sub1), BSpline(Linear())), tspan)
+    interpolate_cloud = scale(interpolate(view(cloud_cover, sub1), BSpline(Linear())), tspan)
+    interpolate_pressure = scale(interpolate(view(pressure, sub1), BSpline(Linear())), tspan)
 
     return MicroForcing(; interpolate_solar, interpolate_zenith, interpolate_slope_zenith, interpolate_temperature, interpolate_wind, interpolate_humidity, interpolate_cloud, interpolate_pressure)
 end

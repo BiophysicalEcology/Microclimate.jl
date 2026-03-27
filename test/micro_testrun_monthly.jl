@@ -151,9 +151,9 @@ rh2m_nmr = collect(metout_nmr[:, 7]) ./ 100.0
 tskyC_nmr = collect(metout_nmr[:, 15]) .* u"°C"
 solr_nmr = collect(metout_nmr[:, 14]) .* u"W/m^2"
 
-air_temperature_matrix = hcat([p.air_temperature for p in micro_out.profile]...)'
-humidity_matrix = hcat([p.relative_humidity for p in micro_out.profile]...)'
-wind_matrix = hcat([p.wind_speed for p in micro_out.profile]...)'
+air_temperature_matrix = micro_out.profile.air_temperature
+humidity_matrix = micro_out.profile.relative_humidity
+wind_matrix = micro_out.profile.wind_speed
 
 @testset "runmicro comparisons" begin
     @test humidity_matrix[:, 1] ≈ rh1cm_nmr rtol=1e-1

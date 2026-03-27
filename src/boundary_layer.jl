@@ -108,7 +108,6 @@ function atmospheric_surface_profile!(buffers;
 
     # define air heights
     N_heights = length(heights)
-    relative_humidity = zeros(Float64, N_heights) # output relative humidities
     wind_speed[1] = v_ref_height
     air_temperature[1] = reference_temp
 
@@ -159,8 +158,8 @@ function atmospheric_surface_profile!(buffers;
             air_temperature[i] = roughness_height_temp + (reference_temp - roughness_height_temp) * log(temp_log_arg) / log(z / z0 - ψ_h)
         end
     end
-    wind_speed = reverse(wind_speed)
-    air_temperature = reverse(air_temperature)
+    reverse!(wind_speed)
+    reverse!(air_temperature)
     reference_vapor_pressure = wet_air_properties(reference_temp, reference_humidity, atmospheric_pressure; vapour_pressure_equation).vapour_pressure
     relative_humidity .= clamp.(reference_vapor_pressure ./ vapour_pressure.(Ref(vapour_pressure_equation), air_temperature) .* 1.0, 0.0, 1.0)
 

@@ -189,9 +189,9 @@ rh1cm_nmr = collect(metout_nmr[:, 6]) ./ 100.0
 rh2m_nmr = collect(metout_nmr[:, 7]) ./ 100.0
 tskyC_nmr = collect(metout_nmr[:, 15]) .* u"°C"
 
-air_temperature_matrix = hcat([p.air_temperature for p in micro_out.profile]...)'
-humidity_matrix = hcat([p.relative_humidity for p in micro_out.profile]...)'
-wind_matrix = hcat([p.wind_speed for p in micro_out.profile]...)'
+air_temperature_matrix = micro_out.profile.air_temperature
+humidity_matrix = micro_out.profile.relative_humidity
+wind_matrix = micro_out.profile.wind_speed
 
 coarse_indices = [1, 3, 5, 7, 9, 11, 13, 15, 17, 19] # indices of original 10 coarse nodes within 19-node fine grid
 @testset "runmicro comparisons" begin

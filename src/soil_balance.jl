@@ -536,7 +536,9 @@ end
 function allocate_phase_transition(num_nodes)
     layer_mass = zeros(Float64, num_nodes)u"kg"
     phase_change_heat = zeros(Float64, num_nodes)u"J"
-    return (; layer_mass, phase_change_heat)
+    mean_temperature = zeros(typeof(0.0u"K"), num_nodes)
+    mean_temperature_past = zeros(typeof(0.0u"K"), num_nodes)
+    return (; layer_mass, phase_change_heat, mean_temperature, mean_temperature_past)
 end
 
 phase_transition(; depths, kw...) =
@@ -550,12 +552,10 @@ function phase_transition!(
     soil_moisture::AbstractVector,
     depths::AbstractVector,
 )
-    (; layer_mass, phase_change_heat) = buffers
+    (; layer_mass, phase_change_heat, mean_temperature, mean_temperature_past) = buffers
     latent_heat_fusion = 333550.0u"J/kg"
     specific_heat_water = 4184.0u"J/kg/K"
     num_nodes = length(depths)
-    mean_temperature = similar(temperatures)
-    mean_temperature_past = similar(temperatures)
     temperature = MVector(temperatures)
     tolerance = 1.0e-4u"°C"
 
