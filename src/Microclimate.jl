@@ -3,6 +3,7 @@ module Microclimate
 using ConstructionBase
 using Interpolations, Statistics, Dates
 using SciMLBase, OrdinaryDiffEqTsit5
+using OrdinaryDiffEqTsit5: Tsit5
 using Unitful, UnitfulMoles
 using ModelParameters, DelimitedFiles
 using SpecialFunctions, StaticArrays
@@ -19,14 +20,15 @@ using SolarRadiation
 export MicroProblem
 
 export GoffGratch, Teten, Huang
+export Tsit5
 
 export CampbelldeVriesSoilThermal, SoilMoistureModel
 
-export MonthlyMinMaxEnvironment, DailyTimeseries, HourlyTimeseries, MicroTerrain
+export MonthlyMinMaxEnvironment, DailyMinMaxEnvironment, DailyTimeseries, HourlyTimeseries, MicroTerrain
 
 export daily_cycle_sine_exponential, daily_cycle_linear, hourly_from_min_max
 
-export cloud_adjust_radiation, longwave_radiation
+export cloud_adjust_radiation, longwave_radiation, precompute_longwave_sky
 
 export atmospheric_surface_profile, calc_convection
 

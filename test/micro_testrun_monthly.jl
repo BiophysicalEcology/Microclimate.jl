@@ -126,11 +126,12 @@ problem = MicroProblem(;
     environment_minmax,
     environment_daily,
     environment_hourly,
-    iterate_day = (microinput[:ndmax]), # number of iterations per day
+    iterate_day = Int(microinput[:ndmax]), # number of iterations per day
     daily = Bool(Int(microinput[:microdaily])), # doing consecutive days?
     runmoist = Bool(Int(microinput[:runmoist])), # run soil moisture algorithm?
     hourly_rainfall = Bool(Int(microinput[:rainhourly])), # use hourly rainfall?
     spinup = Bool(Int(microinput[:spinup])), # spin-up the first day by iterate_day iterations?
+    # convergence_tolerance = 0.1u"K", # number of iterations per day
     # intial conditions
     initial_soil_temperature = nothing, # initial soil temperature, # initial soil temperature
     initial_soil_moisture = (Array(DataFrame(CSV.File("$testdir/data/init_monthly/moists.csv"))[1:10, 2]) .* 1.0), # initial soil moisture

@@ -12,48 +12,76 @@ function atmospheric_radiation(::CampbellNormanAtmosphericRadiation, vapour_pres
     atmospheric_longwave = u"W/m^2"((1.72 * (ustrip(u"kPa", vapour_pressure) / ustrip(u"K", air_temperature + 0.01u"K"))^(1//7)) * σ * (u"K"(air_temperature) + 0.01u"K")^4)
     return vapour_pressure, atmospheric_longwave
 end
+"""
+    precompute_longwave_sky([radiation_model]; micro_terrain, environment_instant, vapour_pressure_equation)
+
+Compute the per-hour sky/atmospheric longwave radiation terms that do not depend on surface
+temperature. Returns a named tuple that can be cached for the duration of a timestep and passed
+into the ODE solver via `SoilEnergyInputs`, avoiding repeated calls to `wet_air_properties`
+on every internal ODE step.
+
+The `net_longwave_radiation` at any surface temperature `T` can then be recovered cheaply as:
+    net_Q = incoming_longwave - outgoing_coeff * T^4 - ground_shade_term
+"""
+function precompute_longwave_sky(radiation_model=CampbellNormanAtmosphericRadiation();
+    micro_terrain,
+    environment_instant,
+    vapour_pressure_equation=GoffGratch(),
+)
+    (; viewfactor) = micro_terrain
+    (; atmospheric_pressure, reference_humidity, reference_temperature, surface_emissivity, cloud_emissivity, cloud_cover, shade) = environment_instant
+
+    wet_air_out = wet_air_properties(u"K"(reference_temperature), reference_humidity, atmospheric_pressure; vapour_pressure_equation)
+    _, atmospheric_longwave = atmospheric_radiation(radiation_model, wet_air_out.vapour_pressure, reference_temperature)
+
+    cloud_radiation = σ * surface_emissivity * (u"K"(reference_temperature) - 2.0u"K")^4
+    hillshade_radiation = σ * surface_emissivity * (u"K"(reference_temperature))^4
+
+    clear_sky_fraction = 1.0 - cloud_cover
+    clear_component = atmospheric_longwave * clear_sky_fraction
+    cloudy_component = cloud_radiation * cloud_cover
+    longwave_radiation_sky = (clear_component + cloudy_component) * (1.0 - shade)
+    longwave_radiation_vegetation = shade * hillshade_radiation
+    longwave_radiation_hillshade = hillshade_radiation
+
+    incoming_longwave = (longwave_radiation_sky + longwave_radiation_vegetation) * viewfactor +
+                        longwave_radiation_hillshade * (1.0 - viewfactor)
+    outgoing_coeff = (1.0 - shade) * σ * cloud_emissivity
+    ground_shade_term = shade * hillshade_radiation
+    sky_temperature = (incoming_longwave / σ)^(1//4)
+
+    return (;
+        incoming_longwave,
+        outgoing_coeff,
+        ground_shade_term,
+        sky_temperature=u"K"(sky_temperature),
+        longwave_radiation_sky,
+        longwave_radiation_vegetation,
+        longwave_radiation_hillshade,
+    )
+end
+
 function longwave_radiation(radiation_model=CampbellNormanAtmosphericRadiation();
     micro_terrain,
     environment_instant,
     surface_temperature,
     vapour_pressure_equation=GoffGratch(),
 )
-    (; elevation, viewfactor) = micro_terrain
-    (; atmospheric_pressure, reference_humidity, reference_temperature, surface_emissivity, cloud_emissivity, cloud_cover, shade) = environment_instant
+    sky = precompute_longwave_sky(radiation_model; micro_terrain, environment_instant, vapour_pressure_equation)
+    (; incoming_longwave, ground_shade_term) = sky
 
-    # Longwave radiation (handle both IR modes)
-    wet_air_out = wet_air_properties(u"K"(reference_temperature), reference_humidity, atmospheric_pressure; vapour_pressure_equation)
-
-    # Atmospheric radiation
-    vapour_pressure, atmospheric_longwave = atmospheric_radiation(radiation_model, wet_air_out.vapour_pressure, reference_temperature)
-
-    # Cloud radiation temperature (shade approximation, air temp - 2°C)
-    cloud_radiation = σ * surface_emissivity * (u"K"(reference_temperature) - 2.0u"K")^4
-
-    # Hillshade radiation temperature (approximated as air temperature)
-    hillshade_radiation = σ * surface_emissivity * (u"K"(reference_temperature))^4
-
-    # Ground surface radiation temperature
-    surface_radiation = σ * cloud_emissivity * (u"K"(surface_temperature))^4
-
-    # Clear sky fraction
-    clear_sky_fraction = 1.0 - cloud_cover
-    clear_component = atmospheric_longwave * clear_sky_fraction
-    cloudy_component = cloud_radiation * cloud_cover
-    longwave_radiation_sky = (clear_component + cloudy_component) * (1.0 - shade)
-    longwave_radiation_vegetation = shade * hillshade_radiation
-    longwave_radiation_ground = (1 - shade) * surface_radiation + shade * hillshade_radiation
-    longwave_radiation_hillshade = hillshade_radiation
-    net_longwave_radiation = (longwave_radiation_sky + longwave_radiation_vegetation) * viewfactor + longwave_radiation_hillshade * (1.0 - viewfactor) - longwave_radiation_ground
-    sky_temperature = (((longwave_radiation_sky + longwave_radiation_vegetation) * viewfactor + longwave_radiation_hillshade * (1.0 - viewfactor)) / σ)^(1//4)
+    surface_radiation = σ * environment_instant.cloud_emissivity * (u"K"(surface_temperature))^4
+    shade = environment_instant.shade
+    longwave_radiation_ground = (1 - shade) * surface_radiation + ground_shade_term
+    net_longwave_radiation = incoming_longwave - (1 - shade) * surface_radiation - ground_shade_term
 
     return (;
-        sky_temperature=u"K"(sky_temperature),
+        sky.sky_temperature,
         net_longwave_radiation,
-        longwave_radiation_sky,
-        longwave_radiation_vegetation,
+        sky.longwave_radiation_sky,
+        sky.longwave_radiation_vegetation,
         longwave_radiation_ground,
-        longwave_radiation_hillshade,
+        sky.longwave_radiation_hillshade,
     )
 end
 
