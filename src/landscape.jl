@@ -1,4 +1,4 @@
-@kwdef struct SoilEnergyInputs{F,B,SP,D<:Vector{<:Number},H<:Vector{<:Number},ST,MT,EI,SW,VP}
+@kwdef struct SoilEnergyInputs{F,B,SP,D<:Vector{<:Number},H<:Vector{<:Number},ST,MT,EI,SW,VP,LW}
     forcing::F
     buffers::B
     soil_thermal_model::SP
@@ -11,6 +11,7 @@
     runmoist::Bool
     soil_wetness::SW
     vapour_pressure_equation::VP = GoffGratch()
+    longwave_sky::LW
 end
 
 @kwdef struct MicroForcing{
@@ -81,47 +82,47 @@ Base.show(io::IO, mr::MicroResult) = print(io, "MicroResult")
 abstract type AbstractSoilThermalModel end
 
 # TODO are these parameters for a specific named model
-@kwdef struct CampbelldeVriesSoilThermal <: AbstractSoilThermalModel
-    de_vries_shape_factor
-    mineral_conductivity
-    mineral_density
-    mineral_heat_capacity
-    bulk_density
-    saturation_moisture
-    recirculation_power
-    return_flow_threshold
+    @kwdef struct CampbelldeVriesSoilThermal{SF,MC,MD,MHC,BD,SM,RP,RFT} <: AbstractSoilThermalModel
+    de_vries_shape_factor::SF
+    mineral_conductivity::MC
+    mineral_density::MD
+    mineral_heat_capacity::MHC
+    bulk_density::BD
+    saturation_moisture::SM
+    recirculation_power::RP
+    return_flow_threshold::RFT
 end
 
 abstract type AbstractSoilMoistureModel end
 
 # TODO whos model is this what is it called
-@kwdef struct SoilMoistureModel <: AbstractSoilMoistureModel
-    air_entry_water_potential
-    saturated_hydraulic_conductivity
-    campbell_b_parameter
-    soil_bulk_density2
-    soil_mineral_density2
-    root_density
-    root_resistance
-    stomatal_closure_potential
-    leaf_resistance
-    stomatal_stability_parameter
-    root_radius
-    moist_error
-    moist_count
-    moist_step
-    maxpool
+@kwdef struct SoilMoistureModel{AEWP,SHC,CBP,SBD,SMD,RDen,RRes,SCP,LRes,SSP,RRad,ME,MC,MS,MP} <: AbstractSoilMoistureModel
+    air_entry_water_potential::AEWP
+    saturated_hydraulic_conductivity::SHC
+    campbell_b_parameter::CBP
+    soil_bulk_density2::SBD
+    soil_mineral_density2::SMD
+    root_density::RDen
+    root_resistance::RRes
+    stomatal_closure_potential::SCP
+    leaf_resistance::LRes
+    stomatal_stability_parameter::SSP
+    root_radius::RRad
+    moist_error::ME
+    moist_count::MC
+    moist_step::MS
+    maxpool::MP
 end
 
 abstract type AbstractTerrain end
 
 # TODO is there a more specific name for this collection of terrain variables
-@kwdef struct MicroTerrain <: AbstractTerrain
-    elevation
-    roughness_height = nothing
-    karman_constant = nothing
-    dyer_constant = nothing
-    viewfactor = nothing
+@kwdef struct MicroTerrain{E,RH,KC,DC,VF} <: AbstractTerrain
+    elevation::E
+    roughness_height::RH = nothing
+    karman_constant::KC = nothing
+    dyer_constant::DC = nothing
+    viewfactor::VF = nothing
 end
 
 # TODO: this should be more generic.
@@ -139,23 +140,43 @@ end
     minima_times::M
     maxima_times::M
 end
-@kwdef struct DailyTimeseries <: AbstractEnvironment
-    shade
-    soil_wetness
-    surface_emissivity
-    cloud_emissivity
-    rainfall
-    deep_soil_temperature
-    leaf_area_index
+"""
+    DailyMinMaxEnvironment
+
+Per-day analogue of `MonthlyMinMaxEnvironment` for consecutive-day simulations
+(ERA5, station data, etc.).  Each entry corresponds to one actual calendar day.
+Passing this to `simulate_microclimate` automatically sets `daily=true` so that
+consecutive days inherit soil state and iterate once.
+"""
+@kwdef struct DailyMinMaxEnvironment{AT,W,H,C,M}
+    reference_temperature_min::AT
+    reference_temperature_max::AT
+    reference_wind_min::W
+    reference_wind_max::W
+    reference_humidity_min::H
+    reference_humidity_max::H
+    cloud_min::C
+    cloud_max::C
+    minima_times::M
+    maxima_times::M
 end
-@kwdef struct HourlyTimeseries <: AbstractEnvironment
-    pressure
-    reference_temperature
-    reference_humidity
-    reference_wind_speed
-    global_radiation
-    longwave_radiation
-    cloud_cover
-    rainfall
-    zenith_angle
+@kwdef struct DailyTimeseries{Sh,SW,SE,CE,R,DST,LAI} <: AbstractEnvironment
+    shade::Sh
+    soil_wetness::SW
+    surface_emissivity::SE
+    cloud_emissivity::CE
+    rainfall::R
+    deep_soil_temperature::DST
+    leaf_area_index::LAI
+end
+@kwdef struct HourlyTimeseries{P,RT,RH,RWS,GR,LW,CC,R,ZA} <: AbstractEnvironment
+    pressure::P
+    reference_temperature::RT
+    reference_humidity::RH
+    reference_wind_speed::RWS
+    global_radiation::GR
+    longwave_radiation::LW
+    cloud_cover::CC
+    rainfall::R
+    zenith_angle::ZA
 end
