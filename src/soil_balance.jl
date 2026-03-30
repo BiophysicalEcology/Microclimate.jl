@@ -67,8 +67,8 @@ function soil_energy_balance(
     # TODO call calc_ρ_cp method specific to elevation and RH in final version but do it this way for NicheMapR comparison
     ρ_cp = calc_ρ_cp(mean_temperature)
     if air_temperature ≥ surface_temperature || zenith_angle ≥ 90°
-        u_star = calc_u_star(; reference_wind_speed=wind_speed, log_z_ratio, κ=karman_constant)
-        convective_heat_flux = calc_convection(; u_star, log_z_ratio, ΔT, ρ_cp, z0=roughness_height)
+        friction_velocity = calc_friction_velocity(; reference_wind_speed=wind_speed, log_z_ratio, κ=karman_constant)
+        convective_heat_flux = calc_convection(; friction_velocity, log_z_ratio, ΔT, ρ_cp, z0=roughness_height)
     else
         # compute ρcpTκg (was a constant in original Fortran version)
         ρcpTκg = 6.003e-8u"cal*minute^2/cm^4"

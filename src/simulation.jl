@@ -607,7 +607,7 @@ function solve_air!(cache::MicroCache)
         output.profile.wind_speed[i, :]        .= result.wind_speed
         output.profile.relative_humidity[i, :] .= result.relative_humidity
         output.profile.convective_heat_flux[i]  = result.convective_heat_flux
-        output.profile.u_star[i]               = result.u_star
+        output.profile.friction_velocity[i]     = result.friction_velocity
     end
 end
 

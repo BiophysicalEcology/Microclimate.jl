@@ -36,7 +36,7 @@ struct MicroProfile{AT,WS,RH,CHF,US}
     wind_speed::WS             # Matrix (nsteps × nheights)
     relative_humidity::RH      # Matrix (nsteps × nheights)
     convective_heat_flux::CHF  # Vector (nsteps)
-    u_star::US                 # Vector (nsteps)
+    friction_velocity::US      # Vector (nsteps)
 end
 function MicroProfile(nsteps::Int, nheights::Int)
     MicroProfile(
