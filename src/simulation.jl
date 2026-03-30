@@ -208,17 +208,102 @@ function example_daily_environmental(;
     EnvironmentTimeseries(; albedo, shade, soil_wetness, surface_emissivity, cloud_emissivity, rainfall, deep_soil_temperature, leaf_area_index)
 end
 
-function solve(mp::MicroProblem)
-    (; environment_minmax, environment_daily, environment_hourly, days, hours, depths, heights) = mp
+"""
+    MicroCache
+
+Pre-allocated workspace for solving a `MicroProblem` without repeated allocation.
+Created by `CommonSolve.init(problem::MicroProblem)` and solved in-place with
+`CommonSolve.solve!(cache::MicroCache)`.
+
+Use `reinit!(cache, new_problem)` to swap the problem while keeping all
+pre-allocated arrays, then call `solve!(cache)` again.
+
+# Example
+```julia
+cache = init(problem)
+output = solve!(cache)
+
+# Change weather and re-solve without allocating
+reinit!(cache, modified_problem)
+output = solve!(cache)
+```
+"""
+mutable struct MicroCache{MP<:MicroProblem,O<:MicroResult,SR,B,I,SM,N,ND,SP,PB}
+    problem::MP
+    output::O
+    solar_radiation_out::SR
+    buffers::B
+    ode_integrator::I
+    soil_moisture::SM
+    nodes::N
+    nodes_day::ND
+    ∑phase::SP
+    profile_buffers::PB
+end
+
+function CommonSolve.init(mp::MicroProblem)
+    (; days, hours, depths, heights) = mp
     ndays = length(days)
     nhours = length(hours)
     nsteps = ndays * nhours
-    num_nodes = length(depths) # number of soil nodes for temperature calcs and final output
+    num_nodes = length(depths)
 
-    # Calculate clear sky solar
+    # Solar radiation (allocated once, recomputed on each solve!)
     solar_radiation_out = solve_solar(mp)
-    # Define the output
+
+    # Output arrays
     output = MicroResult(nsteps, num_nodes, length(heights), solar_radiation_out)
+
+    # Soil buffers
+    nodes_day = zeros(num_nodes, ndays)
+    nodes_day[1, 1:ndays] .= num_nodes
+    nodes = nodes_day[:, 1]
+    buffers = (;
+        profile = allocate_profile(heights),
+        soil_energy_balance = allocate_soil_energy_balance(num_nodes),
+        soil_properties = allocate_soil_properties(nodes, mp.soil_thermal_model),
+        phase_transition = allocate_phase_transition(length(depths)),
+        soil_water_balance = allocate_soil_water_balance(num_nodes),
+    )
+
+    # ODE integrator
+    soil_moisture = collect(mp.initial_soil_moisture)
+    ∑phase = zeros(typeof(1.0u"J"), num_nodes)
+    # T0 here is just a prototype for the ODE integrator allocation;
+    # solve_soil! will set the real initial condition.
+    T0 = if isnothing(mp.initial_soil_temperature)
+        SVector(ntuple(_ -> 280.0u"K", num_nodes))
+    else
+        SVector(ntuple(i -> mp.initial_soil_temperature[i], num_nodes))
+    end
+    environment_day = get_day(mp.environment_daily, 1)
+    environment_instant = get_instant(environment_day, mp.environment_hourly, output, soil_moisture, 1)
+    longwave_sky = precompute_longwave_sky(; micro_terrain=mp.micro_terrain, environment_instant, vapour_pressure_equation=mp.vapour_pressure_equation)
+    inputs_proto = SoilEnergyInputs(;
+        forcing=forcing_day(solar_radiation_out, output, 1),
+        buffers, soil_thermal_model=mp.soil_thermal_model, depths, heights,
+        solar_terrain=mp.solar_terrain, micro_terrain=mp.micro_terrain,
+        runmoist=mp.runmoist, nodes, environment_instant,
+        soil_wetness=0.0, vapour_pressure_equation=mp.vapour_pressure_equation,
+        longwave_sky,
+    )
+    ode_integrator = allocate_ode_integrator(T0, inputs_proto, mp.soil_ode_solver, mp.soil_ode_kwargs)
+
+    # Profile buffers for solve_air!
+    profile_buffers = allocate_profile(heights)
+
+    return MicroCache(mp, output, solar_radiation_out, buffers, ode_integrator, soil_moisture, nodes, nodes_day, ∑phase, profile_buffers)
+end
+
+function CommonSolve.solve!(cache::MicroCache)
+    mp = cache.problem
+    (; environment_minmax, environment_daily, environment_hourly, days, hours, depths, heights) = mp
+    output = cache.output
+    solar_radiation_out = cache.solar_radiation_out
+
+    # Recompute solar (modifies arrays in-place where possible)
+    solve_solar!(solar_radiation_out, mp)
+
     # Interpolate minmax weather
     interpolate_minmax!(output, environment_minmax, environment_daily, environment_hourly, solar_radiation_out)
     # Adjust solar_radiation given cloud cover to get diffuse fraction
@@ -227,22 +312,45 @@ function solve(mp::MicroProblem)
     # Check if cloud-adjusted solar was originally provided
     if !isnothing(environment_hourly)
         if !isnothing(environment_hourly.global_radiation)
-            # Output the original input values
             output.global_radiation .= environment_hourly.global_radiation
         else
-            # Output the cloud-adjusted clear-sky values
             output.global_radiation .= global_radiation
         end
     else
-        # Output the cloud-adjusted clear-sky values
         output.global_radiation .= global_radiation
     end
     # Solve soil temperature and moisture
-    solve_soil!(output, mp, solar_radiation_out; days, hours, depths, heights)
+    solve_soil!(cache)
     # Solve air temperatures, windspeed and humidity
-    solve_air!(output, solar_radiation_out, mp)
+    solve_air!(cache)
 
     return output
+end
+
+function CommonSolve.solve(mp::MicroProblem)
+    return solve!(init(mp))
+end
+
+"""
+    reinit!(cache::MicroCache, mp::MicroProblem)
+
+Replace the problem in `cache` while keeping all pre-allocated arrays.
+The new problem must have the same dimensions (number of days, hours, depths, heights).
+"""
+function reinit!(cache::MicroCache, mp::MicroProblem)
+    old = cache.problem
+    if length(mp.days) != length(old.days) || length(mp.hours) != length(old.hours) ||
+       length(mp.depths) != length(old.depths) || length(mp.heights) != length(old.heights)
+        throw(DimensionMismatch(
+            "reinit! requires identical dimensions. " *
+            "Got days=$(length(mp.days)) vs $(length(old.days)), " *
+            "hours=$(length(mp.hours)) vs $(length(old.hours)), " *
+            "depths=$(length(mp.depths)) vs $(length(old.depths)), " *
+            "heights=$(length(mp.heights)) vs $(length(old.heights))"
+        ))
+    end
+    cache.problem = mp
+    return cache
 end
 
 function solve_solar(mp::MicroProblem)
@@ -254,6 +362,19 @@ function solve_solar(mp::MicroProblem)
     solar_radiation_out.zenith_slope_angle[solar_radiation_out.zenith_slope_angle .> 90u"°"] .= 90u"°"
 
     return solar_radiation_out
+end
+
+# In-place recompute: copy new solar values into existing pre-allocated arrays
+function solve_solar!(existing::NamedTuple, mp::MicroProblem)
+    fresh = solve_solar(mp)
+    for k in keys(existing)
+        dest = getfield(existing, k)
+        src = getfield(fresh, k)
+        if dest isa AbstractArray
+            dest .= src
+        end
+    end
+    return existing
 end
 
 function interpolate_minmax!(output, environment_minmax, environment_daily, environment_hourly, solar_radiation_out)
@@ -291,10 +412,19 @@ function adjust_for_cloud_cover(output, solar_radiation_out, days, hours)
     return (; global_radiation, diffuse_fraction) = cloud_adjust_radiation(output, cloud, diffuse_horizontal, direct_horizontal, zenith_angle, day_of_year)
 end
 
-# Solves soil temperature and moisture
-function solve_soil!(output::MicroResult, mp::MicroProblem, solar_radiation_out; 
-    days, hours, depths, heights
-)
+# Solves soil temperature and moisture using pre-allocated cache buffers
+function solve_soil!(cache::MicroCache)
+    mp = cache.problem
+    (; days, hours, depths, heights) = mp
+    output = cache.output
+    solar_radiation_out = cache.solar_radiation_out
+    buffers = cache.buffers
+    ode_integrator = cache.ode_integrator
+    soil_moisture = cache.soil_moisture
+    nodes = cache.nodes
+    nodes_day = cache.nodes_day
+    ∑phase = cache.∑phase
+
     (; solar_terrain, micro_terrain, soil_thermal_model, soil_moisture_model, environment_minmax, environment_daily, daily, initial_soil_temperature, initial_soil_moisture, runmoist, hourly_rainfall, precomputed_soil_moisture, vapour_pressure_equation, soil_ode_solver, soil_ode_kwargs, convergence_tolerance) = mp
     (; moist_step, campbell_b_parameter, soil_bulk_density2, soil_mineral_density2, air_entry_water_potential) = soil_moisture_model
 
@@ -305,7 +435,7 @@ function solve_soil!(output::MicroResult, mp::MicroProblem, solar_radiation_out;
     # initial conditions
     if !daily && isnothing(initial_soil_temperature)
         #t = mean(u"K", view(output.reference_temperature, 1:nhours))
-        # TODO below we add the first value to the other 24 so that it mimics the Fortran 25h day but 
+        # TODO below we add the first value to the other 24 so that it mimics the Fortran 25h day but
         # ultimately we should remove that extra value
         t = mean(u"K", [view(output.reference_temperature, 1:nhours); output.reference_temperature[1]])
         T0 = SVector(ntuple(_ -> t, num_nodes))
@@ -315,25 +445,14 @@ function solve_soil!(output::MicroResult, mp::MicroProblem, solar_radiation_out;
             error("Initial soil temperature must match length of 'depths'")
         end
         T0 = SVector(ntuple(i -> initial_soil_temperature[i], num_nodes))
-    end  
+    end
 
-    # Soil properties
-    # set up a profile of soil properties with depth for each day to be run
-    nodes_day = zeros(num_nodes, ndays) # array of all possible soil nodes
-    nodes_day[1, 1:ndays] .= num_nodes # deepest node for first substrate type
-    # These could also be vectors if we let users specify them
-    ∑phase = zeros(typeof(1.0u"J"), num_nodes) # zero phase transition for liquid water in soil
+    # Reset pre-allocated scratch arrays
+    nodes_day[1, 1:ndays] .= num_nodes
+    ∑phase .= 0.0u"J"
+    soil_moisture .= initial_soil_moisture
 
-    soil_moisture = collect(initial_soil_moisture)
-
-    nodes = nodes_day[:, 1]
-    buffers = (;
-        profile = allocate_profile(heights),
-        soil_energy_balance = allocate_soil_energy_balance(num_nodes),
-        soil_properties = allocate_soil_properties(nodes, soil_thermal_model),
-        phase_transition = allocate_phase_transition(length(depths)),
-        soil_water_balance = allocate_soil_water_balance(num_nodes),
-    )
+    nodes .= nodes_day[:, 1]
     update_soil_properties!(output, buffers.soil_properties, soil_thermal_model;
         soil_temperature=T0, soil_moisture, atmospheric_pressure=101325.0u"Pa", step=1
     )
@@ -361,10 +480,6 @@ function solve_soil!(output::MicroResult, mp::MicroProblem, solar_radiation_out;
     else
         soil_wetness = 0.0
     end
-    # Allocate the ODE integrator once; reused via reinit!(... p=inputs) each hour to avoid
-    # repeated ODEIntegrator construction and auto_dt_reset! overhead.
-    inputs_proto = SoilEnergyInputs(; forcing=forcing_day(solar_radiation_out, output, 1), buffers, soil_thermal_model, depths, heights, solar_terrain, micro_terrain, runmoist, nodes, environment_instant, soil_wetness, vapour_pressure_equation, longwave_sky)
-    ode_integrator = allocate_ode_integrator(T0, inputs_proto, soil_ode_solver, soil_ode_kwargs)
     for j in 1:ndays
         iday = j
         nodes .= nodes_day[:, iday]
@@ -472,9 +587,12 @@ function solve_soil!(output::MicroResult, mp::MicroProblem, solar_radiation_out;
 end
 
 # compute air temperature, wind speed and relative humidity profiles
-function solve_air!(output::MicroResult, solar_radiation_out, mp::MicroProblem)
-    (; heights, micro_terrain, vapour_pressure_equation) = mp
-    profile_buffers = allocate_profile(heights)
+function solve_air!(cache::MicroCache)
+    mp = cache.problem
+    output = cache.output
+    solar_radiation_out = cache.solar_radiation_out
+    (; micro_terrain, vapour_pressure_equation) = mp
+    profile_buffers = cache.profile_buffers
     for i in 1:size(output.profile.air_temperature, 1)
         surface_temperature = u"°C"(output.soil_temperature[i, 1])
         environment_instant = (;

@@ -1,5 +1,6 @@
 module Microclimate
 
+using CommonSolve: CommonSolve
 using ConstructionBase
 using Interpolations, Statistics, Dates
 using SciMLBase, OrdinaryDiffEqTsit5
@@ -17,7 +18,7 @@ using Interpolations: AbstractInterpolation
 using SolarRadiation
 
 
-export MicroProblem
+export MicroProblem, MicroCache
 
 export GoffGratch, Teten, Huang
 export Tsit5
@@ -38,8 +39,8 @@ export soil_energy_balance, evaporation, soil_water_balance!, phase_transition
 
 export example_micro_terrain, example_monthly_weather, example_daily_environmental, example_soil_moisture_model, example_soil_thermal_parameters, example_microclimate_problem
 
-# TODO replace this with CommonSolve.jl
-export solve
+import CommonSolve: solve, solve!, init
+export solve, solve!, init, reinit!
 
 
 include("constants.jl")
