@@ -1,10 +1,11 @@
 function allocate_profile(heights)
     wind_speed = similar(heights, typeof(0.0u"m/s")) # output wind speeds
     height_array = similar(heights, typeof(0.0u"m"))
-    height_array[end:-1:begin] .= heights 
+    height_array[end:-1:begin] .= heights
     air_temperature = similar(heights, typeof(0.0u"K")) # output temperatures, need to do this otherwise get InexactError
     relative_humidity = similar(heights, Float64) # output relative humidities
-    return (; heights, height_array, air_temperature, wind_speed, relative_humidity)
+    obukhov_length_prev = Ref(-0.3u"m")  # warm-start across timesteps
+    return (; heights, height_array, air_temperature, wind_speed, relative_humidity, obukhov_length_prev)
 end
 
 """
@@ -91,7 +92,7 @@ function atmospheric_surface_profile!(buffers;
     (; roughness_height, karman_constant, dyer_constant, elevation) = micro_terrain
     (; atmospheric_pressure, reference_temperature, reference_wind_speed, reference_humidity, zenith_angle) = environment_instant
 
-    (; heights, height_array, air_temperature, wind_speed, relative_humidity) = buffers
+    (; heights, height_array, air_temperature, wind_speed, relative_humidity, obukhov_length_prev) = buffers
     N_heights = length(heights)
     if minimum(heights) < roughness_height
         throw(ArgumentError("The minimum height is not greater than the roughness height."))
@@ -138,10 +139,9 @@ function atmospheric_surface_profile!(buffers;
             air_temperature[i] = roughness_height_temp + (reference_temp - roughness_height_temp) * log(height_array[i] / z0 + 1.0) / log_z_ratio
         end
     else
-        obukhov_length = -0.3u"m" # initialise Obukhov length
-        # TODO just pass the environment_instant through here
-        Obukhov_out = calc_Obukhov_length(reference_temp, surface_temp, v_ref_height, z0, z, ρcpTκg, κ, log_z_ratio, ΔT, ρ_cp; max_iter=30, tol=1e-2)
+        Obukhov_out = calc_Obukhov_length(reference_temp, surface_temp, v_ref_height, z0, z, ρcpTκg, κ, log_z_ratio, ΔT, ρ_cp; max_iter=30, tol=1e-2, initial_obukhov_length=obukhov_length_prev[])
         obukhov_length = Obukhov_out.obukhov_length
+        obukhov_length_prev[] = obukhov_length
         roughness_height_temp = Obukhov_out.roughness_height_temperature
         convective_heat_flux = Obukhov_out.convective_heat_flux
         u_star = Obukhov_out.u_star
@@ -415,9 +415,9 @@ Iteratively solve for Monin-Obukhov length and convective heat flux.
 """
 @inline function calc_Obukhov_length(
     reference_temp, surface_temp, v_ref_height, z0, z, ρcpTκg, κ, log_z_ratio, ΔT, ρ_cp;
-    γ=16.0, max_iter=30, tol=1e-2
+    γ=16.0, max_iter=30, tol=1e-2, initial_obukhov_length=-0.3u"m"
 )
-    obukhov_length = -0.3u"m" # initial Monin-Obukhov length
+    obukhov_length = initial_obukhov_length
 
     # initialise with zeros
     convective_heat_flux = 0.0u"W/m^2"
