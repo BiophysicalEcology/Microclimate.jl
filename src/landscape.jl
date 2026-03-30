@@ -31,12 +31,12 @@ end
 
 abstract type AbstractEnvironment end
 
-struct MicroProfile{AT,WS,RH,CHF,US}
+struct MicroProfile{AT,WS,RH,CHF,FV}
     air_temperature::AT        # Matrix (nsteps × nheights)
     wind_speed::WS             # Matrix (nsteps × nheights)
     relative_humidity::RH      # Matrix (nsteps × nheights)
     convective_heat_flux::CHF  # Vector (nsteps)
-    friction_velocity::US      # Vector (nsteps)
+    friction_velocity::FV      # Vector (nsteps)
 end
 function MicroProfile(nsteps::Int, nheights::Int)
     MicroProfile(
