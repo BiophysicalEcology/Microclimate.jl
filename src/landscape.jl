@@ -31,6 +31,23 @@ end
 
 abstract type AbstractEnvironment end
 
+struct MicroProfile{AT,WS,RH,CHF,FV}
+    air_temperature::AT        # Matrix (nsteps × nheights)
+    wind_speed::WS             # Matrix (nsteps × nheights)
+    relative_humidity::RH      # Matrix (nsteps × nheights)
+    convective_heat_flux::CHF  # Vector (nsteps)
+    friction_velocity::FV      # Vector (nsteps)
+end
+function MicroProfile(nsteps::Int, nheights::Int)
+    MicroProfile(
+        Matrix{typeof(1.0u"K")}(undef, nsteps, nheights),
+        Matrix{typeof(1.0u"m/s")}(undef, nsteps, nheights),
+        Matrix{Float64}(undef, nsteps, nheights),
+        Vector{typeof(1.0u"W/m^2")}(undef, nsteps),
+        Vector{typeof(1.0u"m/s")}(undef, nsteps),
+    )
+end
+
 @kwdef struct MicroResult{P,AT,WS,RH,CC,GS,DF,SkT,SoT,SM,SWP,SH,STC,SPH,SBD,SW,SR,Pr} <: AbstractEnvironment
     pressure::P
     reference_temperature::AT
@@ -52,7 +69,7 @@ abstract type AbstractEnvironment end
     solar_radiation::SR
     profile::Pr
 end
-function MicroResult(nsteps::Int, num_nodes::Int, solar_radiation::NamedTuple)
+function MicroResult(nsteps::Int, num_nodes::Int, nheights::Int, solar_radiation::NamedTuple)
 
     return MicroResult(;
         pressure = Array{typeof(1.0u"Pa")}(undef, nsteps),
@@ -72,7 +89,7 @@ function MicroResult(nsteps::Int, num_nodes::Int, solar_radiation::NamedTuple)
         soil_bulk_density = Array{typeof(1.0u"kg/m^3")}(undef, nsteps, num_nodes),
         surface_water = Array{typeof(1.0u"kg/m^2")}(undef, nsteps),
         solar_radiation = solar_radiation,
-        profile = Array{Any}(undef, nsteps),
+        profile = MicroProfile(nsteps, nheights),
     )
 end
 

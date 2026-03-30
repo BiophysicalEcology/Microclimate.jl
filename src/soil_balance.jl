@@ -68,8 +68,8 @@ function soil_energy_balance(
     # TODO call calc_ρ_cp method specific to elevation and RH in final version but do it this way for NicheMapR comparison
     ρ_cp = calc_ρ_cp(mean_temperature)
     if air_temperature ≥ surface_temperature || zenith_angle ≥ 90°
-        u_star = calc_u_star(; reference_wind_speed=wind_speed, log_z_ratio, κ=karman_constant)
-        convective_heat_flux = calc_convection(; u_star, log_z_ratio, ΔT, ρ_cp, z0=roughness_height)
+        friction_velocity = calc_friction_velocity(; reference_wind_speed=wind_speed, log_z_ratio, κ=karman_constant)
+        convective_heat_flux = calc_convection(; friction_velocity, log_z_ratio, ΔT, ρ_cp, z0=roughness_height)
     else
         Obukhov_out = calc_soil_obukhov(air_temperature, surface_temperature, wind_speed, roughness_height, reference_height, karman_constant; initial_obukhov_length=buffers.soil_energy_balance.obukhov_length_prev[])
         convective_heat_flux = Obukhov_out.convective_heat_flux
@@ -555,7 +555,9 @@ end
 function allocate_phase_transition(num_nodes)
     layer_mass = zeros(Float64, num_nodes)u"kg"
     phase_change_heat = zeros(Float64, num_nodes)u"J"
-    return (; layer_mass, phase_change_heat)
+    mean_temperature = zeros(typeof(0.0u"K"), num_nodes)
+    mean_temperature_past = zeros(typeof(0.0u"K"), num_nodes)
+    return (; layer_mass, phase_change_heat, mean_temperature, mean_temperature_past)
 end
 
 phase_transition(; depths, kw...) =
@@ -569,12 +571,10 @@ function phase_transition!(
     soil_moisture::AbstractVector,
     depths::AbstractVector,
 )
-    (; layer_mass, phase_change_heat) = buffers
+    (; layer_mass, phase_change_heat, mean_temperature, mean_temperature_past) = buffers
     latent_heat_fusion = 333550.0u"J/kg"
     specific_heat_water = 4184.0u"J/kg/K"
     num_nodes = length(depths)
-    mean_temperature = similar(temperatures)
-    mean_temperature_past = similar(temperatures)
     temperature = MVector(temperatures)
     tolerance = 1.0e-4u"°C"
 

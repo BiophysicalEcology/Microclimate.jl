@@ -39,7 +39,7 @@ Named tuple with fields:
 - `air_temperature`: Air temperature profile at each height (`K`).
 - `relative_humidity`: Relative humidity (fractional) at each height.
 - `convective_heat_flux`: Convective heat flux (`W/m²`).
-- `u_star`: Friction velocity (`m/s`).
+- `friction_velocity`: Friction velocity (`m/s`).
 
 # Notes
 - Stability corrections use the **Businger–Dyer** formulations for unstable conditions.
@@ -109,7 +109,6 @@ function atmospheric_surface_profile!(buffers;
 
     # define air heights
     N_heights = length(heights)
-    relative_humidity = zeros(Float64, N_heights) # output relative humidities
     wind_speed[1] = v_ref_height
     air_temperature[1] = reference_temp
 
@@ -131,11 +130,11 @@ function atmospheric_surface_profile!(buffers;
 
     # TODO name and explain this check, why `|| zenith_angle`
     if reference_temp ≥ surface_temp || zenith_angle ≥ 90°
-        u_star = calc_u_star(; reference_wind_speed, log_z_ratio, κ)
-        convective_heat_flux = calc_convection(; u_star, log_z_ratio, ΔT, ρ_cp, z0)
+        friction_velocity = calc_friction_velocity(; reference_wind_speed, log_z_ratio, κ)
+        convective_heat_flux = calc_convection(; friction_velocity, log_z_ratio, ΔT, ρ_cp, z0)
         for i in 2:N_heights
-            wind_speed[i] = calc_wind(height_array[i], z0, κ, u_star, 1.0)
-            roughness_height_temp = (reference_temp * bulk_stanton(log_z_ratio) + surface_temp * sublayer_stanton(z0, u_star)) / (bulk_stanton(log_z_ratio) + sublayer_stanton(z0, u_star))
+            wind_speed[i] = calc_wind(height_array[i], z0, κ, friction_velocity, 1.0)
+            roughness_height_temp = (reference_temp * bulk_stanton(log_z_ratio) + surface_temp * sublayer_stanton(z0, friction_velocity)) / (bulk_stanton(log_z_ratio) + sublayer_stanton(z0, friction_velocity))
             air_temperature[i] = roughness_height_temp + (reference_temp - roughness_height_temp) * log(height_array[i] / z0 + 1.0) / log_z_ratio
         end
     else
@@ -144,7 +143,7 @@ function atmospheric_surface_profile!(buffers;
         obukhov_length_prev[] = obukhov_length
         roughness_height_temp = Obukhov_out.roughness_height_temperature
         convective_heat_flux = Obukhov_out.convective_heat_flux
-        u_star = Obukhov_out.u_star
+        friction_velocity = Obukhov_out.friction_velocity
         ψ_h = Obukhov_out.ψ_h
         for i in 2:N_heights
             φ_m1 = calc_φ_m(height_array[i], γ, obukhov_length)
@@ -154,13 +153,13 @@ function atmospheric_surface_profile!(buffers;
             # Clamp log arguments to a small positive value to prevent NaN when
             # stability corrections exceed h/z0 at near-surface heights (e.g. 0.01 m).
             wind_log_arg = max(h_ratio - ψ_m1, 1e-6)
-            wind_speed[i] = (u_star / κ) * log(wind_log_arg)
+            wind_speed[i] = (friction_velocity / κ) * log(wind_log_arg)
             temp_log_arg = max(h_ratio - ψ_h2, 1e-6)
             air_temperature[i] = roughness_height_temp + (reference_temp - roughness_height_temp) * log(temp_log_arg) / log(z / z0 - ψ_h)
         end
     end
-    wind_speed = reverse(wind_speed)
-    air_temperature = reverse(air_temperature)
+    reverse!(wind_speed)
+    reverse!(air_temperature)
     reference_vapor_pressure = wet_air_properties(reference_temp, reference_humidity, atmospheric_pressure; vapour_pressure_equation).vapour_pressure
     relative_humidity .= clamp.(reference_vapor_pressure ./ vapour_pressure.(Ref(vapour_pressure_equation), air_temperature) .* 1.0, 0.0, 1.0)
 
@@ -169,7 +168,7 @@ function atmospheric_surface_profile!(buffers;
         air_temperature,
         relative_humidity,
         convective_heat_flux=u"W/m^2"(convective_heat_flux),
-        u_star,
+        friction_velocity,
     )
 end
 
@@ -218,7 +217,7 @@ function calc_ρ_cp(mean_temperature, elevation, relative_humidity, atmospheric_
 end
 
 """
-    calc_u_star(; reference_wind_speed, log_z_ratio, κ=0.4)
+    calc_friction_velocity(; reference_wind_speed, log_z_ratio, κ=0.4)
 
 Compute the friction velocity (u*) from a reference wind speed using the
 logarithmic wind profile.
@@ -229,18 +228,18 @@ logarithmic wind profile.
 - `κ::Real`: von Kármán constant (default = 0.4).
 
 # Returns
-- Friction velocity `u_star::Quantity{<:Real,𝐋/𝐓}`.
+- Friction velocity `friction_velocity::Quantity{<:Real,𝐋/𝐓}`.
 
 # See also
 [`calc_convection`](@ref), [`calc_wind`](@ref)
 """
-function calc_u_star(; reference_wind_speed, log_z_ratio, κ=0.4)
+function calc_friction_velocity(; reference_wind_speed, log_z_ratio, κ=0.4)
     v_ref_height = reference_wind_speed
     return κ * v_ref_height / log_z_ratio
 end
 
 """
-    calc_wind(z, z0, κ, u_star, b)
+    calc_wind(z, z0, κ, friction_velocity, b)
 
 Calculate wind speed at height `z` using the logarithmic wind profile.
 
@@ -248,27 +247,27 @@ Calculate wind speed at height `z` using the logarithmic wind profile.
 - `z::Quantity{<:Real,𝐋}`: Height above the surface (e.g. `m`, `cm`).
 - `z0::Quantity{<:Real,𝐋}`: Roughness length (e.g. `m`, `cm`).
 - `κ::Real`: von Kármán constant.
-- `u_star::Quantity{<:Real,𝐋/𝐓}`: Friction velocity.
+- `friction_velocity::Quantity{<:Real,𝐋/𝐓}`: Friction velocity.
 - `b::Real`: Offset term (e.g. `1.0` for neutral stability, or stability correction).
 
 # Returns
 - Wind speed at height `z::Quantity{<:Real,𝐋/𝐓}`.
 
 # See also
-[`calc_u_star`](@ref), [`calc_convection`](@ref)
+[`calc_friction_velocity`](@ref), [`calc_convection`](@ref)
 """
-function calc_wind(z, z0, κ, u_star, b)
-    return (u_star / κ) * log(z / z0 + b)
+function calc_wind(z, z0, κ, friction_velocity, b)
+    return (friction_velocity / κ) * log(z / z0 + b)
 end
 
 
 """
-    calc_convection(; u_star, log_z_ratio, ΔT, ρ_cp, z0)
+    calc_convection(; friction_velocity, log_z_ratio, ΔT, ρ_cp, z0)
 
 Calculate the convective heat flux (sensible heat exchange between surface and air).
 
 # Arguments
-- `u_star::Quantity{<:Real,𝐋/𝐓}`: Friction velocity (e.g. `m/s`, `cm/min`).
+- `friction_velocity::Quantity{<:Real,𝐋/𝐓}`: Friction velocity (e.g. `m/s`, `cm/min`).
 - `log_z_ratio::Real`: Precomputed logarithmic height ratio, typically `log(z/z0 + 1.0)`.
 - `ΔT::Quantity{<:Real,Θ}`: Temperature difference between reference air and surface (Kelvin).
 - `ρ_cp::Quantity{<:Real,(𝐌*𝐋^-1*𝐓^-2)}`: Volumetric heat capacity of air (e.g. `J/m³/K`, `cal/cm³/K`).
@@ -280,31 +279,31 @@ Calculate the convective heat flux (sensible heat exchange between surface and a
 Uses bulk and sublayer Stanton numbers to account for turbulence near the surface.
 
 # See also
-[`calc_u_star`](@ref), [`calc_wind`](@ref), [`sublayer_stanton`](@ref), [`bulk_stanton`](@ref), [`convective_flux`](@ref)
+[`calc_friction_velocity`](@ref), [`calc_wind`](@ref), [`sublayer_stanton`](@ref), [`bulk_stanton`](@ref), [`convective_flux`](@ref)
 """
-function calc_convection(; u_star, log_z_ratio, ΔT, ρ_cp, z0)
-    sublayer_stanton_number = sublayer_stanton(z0, u_star)
+function calc_convection(; friction_velocity, log_z_ratio, ΔT, ρ_cp, z0)
+    sublayer_stanton_number = sublayer_stanton(z0, friction_velocity)
     bulk_stanton_number = bulk_stanton(log_z_ratio)
-    return convective_flux(ρ_cp, ΔT, u_star, bulk_stanton_number, sublayer_stanton_number)
+    return convective_flux(ρ_cp, ΔT, friction_velocity, bulk_stanton_number, sublayer_stanton_number)
 end
 
 """
-    convective_flux(ρ_cp, ΔT, u_star, St_bulk, St_sublayer)
+    convective_flux(ρ_cp, ΔT, friction_velocity, St_bulk, St_sublayer)
 
 Compute convective heat flux given bulk and sublayer Stanton numbers.
 """
-@inline function convective_flux(ρ_cp, ΔT, u_star, bulk_stanton_number, sublayer_stanton_number)
-    return ρ_cp * ΔT * u_star * bulk_stanton_number / (1 + bulk_stanton_number / sublayer_stanton_number)
+@inline function convective_flux(ρ_cp, ΔT, friction_velocity, bulk_stanton_number, sublayer_stanton_number)
+    return ρ_cp * ΔT * friction_velocity * bulk_stanton_number / (1 + bulk_stanton_number / sublayer_stanton_number)
 end
 
 
 """
-    sublayer_stanton(z0, u_star)
+    sublayer_stanton(z0, friction_velocity)
 
 Compute the Stanton number for the viscous sublayer.
 """
-@inline function sublayer_stanton(z0, u_star)
-    return 0.62 / (ustrip(u"cm", z0) * ustrip(u"cm/minute", u_star) / 12)^(9//20)
+@inline function sublayer_stanton(z0, friction_velocity)
+    return 0.62 / (ustrip(u"cm", z0) * ustrip(u"cm/minute", friction_velocity) / 12)^(9//20)
 end
 
 """
@@ -425,7 +424,7 @@ Iteratively solve for Monin-Obukhov length and convective heat flux.
     sublayer_stanton_number = 0.0
     ψ_h = 0.0
     φ_m = 0.0
-    u_star = 0.0u"m/s"
+    friction_velocity = 0.0u"m/s"
     obukhov_length_new = 0.0u"m"
 
     relative_error = 1.0
@@ -440,14 +439,14 @@ Iteratively solve for Monin-Obukhov length and convective heat flux.
         if log_ratio_corrected <= 0.0
             log_ratio_corrected = just_above_zero
         end
-        u_star = κ * v_ref_height / log_ratio_corrected
-        if u_star < just_above_zero * 1u"m/s"
-            u_star = just_above_zero * 1u"m/s"
+        friction_velocity = κ * v_ref_height / log_ratio_corrected
+        if friction_velocity < just_above_zero * 1u"m/s"
+            friction_velocity = just_above_zero * 1u"m/s"
         end
-        sublayer_stanton_number = sublayer_stanton(z0, u_star)
+        sublayer_stanton_number = sublayer_stanton(z0, friction_velocity)
         bulk_stanton_number = bulk_stanton(log_ratio_corrected, z, obukhov_length)
-        convective_heat_flux = convective_flux(ρ_cp, ΔT, u_star, bulk_stanton_number, sublayer_stanton_number)
-        obukhov_length_new = ρcpTκg * u_star^3 / convective_heat_flux
+        convective_heat_flux = convective_flux(ρ_cp, ΔT, friction_velocity, bulk_stanton_number, sublayer_stanton_number)
+        obukhov_length_new = ρcpTκg * friction_velocity^3 / convective_heat_flux
         relative_error = abs((obukhov_length_new - obukhov_length) / obukhov_length)
         obukhov_length = obukhov_length_new
     end
@@ -458,7 +457,7 @@ Iteratively solve for Monin-Obukhov length and convective heat flux.
         obukhov_length=u"m"(obukhov_length),
         sublayer_stanton_number,
         bulk_stanton_number,
-        u_star,
+        friction_velocity,
         ψ_h,
         convective_heat_flux=u"W/m^2"(convective_heat_flux),
         roughness_height_temperature,

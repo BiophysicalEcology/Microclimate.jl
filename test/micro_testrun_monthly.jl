@@ -151,9 +151,9 @@ rh2m_nmr = collect(metout_nmr[:, 7]) ./ 100.0
 tskyC_nmr = collect(metout_nmr[:, 15]) .* u"°C"
 solr_nmr = collect(metout_nmr[:, 14]) .* u"W/m^2"
 
-air_temperature_matrix = hcat([p.air_temperature for p in micro_out.profile]...)'
-humidity_matrix = hcat([p.relative_humidity for p in micro_out.profile]...)'
-wind_matrix = hcat([p.wind_speed for p in micro_out.profile]...)'
+air_temperature_matrix = micro_out.profile.air_temperature
+humidity_matrix = micro_out.profile.relative_humidity
+wind_matrix = micro_out.profile.wind_speed
 
 @testset "runmicro comparisons" begin
     @test humidity_matrix[:, 1] ≈ rh1cm_nmr rtol=1e-1
@@ -165,6 +165,30 @@ wind_matrix = hcat([p.wind_speed for p in micro_out.profile]...)'
     @test micro_out.sky_temperature ≈ u"K".(tskyC_nmr) rtol=1e-7
     @test micro_out.global_radiation ≈ solr_nmr rtol=1e-4
     @test all(isapprox.(micro_out.soil_temperature, u"K".(Matrix(soiltemps_nmr)); rtol=1e-2))
+end
+
+# Test init/solve! interface produces identical results to solve
+@testset "init and solve!" begin
+    cache = init(problem)
+    @test cache isa Microclimate.MicroCache
+    out2 = solve!(cache)
+    @test out2.soil_temperature ≈ micro_out.soil_temperature rtol=1e-4
+    @test out2.profile.air_temperature ≈ micro_out.profile.air_temperature rtol=1e-4
+    @test out2.profile.relative_humidity ≈ micro_out.profile.relative_humidity rtol=1e-4
+    @test out2.profile.wind_speed ≈ micro_out.profile.wind_speed rtol=1e-4
+    @test out2.sky_temperature ≈ micro_out.sky_temperature rtol=1e-4
+    @test out2.global_radiation ≈ micro_out.global_radiation rtol=1e-4
+end
+
+# Test reinit!/solve! reuse (ODE integrator carries internal step-size state,
+# so results are close but not bit-identical across reinitializations)
+@testset "reinit! and re-solve!" begin
+    cache = init(problem)
+    solve!(cache)
+    reinit!(cache, problem)
+    out3 = solve!(cache)
+    @test out3.soil_temperature ≈ micro_out.soil_temperature rtol=1e-4
+    @test out3.profile.air_temperature ≈ micro_out.profile.air_temperature rtol=1e-4
 end
 
 # Visual comparisons — run manually (not in CI)
