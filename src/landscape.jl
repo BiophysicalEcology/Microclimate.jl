@@ -240,9 +240,6 @@ end
     zenith_angle::ZA
 end
 
-# Deprecation alias for renamed SoilMoistureModel
-const SoilMoistureModel = CampbellSoilHydraulics
-
 # ── Soil moisture mode dispatch functions ─────────────────────────────────
 
 get_soil_wetness(::PrescribedSoilMoisture, environment_instant) = environment_instant.soil_wetness

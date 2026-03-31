@@ -132,7 +132,6 @@ function example_soil_hydraulics(depths=DEFAULT_DEPTHS;
         root_radius, moist_error, moist_count, moist_step, maxpool, mode,
     )
 end
-const example_soil_moisture_model = example_soil_hydraulics
 function example_daily_environmental(;
     shade = fill(0.0, length(days)), # fractional shade cast by vegetation
     soil_wetness = fill(0.0, length(days)), # fractional surface wetness

@@ -27,7 +27,7 @@ export Tsit5
 export CampbelldeVriesSoilThermal
 
 # Soil hydraulics and moisture mode
-export CampbellSoilHydraulics, SoilMoistureModel # SoilMoistureModel is a deprecation alias
+export CampbellSoilHydraulics
 export PrescribedSoilMoisture, DynamicSoilMoisture
 
 # Convergence strategies
@@ -51,7 +51,7 @@ export soil_properties, soil_properties!, allocate_soil_properties
 
 export soil_energy_balance, evaporation, soil_water_balance!, phase_transition
 
-export example_micro_terrain, example_monthly_weather, example_daily_environmental, example_soil_moisture_model, example_soil_hydraulics, example_soil_thermal_parameters, example_microclimate_problem
+export example_micro_terrain, example_monthly_weather, example_daily_environmental, example_soil_hydraulics, example_soil_thermal_parameters, example_microclimate_problem
 
 import CommonSolve: solve, solve!, init
 export solve, solve!, init, reinit!
