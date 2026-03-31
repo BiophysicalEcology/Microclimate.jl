@@ -107,6 +107,7 @@ Maxwell, E. L., "A Quasi-Physical Model for Converting Hourly
            Institute, 1987.
 """
 function cloud_adjust_radiation(output, cloud::AbstractArray, diffuse_clear_sky, direct_clear_sky, zenith::AbstractArray, doy;
+    diffuse_fraction_model::AbstractDiffuseFractionModel=ErbsDiffuseFraction(),
     a=0.36, b=0.64, gamma=1.0,
 )
     (; global_horizontal, diffuse_horizontal, direct_horizontal) = output.solar_radiation
@@ -129,19 +130,13 @@ function cloud_adjust_radiation(output, cloud::AbstractArray, diffuse_clear_sky,
     global_clear_sky = diffuse_clear_sky .+ direct_clear_sky
     global_radiation .= max.(transmittance .* global_clear_sky, 0.0u"W/m^2")
 
-    # 3) Split global into diffuse/direct using Erbs diffuse fraction vs clearness index
+    # 3) Split global into diffuse/direct using clearness index
     ϵ = 1e-9u"W/m^2"
     clearness_index = global_radiation ./ max.(extraterrestrial_horizontal, ϵ)
     clearness_index = clamp.(clearness_index, 0.0, 1.2)
     diffuse_fraction = similar(clearness_index)
     for i in eachindex(clearness_index)
-        if clearness_index[i] <= 0.22
-            diffuse_fraction[i] = 1 - 0.09*clearness_index[i]
-        elseif clearness_index[i] <= 0.80
-            diffuse_fraction[i] = 0.9511 - 0.1604*clearness_index[i] + 4.388*clearness_index[i]^2 - 16.638*clearness_index[i]^3 + 12.336*clearness_index[i]^4
-        else
-            diffuse_fraction[i] = 0.165
-        end
+        diffuse_fraction[i] = calc_diffuse_fraction(diffuse_fraction_model, clearness_index[i])
     end
     diffuse_fraction .= clamp.(diffuse_fraction, zero(eltype(diffuse_fraction)), oneunit(eltype(diffuse_fraction)))
 

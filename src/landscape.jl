@@ -8,7 +8,6 @@
     solar_terrain::ST #TODO make just one terrain
     micro_terrain::MT
     environment_instant::EI
-    runmoist::Bool
     soil_wetness::SW
     vapour_pressure_equation::VP = GoffGratch()
     longwave_sky::LW
@@ -112,8 +111,50 @@ end
 
 abstract type AbstractSoilMoistureModel end
 
-# TODO whos model is this what is it called
-@kwdef struct SoilMoistureModel{AEWP,SHC,CBP,SBD,SMD,RDen,RRes,SCP,LRes,SSP,RRad,ME,MC,MS,MP} <: AbstractSoilMoistureModel
+# ── Soil moisture mode (defined early so CampbellSoilHydraulics can reference it) ──
+
+abstract type AbstractSoilMoistureMode end
+
+"""
+    PrescribedSoilMoisture(; precomputed_soil_moisture=nothing)
+
+Use prescribed soil moisture values rather than running a dynamic soil moisture solver.
+Soil wetness is taken from the daily environment timeseries.
+
+When `precomputed_soil_moisture` is provided as a matrix (ndepths × ndays), those values
+override `initial_soil_moisture` at the start of each day (monthly-representative mode only).
+"""
+struct PrescribedSoilMoisture{PSM} <: AbstractSoilMoistureMode
+    precomputed_soil_moisture::PSM
+end
+PrescribedSoilMoisture(; precomputed_soil_moisture=nothing) =
+    PrescribedSoilMoisture(precomputed_soil_moisture)
+
+"""
+    DynamicSoilMoisture()
+
+Run the Campbell soil water balance solver to dynamically compute soil moisture
+at each hourly timestep. Tracks the evolving surface soil wetness fraction
+internally.
+"""
+mutable struct DynamicSoilMoisture <: AbstractSoilMoistureMode
+    soil_wetness::Float64
+end
+DynamicSoilMoisture() = DynamicSoilMoisture(0.0)
+
+"""
+    CampbellSoilHydraulics(; ..., mode=PrescribedSoilMoisture())
+
+Soil hydraulic parameters for Campbell's (1985) soil water balance model.
+The `mode` field controls how soil moisture is handled during simulation:
+
+- `PrescribedSoilMoisture()` — use prescribed wetness from environment data (default)
+- `DynamicSoilMoisture()` — run the full Campbell soil water balance solver
+
+# References
+Campbell, G. S. (1985). Soil Physics with BASIC. Elsevier.
+"""
+@kwdef struct CampbellSoilHydraulics{AEWP,SHC,CBP,SBD,SMD,RDen,RRes,SCP,LRes,SSP,RRad,ME,MC,MS,MP,Mode<:AbstractSoilMoistureMode} <: AbstractSoilMoistureModel
     air_entry_water_potential::AEWP
     saturated_hydraulic_conductivity::SHC
     campbell_b_parameter::CBP
@@ -129,6 +170,7 @@ abstract type AbstractSoilMoistureModel end
     moist_count::MC
     moist_step::MS
     maxpool::MP
+    mode::Mode = PrescribedSoilMoisture()
 end
 
 abstract type AbstractTerrain end
@@ -196,4 +238,138 @@ end
     cloud_cover::CC
     rainfall::R
     zenith_angle::ZA
+end
+
+# Deprecation alias for renamed SoilMoistureModel
+const SoilMoistureModel = CampbellSoilHydraulics
+
+# ── Soil moisture mode dispatch functions ─────────────────────────────────
+
+get_soil_wetness(::PrescribedSoilMoisture, environment_instant) = environment_instant.soil_wetness
+get_soil_wetness(mode::DynamicSoilMoisture, _) = mode.soil_wetness
+
+init_soil_wetness!(::PrescribedSoilMoisture) = nothing
+init_soil_wetness!(mode::DynamicSoilMoisture) = (mode.soil_wetness = 0.0; nothing)
+
+function initialise_soil_humidity!(::DynamicSoilMoisture, output, soil_water_potential, T0)
+    water_molar_mass = 0.01801528u"kg/mol"
+    output.soil_humidity[1, :] = clamp.(exp.(water_molar_mass .* soil_water_potential ./ (R .* T0)), 0, 1)
+end
+initialise_soil_humidity!(::PrescribedSoilMoisture, output, soil_water_potential, T0) = nothing
+
+function reset_day_soil_moisture!(mode::PrescribedSoilMoisture, soil_moisture, initial_soil_moisture, day_index)
+    if !isnothing(mode.precomputed_soil_moisture)
+        soil_moisture .= mode.precomputed_soil_moisture[:, day_index]
+    else
+        soil_moisture .= initial_soil_moisture
+    end
+end
+function reset_day_soil_moisture!(::DynamicSoilMoisture, soil_moisture, initial_soil_moisture, day_index)
+    soil_moisture .= initial_soil_moisture
+end
+
+# ── Soil temperature convergence ────────────────────────────────────────────
+
+abstract type AbstractSoilTemperatureConvergence end
+
+"""
+    FixedSoilTemperatureIterations(iterations_per_day::Int)
+
+Run a fixed number of iterations of the soil temperature solver per simulated day.
+"""
+struct FixedSoilTemperatureIterations <: AbstractSoilTemperatureConvergence
+    iterations_per_day::Int
+end
+
+"""
+    SoilTemperatureConvergenceTolerance(; tolerance, max_iterations_per_day)
+
+Iterate the soil temperature solver until the maximum nodal temperature change
+between successive full-day passes falls below `tolerance`, or until
+`max_iterations_per_day` passes have been completed.
+"""
+@kwdef struct SoilTemperatureConvergenceTolerance{T} <: AbstractSoilTemperatureConvergence
+    tolerance::T
+    max_iterations_per_day::Int
+end
+
+max_iterations(c::FixedSoilTemperatureIterations) = c.iterations_per_day
+max_iterations(c::SoilTemperatureConvergenceTolerance) = c.max_iterations_per_day
+
+may_iterate(c::FixedSoilTemperatureIterations) = c.iterations_per_day > 1
+may_iterate(::SoilTemperatureConvergenceTolerance) = true
+
+function is_converged(::FixedSoilTemperatureIterations, iter, niter, T0, T0_prev)
+    return iter >= niter
+end
+function is_converged(c::SoilTemperatureConvergenceTolerance, iter, niter, T0, T0_prev)
+    iter >= niter && return true
+    iter <= 1 && return niter <= 1
+    tol = ustrip(u"K", c.tolerance)
+    max_change = maximum(abs.(ustrip.(u"K", T0) .- ustrip.(u"K", T0_prev)))
+    return max_change < tol
+end
+
+# ── Time mode ───────────────────────────────────────────────────────────────
+
+abstract type AbstractTimeMode end
+
+"""
+    MonthlyRepresentativeMode()
+
+Each simulated day is treated independently as a representative day for its month.
+Soil state is reset at the start of each day, and the temperature solver iterates
+multiple times per day (controlled by the convergence strategy).
+"""
+struct MonthlyRepresentativeMode <: AbstractTimeMode end
+
+"""
+    HourlyMode(; spinup_first_day=false)
+
+Consecutive-day simulation where soil state carries over between days.
+Only one iteration per day is performed (the soil state from the previous day
+provides the initial condition). When `spinup_first_day=true`, the first day
+is iterated multiple times to establish a quasi-equilibrium initial state.
+"""
+struct HourlyMode <: AbstractTimeMode
+    spinup_first_day::Bool
+end
+HourlyMode(; spinup_first_day=false) = HourlyMode(spinup_first_day)
+
+independent_days(::MonthlyRepresentativeMode) = true
+independent_days(::HourlyMode) = false
+
+function iterations_for_day(::MonthlyRepresentativeMode, convergence::AbstractSoilTemperatureConvergence, day_index)
+    return max_iterations(convergence)
+end
+function iterations_for_day(mode::HourlyMode, convergence::AbstractSoilTemperatureConvergence, day_index)
+    return (mode.spinup_first_day && day_index == 1) ? max_iterations(convergence) : 1
+end
+
+# ── Diffuse fraction model ──────────────────────────────────────────────────
+
+abstract type AbstractDiffuseFractionModel end
+
+"""
+    ErbsDiffuseFraction()
+
+Estimate the diffuse fraction of global solar radiation from the clearness index
+using the piecewise model of Erbs et al. (1982).
+
+# References
+Erbs, D. G., Klein, S. A., & Duffie, J. A. (1982). Estimation of the diffuse
+radiation fraction for hourly, daily and monthly-average global radiation.
+*Solar Energy*, 28(4), 293–302.
+"""
+struct ErbsDiffuseFraction <: AbstractDiffuseFractionModel end
+
+function calc_diffuse_fraction(::ErbsDiffuseFraction, clearness_index)
+    if clearness_index <= 0.22
+        return 1 - 0.09 * clearness_index
+    elseif clearness_index <= 0.80
+        return 0.9511 - 0.1604 * clearness_index + 4.388 * clearness_index^2 -
+               16.638 * clearness_index^3 + 12.336 * clearness_index^4
+    else
+        return 0.165
+    end
 end
