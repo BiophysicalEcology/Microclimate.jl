@@ -112,7 +112,12 @@ function calc_soil_obukhov(air_temperature, surface_temperature, wind_speed, rou
     ΔT = air_temperature - surface_temperature
     ρ_cp = calc_ρ_cp((surface_temperature + air_temperature) / 2)
     ρcpTκg = 6.003e-8u"cal*minute^2/cm^4"
-    return calc_Obukhov_length(air_temperature, surface_temperature, wind_speed, roughness_height, reference_height, ρcpTκg, karman_constant, log_z_ratio, ΔT, ρ_cp; initial_obukhov_length)
+    # This branch is only entered for unstable conditions (air_temperature < surface_temperature),
+    # so the Obukhov length must be negative. A warm-started value from a previous hour may have
+    # converged to positive or near-zero, which causes NaN in calc_φ_m via sqrt of a negative number.
+    # Reset to the default unstable guess if the warm-start is invalid.
+    L0 = initial_obukhov_length >= 0.0u"m" ? -0.3u"m" : initial_obukhov_length
+    return calc_Obukhov_length(air_temperature, surface_temperature, wind_speed, roughness_height, reference_height, ρcpTκg, karman_constant, log_z_ratio, ΔT, ρ_cp; initial_obukhov_length=L0)
 end
 
 function init_soil_obukhov!(buffers, forcing, micro_terrain, heights, T0, i)
