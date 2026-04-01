@@ -1,0 +1,129 @@
+# prepare_scan329_data.jl
+#
+# One-time data preparation script for the SNOTEL 329 snow comparison test.
+# Run manually from the repo root:
+#   julia test/prepare_scan329_data.jl
+#
+# Reads forcing inputs and NicheMapR outputs from the external SCAN_SNOTEL_TEST
+# directory and saves compact CSV files to test/data/scan329/.
+# Also reads observations from the SNOTEL 329 data file and subsets to the
+# simulation period (2010-01-01 to 2013-12-31).
+
+using CSV, DataFrames, Dates
+
+const DATADIR  = "C:/Users/mrke/Dropbox/Completed Research Projects/SCAN_SNOTEL_TEST"
+const INPUTDIR = joinpath(DATADIR, "micro csv input")
+
+testdir = realpath(joinpath(@__DIR__))
+outdir  = joinpath(testdir, "data", "scan329")
+mkpath(outdir)
+println("Writing output to: $outdir")
+
+# ── 1. Daily forcing ──────────────────────────────────────────────────────────
+println("\nReading daily forcing inputs...")
+
+doy    = DataFrame(CSV.File(joinpath(INPUTDIR, "doy.csv")))[:, 2]
+tminn  = DataFrame(CSV.File(joinpath(INPUTDIR, "TMINN.csv")))[:, 2]
+tmaxx  = DataFrame(CSV.File(joinpath(INPUTDIR, "TMAXX.csv")))[:, 2]
+wnminn = DataFrame(CSV.File(joinpath(INPUTDIR, "WNMINN.csv")))[:, 2]
+wnmaxx = DataFrame(CSV.File(joinpath(INPUTDIR, "WNMAXX.csv")))[:, 2]
+rhminn = DataFrame(CSV.File(joinpath(INPUTDIR, "RHMINN.csv")))[:, 2]
+rhmaxx = DataFrame(CSV.File(joinpath(INPUTDIR, "RHMAXX.csv")))[:, 2]
+ccmaxx = DataFrame(CSV.File(joinpath(INPUTDIR, "CCMAXX.csv")))[:, 2]
+rain   = DataFrame(CSV.File(joinpath(INPUTDIR, "rain.csv")))[:, 2]
+
+ndays = length(doy)
+println("  ndays = $ndays")
+
+forcing = DataFrame(
+    DOY      = Int.(round.(doy)),
+    TMINN    = round.(tminn,   digits=2),
+    TMAXX    = round.(tmaxx,   digits=2),
+    WNMINN   = round.(wnminn,  digits=3),
+    WNMAXX   = round.(wnmaxx,  digits=3),
+    RHMINN   = round.(rhminn,  digits=2),
+    RHMAXX   = round.(rhmaxx,  digits=2),
+    CCMAXX   = round.(ccmaxx,  digits=2),
+    RAINFALL = round.(rain,    digits=2),
+)
+CSV.write(joinpath(outdir, "forcing.csv"), forcing)
+println("  Wrote forcing.csv ($(nrow(forcing)) rows × $(ncol(forcing)) cols)")
+
+# ── 2. Initial soil moisture from moists.csv ──────────────────────────────────
+# moists.csv: 10 rows (soil layers) × ndays columns; col 2 = day-1 initial values
+println("\nReading moists.csv (large file, may be slow)...")
+moists_df = DataFrame(CSV.File(joinpath(INPUTDIR, "moists.csv")))
+initial_sm = round.(Float64.(moists_df[1:10, 2]), digits=4)
+println("  Initial soil moisture (m³/m³):")
+println("  $initial_sm")
+CSV.write(joinpath(outdir, "initial_sm.csv"),
+    DataFrame(; layer=1:10, moisture=initial_sm))
+println("  Wrote initial_sm.csv")
+
+# ── 3. NicheMapR hourly outputs ───────────────────────────────────────────────
+# Columns needed: SNOWDEP, SNOWDENS from metout; DEP3/4/6/8 from soil; WC3/4/6/8 from soilmoist
+# Depth mapping (DEP.csv = [0,2.5,5,10,15,20,30,50,100,200] cm):
+#   DEP3/WC3 = 5 cm, DEP4/WC4 = 10 cm, DEP6/WC6 = 20 cm, DEP8/WC8 = 50 cm
+println("\nReading NicheMapR output files...")
+# R write.csv format: row index + dates + DOY + TIME(minutes) + named depth columns
+# normalizenames=true handles dots in names like "WC2.5cm" → "WC2_5cm"
+metout = DataFrame(CSV.File(joinpath(DATADIR, "metout.csv"),     normalizenames=true))
+soil   = DataFrame(CSV.File(joinpath(DATADIR, "soil.csv"),       normalizenames=true))
+smoist = DataFrame(CSV.File(joinpath(DATADIR, "soilmoist.csv"),  normalizenames=true))
+println("  metout rows: $(nrow(metout)),  soil rows: $(nrow(soil)),  soilmoist rows: $(nrow(smoist))")
+
+# TIME is in minutes (0,60,...,1380); convert to hour (0-23) for alignment
+nmr = DataFrame(
+    DOY      = Int.(metout.DOY),
+    HOUR     = Int.(round.(metout.TIME ./ 60.0)),
+    SNOWDEP  = round.(metout.SNOWDEP,  digits=1),
+    SNOWDENS = round.(metout.SNOWDENS, digits=3),
+    D5cm     = round.(soil.D5cm,       digits=1),
+    D10cm    = round.(soil.D10cm,      digits=1),
+    D20cm    = round.(soil.D20cm,      digits=1),
+    D50cm    = round.(soil.D50cm,      digits=1),
+    WC5cm    = round.(smoist.WC5cm,    digits=3),
+    WC10cm   = round.(smoist.WC10cm,   digits=3),
+    WC20cm   = round.(smoist.WC20cm,   digits=3),
+    WC50cm   = round.(smoist.WC50cm,   digits=3),
+)
+CSV.write(joinpath(outdir, "nmr_hourly.csv"), nmr)
+println("  Wrote nmr_hourly.csv ($(nrow(nmr)) rows × $(ncol(nmr)) cols)")
+
+# ── 4. SNOTEL 329 observations ────────────────────────────────────────────────
+# Subset to simulation period 2010-01-01 to 2013-12-31.
+# Raw units: SNWD.I = mm snow depth, WTEQ.I = in (tenths-of-inches SWE → cm via ×2.54/10)
+# Soil temp STO.I_* in °C, soil moisture SMS.I_* in % volumetric
+println("\nReading SNOTEL 329 observations...")
+# normalizenames=true converts "STO.I_2" → "STO_I_2" etc.
+obs_raw = DataFrame(CSV.File(joinpath(DATADIR, "climate/329/329.csv"),
+    normalizenames=true))
+obs_raw[!, :DateTime] = DateTime.(string.(obs_raw[!, :DateTime]),
+    dateformat"yyyy-mm-dd HH:MM:SS")
+
+t_start = DateTime(2010, 1, 1)
+t_end   = DateTime(2013, 12, 31, 23, 0, 0)
+mask    = (obs_raw[!, :DateTime] .>= t_start) .& (obs_raw[!, :DateTime] .<= t_end)
+
+# After normalizenames: "SNWD.I"→"SNWD_I", "STO.I_2"→"STO_I_2", etc.
+obs_sub = obs_raw[mask, [:DateTime, :SNWD_I, :WTEQ_I,
+    :STO_I_2, :STO_I_8, :STO_I_20,
+    :SMS_I_2, :SMS_I_8, :SMS_I_20]]
+
+# Rename to depth-labelled identifiers
+rename!(obs_sub,
+    :SNWD_I   => :SNWD_mm,
+    :WTEQ_I   => :WTEQ_in10,   # tenths of inches; convert ×2.54/10 → cm in test script
+    :STO_I_2  => :STO_5cm,
+    :STO_I_8  => :STO_20cm,
+    :STO_I_20 => :STO_50cm,
+    :SMS_I_2  => :SMS_5cm,
+    :SMS_I_8  => :SMS_20cm,
+    :SMS_I_20 => :SMS_50cm,
+)
+CSV.write(joinpath(outdir, "obs.csv"), obs_sub)
+println("  Wrote obs.csv ($(nrow(obs_sub)) rows)")
+
+println("\nDone. Data files written to $outdir")
+println("Hard-wire initial_soil_moisture in snow_obs_comparison.jl:")
+println("  $initial_sm")
