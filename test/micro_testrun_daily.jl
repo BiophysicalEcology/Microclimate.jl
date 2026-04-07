@@ -87,25 +87,27 @@ environment_minmax = nothing
 #     maxima_times = [1, 1, 0, 0], # time of maxima for air temp, wind, humidity and cloud cover (h), air temp & wind maxs relative to solar noon, humidity and cloud cover maxs relative to sunrise
 # )
 
-soil_moisture_model = SoilMoistureModel(; 
-    # soil moisture model soil parameters
-    air_entry_water_potential = (DataFrame(CSV.File("$testdir/data/init_daily/PE.csv"))[:, 2] * 1.0u"J/kg"), # set up vector of ground emissivities for each day
-    saturated_hydraulic_conductivity = (DataFrame(CSV.File("$testdir/data/init_daily/KS.csv"))[:, 2] * 1.0u"kg*s/m^3"), # set up vector of ground emissivities for each day
-    campbell_b_parameter = (DataFrame(CSV.File("$testdir/data/init_daily/BB.csv"))[:, 2] * 1.0), # set up vector of ground emissivities for each day
-    soil_bulk_density2 = (DataFrame(CSV.File("$testdir/data/init_daily/BD.csv"))[:, 2] * 1.0u"Mg/m^3"), # set up vector of ground emissivities for each day
-    soil_mineral_density2 = (DataFrame(CSV.File("$testdir/data/init_daily/DD.csv"))[:, 2] * 1.0u"Mg/m^3"), # set up vector of ground emissivities for each day
-    # soil moisture plant parameters
-    root_density = DataFrame(CSV.File("$testdir/data/init_daily/L.csv"))[:, 2] * u"m/m^3", # root density at each node, mm/m3 (from Campell 1985 Soil Physics with Basic, p. 131) # max depth for water pooling on the surface, mm (to account for runoff)
-    root_resistance = microinput[:RW] * u"m^3/kg/s", # resistance per unit length of root, m3 kg-1 s-1
-    stomatal_closure_potential = -microinput[:PC] * u"J/kg", # critical leaf water potential for stomatal closure, J kg-1
-    leaf_resistance = microinput[:RL] * u"m^4/kg/s", # resistance per unit length of leaf, m4 kg-1 s-1
-    stomatal_stability_parameter = microinput[:SP], # stability parameter, -
-    root_radius = microinput[:R1]u"m", # root radius, m    
-    # soil moisture simulation controls
-    moist_error = microinput[:IM]u"kg/m^2/s", # maximum overall mass balance error allowed, kg
+_runmoist = Bool(Int(microinput[:runmoist]))
+soil_moisture_model = CampbellSoilHydraulics(;
+    # soil hydraulic parameters
+    air_entry_water_potential = (DataFrame(CSV.File("$testdir/data/init_daily/PE.csv"))[:, 2] * 1.0u"J/kg"),
+    saturated_hydraulic_conductivity = (DataFrame(CSV.File("$testdir/data/init_daily/KS.csv"))[:, 2] * 1.0u"kg*s/m^3"),
+    campbell_b_parameter = (DataFrame(CSV.File("$testdir/data/init_daily/BB.csv"))[:, 2] * 1.0),
+    soil_bulk_density2 = (DataFrame(CSV.File("$testdir/data/init_daily/BD.csv"))[:, 2] * 1.0u"Mg/m^3"),
+    soil_mineral_density2 = (DataFrame(CSV.File("$testdir/data/init_daily/DD.csv"))[:, 2] * 1.0u"Mg/m^3"),
+    # plant parameters
+    root_density = DataFrame(CSV.File("$testdir/data/init_daily/L.csv"))[:, 2] * u"m/m^3",
+    root_resistance = microinput[:RW] * u"m^3/kg/s",
+    stomatal_closure_potential = -microinput[:PC] * u"J/kg",
+    leaf_resistance = microinput[:RL] * u"m^4/kg/s",
+    stomatal_stability_parameter = microinput[:SP],
+    root_radius = microinput[:R1]u"m",
+    # simulation controls
+    moist_error = microinput[:IM]u"kg/m^2/s",
     moist_count = microinput[:MAXCOUNT],
-    moist_step = microinput[:moiststep]u"s",    
-    maxpool = microinput[:maxpool] * 1000.0u"kg/m^2", # max depth for water pooling on the surface, mm (to account for runoff)
+    moist_step = microinput[:moiststep]u"s",
+    maxpool = microinput[:maxpool] * 1000.0u"kg/m^2",
+    mode = _runmoist ? DynamicSoilMoisture() : PrescribedSoilMoisture(),
 )
 
 environment_daily = DailyTimeseries(;
@@ -133,12 +135,20 @@ environment_hourly = HourlyTimeseries(;
 
 solar_model = SolarProblem(; scattered_uv = Bool(Int(microinput[:IUV])))
 
+# Set up time mode from the daily/spinup flags
+_daily = Bool(Int(microinput[:microdaily]))
+_spinup = Bool(Int(microinput[:spinup]))
+time_mode = _daily ? ConsecutiveDayMode(; spinup_first_day=_spinup) : NonConsecutiveDayMode()
+
+# Set up convergence strategy
+convergence = FixedSoilTemperatureIterations(Int(microinput[:ndmax]))
+
 # now try the simulation function
 problem = MicroProblem(;
     # locations, times, depths and heights
     latitude = (microinput[:ALAT] + microinput[:AMINUT] / 60) * 1.0u"°", # latitude
     days = days[1:days2do], # days of year to simulate - TODO leap years
-    hours = 0:1:23, # hour of day for solar_radiation # TODO how and in what context would users change this
+    hours = 0:1:23, # hour of day for solar_radiation
     depths, # soil nodes - keep spacing close near the surface
     heights, # air nodes for temperature, wind speed and humidity profile
     # Objects defined above
@@ -150,12 +160,10 @@ problem = MicroProblem(;
     environment_minmax,
     environment_daily,
     environment_hourly,
-    iterate_day = Int(microinput[:ndmax]), # number of iterations per day
-    daily = Bool(Int(microinput[:microdaily])), # doing consecutive days?
-    runmoist = Bool(Int(microinput[:runmoist])), # run soil moisture algorithm?
+    time_mode,
+    convergence,
     hourly_rainfall = Bool(Int(microinput[:rainhourly])), # use hourly rainfall?
-    spinup = Bool(Int(microinput[:spinup])), # spin-up the first day by iterate_day iterations?
-    # intial conditions
+    # initial conditions
     initial_soil_temperature = let coarse = u"K".((DataFrame(CSV.File("$testdir/data/init_daily/soilinit.csv"))[:, 2] * 1.0)u"°C"), n = length(coarse)
         result = Vector{eltype(coarse)}(undef, 2n - 1)
         for i in 1:n; result[2i-1] = coarse[i]; end
@@ -168,7 +176,6 @@ problem = MicroProblem(;
         for i in 1:n-1; result[2i] = (coarse[i] + coarse[i+1]) / 2; end
         result
     end,
-    #maximum_surface_temperature = u"K"(microinput[:maxsurf]u"°C")
 )
 
 # now try the simulation function

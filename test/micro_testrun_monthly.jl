@@ -105,13 +105,23 @@ environment_minmax = MonthlyMinMaxEnvironment(;
     maxima_times = [microinput[:TIMAXS1], microinput[:TIMAXS2], microinput[:TIMAXS3], microinput[:TIMAXS4]], # time of maxima for air temp, wind, humidity and cloud cover (h), air temp & wind maxs relative to solar noon, humidity and cloud cover maxs relative to sunrise
 )
 
-soil_moisture_model = example_soil_moisture_model(depths; bulk_density, mineral_density,
-    root_density = fill(0.0, length(depths))u"m/m^3")
+_runmoist = Bool(Int(microinput[:runmoist]))
+soil_moisture_model = example_soil_hydraulics(depths; bulk_density, mineral_density,
+    root_density = fill(0.0, length(depths))u"m/m^3",
+    mode = _runmoist ? DynamicSoilMoisture() : PrescribedSoilMoisture())
 solar_model = SolarProblem(; scattered_uv = Bool(Int(microinput[:IUV])))
+
+# Set up time mode from the daily/spinup flags
+_daily = Bool(Int(microinput[:microdaily]))
+_spinup = Bool(Int(microinput[:spinup]))
+time_mode = _daily ? ConsecutiveDayMode(; spinup_first_day=_spinup) : NonConsecutiveDayMode()
+
+# Set up convergence strategy
+convergence = FixedSoilTemperatureIterations(Int(microinput[:ndmax]))
 
 # now try the simulation function
 problem = MicroProblem(;
-    # locations, times, depths and heights 
+    # locations, times, depths and heights
     latitude = longlat[2]*1.0u"°",
     days = days[days2do], # days of year for solar_radiation
     hours = collect(0.0:1:23.0), # hour of day for solar_radiation
@@ -126,16 +136,12 @@ problem = MicroProblem(;
     environment_minmax,
     environment_daily,
     environment_hourly,
-    iterate_day = Int(microinput[:ndmax]), # number of iterations per day
-    daily = Bool(Int(microinput[:microdaily])), # doing consecutive days?
-    runmoist = Bool(Int(microinput[:runmoist])), # run soil moisture algorithm?
+    time_mode,
+    convergence,
     hourly_rainfall = Bool(Int(microinput[:rainhourly])), # use hourly rainfall?
-    spinup = Bool(Int(microinput[:spinup])), # spin-up the first day by iterate_day iterations?
-    convergence_tolerance = nothing, # number of iterations per day
     # intial conditions
-    initial_soil_temperature = nothing, # initial soil temperature, # initial soil temperature
+    initial_soil_temperature = nothing, # initial soil temperature
     initial_soil_moisture = (Array(DataFrame(CSV.File("$testdir/data/init_monthly/moists.csv"))[1:10, 2]) .* 1.0), # initial soil moisture
-    #maximum_surface_temperature = u"K"(microinput[:maxsurf]u"°C")
 )
 
 # now try the simulation function

@@ -225,7 +225,7 @@ function allocate_soil_water_balance(num_layers)
     )
 end
 
-function soil_water_balance!(buffers, smm::SoilMoistureModel;
+function soil_water_balance!(buffers, smm::CampbellSoilHydraulics;
     depths,
     atmospheric_pressure,
     soil_moisture,
@@ -461,7 +461,7 @@ end
 get_soil_water_balance(soil_moisture_model; num_layers=18, kw...) =
     get_soil_water_balance!(allocate_soil_water_balance(num_layers), soil_moisture_model; kw...)
 
-function get_soil_water_balance!(buffers, soil_moisture_model::SoilMoistureModel;
+function get_soil_water_balance!(buffers, soil_moisture_model::CampbellSoilHydraulics;
     depths,
     micro_terrain,
     environment_instant,
