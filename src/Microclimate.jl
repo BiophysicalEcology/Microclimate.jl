@@ -34,7 +34,7 @@ export PrescribedSoilMoisture, DynamicSoilMoisture
 export AbstractSoilTemperatureConvergence, FixedSoilTemperatureIterations, SoilTemperatureConvergenceTolerance
 
 # Time modes
-export AbstractTimeMode, MonthlyRepresentativeMode, HourlyMode
+export AbstractTimeMode, NonConsecutiveDayMode, ConsecutiveDayMode
 
 # Diffuse fraction models
 export AbstractDiffuseFractionModel, ErbsDiffuseFraction

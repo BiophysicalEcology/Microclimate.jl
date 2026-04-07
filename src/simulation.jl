@@ -6,7 +6,7 @@ Microclimate simulation problem specification.
 # Key formulation choices (type-dispatched)
 - `soil_moisture_model`: `CampbellSoilHydraulics(; ..., mode)` where `mode` is
   `PrescribedSoilMoisture()` (default) or `DynamicSoilMoisture()`
-- `time_mode`: `MonthlyRepresentativeMode()` (default) or `HourlyMode(; spinup_first_day=false)`
+- `time_mode`: `NonConsecutiveDayMode()` (default) or `ConsecutiveDayMode(; spinup_first_day=false)`
 - `convergence`: `FixedSoilTemperatureIterations(3)` (default) or
   `SoilTemperatureConvergenceTolerance(; tolerance, max_iterations_per_day)`
 - `diffuse_fraction_model`: `ErbsDiffuseFraction()` (default)
@@ -39,7 +39,7 @@ Microclimate simulation problem specification.
     #   Euler()           — fixed-step Euler; fastest but least accurate
     soil_ode_solver::SOS = Tsit5()
     soil_ode_kwargs::SOK = (; reltol=1e-6u"K", abstol=1e-8u"K")
-    time_mode::TM = MonthlyRepresentativeMode() # MonthlyRepresentativeMode() or HourlyMode()
+    time_mode::TM = NonConsecutiveDayMode() # NonConsecutiveDayMode() or ConsecutiveDayMode()
     convergence::Conv = FixedSoilTemperatureIterations(3) # FixedSoilTemperatureIterations or SoilTemperatureConvergenceTolerance
     diffuse_fraction_model::DFM = ErbsDiffuseFraction()
     hourly_rainfall::Bool = false # use hourly rainfall?

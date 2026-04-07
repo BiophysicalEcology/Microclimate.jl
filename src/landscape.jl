@@ -312,34 +312,35 @@ end
 abstract type AbstractTimeMode end
 
 """
-    MonthlyRepresentativeMode()
+    NonConsecutiveDayMode()
 
-Each simulated day is treated independently as a representative day for its month.
+Each simulated day is treated independently and iterated to convergence.
 Soil state is reset at the start of each day, and the temperature solver iterates
 multiple times per day (controlled by the convergence strategy).
+Days could represent months, weeks, or any non-consecutive selection.
 """
-struct MonthlyRepresentativeMode <: AbstractTimeMode end
+struct NonConsecutiveDayMode <: AbstractTimeMode end
 
 """
-    HourlyMode(; spinup_first_day=false)
+    ConsecutiveDayMode(; spinup_first_day=false)
 
-Consecutive-day simulation where soil state carries over between days.
-Only one iteration per day is performed (the soil state from the previous day
-provides the initial condition). When `spinup_first_day=true`, the first day
-is iterated multiple times to establish a quasi-equilibrium initial state.
+Consecutive-day simulation where the end state of each day becomes the
+initial condition for the next. Only one iteration per day is performed.
+When `spinup_first_day=true`, the first day is iterated multiple times to
+establish a quasi-equilibrium initial state.
 """
-struct HourlyMode <: AbstractTimeMode
+struct ConsecutiveDayMode <: AbstractTimeMode
     spinup_first_day::Bool
 end
-HourlyMode(; spinup_first_day=false) = HourlyMode(spinup_first_day)
+ConsecutiveDayMode(; spinup_first_day=false) = ConsecutiveDayMode(spinup_first_day)
 
-independent_days(::MonthlyRepresentativeMode) = true
-independent_days(::HourlyMode) = false
+independent_days(::NonConsecutiveDayMode) = true
+independent_days(::ConsecutiveDayMode) = false
 
-function iterations_for_day(::MonthlyRepresentativeMode, convergence::AbstractSoilTemperatureConvergence, day_index)
+function iterations_for_day(::NonConsecutiveDayMode, convergence::AbstractSoilTemperatureConvergence, day_index)
     return max_iterations(convergence)
 end
-function iterations_for_day(mode::HourlyMode, convergence::AbstractSoilTemperatureConvergence, day_index)
+function iterations_for_day(mode::ConsecutiveDayMode, convergence::AbstractSoilTemperatureConvergence, day_index)
     return (mode.spinup_first_day && day_index == 1) ? max_iterations(convergence) : 1
 end
 

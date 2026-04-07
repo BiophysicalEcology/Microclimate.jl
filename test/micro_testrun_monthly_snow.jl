@@ -114,7 +114,7 @@ solar_model = SolarProblem(; scattered_uv = Bool(Int(microinput[:IUV])))
 # Set up time mode from the daily/spinup flags
 _daily = Bool(Int(microinput[:microdaily]))
 _spinup = Bool(Int(microinput[:spinup]))
-time_mode = _daily ? HourlyMode(; spinup_first_day=_spinup) : MonthlyRepresentativeMode()
+time_mode = _daily ? ConsecutiveDayMode(; spinup_first_day=_spinup) : NonConsecutiveDayMode()
 
 # Set up convergence strategy
 convergence = FixedSoilTemperatureIterations(Int(microinput[:ndmax]))
