@@ -10,7 +10,9 @@ DataStructures = "864edb3b-99cc-5e75-8d2d-829cb0a9cfe8"
 Dates = "ade2ca70-3891-5945-98fb-dc099432e06a"
 DelimitedFiles = "8bb1440f-4735-579b-a4ab-409b98df4dab"
 FluidProperties = "d16f1b92-71d3-42f3-aafa-43e5bb0efda8"
+Geomorphometry = "714e3e49-7933-471a-9334-4a6a65a92f36"
 Interpolations = "a98d9a8b-a2ab-59e6-89dd-64a1c18fca59"
+KernelAbstractions = "63c18a36-062a-441e-b654-da1e3ab1ce7c"
 ModelParameters = "4744a3fa-6c31-4707-899e-a3298e4618ad"
 OrdinaryDiffEqTsit5 = "b1df2697-797e-41e3-8120-5422d3b24e4a"
 SciMLBase = "0bca4576-84f4-4d90-8ffe-ffa030f20462"
@@ -18,6 +20,7 @@ SolarRadiation = "d01e3663-6acb-4162-92ee-c50acb918cac"
 SpecialFunctions = "276daf66-3868-5448-9aa4-cd146d93841b"
 StaticArrays = "90137ffa-7385-5640-81b9-e52037218182"
 Statistics = "10745b16-79ce-11e8-11f9-7d13ad32a3b2"
+Stencils = "264155e8-78a8-466a-aa59-c9b28c34d21a"
 Unitful = "1986cc42-f94f-5a68-af5c-568840ba703d"
 UnitfulMoles = "999f2bd7-36bf-5ba7-9bc1-c9473aa75374"
 
@@ -26,7 +29,9 @@ Makie = "ee78f7c6-11fb-53f2-987a-cfe4a2b5a57a"
 
 [sources]
 FluidProperties = {rev = "main", url = "https://github.com/BiophysicalEcology/FluidProperties.jl"}
+Geomorphometry = {path = "../Geomorphometry"}
 SolarRadiation = {rev = "main", url = "https://github.com/BiophysicalEcology/SolarRadiation.jl"}
+Stencils = {path = "../Stencils"}
 
 [extensions]
 MicroclimateMakieExt = "Makie"
@@ -42,6 +47,7 @@ Dates = "1"
 DelimitedFiles = "1"
 FluidProperties = "0.1"
 Interpolations = "0.15.1"
+KernelAbstractions = "0.9.40"
 Makie = "0.20, 0.21, 0.22, 0.23, 0.24"
 ModelParameters = "0.4"
 OrdinaryDiffEqTsit5 = "1.5"
