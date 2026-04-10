@@ -11,6 +11,7 @@
     soil_wetness::SW
     vapour_pressure_equation::VP = GoffGratch()
     longwave_sky::LW
+    albedo::Float64
 end
 
 @kwdef struct MicroForcing{
@@ -47,7 +48,7 @@ function MicroProfile(nsteps::Int, nheights::Int)
     )
 end
 
-@kwdef struct MicroResult{P,AT,WS,RH,CC,GS,DF,SkT,SoT,SM,SWP,SH,STC,SPH,SBD,SW,SR,Pr} <: AbstractEnvironment
+@kwdef struct MicroResult{P,AT,WS,RH,CC,GS,DF,SkT,SoT,SM,SWP,SH,STC,SPH,SBD,SW,SR,Pr,SF,SD,SDN} <: AbstractEnvironment
     pressure::P
     reference_temperature::AT
     reference_wind_speed::WS
@@ -56,17 +57,19 @@ end
     global_radiation::GS
     diffuse_fraction::DF
     sky_temperature::SkT
-    # TODO: should things like soil_temperature be sub-components? soil.temperature ?
     soil_temperature::SoT
     soil_moisture::SM
     soil_water_potential::SWP
-    soil_humidity::SH 
+    soil_humidity::SH
     soil_thermal_conductivity::STC
-    soil_heat_capacity::SPH 
-    soil_bulk_density::SBD 
+    soil_heat_capacity::SPH
+    soil_bulk_density::SBD
     surface_water::SW
     solar_radiation::SR
     profile::Pr
+    snow_fall::SF
+    snow_depth::SD
+    snow_density::SDN
 end
 function MicroResult(nsteps::Int, num_nodes::Int, nheights::Int, solar_radiation::NamedTuple)
 
@@ -89,6 +92,9 @@ function MicroResult(nsteps::Int, num_nodes::Int, nheights::Int, solar_radiation
         surface_water = Array{typeof(1.0u"kg/m^2")}(undef, nsteps),
         solar_radiation = solar_radiation,
         profile = MicroProfile(nsteps, nheights),
+        snow_fall = zeros(typeof(1.0u"cm/hr"), nsteps),
+        snow_depth = zeros(typeof(1.0u"cm"), nsteps),
+        snow_density = zeros(typeof(1.0u"g/cm^3"), nsteps),
     )
 end
 

@@ -87,7 +87,7 @@ environment_daily = DailyTimeseries(;
     soil_wetness = (DataFrame(CSV.File("$testdir/data/init_monthly/PCTWET.csv"))[days2do, 2] * 1.0) ./ 100.0, # daily soil wetness (fractional)
     surface_emissivity = (DataFrame(CSV.File("$testdir/data/init_monthly/SLES.csv"))[days2do, 2] * 1.0), # - surface emissivity
     cloud_emissivity = (DataFrame(CSV.File("$testdir/data/init_monthly/SLES.csv"))[days2do, 2] * 1.0), # - cloud emissivity
-    rainfall = ((DataFrame(CSV.File("$testdir/data/init_monthly/rain.csv"))[days2do, 2] * 1.0) / 1000)u"kg/m^2", # monthly total rainfall
+    rainfall = (DataFrame(CSV.File("$testdir/data/init_monthly/rain.csv"))[days2do, 2] * 1.0)u"kg/m^2", # monthly total rainfall (mm = kg/m²)
     deep_soil_temperature = (DataFrame(CSV.File("$testdir/data/init_monthly/tannulrun.csv"))[days2do, 2] * 1.0)u"°C", # daily deep soil temperatures
     leaf_area_index = fill(0.1, length(days)),
 )

@@ -19,7 +19,8 @@ function soil_energy_balance(
     # Get environmental data at time t
     (; atmospheric_pressure, air_temperature, wind_speed, zenith_angle, solar_radiation, cloud_cover, relative_humidity, slope_zenith_angle) = interpolate_forcings(forcing, t)
     (; roughness_height, karman_constant, dyer_constant) = micro_terrain
-    (; albedo, slope) = solar_terrain
+    (; slope) = solar_terrain
+    albedo = p.albedo
 
     reference_height = last(heights)
     absorptivity = 1.0 - albedo
@@ -33,15 +34,17 @@ function soil_energy_balance(
 
     # set boundary condition of deep soil temperature
     layer_depths[1:N] = depths
-    # Compute soil layer properties
+    # Compute soil layer properties (guard zero depths for inactive snow nodes)
     for i in 1:N
         volumetric_heat_capacity = bulk_density[i] * bulk_heat_capacity[i]
         if i == 1
-            heat_capacity[i] = volumetric_heat_capacity * layer_depths[2] / 2.0
-            thermal_conductance[i] = bulk_thermal_conductivity[1] / layer_depths[2]
+            d2 = layer_depths[2]
+            heat_capacity[i] = volumetric_heat_capacity * d2 / 2.0
+            thermal_conductance[i] = iszero(d2) ? zero(bulk_thermal_conductivity[1] / oneunit(d2)) : bulk_thermal_conductivity[1] / d2
         else
+            Δd = layer_depths[i+1] - layer_depths[i]
             heat_capacity[i] = volumetric_heat_capacity * (layer_depths[i+1] - layer_depths[i-1]) / 2.0
-            thermal_conductance[i] = bulk_thermal_conductivity[i] / (layer_depths[i+1] - layer_depths[i])
+            thermal_conductance[i] = iszero(Δd) ? zero(bulk_thermal_conductivity[i] / oneunit(Δd)) : bulk_thermal_conductivity[i] / Δd
         end
     end
 
@@ -93,13 +96,15 @@ function soil_energy_balance(
         vapour_pressure_equation,
     )
     # Construct static vector of change in soil temperature, to return
-    # Energy balance at surface
-    surface = u"K/minute"((Q_solar + Q_infrared + Q_conduction + convective_heat_flux - Q_evaporation) / heat_capacity[1])
+    # Energy balance at surface (guard zero heat capacity for inactive snow nodes)
+    surface = iszero(heat_capacity[1]) ? 0.0u"K/minute" :
+        u"K/minute"((Q_solar + Q_infrared + Q_conduction + convective_heat_flux - Q_evaporation) / heat_capacity[1])
     # Lower boundary condition
     lower_boundary = 0.0u"K/minute"
     # Soil conduction for internal nodes
     internal = ntuple(Val{N-2}()) do i
-        u"K/minute"((thermal_conductance[i] * (soil_temperature[i] - soil_temperature[i+1]) + thermal_conductance[i+1] * (soil_temperature[i+2] - soil_temperature[i+1])) / heat_capacity[i+1])
+        iszero(heat_capacity[i+1]) ? 0.0u"K/minute" :
+            u"K/minute"((thermal_conductance[i] * (soil_temperature[i] - soil_temperature[i+1]) + thermal_conductance[i+1] * (soil_temperature[i+2] - soil_temperature[i+1])) / heat_capacity[i+1])
     end
     dt = SVector{N}((surface, internal..., lower_boundary))
 

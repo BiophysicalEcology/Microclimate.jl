@@ -8,8 +8,8 @@ using Test
 testdir = realpath(joinpath(dirname(pathof(Microclimate)), "../test"))
 
 # read in output from NicheMapR and input variables
-soiltemps_nmr = (DataFrame(CSV.File("$testdir/data/soil_monthly_snow.csv"))[:, 4:13]) .* u"°C"
-metout_nmr = DataFrame(CSV.File("$testdir/data/metout_monthly_snow.csv"))
+soiltemps_raw = DataFrame(CSV.File("$testdir/data/soil_monthly_snow.csv"))[:, 4:13]
+metout_nmr = DataFrame(CSV.File("$testdir/data/metout_monthly_snow.csv"; missingstring="NA"))
 microinput_vec = DataFrame(CSV.File("$testdir/data/init_monthly_snow/microinput.csv"))[:, 2]
 
 names = [
@@ -87,7 +87,7 @@ environment_daily = DailyTimeseries(;
     soil_wetness = (DataFrame(CSV.File("$testdir/data/init_monthly_snow/PCTWET.csv"))[days2do, 2] * 1.0) ./ 100.0, # daily soil wetness (fractional)
     surface_emissivity = (DataFrame(CSV.File("$testdir/data/init_monthly_snow/SLES.csv"))[days2do, 2] * 1.0), # - surface emissivity
     cloud_emissivity = (DataFrame(CSV.File("$testdir/data/init_monthly_snow/SLES.csv"))[days2do, 2] * 1.0), # - cloud emissivity
-    rainfall = ((DataFrame(CSV.File("$testdir/data/init_monthly_snow/rain.csv"))[days2do, 2] * 1.0) / 1000)u"kg/m^2", # monthly total rainfall
+    rainfall = (DataFrame(CSV.File("$testdir/data/init_monthly_snow/rain.csv"))[days2do, 2] * 1.0)u"kg/m^2", # monthly total rainfall (mm = kg/m²)
     deep_soil_temperature = (DataFrame(CSV.File("$testdir/data/init_monthly_snow/tannulrun.csv"))[days2do, 2] * 1.0)u"°C", # daily deep soil temperatures
     leaf_area_index = fill(0.1, length(days)),
 )
@@ -119,18 +119,29 @@ time_mode = _daily ? ConsecutiveDayMode(; spinup_first_day=_spinup) : NonConsecu
 # Set up convergence strategy
 convergence = FixedSoilTemperatureIterations(Int(microinput[:ndmax]))
 
+snow_model = SnowModel(;
+    snow_temperature_threshold = microinput[:snowtemp] * u"°C",
+    snow_density = microinput[:snowdens] * u"g/cm^3",
+    snow_melt_factor = microinput[:snowmelt],
+    undercatch = microinput[:undercatch],
+    rain_multiplier = microinput[:rainmult],
+    rain_melt_factor = microinput[:rainmelt],
+    density_function = (microinput[:densfun1], microinput[:densfun2], microinput[:densfun3], microinput[:densfun4]),
+    snow_conductivity = microinput[:snowcond] * u"W/m/K",
+    canopy_interception = microinput[:intercept],
+    grass_shade = Bool(Int(microinput[:grasshade])),
+)
+
 # now try the simulation function
 problem = MicroProblem(;
-    # locations, times, depths and heights
     latitude = longlat[2]*1.0u"°",
-    days = days[days2do], # days of year for solar_radiation
-    hours = collect(0.0:1:23.0), # hour of day for solar_radiation
+    days = days[days2do],
+    hours = collect(0.0:1:23.0),
     depths,
-    heights, # air nodes for temperature, wind speed and humidity profile
-    # Objects defined above
+    heights,
     solar_model,
     solar_terrain,
-    micro_terrain, #TODO combine terrains via a generic terrain in BiophysicalEcologyBase
+    micro_terrain,
     soil_moisture_model,
     soil_thermal_model,
     environment_minmax,
@@ -138,46 +149,40 @@ problem = MicroProblem(;
     environment_hourly,
     time_mode,
     convergence,
-    hourly_rainfall = Bool(Int(microinput[:rainhourly])), # use hourly rainfall?
-    # initial conditions
-    initial_soil_temperature = nothing, # initial soil temperature
-    initial_soil_moisture = (Array(DataFrame(CSV.File("$testdir/data/init_monthly_snow/moists.csv"))[1:10, 2]) .* 1.0), # initial soil moisture
+    hourly_rainfall = Bool(Int(microinput[:rainhourly])),
+    initial_soil_temperature = nothing,
+    initial_soil_moisture = (Array(DataFrame(CSV.File("$testdir/data/init_monthly_snow/moists.csv"))[1:10, 2]) .* 1.0),
+    snow_model,
 )
 
-# now try the simulation function
 @time micro_out = Microclimate.solve(problem);
 
 # subset NicheMapR predictions
-vel1cm_nmr = collect(metout_nmr[:, 8]) .* 1u"m/s"
 vel2m_nmr = collect(metout_nmr[:, 9]) .* 1u"m/s"
-ta1cm_nmr = collect(metout_nmr[:, 4] .+ 273.15) .* 1u"K"
-ta2m_nmr = collect(metout_nmr[:, 5] .+ 273.15) .* 1u"K"
-rh1cm_nmr = collect(metout_nmr[:, 6]) ./ 100.0
 rh2m_nmr = collect(metout_nmr[:, 7]) ./ 100.0
 tskyC_nmr = collect(metout_nmr[:, 15]) .* u"°C"
 solr_nmr = collect(metout_nmr[:, 14]) .* u"W/m^2"
-snowfall_nmr = collect(metout_nmr[:, 18]) .* u"cm/hr"
-snowdepth_nmr = collect(metout_nmr[:, 19]) .* u"cm"
-snowdensity_nmr = collect(metout_nmr[:, 20]) .* u"g/cm^3"
+# Snow columns may contain missing values (NA in R output)
+snowfall_nmr = metout_nmr[:, 18]
+snowdepth_nmr = metout_nmr[:, 19]
+snowdensity_nmr = metout_nmr[:, 20]
 
-air_temperature_matrix = hcat([p.air_temperature for p in micro_out.profile]...)'
-humidity_matrix = hcat([p.relative_humidity for p in micro_out.profile]...)'
-wind_matrix = hcat([p.wind_speed for p in micro_out.profile]...)'
+air_temperature_matrix = micro_out.profile.air_temperature
+humidity_matrix = micro_out.profile.relative_humidity
+wind_matrix = micro_out.profile.wind_speed
 
-# TODO uncomment tests once snow model implemented
+# Find rows where NicheMapR has non-missing snow data (first hour of each day)
+snow_valid = .!ismissing.(snowdepth_nmr)
+
 @testset "runmicro comparisons" begin
-    #@test humidity_matrix[:, 1] ≈ rh1cm_nmr rtol=1e-1
     @test humidity_matrix[:, 2] ≈ rh2m_nmr rtol=1e-8
-    #@test wind_matrix[:, 1] ≈ vel1cm_nmr rtol=1e-2
     @test wind_matrix[:, 2] ≈ vel2m_nmr rtol=1e-8
-    #@test u"K".(air_temperature_matrix[:, 1]) ≈ ta1cm_nmr rtol=1e-3
-    #@test u"K".(air_temperature_matrix[:, 2]) ≈ ta2m_nmr rtol=1e-8
     @test micro_out.sky_temperature ≈ u"K".(tskyC_nmr) rtol=1e-7
     @test micro_out.global_radiation ≈ solr_nmr rtol=1e-4
-    #@test all(isapprox.(micro_out.soil_temperature, u"K".(Matrix(soiltemps_nmr)); rtol=1e-2))
-    #@test micro_out.snow_fall ≈ snowfall_nmr rtol=1e-4
-    #@test micro_out.snow_depth ≈ snowdepth_nmr rtol=1e-4
-    #@test micro_out.snow_density ≈ snowdensity_nmr rtol=1e-4
+    # Snow outputs (compare only non-missing reference values)
+    @test ustrip.(u"cm/hr", micro_out.snow_fall[snow_valid]) ≈ Float64.(snowfall_nmr[snow_valid]) rtol=1e-4
+    @test ustrip.(u"cm", micro_out.snow_depth[snow_valid]) ≈ Float64.(snowdepth_nmr[snow_valid]) rtol=1e-4
+    @test ustrip.(u"g/cm^3", micro_out.snow_density[snow_valid]) ≈ Float64.(snowdensity_nmr[snow_valid]) rtol=1e-4
 end
 
 # Visual comparisons — run manually (not in CI)

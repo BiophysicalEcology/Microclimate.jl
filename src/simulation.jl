@@ -12,7 +12,7 @@ Microclimate simulation problem specification.
 - `diffuse_fraction_model`: `ErbsDiffuseFraction()` (default)
 - `vapour_pressure_equation`: `GoffGratch()` (default), `Teten()`, or `Huang()`
 """
-@kwdef struct MicroProblem{D,H,Dep,Ht,Lat,SM,ST,MT,SMM,STM,EMM,EH,ED,IST,ISM,VP,SOS,SOK,TM,Conv,DFM}
+@kwdef struct MicroProblem{D,H,Dep,Ht,Lat,SM,ST,MT,SMM,STM,EMM,EH,ED,IST,ISM,VP,SOS,SOK,TM,Conv,DFM,SNM}
     # locations, times, depths and heights
     days::D = [15, 46, 74, 105, 135, 166, 196, 227, 258, 288, 319, 349] # days of year to simulate - TODO leap years - why not use real dates?
     hours::H = collect(0.0:1:23.0) # hour of day for solar_radiation
@@ -43,6 +43,7 @@ Microclimate simulation problem specification.
     convergence::Conv = FixedSoilTemperatureIterations(3) # FixedSoilTemperatureIterations or SoilTemperatureConvergenceTolerance
     diffuse_fraction_model::DFM = ErbsDiffuseFraction()
     hourly_rainfall::Bool = false # use hourly rainfall?
+    snow_model::SNM = NoSnow()
 end
 
 function example_microclimate_problem(;
@@ -164,7 +165,7 @@ reinit!(cache, modified_problem)
 output = solve!(cache)
 ```
 """
-mutable struct MicroCache{MP<:MicroProblem,O<:MicroResult,SR,B,I,SM,N,ND,SP,PB}
+mutable struct MicroCache{MP<:MicroProblem,O<:MicroResult,SR,B,I,SM,N,ND,SP,PB,SS,SC}
     problem::MP
     output::O
     solar_radiation_out::SR
@@ -175,60 +176,77 @@ mutable struct MicroCache{MP<:MicroProblem,O<:MicroResult,SR,B,I,SM,N,ND,SP,PB}
     nodes_day::ND
     ∑phase::SP
     profile_buffers::PB
+    snow_state::SS
+    snow_scratch::SC
 end
 
 function CommonSolve.init(mp::MicroProblem)
     (; days, hours, depths, heights) = mp
+    snow_model = mp.snow_model
+    n_snow = n_snow_nodes(snow_model)
     ndays = length(days)
     nhours = length(hours)
     nsteps = ndays * nhours
-    num_nodes = length(depths)
+    num_soil_nodes = length(depths)
+    num_ode_nodes = n_snow + num_soil_nodes
 
     # Solar radiation (allocated once, recomputed on each solve!)
     solar_radiation_out = solve_solar(mp)
 
-    # Output arrays
-    output = MicroResult(nsteps, num_nodes, length(heights), solar_radiation_out)
+    # Output arrays (always soil-node sized)
+    output = MicroResult(nsteps, num_soil_nodes, length(heights), solar_radiation_out)
 
-    # Soil buffers
-    nodes_day = zeros(num_nodes, ndays)
-    nodes_day[1, 1:ndays] .= num_nodes
+    # Snow state and scratch
+    snow_state = initial_snow_state(snow_model)
+    snow_scratch = allocate_snow_scratch(snow_model, nsteps, num_ode_nodes, depths)
+
+    # Soil buffers (unchanged — all soil-node sized)
+    nodes_day = zeros(num_soil_nodes, ndays)
+    nodes_day[1, 1:ndays] .= num_soil_nodes
     nodes = nodes_day[:, 1]
     buffers = (;
         profile = allocate_profile(heights),
-        soil_energy_balance = allocate_soil_energy_balance(num_nodes),
-        soil_properties = allocate_soil_properties(nodes, mp.soil_thermal_model),
-        phase_transition = allocate_phase_transition(length(depths)),
-        soil_water_balance = allocate_soil_water_balance(num_nodes),
+        soil_energy_balance = allocate_soil_energy_balance(num_ode_nodes),
+        soil_properties = allocate_soil_properties(zeros(num_ode_nodes), mp.soil_thermal_model),
+        phase_transition = allocate_phase_transition(num_soil_nodes),
+        soil_water_balance = allocate_soil_water_balance(num_soil_nodes),
     )
 
-    # ODE integrator
+    # ODE integrator — sized for the combined (snow + soil) vector
     soil_moisture = collect(mp.initial_soil_moisture)
-    ∑phase = zeros(typeof(1.0u"J"), num_nodes)
-    # T0 here is just a prototype for the ODE integrator allocation;
-    # solve_soil! will set the real initial condition.
-    T0 = if isnothing(mp.initial_soil_temperature)
-        SVector(ntuple(_ -> 280.0u"K", num_nodes))
+    ∑phase = zeros(typeof(1.0u"J"), num_soil_nodes)
+    T0_soil = if isnothing(mp.initial_soil_temperature)
+        SVector(ntuple(_ -> 280.0u"K", num_soil_nodes))
     else
-        SVector(ntuple(i -> mp.initial_soil_temperature[i], num_nodes))
+        SVector(ntuple(i -> mp.initial_soil_temperature[i], num_soil_nodes))
     end
+    T0_snow = SVector(ntuple(_ -> u"K"(0.0u"°C"), n_snow))
+    T0_ode = vcat(T0_snow, T0_soil)
+
+    # Build prototype depths for ODE (combined snow + soil)
+    if n_snow > 0
+        depths_proto = collect(combined_depths(snow_model, snow_state, snow_scratch, depths))
+    else
+        depths_proto = collect(depths)
+    end
+
     environment_day = get_day(mp.environment_daily, 1)
     environment_instant = get_instant(environment_day, mp.environment_hourly, output, soil_moisture, 1)
     longwave_sky = precompute_longwave_sky(; micro_terrain=mp.micro_terrain, environment_instant, vapour_pressure_equation=mp.vapour_pressure_equation)
     inputs_proto = SoilEnergyInputs(;
         forcing=forcing_day(solar_radiation_out, output, 1),
-        buffers, soil_thermal_model=mp.soil_thermal_model, depths, heights,
+        buffers, soil_thermal_model=mp.soil_thermal_model, depths=depths_proto, heights,
         solar_terrain=mp.solar_terrain, micro_terrain=mp.micro_terrain,
-        nodes, environment_instant,
+        nodes=zeros(num_ode_nodes), environment_instant,
         soil_wetness=0.0, vapour_pressure_equation=mp.vapour_pressure_equation,
-        longwave_sky,
+        longwave_sky, albedo=mp.solar_terrain.albedo,
     )
-    ode_integrator = allocate_ode_integrator(T0, inputs_proto, mp.soil_ode_solver, mp.soil_ode_kwargs)
+    ode_integrator = allocate_ode_integrator(T0_ode, inputs_proto, mp.soil_ode_solver, mp.soil_ode_kwargs)
 
     # Profile buffers for solve_air!
     profile_buffers = allocate_profile(heights)
 
-    return MicroCache(mp, output, solar_radiation_out, buffers, ode_integrator, soil_moisture, nodes, nodes_day, ∑phase, profile_buffers)
+    return MicroCache(mp, output, solar_radiation_out, buffers, ode_integrator, soil_moisture, nodes, nodes_day, ∑phase, profile_buffers, snow_state, snow_scratch)
 end
 
 function CommonSolve.solve!(cache::MicroCache)
@@ -352,6 +370,10 @@ end
 function solve_soil!(cache::MicroCache)
     mp = cache.problem
     (; days, hours, depths, heights) = mp
+    snow_model = mp.snow_model
+    n_snow = n_snow_nodes(snow_model)
+    snow_state = cache.snow_state
+    snow_scratch = cache.snow_scratch
     output = cache.output
     solar_radiation_out = cache.solar_radiation_out
     buffers = cache.buffers
@@ -368,28 +390,38 @@ function solve_soil!(cache::MicroCache)
 
     ndays = length(days)
     nhours = length(hours)
-    num_nodes = length(depths) # number of soil nodes for temperature and soil moisture calcs
+    num_soil_nodes = length(depths)
 
-    # initial conditions
+    # initial conditions — T0 is always SVector{N_soil}
     if independent_days(time_mode) && isnothing(initial_soil_temperature)
-        # TODO below we add the first value to the other 24 so that it mimics the Fortran 25h day but
-        # ultimately we should remove that extra value
         t = mean(u"K", [view(output.reference_temperature, 1:nhours); output.reference_temperature[1]])
-        T0 = SVector(ntuple(_ -> t, num_nodes))
+        T0 = SVector(ntuple(_ -> t, num_soil_nodes))
     else
-        if num_nodes != length(initial_soil_temperature)
+        if num_soil_nodes != length(initial_soil_temperature)
             error("Initial soil temperature must match length of 'depths'")
         end
-        T0 = SVector(ntuple(i -> initial_soil_temperature[i], num_nodes))
+        T0 = SVector(ntuple(i -> initial_soil_temperature[i], num_soil_nodes))
     end
 
+    # Snow temperature — separate SVector{N_snow}, or nothing for NoSnow
+    T_snow = n_snow > 0 ? SVector(ntuple(_ -> u"K"(0.0u"°C"), n_snow)) : nothing
+
     # Reset pre-allocated scratch arrays
-    nodes_day[1, 1:ndays] .= num_nodes
+    nodes_day[1, 1:ndays] .= num_soil_nodes
     ∑phase .= 0.0u"J"
     soil_moisture .= initial_soil_moisture
+    snow_state = initial_snow_state(snow_model)
+    reset_snow_scratch!(snow_model, snow_scratch)
 
     nodes .= nodes_day[:, 1]
-    update_soil_properties!(output, buffers.soil_properties, soil_thermal_model;
+    soil_prop_view = if n_snow > 0
+        (; bulk_thermal_conductivity = view(buffers.soil_properties.bulk_thermal_conductivity, n_snow+1:n_snow+num_soil_nodes),
+           bulk_heat_capacity = view(buffers.soil_properties.bulk_heat_capacity, n_snow+1:n_snow+num_soil_nodes),
+           bulk_density = view(buffers.soil_properties.bulk_density, n_snow+1:n_snow+num_soil_nodes))
+    else
+        buffers.soil_properties
+    end
+    update_soil_properties!(output, soil_prop_view, soil_thermal_model;
         soil_temperature=T0, soil_moisture, atmospheric_pressure=101325.0u"Pa", step=1
     )
 
@@ -405,8 +437,8 @@ function solve_soil!(cache::MicroCache)
     longwave_sky = precompute_longwave_sky(; micro_terrain, environment_instant, vapour_pressure_equation)
 
     # simulate all days
-    pool = 0.0u"kg/m^2" # initialise depth of pooling water TODO make this an init option
-    niter_moist = ustrip(u"s^-1", 3600 / moist_step) # TODO use a solver for soil moisture calc
+    pool = 0.0u"kg/m^2"
+    niter_moist = ustrip(u"s^-1", 3600 / moist_step)
     infil_out = nothing
     for j in 1:ndays
         iday = j
@@ -416,61 +448,135 @@ function solve_soil!(cache::MicroCache)
         niter = iterations_for_day(time_mode, convergence, j)
         if independent_days(time_mode)
             ∑phase .= 0.0u"J"
-            sub2 = (iday*nhours-nhours+1):(iday*nhours) # for getting mean monthly over the 25 hrs as in fortran version
+            sub2 = (iday*nhours-nhours+1):(iday*nhours)
             if isnothing(initial_soil_temperature)
                 t = mean(u"K", [output.reference_temperature[sub2]; output.reference_temperature[sub2][1]])
-                T0 = SVector(ntuple(_ -> t, num_nodes))
+                T0 = SVector(ntuple(_ -> t, num_soil_nodes))
             else
-                T0 = SVector(ntuple(i -> initial_soil_temperature[i], num_nodes))
+                T0 = SVector(ntuple(i -> initial_soil_temperature[i], num_soil_nodes))
+            end
+            if n_snow > 0
+                T_snow = SVector(ntuple(_ -> u"K"(0.0u"°C"), n_snow))
             end
             reset_day_soil_moisture!(moisture_mode, soil_moisture, initial_soil_moisture, j)
+            snow_state = initial_snow_state(snow_model)
+            reset_snow_scratch!(snow_model, snow_scratch)
         end
-        T0 = setindex(T0, environment_instant.deep_soil_temperature, num_nodes) # set deepest node to boundary condition
+        T0 = setindex(T0, environment_instant.deep_soil_temperature, num_soil_nodes)
         use_multi_iter  = may_iterate(convergence)
         iter            = 0
         is_last_iter    = false
-        T0_prev_start   = T0  # T0 at start of the previous outer iteration (for convergence check)
+        T0_prev_start   = T0
         while !is_last_iter
             iter += 1
-            T0_iter_start = T0  # save for next iteration's convergence check
+            T0_iter_start = T0
             is_last_iter = is_converged(convergence, iter, niter, T0, T0_prev_start)
             T0_prev_start = T0_iter_start
-            ∑phase .= 0.0u"J" # TODO decide whether this should happen and fix in Fortran
-            for i in 1:length(hours) # loop through hours of day
+            ∑phase .= 0.0u"J"
+            T0_before = T0
+            T_snow_before = T_snow
+            for i in 1:length(hours)
                 step = (j - 1) * length(hours) + i
                 environment_instant = get_instant(environment_day, mp.environment_hourly, output, soil_moisture, step)
-                longwave_sky = precompute_longwave_sky(; micro_terrain, environment_instant, vapour_pressure_equation)
-                inputs = SoilEnergyInputs(; forcing, buffers, soil_thermal_model, depths, heights, solar_terrain, micro_terrain, nodes, environment_instant, soil_wetness=get_soil_wetness(moisture_mode, environment_instant), vapour_pressure_equation, longwave_sky)
-                # Precompute soil properties once per hour using T0; ODE reads buffers directly
-                soil_properties!(buffers.soil_properties, soil_thermal_model;
-                    soil_temperature=T0, soil_moisture,
-                    atmospheric_pressure=environment_instant.atmospheric_pressure,
-                    vapour_pressure_equation,
+
+                # ── Snow surface overrides ──
+                overrides = snow_surface_overrides(snow_model, snow_state, snow_scratch, step)
+                albedo = isnothing(overrides.albedo) ? solar_terrain.albedo : overrides.albedo
+                effective_wetness = isnothing(overrides.soil_wetness) ? get_soil_wetness(moisture_mode, environment_instant) : overrides.soil_wetness
+                env_for_longwave = isnothing(overrides.shade) ? environment_instant : merge(environment_instant, (; shade=overrides.shade))
+
+                longwave_sky = precompute_longwave_sky(; micro_terrain, environment_instant=env_for_longwave, vapour_pressure_equation)
+
+                # ── Compute thermal properties ──
+                # buffers.soil_properties is N_total-sized (N_snow + N_soil).
+                # Soil properties → positions N_snow+1:end
+                # Snow properties → positions 1:N_snow (when active)
+                if n_snow > 0
+                    soil_view = (;
+                        bulk_thermal_conductivity = view(buffers.soil_properties.bulk_thermal_conductivity, n_snow+1:n_snow+num_soil_nodes),
+                        bulk_heat_capacity = view(buffers.soil_properties.bulk_heat_capacity, n_snow+1:n_snow+num_soil_nodes),
+                        bulk_density = view(buffers.soil_properties.bulk_density, n_snow+1:n_snow+num_soil_nodes),
+                    )
+                    soil_properties!(soil_view, soil_thermal_model;
+                        soil_temperature=T0, soil_moisture,
+                        atmospheric_pressure=environment_instant.atmospheric_pressure,
+                        vapour_pressure_equation,
+                    )
+                    # Write snow properties into positions 1:N_snow
+                    snow_state = write_snow_properties!(snow_model, snow_state, snow_scratch, T_snow, buffers.soil_properties,
+                        environment_instant.atmospheric_pressure, vapour_pressure_equation)
+                    # Build combined depth vector
+                    compute_effective_depths!(snow_model, snow_state, snow_scratch, depths)
+                    ode_depths = snow_scratch.effective_depths
+                else
+                    soil_properties!(buffers.soil_properties, soil_thermal_model;
+                        soil_temperature=T0, soil_moisture,
+                        atmospheric_pressure=environment_instant.atmospheric_pressure,
+                        vapour_pressure_equation,
+                    )
+                    ode_depths = depths
+                end
+
+                inputs = SoilEnergyInputs(; forcing, buffers, soil_thermal_model,
+                    depths=ode_depths, heights, solar_terrain, micro_terrain,
+                    nodes=n_snow > 0 ? zeros(n_snow + num_soil_nodes) : nodes,
+                    environment_instant, soil_wetness=effective_wetness,
+                    vapour_pressure_equation, longwave_sky, albedo,
                 )
-                if i == 1 # make first hour of day equal last hour of previous iteration
+
+                # ── Combine snow + soil into ODE state vector ──
+                T0_ode = n_snow > 0 ? vcat(T_snow, T0) : T0
+
+                if i == 1
                     if use_multi_iter
-                        ∑phase .= 0.0u"J" # TODO decide whether this should happen and fix in Fortran
+                        ∑phase .= 0.0u"J"
                         T0_before = T0
-                        T0 = get_soil_temp_timeline!(ode_integrator, T0, i + 1, inputs)
-                        if is_last_iter # TODO this should happen every time but at present it doesn't in Fortran version
-                            (; accumulated_latent_heat, phase_change_heat, temperature) = phase_transition!(buffers.phase_transition;
-                                temperatures=T0, temperatures_past=T0_before, accumulated_latent_heat=∑phase, soil_moisture, depths
-                            )
+                        T_snow_before = T_snow
+                        T_result = get_soil_temp_timeline!(ode_integrator, T0_ode, i + 1, inputs)
+                        # Split result back
+                        if n_snow > 0
+                            T_snow = SVector(ntuple(k -> T_result[k], n_snow))
+                            T0 = SVector(ntuple(k -> T_result[n_snow + k], num_soil_nodes))
+                        else
+                            T0 = T_result
+                        end
+                        if is_last_iter
+                            (; accumulated_latent_heat, phase_change_heat, temperature) = apply_phase_transition(snow_model, T0, T0_before, buffers.phase_transition, ∑phase, soil_moisture, depths)
                             ∑phase = accumulated_latent_heat
                             T0 = temperature
                         end
                     end
                 else
                     T0_before = T0
-                    T0 = get_soil_temp_timeline!(ode_integrator, T0, i, inputs)
-                    if is_last_iter # TODO this should happen every time but at present it doesn't in Fortran version
-                        (; accumulated_latent_heat, phase_change_heat, temperature) = phase_transition!(buffers.phase_transition;
-                            temperatures=T0, temperatures_past=T0_before, accumulated_latent_heat=∑phase, soil_moisture, depths
-                        )
+                    T_snow_before = T_snow
+                    T_result = get_soil_temp_timeline!(ode_integrator, T0_ode, i, inputs)
+                    if n_snow > 0
+                        T_snow = SVector(ntuple(k -> T_result[k], n_snow))
+                        T0 = SVector(ntuple(k -> T_result[n_snow + k], num_soil_nodes))
+                    else
+                        T0 = T_result
+                    end
+                    if is_last_iter
+                        (; accumulated_latent_heat, phase_change_heat, temperature) = apply_phase_transition(snow_model, T0, T0_before, buffers.phase_transition, ∑phase, soil_moisture, depths)
                         ∑phase = accumulated_latent_heat
                         T0 = temperature
                     end
                 end
+
+                # ── Snow post-ODE: mass balance, clamping, node activation ──
+                # Only on final iteration (Fortran OSUB returns before snow code on non-final iterations)
+                snowfall_hour = 0.0u"cm"
+                if n_snow > 0 && is_last_iter
+                    snow_state, snowfall_hour = update_snow(snow_model, snow_state, snow_scratch, T_snow, T_snow_before, environment_instant, step;
+                        hourly_rainfall, shade=environment_instant.shade)
+                    snow_state = snow_phase_transition(snow_model, snow_state, snow_scratch, T_snow, T_snow_before, environment_instant.atmospheric_pressure)
+                    T_snow = clamp_snow_temperatures(T_snow, snow_scratch)
+                    T_snow = freeze_new_snow(T_snow, snow_scratch, step)
+                    snow_state = activate_snow_nodes(snow_model, snow_state, snow_scratch, T_snow, step)
+                    snow_state = adjust_snow_near_nodes(snow_model, snow_state, snow_scratch, step)
+                    snow_state = activate_snow_nodes(snow_model, snow_state, snow_scratch, T_snow, step)
+                end
+
                 init_soil_obukhov!(buffers, forcing, micro_terrain, heights, T0, i)
                 rain = hourly_rainfall ? mp.environment_hourly.rainfall[step] : environment_instant.rainfall
                 pool = clamp(pool + rain, 0.0u"kg/m^2", soil_moisture_model.maxpool)
@@ -482,8 +588,13 @@ function solve_soil!(cache::MicroCache)
                     output.surface_water[step] = pool
                     output.soil_temperature[step, :] .= T0
                     output.sky_temperature[step] = longwave_sky.sky_temperature
+                    if n_snow > 0
+                        output.snow_fall[step] = uconvert(u"cm/hr", snowfall_hour / 1.0u"hr")
+                        output.snow_depth[step] = uconvert(u"cm", snow_scratch.snow_depth_hourly[step])
+                        output.snow_density[step] = uconvert(u"g/cm^3", snow_state.density)
+                    end
                     environment_instant = get_instant(environment_day, mp.environment_hourly, output, soil_moisture, step)
-                    update_soil_properties!(output, buffers.soil_properties, soil_thermal_model;
+                    update_soil_properties!(output, soil_prop_view, soil_thermal_model;
                         soil_temperature=T0, soil_moisture, atmospheric_pressure=environment_instant.atmospheric_pressure, step, vapour_pressure_equation
                     )
                 end
