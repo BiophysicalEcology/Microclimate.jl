@@ -190,6 +190,15 @@ function CommonSolve.init(mp::MicroProblem)
     # Output arrays
     output = MicroResult(nsteps, num_nodes, length(heights), solar_radiation_out)
 
+    # Fill output weather arrays with placeholder values so the prototype ODE integrator
+    # can be allocated without NaNs. Real values are set at the start of solve!.
+    fill!(output.pressure, 101325.0u"Pa")
+    fill!(output.reference_temperature, 293.0u"K")
+    fill!(output.reference_wind_speed, 1.0u"m/s")
+    fill!(output.reference_humidity, 0.5)
+    fill!(output.cloud_cover, 0.0)
+    fill!(output.global_radiation, 300.0u"W/m^2")
+
     # Soil buffers
     nodes_day = zeros(num_nodes, ndays)
     nodes_day[1, 1:ndays] .= num_nodes
