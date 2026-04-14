@@ -13,7 +13,7 @@ function soil_energy_balance(
     t::Quantity,           # timestep
 ) where U <: SVector{N} where N
     # extract parameters
-    (; forcing, buffers, heights, depths, environment_instant, solar_terrain, micro_terrain, soil_wetness, vapour_pressure_equation, longwave_sky) = p
+    (; forcing, buffers, heights, depths, environment_instant, solar_terrain, micro_terrain, soil_wetness, vapour_pressure_equation, longwave_sky, qfreze) = p
     (; layer_depths, heat_capacity, thermal_conductance) = buffers.soil_energy_balance
     (; shade) = environment_instant
     # Get environmental data at time t
@@ -28,7 +28,29 @@ function soil_energy_balance(
     # check for unstable conditions of ground surface temperature
     soil_temperature = clamped_temperature = map(t -> clamp(t, (-81.0+273.15)u"K", (85.0+273.15)u"K"), temperature_state)::U
 
-    # soil properties are precomputed once per hour in simulation.jl before the ODE solve
+    # Recompute soil/snow properties at current temperatures on every ODE sub-step,
+    # matching Fortran DSUB.f lines 274-337 which calls SOILPROPS on every evaluation.
+    n_snow = p.n_snow
+    if n_snow > 0 && !isnothing(p.snow_model)
+        soil_view = (;
+            bulk_thermal_conductivity = view(buffers.soil_properties.bulk_thermal_conductivity, n_snow+1:N),
+            bulk_heat_capacity = view(buffers.soil_properties.bulk_heat_capacity, n_snow+1:N),
+            bulk_density = view(buffers.soil_properties.bulk_density, n_snow+1:N),
+        )
+        soil_properties!(soil_view, p.soil_thermal_model;
+            soil_temperature=SVector(ntuple(k -> soil_temperature[n_snow + k], N - n_snow)),
+            soil_moisture=p.soil_moisture,
+            atmospheric_pressure, vapour_pressure_equation,
+        )
+        write_snow_properties!(p.snow_model, p.snow_state, p.snow_scratch,
+            SVector(ntuple(k -> soil_temperature[k], n_snow)),
+            buffers.soil_properties, atmospheric_pressure, vapour_pressure_equation)
+    else
+        soil_properties!(buffers.soil_properties, p.soil_thermal_model;
+            soil_temperature=soil_temperature, soil_moisture=p.soil_moisture,
+            atmospheric_pressure, vapour_pressure_equation,
+        )
+    end
     (; bulk_thermal_conductivity, bulk_heat_capacity, bulk_density) = buffers.soil_properties
 
 
@@ -43,9 +65,23 @@ function soil_energy_balance(
             thermal_conductance[i] = iszero(d2) ? zero(bulk_thermal_conductivity[1] / oneunit(d2)) : bulk_thermal_conductivity[1] / d2
         else
             Δd = layer_depths[i+1] - layer_depths[i]
-            heat_capacity[i] = volumetric_heat_capacity * (layer_depths[i+1] - layer_depths[i-1]) / 2.0
+            # Fortran DSUB.f special case: when a node sits at depth 0 with snow
+            # active (depp(i) < 1e-8 and maxsnode1 > 0), the heat capacity uses the
+            # full distance to the next node rather than the centered half-cell.
+            # This is the first active snow node acting as the surface.
+            if iszero(layer_depths[i]) && !iszero(layer_depths[i+1])
+                heat_capacity[i] = volumetric_heat_capacity * layer_depths[i+1]
+            else
+                heat_capacity[i] = volumetric_heat_capacity * (layer_depths[i+1] - layer_depths[i-1]) / 2.0
+            end
             thermal_conductance[i] = iszero(Δd) ? zero(bulk_thermal_conductivity[i] / oneunit(Δd)) : bulk_thermal_conductivity[i] / Δd
         end
+    end
+
+    # Find first active node (first with nonzero heat capacity)
+    j = 1
+    while j < N && iszero(heat_capacity[j])
+        j += 1
     end
 
     # Solar radiation
@@ -56,57 +92,70 @@ function soil_energy_balance(
         Q_solar = (Q_solar / cos_zenith) * cos_slope_zenith
     end
 
-    # Longwave radiation — use precomputed sky terms; only surface emission varies with ODE state
-    (; incoming_longwave, outgoing_coeff, ground_shade_term) = longwave_sky
-    Q_infrared = incoming_longwave - outgoing_coeff * (u"K"(soil_temperature[1]))^4 - ground_shade_term
-
-    # Conduction
-    Q_conduction = thermal_conductance[1] * (soil_temperature[2] - soil_temperature[1])
-
-    # Convection
-    log_z_ratio = log(reference_height / roughness_height + 1)
-    surface_temperature = soil_temperature[1]
-    ΔT = air_temperature - surface_temperature
-    mean_temperature = (surface_temperature + air_temperature) / 2
-    # TODO call calc_ρ_cp method specific to elevation and RH in final version but do it this way for NicheMapR comparison
-    ρ_cp = calc_ρ_cp(mean_temperature)
-    if air_temperature ≥ surface_temperature || zenith_angle ≥ 90°
-        friction_velocity = calc_friction_velocity(; reference_wind_speed=wind_speed, log_z_ratio, κ=karman_constant)
-        convective_heat_flux = calc_convection(; friction_velocity, log_z_ratio, ΔT, ρ_cp, z0=roughness_height)
-    else
-        Obukhov_out = calc_soil_obukhov(air_temperature, surface_temperature, wind_speed, roughness_height, reference_height, karman_constant; initial_obukhov_length=buffers.soil_energy_balance.obukhov_length_prev[])
-        convective_heat_flux = Obukhov_out.convective_heat_flux
-    end
-    heat_transfer_coefficient = max(abs(convective_heat_flux / (soil_temperature[1] - air_temperature)), 0.5u"W/m^2/K")
-
-    # Evaporation
+    # Longwave radiation — recompute from interpolated forcings at each ODE sub-step,
+    # matching Fortran DSUB.f lines 396-465 which recomputes at every call.
+    # Use interpolated cloud_cover (from line 20), not the hourly snapshot.
+    (; surface_emissivity, cloud_emissivity) = environment_instant
+    (; viewfactor) = micro_terrain
     wet_air_out = wet_air_properties(u"K"(air_temperature), relative_humidity, atmospheric_pressure; vapour_pressure_equation)
-    air_heat_capacity = wet_air_out.specific_heat
-    air_density = wet_air_out.density
-    mass_transfer_coefficient = (heat_transfer_coefficient / (air_heat_capacity * air_density)) * (0.71 / 0.60)^0.666
-    Q_evaporation, evaporation_mass_flux = evaporation(;
-        surface_temperature=u"K"(temperature_state[1]),
-        air_temperature=u"K"(air_temperature),
-        relative_humidity,
-        surface_relative_humidity=1.0,
-        mass_transfer_coefficient,
-        atmospheric_pressure,
-        soil_wetness,
-        saturated=false,
-        vapour_pressure_equation,
-    )
-    # Construct static vector of change in soil temperature, to return
-    # Energy balance at surface (guard zero heat capacity for inactive snow nodes)
-    surface = iszero(heat_capacity[1]) ? 0.0u"K/minute" :
-        u"K/minute"((Q_solar + Q_infrared + Q_conduction + convective_heat_flux - Q_evaporation) / heat_capacity[1])
-    # Lower boundary condition
-    lower_boundary = 0.0u"K/minute"
-    # Soil conduction for internal nodes
-    internal = ntuple(Val{N-2}()) do i
-        iszero(heat_capacity[i+1]) ? 0.0u"K/minute" :
-            u"K/minute"((thermal_conductance[i] * (soil_temperature[i] - soil_temperature[i+1]) + thermal_conductance[i+1] * (soil_temperature[i+2] - soil_temperature[i+1])) / heat_capacity[i+1])
+    _, atmospheric_longwave = atmospheric_radiation(longwave_sky.radiation_model, wet_air_out.vapour_pressure, air_temperature)
+    cloud_radiation = σ * cloud_emissivity * (u"K"(air_temperature) - 2.0u"K")^4
+    hillshade_radiation = σ * cloud_emissivity * (u"K"(air_temperature))^4
+    clear_sky_fraction = 1.0 - cloud_cover
+    longwave_radiation_sky = (atmospheric_longwave * clear_sky_fraction + cloud_radiation * cloud_cover) * (1.0 - shade)
+    longwave_radiation_vegetation = shade * hillshade_radiation
+    incoming_longwave = (longwave_radiation_sky + longwave_radiation_vegetation) * viewfactor +
+                        hillshade_radiation * (1.0 - viewfactor)
+    outgoing_coeff = (1.0 - shade) * σ * surface_emissivity
+    ground_shade_term = shade * hillshade_radiation
+    Q_infrared = incoming_longwave - outgoing_coeff * (u"K"(soil_temperature[j]))^4 - ground_shade_term
+
+    # Conduction from first active node to the node below it
+    # Fortran DSUB.f lines 483-487: on day 1 hour 1, uses T(1) instead of T(j).
+    # t == 0 minute corresponds to the very first ODE evaluation of the simulation.
+    conduction_ref = (t == 0.0u"minute" && j > 1) ? soil_temperature[1] : soil_temperature[j]
+    Q_conduction = j < N ? thermal_conductance[j] * (soil_temperature[j+1] - conduction_ref) : 0.0u"W/m^2"
+
+    # Convection and evaporation using first active node as surface
+    # Fortran DSUB.f lines 551-561: temperature safety guards before convection
+    surface_temperature = soil_temperature[j]
+    if abs(u"°C"(surface_temperature)) > 100u"°C"
+        surface_temperature = air_temperature + 1.0u"K"  # DSUB.f line 557
     end
-    dt = SVector{N}((surface, internal..., lower_boundary))
+    if surface_temperature == air_temperature
+        surface_temperature = surface_temperature + 0.1u"K"  # DSUB.f line 561: prevent divide-by-zero
+    end
+    # Fortran DSUB.f line 565: CALL EVAP(T(1),TAIR,RH,100.0D0,...) — the 100.0 is
+    # surface relative humidity (RHSURF), not wetness. PTWET comes from COMMON block.
+    Q_evaporation, convective_heat_flux = surface_convection_evaporation(;
+        surface_temperature, air_temperature, wind_speed, relative_humidity,
+        atmospheric_pressure, roughness_height, reference_height, karman_constant,
+        zenith_angle, soil_wetness, vapour_pressure_equation,
+        obukhov_length_prev=buffers.soil_energy_balance.obukhov_length_prev,
+    )
+
+    # Surface energy derivative for the first active node
+    # QFREZE: snow melt energy correction, matching Fortran DSUB.f line 567
+    surface_dtdt = u"K/minute"((Q_solar + Q_infrared + Q_conduction + convective_heat_flux + qfreze - Q_evaporation) / heat_capacity[j])
+
+    # Build derivative vector: inactive nodes follow surface, active nodes use conduction
+    # Fortran DSUB.f: the loop runs DO 10 I=2,N with the same conduction formula for all
+    # interior nodes including N. For node N, T(N) is pinned to TDS (deep soil temperature)
+    # and the formula references T(N+1). Since T(N) is pinned, DTDT(N) doesn't matter in
+    # practice. We set it to 0 since Julia's SVector has no T(N+1) element.
+    dt = SVector{N}(ntuple(Val{N}()) do i
+        if i <= j
+            # Inactive nodes (i < j) follow surface; node j IS the surface
+            surface_dtdt
+        elseif i == N
+            # Lower boundary: T(N) is pinned to deep soil temperature
+            0.0u"K/minute"
+        else
+            # Internal conduction
+            iszero(heat_capacity[i]) ? 0.0u"K/minute" :
+                u"K/minute"((thermal_conductance[i-1] * (soil_temperature[i-1] - soil_temperature[i]) + thermal_conductance[i] * (soil_temperature[i+1] - soil_temperature[i])) / heat_capacity[i])
+        end
+    end)
 
     return dt
 end
@@ -142,13 +191,51 @@ function interpolate_forcings(f, t)
     return (;
         atmospheric_pressure = f.interpolate_pressure(t_m),
         air_temperature = f.interpolate_temperature(t_m),
-        wind_speed = max(0.1u"m/s", f.interpolate_wind(t_m)),
+        wind_speed = f.interpolate_wind(t_m),
         zenith_angle = min(90.0u"°", u"°"(round(f.interpolate_zenith(t_m), digits=3))),
         solar_radiation = max(0.0u"W/m^2", f.interpolate_solar(t_m)),
         cloud_cover = clamp(f.interpolate_cloud(t_m), 0.0, 1.0),
         relative_humidity = clamp(f.interpolate_humidity(t_m), 0.0, 1.0),
         slope_zenith_angle = min(90.0u"°", f.interpolate_slope_zenith(t_m)),
     )
+end
+
+"""
+Compute convective heat flux and evaporative heat flux at the surface.
+Used by the energy balance ODE and after the ODE for snow sublimation.
+"""
+function surface_convection_evaporation(;
+    surface_temperature, air_temperature, wind_speed, relative_humidity,
+    atmospheric_pressure, roughness_height, reference_height, karman_constant,
+    zenith_angle=90.0u"°", soil_wetness, vapour_pressure_equation=GoffGratch(),
+    obukhov_length_prev=nothing,
+)
+    log_z_ratio = log(reference_height / roughness_height + 1)
+    ΔT = air_temperature - surface_temperature
+    ρ_cp = calc_ρ_cp((surface_temperature + air_temperature) / 2)
+    if air_temperature ≥ surface_temperature || zenith_angle ≥ 90°
+        friction_velocity = calc_friction_velocity(; reference_wind_speed=wind_speed, log_z_ratio, κ=karman_constant)
+        convective_heat_flux = calc_convection(; friction_velocity, log_z_ratio, ΔT, ρ_cp, z0=roughness_height)
+    else
+        initial_L = isnothing(obukhov_length_prev) ? -0.3u"m" : obukhov_length_prev[]
+        Obukhov_out = calc_soil_obukhov(air_temperature, surface_temperature, wind_speed, roughness_height, reference_height, karman_constant; initial_obukhov_length=initial_L)
+        convective_heat_flux = Obukhov_out.convective_heat_flux
+    end
+    heat_transfer_coefficient = calc_heat_transfer_coefficient(convective_heat_flux, ΔT)
+    wet_air_out = wet_air_properties(u"K"(air_temperature), relative_humidity, atmospheric_pressure; vapour_pressure_equation)
+    mass_transfer_coefficient = calc_mass_transfer_coefficient(heat_transfer_coefficient, wet_air_out.specific_heat, wet_air_out.density)
+    Q_evaporation, _ = evaporation(;
+        surface_temperature=u"K"(surface_temperature),
+        air_temperature=u"K"(air_temperature),
+        relative_humidity,
+        surface_relative_humidity=1.0,
+        mass_transfer_coefficient,
+        atmospheric_pressure,
+        soil_wetness,
+        saturated=false,
+        vapour_pressure_equation,
+    )
+    return Q_evaporation, convective_heat_flux
 end
 
 function evaporation(;
@@ -407,8 +494,12 @@ function soil_water_balance!(buffers, smm::CampbellSoilHydraulics;
         end
 
         # Thomas algorithm (Gauss elimination)
+        # Fortran INFIL.f lines 255-256: clamp tiny normalized super-diagonal values to zero
         for i in 2:num_layers-1
             normalized_super_diagonal[i] = super_diagonal[i] / diagonal[i]
+            if abs(normalized_super_diagonal[i]) < 1e-8
+                normalized_super_diagonal[i] = zero(normalized_super_diagonal[i])
+            end
             normalized_residual[i] = mass_balance_residual[i] / diagonal[i]
             diagonal[i+1] -= sub_diagonal[i+1] * normalized_super_diagonal[i]
             mass_balance_residual[i+1] -= sub_diagonal[i+1] * normalized_residual[i]
@@ -476,6 +567,7 @@ function get_soil_water_balance!(buffers, soil_moisture_model::CampbellSoilHydra
     soil_wetness,
     soil_moisture,
     vapour_pressure_equation=GoffGratch(),
+    snow_present=false,
 )
     air_temperature = environment_instant.reference_temperature
     atmospheric_pressure = environment_instant.atmospheric_pressure
@@ -519,6 +611,10 @@ function get_soil_water_balance!(buffers, soil_moisture_model::CampbellSoilHydra
     )
     latent_heat_vaporisation = enthalpy_of_vaporisation(surface_temperature)
     evaporation_potential = max(1e-7u"kg/m^2/s", Q_evaporation / latent_heat_vaporisation)
+    # Fortran OSUB.f lines 1188-1196: suppress soil evaporation when snow covers the ground
+    if snow_present
+        evaporation_potential = 1e-7u"kg/m^2/s"
+    end
 
     # run infiltration algorithm
     infil_out = soil_water_balance!(buffers.soil_water_balance, soil_moisture_model;
@@ -557,7 +653,11 @@ function get_soil_water_balance!(buffers, soil_moisture_model::CampbellSoilHydra
             soil_moisture[1] = 1 - bulk_density[1] / mineral_density[1]
         end
     end
-    soil_wetness = clamp(abs(surf_evap / (evaporation_potential * moist_step) * 1.0), 0, 1.0)
+    # Fortran OSUB.f line 1239: ptwet = surflux / (ep * timestep) * 100
+    # Uses infiltration flux (surface_water_flux), not evaporation flux.
+    # Use raw (unclamped) surface_water_flux, matching Fortran's surflux.
+    raw_surface_flux = infil_out.surface_water_flux
+    soil_wetness = clamp(abs(raw_surface_flux / (evaporation_potential * moist_step) * 1.0), 0, 1.0)
 
     return (; infil_out, soil_wetness, pool, soil_moisture)
 end
@@ -620,6 +720,11 @@ function phase_transition!(
         # ==============================
 
         # --- FREEZING (above → below 0°C) ---
+        # NOTE: this condition only fires on the exact hour the temperature crosses 0°C,
+        # matching the Fortran NicheMapR behaviour. A more physically correct approach
+        # would use `>= -tolerance` so that nodes previously clamped to 0°C continue
+        # accumulating latent heat while unfrozen water remains, but that changes the
+        # snow melt dynamics. TODO: revisit once we have NicheMapR parity.
         if (mean_temperature_past[i] > tolerance) && (mean_temperature[i] <= -tolerance)
             phase_change_heat[i] = (mean_temperature_past[i] - mean_temperature[i]) * layer_mass[i] * specific_heat_water
             accumulated_latent_heat[i] += phase_change_heat[i]

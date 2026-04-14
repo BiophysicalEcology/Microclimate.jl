@@ -162,18 +162,21 @@ end
 function write_snow_properties!(snow_model::SnowModel{N}, state::SnowState, scratch, snow_temperature,
     property_buffers, atmospheric_pressure, vapour_pressure_equation=GoffGratch(),
 ) where N
+    # Evolve density for property calculations only — do NOT update state.density here.
+    # The density update belongs in update_snow, which needs the old density for the
+    # compaction ratio (densrat = snowdens/prevden, Fortran OSUB.f line 754).
     snowdens = evolve_snow_density(snow_model, state)
-    state = setproperties(state, (; density=snowdens))
 
     (; node_depths) = scratch
 
     if state.current_depth >= snow_model.min_snow_depth
-        # Mixing ratio at 0°C
-        e_sat = wet_air_properties(273.15u"K", 1.0, atmospheric_pressure; vapour_pressure_equation).vapour_pressure
-        mixing_ratio = 0.622 * e_sat / (atmospheric_pressure - e_sat)
+        # Mixing ratio at 0°C — use wet_air_properties to match Fortran WETAIR constants
+        wap = wet_air_properties(273.15u"K", 1.0, atmospheric_pressure; vapour_pressure_equation)
+        mixing_ratio = wap.mixing_ratio
         # Specific heat: ice + humid air weighted by density fraction
+        # Fortran OSUB.f line 847: RW/1.+RW = 2*RW due to operator precedence
         density_fraction = ustrip(u"g/cm^3", snowdens)
-        specific_heat = (2100.0 * density_fraction + (1005.0 + 1820.0 * mixing_ratio) * (1.0 - density_fraction))u"J/kg/K"
+        specific_heat = (2100.0 * density_fraction + (1005.0 + 1820.0 * (mixing_ratio / 1.0 + mixing_ratio)) * (1.0 - density_fraction))u"J/kg/K"
 
         # Conductivity (Aggarwal 2009 or user-defined)
         conductivity = if snow_model.snow_conductivity > 0.0u"W/m/K"
@@ -206,21 +209,54 @@ end
 
 # ── Snow temperature operations ──────────────────────────────────────────
 
+"""
+Clamp active snow node temperatures to ≤ 0°C, and if the last snow node (N) is active
+and above 0°C, also clamp the first soil node.  Matches Fortran OSUB.f lines 976-989.
+Returns `(snow_temperature, clamp_soil_surface::Bool)`.
+"""
 function clamp_snow_temperatures(snow_temperature::SVector{N}, scratch) where N
     freeze = u"K"(0.0u"°C")
-    return SVector(ntuple(Val(N)) do i
+    clamp_soil = scratch.node_depths[N] > 0.0u"cm" && snow_temperature[N] > freeze
+    snow_temperature = SVector(ntuple(Val(N)) do i
         scratch.node_depths[i] > 0.0u"cm" && snow_temperature[i] > freeze ? freeze : snow_temperature[i]
     end)
+    return (snow_temperature, clamp_soil)
 end
 
-function freeze_new_snow(snow_temperature::SVector{N}, scratch, step) where N
+"""
+Freeze recently fallen snow nodes.  Fortran OSUB.f lines 990-1013: computes exactly
+which nodes the new snow covers (`maxsnode3`), freezes only those.  If zero nodes
+are covered, freezes the soil surface node instead.
+
+Returns `(snow_temperature, freeze_soil_surface::Bool)`.
+"""
+function freeze_new_snow(snow_model::SnowModel{N}, snow_temperature::SVector{N}, scratch, step) where N
     if step > 1 && scratch.snow_depth_hourly[step] > 0.0u"cm" && scratch.snow_depth_hourly[step - 1] < 1e-8u"cm"
         freeze = u"K"(0.0u"°C")
-        return SVector(ntuple(Val(N)) do i
-            snow_temperature[i] > freeze ? freeze : snow_temperature[i]
-        end)
+        depth = scratch.snow_depth_hourly[step]
+        # Count how many node thresholds the new snow exceeds
+        maxsnode3 = 0
+        for i in 1:N
+            if depth > snow_model.snow_node_thresholds[i]
+                maxsnode3 = i
+            end
+        end
+        if maxsnode3 == 0
+            # Snow is shallower than all thresholds — freeze soil surface (node 9 in Fortran)
+            return (snow_temperature, true)
+        else
+            # Freeze only the specific snow nodes that the new snow covers
+            # Fortran: do i=9-maxsnode3, 8-maxsnode3 → Julia indices: (N+1-maxsnode3):(N-maxsnode3)
+            # But since N=8, this is (9-maxsnode3):(8-maxsnode3), matching Fortran's node mapping
+            lo = N + 1 - maxsnode3
+            hi = N - maxsnode3
+            snow_temperature = SVector(ntuple(Val(N)) do i
+                (i >= lo && i <= hi && snow_temperature[i] > freeze) ? freeze : snow_temperature[i]
+            end)
+            return (snow_temperature, false)
+        end
     end
-    return snow_temperature
+    return (snow_temperature, false)
 end
 
 # ── Snow albedo ──────────────────────────────────────────────────────────
@@ -256,7 +292,7 @@ function snow_surface_overrides(snow_model::SnowModel, state::SnowState, scratch
     if step > 1 && scratch.snow_depth_hourly[step - 1] > 0.0u"cm"
         return (;
             albedo    = snow_albedo(state.days_since_snow),
-            emissivity = nothing,
+            emissivity = 0.98,  # Fortran OSUB.f line 1028: SLE = 0.98
             soil_wetness = 1.0,
             shade = snow_model.grass_shade ? 0.0 : nothing,
         )
@@ -283,24 +319,28 @@ end
 # Empirical formula: weighted average of ice and humid air specific heats.
 
 function snow_specific_heat(snow_density, atmospheric_pressure)
-    e_sat = wet_air_properties(273.15u"K", 1.0, atmospheric_pressure).vapour_pressure
-    mixing_ratio = 0.622 * e_sat / (atmospheric_pressure - e_sat)
+    wap = wet_air_properties(273.15u"K", 1.0, atmospheric_pressure)
+    mixing_ratio = wap.mixing_ratio
     density_fraction = ustrip(u"g/cm^3", snow_density)
-    return (2100.0 * density_fraction + (1005.0 + 1820.0 * mixing_ratio) * (1.0 - density_fraction))u"J/kg/K"
+    # Fortran OSUB.f line 847: RW/1.+RW = 2*RW due to operator precedence
+    return (2100.0 * density_fraction + (1005.0 + 1820.0 * (mixing_ratio / 1.0 + mixing_ratio)) * (1.0 - density_fraction))u"J/kg/K"
 end
 
 # ── Thermal melt ─────────────────────────────────────────────────────────
 
 function snow_thermal_melt(snow_model::SnowModel{N}, state::SnowState, scratch,
     snow_temperature, snow_temperature_before, atmospheric_pressure,
+    soil_surface_temperature, soil_surface_temperature_before,
 ) where N
     maxsnode = state.active_nodes
     snowdens = state.density
     (; mean_temperature, mean_temperature_past) = scratch
 
     for i in 1:N
-        mean_temperature[i] = u"°C"((snow_temperature[i] + snow_temperature[min(N, i + 1)]) / 2)
-        mean_temperature_past[i] = u"°C"((snow_temperature_before[i] + snow_temperature_before[min(N, i + 1)]) / 2)
+        t_below = i < N ? snow_temperature[i + 1] : soil_surface_temperature
+        t_below_past = i < N ? snow_temperature_before[i + 1] : soil_surface_temperature_before
+        mean_temperature[i] = u"°C"((snow_temperature[i] + t_below) / 2)
+        mean_temperature_past[i] = u"°C"((snow_temperature_before[i] + t_below_past) / 2)
     end
 
     specific_heat = snow_specific_heat(snowdens, atmospheric_pressure)
@@ -318,26 +358,35 @@ function snow_thermal_melt(snow_model::SnowModel{N}, state::SnowState, scratch,
         end
     end
 
-    return uconvert(u"cm", total_melt / snowdens)
+    # Fortran converts g/m² to cm via *0.0001, i.e. divides by ice density (1 g/cm³)
+    return uconvert(u"cm", total_melt / 1.0u"g/cm^3")
 end
 
 # ── Snow phase transition (freezing within snowpack) ─────────────────────
 
-snow_phase_transition(::NoSnow, args...) = nothing
+snow_phase_transition(::NoSnow, args...) = (nothing, nothing, nothing)
 function snow_phase_transition(snow_model::SnowModel{N}, state::SnowState, scratch,
-    snow_temperature, snow_temperature_before, atmospheric_pressure,
+    snow_temperature::SVector{N}, snow_temperature_before, atmospheric_pressure,
+    soil_surface_temperature,
 ) where N
     maxsnode = state.active_nodes
     (; mean_temperature, mean_temperature_past, phase_heat, layer_mass) = scratch
 
-    state.current_depth < 200.0u"cm" || return state
+    if state.current_depth >= 200.0u"cm"
+        return (state, snow_temperature, soil_surface_temperature)
+    end
 
     specific_heat = snow_specific_heat(state.density, atmospheric_pressure)
+    freeze = u"K"(0.0u"°C")
+
+    # Track which nodes to clamp to 0°C (Fortran: t(cnd)=0, t(cnd+1)=0)
+    clamp_to_zero = fill(false, N)
+    clamp_soil_surface = false
 
     phase_heat .= 0.0u"J/m^2"
     layer_mass .= 0.0u"kg/m^2"
     for j in 1:(maxsnode + 1)
-        j < N && j != maxsnode + 1 || continue
+        j <= N || continue
         (; node_index, thickness) = snow_layer_geometry(snow_model, state, scratch, j)
         mass = uconvert(u"kg/m^2", thickness * state.density)
 
@@ -345,24 +394,62 @@ function snow_phase_transition(snow_model::SnowModel{N}, state::SnowState, scrat
             layer_mass[node_index] = max(0.0u"kg/m^2", mass)
             phase_heat[node_index] = uconvert(u"J/m^2",
                 (mean_temperature_past[node_index] - mean_temperature[node_index]) * specific_heat * layer_mass[node_index])
+            # Fortran OSUB.f lines 876-895: set t(cnd)=0, t(cnd+1)=0
+            clamp_to_zero[node_index] = true
+            if node_index < N
+                clamp_to_zero[node_index + 1] = true
+            else
+                # cnd+1 is the first soil node
+                clamp_soil_surface = true
+            end
         end
+    end
+
+    # Apply temperature clamping to 0°C
+    snow_temperature = SVector(ntuple(Val(N)) do i
+        clamp_to_zero[i] ? freeze : snow_temperature[i]
+    end)
+    if clamp_soil_surface
+        soil_surface_temperature = freeze
     end
 
     new_sum_phase = state.sum_phase + sum(phase_heat)
     total_mass = sum(layer_mass)
+
+    # Fortran OSUB.f lines 914-931: if sumphase exceeds latent heat budget,
+    # set nodes AND their neighbors to -0.5°C, reset individual qphase entries,
+    # and reset phase accumulator.
     if total_mass > 0.0u"kg/m^2" && new_sum_phase > uconvert(u"J/m^2", LATENT_HEAT_FUSION * total_mass)
+        freeze_overshoot = u"K"(-0.5u"°C")
+        # Mark nodes that overshoot AND their neighbors (Fortran: t(cnd)=-0.5, t(cnd+1)=-0.5)
+        overshoot_node = fill(false, N)
+        for i in 1:N
+            if snow_temperature[i] < freeze - 1e-8u"K" && phase_heat[i] > 0.0u"J/m^2"
+                overshoot_node[i] = true
+                phase_heat[i] = 0.0u"J/m^2"  # Fortran: qphase(cnd)=0
+                if i < N
+                    overshoot_node[i + 1] = true
+                end
+            end
+        end
+        snow_temperature = SVector(ntuple(Val(N)) do i
+            overshoot_node[i] ? freeze_overshoot : snow_temperature[i]
+        end)
         new_sum_phase = 0.0u"J/m^2"
     end
-    return setproperties(state, (; sum_phase=new_sum_phase))
+
+    return (setproperties(state, (; sum_phase=new_sum_phase)), snow_temperature, soil_surface_temperature)
 end
 
 # ── Snow mass balance ────────────────────────────────────────────────────
 
-update_snow(::NoSnow, args...; kw...) = (nothing, 0.0u"cm")
+update_snow(::NoSnow, args...; kw...) = (nothing, 0.0u"cm", 0.0u"cm")
 
 function update_snow(snow_model::SnowModel{N}, state::SnowState, scratch,
-    snow_temperature, snow_temperature_before, environment_instant, step;
-    hourly_rainfall=false, shade=0.0,
+    snow_temperature, snow_temperature_before, environment_instant, step,
+    soil_surface_temperature, soil_surface_temperature_before,
+    Q_evaporation;
+    hourly_rainfall=false, shade=0.0, day_of_year=1,
 ) where N
     (; snow_depth_hourly) = scratch
 
@@ -398,26 +485,13 @@ function update_snow(snow_model::SnowModel{N}, state::SnowState, scratch,
     days_since_snow = max(days_since_snow, 0.3)
 
     # ── Sublimation ──
+    # Fortran OSUB.f lines 782-817: use Q_evaporation from the energy balance ODE,
+    # convert to mass via latent heat of vaporisation, zero if soil surface ≤ 0°C.
     sublimation = 0.0u"cm"
-    snow_surface_temperature = snow_temperature[1]
-    if snow_surface_temperature > u"K"(0.0u"°C")
-        atmospheric_pressure = environment_instant.atmospheric_pressure
-        relative_humidity = environment_instant.reference_humidity
-        wet_air_out = wet_air_properties(u"K"(air_temperature), relative_humidity, atmospheric_pressure)
-        heat_transfer_coefficient = 5.0u"W/m^2/K"
-        mass_transfer_coefficient = (heat_transfer_coefficient / (wet_air_out.specific_heat * wet_air_out.density)) * (0.71 / 0.60)^0.666
-        _, evaporation_mass_flux = evaporation(;
-            surface_temperature=u"K"(snow_surface_temperature),
-            air_temperature=u"K"(air_temperature),
-            relative_humidity,
-            surface_relative_humidity=1.0,
-            mass_transfer_coefficient,
-            atmospheric_pressure,
-            soil_wetness=1.0,
-            saturated=false,
-        )
-        evaporation_mass_flux = max(0.0u"g/s/m^2", evaporation_mass_flux)
-        sublimation = uconvert(u"cm", evaporation_mass_flux * 1.0u"hr" / new_dens)
+    if u"°C"(soil_surface_temperature) > 0.0u"°C" && Q_evaporation > 0.0u"W/m^2"
+        latent_heat = enthalpy_of_vaporisation(soil_surface_temperature)
+        gwsurf = Q_evaporation / latent_heat  # kg/s/m²
+        sublimation = uconvert(u"cm", gwsurf * 1.0u"hr" / new_dens)
     end
 
     # ── Rain melt (Anderson model) ──
@@ -436,15 +510,24 @@ function update_snow(snow_model::SnowModel{N}, state::SnowState, scratch,
     end
 
     # ── Thermal melt ──
-    # snow_thermal_melt needs state with updated density
+    # Fortran OSUB.f lines 836-837: only compute thermal melt if prevsnow >= minsnow
     state_for_melt = setproperties(state, (; density=new_dens))
-    thermal_melt = if is_first_step
+    previous_depth = step > 1 ? snow_depth_hourly[step - 1] : 0.0u"cm"
+    thermal_melt = if is_first_step || previous_depth < snow_model.min_snow_depth
         0.0u"cm"
     else
-        snow_thermal_melt(snow_model, state_for_melt, scratch, snow_temperature, snow_temperature_before,
-            environment_instant.atmospheric_pressure) * snow_model.snow_melt_factor
+        raw_melt = snow_thermal_melt(snow_model, state_for_melt, scratch, snow_temperature, snow_temperature_before,
+            environment_instant.atmospheric_pressure,
+            soil_surface_temperature, soil_surface_temperature_before)
+        # Fortran OSUB.f lines 938-940: melt factor only applied when DOY > 1
+        day_of_year > 1 ? raw_melt * snow_model.snow_melt_factor : raw_melt
     end
     cumulative_melt = state.cumulative_melt + thermal_melt
+    # Fortran OSUB.f lines 957-962: clamp and reset cumulative melt at end of day (hour 24)
+    if mod(step, 24) == 0
+        cumulative_melt = min(cumulative_melt, previous_depth)
+        cumulative_melt = 0.0u"cm"
+    end
 
     # ── Net accumulation ──
     carried_over = uconvert(u"cm", state.extra_snow / new_dens)
@@ -473,13 +556,13 @@ function update_snow(snow_model::SnowModel{N}, state::SnowState, scratch,
 
     new_state = SnowState(new_depth, snow_age, days_since_snow, new_dens, new_dens,
                           cumulative_melt, extra_snow, state.active_nodes, state.sum_phase)
-    return (new_state, snowfall)
+    return (new_state, snowfall, thermal_melt)
 end
 
 # ── Adjust snow depth near node boundaries ────────────────────────────────
 
 adjust_snow_near_nodes(::NoSnow, args...) = nothing
-function adjust_snow_near_nodes(snow_model::SnowModel, state::SnowState, scratch, step)
+function adjust_snow_near_nodes(snow_model::SnowModel, state::SnowState, scratch, snow_temperature, step)
     (; snow_depth_hourly) = scratch
 
     snowout = snow_depth_hourly[step]
@@ -487,6 +570,7 @@ function adjust_snow_near_nodes(snow_model::SnowModel, state::SnowState, scratch
     threshold = snow_model.snow_node_thresholds[max(1, maxsnode)]
     extra_snow = state.extra_snow
 
+    # First adjustment
     if step > 1 && snowout > 0.0u"cm"
         if (snowout - threshold < 0.5u"cm") && (snowout <= snow_depth_hourly[step - 1])
             extra_snow += uconvert(u"kg/m^2", (snowout - threshold) * state.density)
@@ -494,6 +578,11 @@ function adjust_snow_near_nodes(snow_model::SnowModel, state::SnowState, scratch
         end
     end
 
+    # Fortran OSUB.f: call snowlayer between adjustments to recompute node thresholds
+    state = setproperties(state, (; extra_snow))
+    state = activate_snow_nodes(snow_model, state, scratch, snow_temperature, step)
+
+    # Second adjustment — use recomputed threshold
     snowout = snow_depth_hourly[step]
     if snowout > 0.0u"cm"
         threshold = snow_model.snow_node_thresholds[max(1, state.active_nodes)]

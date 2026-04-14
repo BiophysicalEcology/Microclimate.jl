@@ -1,4 +1,4 @@
-@kwdef struct SoilEnergyInputs{F,B,SP,D<:Vector{<:Number},H<:Vector{<:Number},ST,MT,EI,SW,VP,LW}
+@kwdef struct SoilEnergyInputs{F,B,SP,D<:Vector{<:Number},H<:Vector{<:Number},ST,MT,EI,SW,VP,LW,QF,SNM,SNS,SNSC,SM}
     forcing::F
     buffers::B
     soil_thermal_model::SP
@@ -12,6 +12,13 @@
     vapour_pressure_equation::VP = GoffGratch()
     longwave_sky::LW
     albedo::Float64
+    qfreze::QF = 0.0u"W/m^2"  # Fortran COMMON/melt/QFREZE: snow melt energy fed back to surface node
+    # Snow/soil property recomputation inside ODE (matching Fortran DSUB calling SOILPROPS)
+    snow_model::SNM = nothing
+    snow_state::SNS = nothing
+    snow_scratch::SNSC = nothing
+    soil_moisture::SM = nothing
+    n_snow::Int = 0
 end
 
 @kwdef struct MicroForcing{

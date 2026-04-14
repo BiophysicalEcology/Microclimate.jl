@@ -298,6 +298,24 @@ end
 
 
 """
+    calc_heat_transfer_coefficient(convective_heat_flux, ΔT)
+
+Heat transfer coefficient from convective heat flux and temperature difference.
+Minimum 0.5 W/m²/K.
+"""
+calc_heat_transfer_coefficient(convective_heat_flux, ΔT) =
+    iszero(ΔT) ? 0.5u"W/m^2/K" : max(abs(convective_heat_flux / ΔT), 0.5u"W/m^2/K")
+
+"""
+    calc_mass_transfer_coefficient(heat_transfer_coefficient, air_specific_heat, air_density)
+
+Mass transfer coefficient from heat transfer coefficient via the Lewis relation.
+The (Pr/Sc)^0.666 = (0.71/0.60)^0.666 factor converts from heat to mass transfer.
+"""
+calc_mass_transfer_coefficient(heat_transfer_coefficient, air_specific_heat, air_density) =
+    (heat_transfer_coefficient / (air_specific_heat * air_density)) * (0.71 / 0.60)^0.666
+
+"""
     sublayer_stanton(z0, friction_velocity)
 
 Compute the Stanton number for the viscous sublayer.
