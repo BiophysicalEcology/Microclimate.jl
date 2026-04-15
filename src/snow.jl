@@ -170,13 +170,7 @@ function write_snow_properties!(snow_model::SnowModel{N}, state::SnowState, scra
     (; node_depths) = scratch
 
     if state.current_depth >= snow_model.min_snow_depth
-        # Mixing ratio at 0°C — use wet_air_properties to match Fortran WETAIR constants
-        wap = wet_air_properties(273.15u"K", 1.0, atmospheric_pressure; vapour_pressure_equation)
-        mixing_ratio = wap.mixing_ratio
-        # Specific heat: ice + humid air weighted by density fraction
-        # Fortran OSUB.f line 847: RW/1.+RW = 2*RW due to operator precedence
-        density_fraction = ustrip(u"g/cm^3", snowdens)
-        specific_heat = (2100.0 * density_fraction + (1005.0 + 1820.0 * (mixing_ratio / 1.0 + mixing_ratio)) * (1.0 - density_fraction))u"J/kg/K"
+        specific_heat = snow_specific_heat(snowdens, atmospheric_pressure; vapour_pressure_equation)
 
         # Conductivity (Aggarwal 2009 or user-defined)
         conductivity = if snow_model.snow_conductivity > 0.0u"W/m/K"
@@ -318,8 +312,8 @@ end
 # ── Snow specific heat ───────────────────────────────────────────────────
 # Empirical formula: weighted average of ice and humid air specific heats.
 
-function snow_specific_heat(snow_density, atmospheric_pressure)
-    wap = wet_air_properties(273.15u"K", 1.0, atmospheric_pressure)
+function snow_specific_heat(snow_density, atmospheric_pressure; vapour_pressure_equation=GoffGratch())
+    wap = wet_air_properties(273.15u"K", 1.0, atmospheric_pressure; vapour_pressure_equation)
     mixing_ratio = wap.mixing_ratio
     density_fraction = ustrip(u"g/cm^3", snow_density)
     # Fortran OSUB.f line 847: RW/1.+RW = 2*RW due to operator precedence
@@ -523,9 +517,12 @@ function update_snow(snow_model::SnowModel{N}, state::SnowState, scratch,
         day_of_year > 1 ? raw_melt * snow_model.snow_melt_factor : raw_melt
     end
     cumulative_melt = state.cumulative_melt + thermal_melt
-    # Fortran OSUB.f lines 957-962: clamp and reset cumulative melt at end of day (hour 24)
+    # Fortran OSUB.f lines 957-962: at end of day (siout(1)==1380), clamp cummelted
+    # to previous snow depth, then immediately reset to zero. The clamp is dead code
+    # in Fortran too (overwritten on the next line). Possibly a bug — the clamped
+    # value may have been intended for output.
     if mod(step, 24) == 0
-        cumulative_melt = min(cumulative_melt, previous_depth)
+        # cumulative_melt = min(cumulative_melt, previous_depth)
         cumulative_melt = 0.0u"cm"
     end
 

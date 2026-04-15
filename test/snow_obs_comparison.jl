@@ -31,7 +31,7 @@ const REFHYT      = 2.0u"m"
 const ALBEDO      = 0.25                               # REFLS (constant all days)
 const EMISSIVITY  = 0.95                               # SLES (constant)
 const TANNUL      = 6.43                               # deep soil temperature (°C, constant)
-const NDAYS       = 182  # 6 months for quick debugging (was 1461)
+const NDAYS       = 1461
 
 # Soil depths: [0, 2.5, 5, 10, 15, 20, 30, 50, 100, 200] cm → metres
 const DEPTHS = ([0.0, 2.5, 5.0, 10.0, 15.0, 20.0, 30.0, 50.0, 100.0, 200.0] ./ 100.0) .* u"m"
@@ -279,6 +279,24 @@ for day in 78:112
     j_tsurf = ustrip(u"°C", micro_out.soil_temperature[noon_step, 1])
     n_t5 = nmr_sub.D5cm[noon_step]
     println("  $(lpad(day,3)) | $(lpad(round(j_snow_end,digits=1),6))  $(lpad(round(n_snow_end,digits=1),6)) | $(lpad(round(j_daily,digits=1),9))  $(lpad(round(n_daily,digits=1),9)) | $(lpad(round(j_tsurf,digits=2),7))  $(lpad(round(n_t5,digits=1),5))")
+end
+
+# ── Soil moisture and thermal property comparison ──
+println("\n── Soil moisture & conductivity comparison ──")
+println("  day | SM5_J SM5_N | SM20_J SM20_N | SM50_J SM50_N | k5_J   k20_J   k50_J")
+for day in [90, 180, 270, 360, 450, 540, 730, 1000]
+    step = (day-1)*24 + 13
+    (step > nhours_out || step > size(nmr_sub, 1)) && continue
+    j5 = round(micro_out.soil_moisture[step, 3], digits=3)
+    j20 = round(micro_out.soil_moisture[step, 6], digits=3)
+    j50 = round(micro_out.soil_moisture[step, 8], digits=3)
+    n5 = round(nmr_sub.WC5cm[step], digits=3)
+    n20 = round(nmr_sub.WC20cm[step], digits=3)
+    n50 = round(nmr_sub.WC50cm[step], digits=3)
+    k5 = round(ustrip(u"W/m/K", micro_out.soil_thermal_conductivity[step, 3]), digits=3)
+    k20 = round(ustrip(u"W/m/K", micro_out.soil_thermal_conductivity[step, 6]), digits=3)
+    k50 = round(ustrip(u"W/m/K", micro_out.soil_thermal_conductivity[step, 8]), digits=3)
+    println("  $(lpad(day,4)) | $j5  $n5 | $j20  $n20 | $j50  $n50 | $k5  $k20  $k50")
 end
 
 @testset "SNOTEL 329 — Julia vs NicheMapR ($(NDAYS)d)" begin
