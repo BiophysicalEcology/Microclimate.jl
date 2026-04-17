@@ -129,7 +129,6 @@ snow_model = SnowModel(;
     density_function = (microinput[:densfun1], microinput[:densfun2], microinput[:densfun3], microinput[:densfun4]),
     snow_conductivity = microinput[:snowcond] * u"W/m/K",
     canopy_interception = microinput[:intercept],
-    grass_shade = Bool(Int(microinput[:grasshade])),
 )
 
 # now try the simulation function

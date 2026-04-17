@@ -12,7 +12,6 @@ struct SnowModel{N}
     density_function::NTuple{4,Float64}  # empirical coefficients (dimensionless)
     snow_conductivity::typeof(1.0u"W/m/K")  # 0 W/m/K = use Aggarwal
     canopy_interception::Float64
-    grass_shade::Bool
     min_snow_depth::typeof(1.0u"cm")
     snow_node_thresholds::NTuple{N,typeof(1.0u"cm")}
     melt_threshold::typeof(1.0u"°C")
@@ -28,7 +27,6 @@ function SnowModel(;
     density_function=(0.0, 0.0, 0.0, 0.0),
     snow_conductivity=0.0u"W/m/K",
     canopy_interception=0.0,
-    grass_shade=false,
     min_snow_depth=2.0u"cm",
     snow_node_thresholds=DEFAULT_SNOW_NODE_THRESHOLDS .* u"cm",
     melt_threshold=0.4u"°C",
@@ -37,7 +35,7 @@ function SnowModel(;
     SnowModel{N}(
         snow_temperature_threshold, snow_density, snow_melt_factor,
         undercatch, rain_multiplier, rain_melt_factor, density_function,
-        snow_conductivity, canopy_interception, grass_shade, min_snow_depth,
+        snow_conductivity, canopy_interception, min_snow_depth,
         NTuple{N,typeof(1.0u"cm")}(snow_node_thresholds), melt_threshold,
     )
 end
@@ -60,8 +58,14 @@ struct SnowState
 end
 
 initial_snow_state(::NoSnow) = nothing
+initial_snow_state(::NoSnow, ::Any, ::Any) = nothing
 function initial_snow_state(sm::SnowModel)
     SnowState(0.0u"cm", 0.0, 0.3, sm.snow_density, 1.0u"g/cm^3",
+              0.0u"cm", 0.0u"kg/m^2", 0, 0.0u"J/m^2")
+end
+function initial_snow_state(sm::SnowModel, depth, density_or_nothing)
+    density = isnothing(density_or_nothing) ? sm.snow_density : density_or_nothing
+    SnowState(depth, 0.0, 0.3, density, density,
               0.0u"cm", 0.0u"kg/m^2", 0, 0.0u"J/m^2")
 end
 
@@ -282,13 +286,13 @@ end
 snow_surface_overrides(::NoSnow, _, _, _) = (;
     albedo=nothing, emissivity=nothing, soil_wetness=nothing, shade=nothing
 )
-function snow_surface_overrides(snow_model::SnowModel, state::SnowState, scratch, step)
+function snow_surface_overrides(::SnowModel, state::SnowState, scratch, step)
     if step > 1 && scratch.snow_depth_hourly[step - 1] > 0.0u"cm"
         return (;
             albedo    = snow_albedo(state.days_since_snow),
             emissivity = 0.98,  # Fortran OSUB.f line 1028: SLE = 0.98
             soil_wetness = 1.0,
-            shade = snow_model.grass_shade ? 0.0 : nothing,
+            shade = nothing,
         )
     end
     return (; albedo=nothing, emissivity=nothing, soil_wetness=nothing, shade=nothing)

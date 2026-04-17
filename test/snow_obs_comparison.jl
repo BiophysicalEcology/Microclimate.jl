@@ -166,7 +166,6 @@ snow_model = SnowModel(;
     density_function = (0.5979, 0.2178, 0.001, 0.0038),
     snow_conductivity = 0.0u"W/m/K",
     canopy_interception = 0.0,
-    grass_shade = false,
 )
 
 # ── Build and solve ───────────────────────────────────────────────────────────

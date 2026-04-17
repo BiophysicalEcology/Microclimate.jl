@@ -198,32 +198,32 @@ end
 end
 
 # Visual comparisons — run manually (not in CI)
-# using Plots
-# let
-#     t = 1:length(days2do)*24
-#     depth_labels = ["$(round(ustrip(u"cm", depths[i]); digits=1)) cm" for i in 1:length(depths)]
+using Plots
+let
+    t = 1:length(days2do)*24
+    depth_labels = ["$(round(ustrip(u"cm", depths[i]); digits=1)) cm" for i in 1:length(depths)]
 
-#     # Soil temperature (°C)
-#     p_st = plot(layout=(2, 5), size=(1400, 600), title=reshape(depth_labels, 1, :))
-#     for col in 1:length(depths)
-#         plot!(p_st, t, ustrip.(u"°C", micro_out.soil_temperature[t, col]); sp=col, label="Julia",     color=:red,   ylabel="°C")
-#         plot!(p_st, t, collect(soiltemps_nmr[t, col]);                     sp=col, label="NicheMapR", color=:black)
-#     end
-#     display(p_st)
+    # Soil temperature (°C)
+    p_st = plot(layout=(2, 5), size=(1400, 600), title=reshape(depth_labels, 1, :))
+    for col in 1:length(depths)
+        plot!(p_st, t, ustrip.(u"°C", micro_out.soil_temperature[t, col]); sp=col, label="Julia",     color=:red,   ylabel="°C")
+        plot!(p_st, t, collect(soiltemps_nmr[t, col]);                     sp=col, label="NicheMapR", color=:black)
+    end
+    display(p_st)
 
-#     # Atmospheric profiles
-#     p_atm = plot(layout=(3, 2), size=(900, 700))
-#     plot!(p_atm, t, humidity_matrix[t, 1];                               sp=1, label="Julia",     color=:red,   title="RH 1cm",       ylabel="–")
-#     plot!(p_atm, t, rh1cm_nmr[t];                                        sp=1, label="NicheMapR", color=:black)
-#     plot!(p_atm, t, humidity_matrix[t, 2];                               sp=2, label="Julia",     color=:red,   title="RH 2m")
-#     plot!(p_atm, t, rh2m_nmr[t];                                         sp=2, label="NicheMapR", color=:black)
-#     plot!(p_atm, t, ustrip.(u"m/s", wind_matrix[t, 1]);                  sp=3, label="Julia",     color=:red,   title="Wind 1cm",     ylabel="m/s")
-#     plot!(p_atm, t, ustrip.(u"m/s", vel1cm_nmr[t]);                      sp=3, label="NicheMapR", color=:black)
-#     plot!(p_atm, t, ustrip.(u"m/s", wind_matrix[t, 2]);                  sp=4, label="Julia",     color=:red,   title="Wind 2m")
-#     plot!(p_atm, t, ustrip.(u"m/s", vel2m_nmr[t]);                       sp=4, label="NicheMapR", color=:black)
-#     plot!(p_atm, t, ustrip.(u"°C", u"K".(air_temperature_matrix[t, 1])); sp=5, label="Julia",     color=:red,   title="Air temp 1cm", ylabel="°C")
-#     plot!(p_atm, t, ustrip.(u"°C", ta1cm_nmr[t]);                        sp=5, label="NicheMapR", color=:black)
-#     plot!(p_atm, t, ustrip.(u"°C", u"K".(air_temperature_matrix[t, 2])); sp=6, label="Julia",     color=:red,   title="Air temp 2m")
-#     plot!(p_atm, t, ustrip.(u"°C", ta2m_nmr[t]);                         sp=6, label="NicheMapR", color=:black)
-#     display(p_atm)
-# end
+    # Atmospheric profiles
+    p_atm = plot(layout=(3, 2), size=(900, 700))
+    plot!(p_atm, t, humidity_matrix[t, 1];                               sp=1, label="Julia",     color=:red,   title="RH 1cm",       ylabel="–")
+    plot!(p_atm, t, rh1cm_nmr[t];                                        sp=1, label="NicheMapR", color=:black)
+    plot!(p_atm, t, humidity_matrix[t, 2];                               sp=2, label="Julia",     color=:red,   title="RH 2m")
+    plot!(p_atm, t, rh2m_nmr[t];                                         sp=2, label="NicheMapR", color=:black)
+    plot!(p_atm, t, ustrip.(u"m/s", wind_matrix[t, 1]);                  sp=3, label="Julia",     color=:red,   title="Wind 1cm",     ylabel="m/s")
+    plot!(p_atm, t, ustrip.(u"m/s", vel1cm_nmr[t]);                      sp=3, label="NicheMapR", color=:black)
+    plot!(p_atm, t, ustrip.(u"m/s", wind_matrix[t, 2]);                  sp=4, label="Julia",     color=:red,   title="Wind 2m")
+    plot!(p_atm, t, ustrip.(u"m/s", vel2m_nmr[t]);                       sp=4, label="NicheMapR", color=:black)
+    plot!(p_atm, t, ustrip.(u"°C", u"K".(air_temperature_matrix[t, 1])); sp=5, label="Julia",     color=:red,   title="Air temp 1cm", ylabel="°C")
+    plot!(p_atm, t, ustrip.(u"°C", ta1cm_nmr[t]);                        sp=5, label="NicheMapR", color=:black)
+    plot!(p_atm, t, ustrip.(u"°C", u"K".(air_temperature_matrix[t, 2])); sp=6, label="Julia",     color=:red,   title="Air temp 2m")
+    plot!(p_atm, t, ustrip.(u"°C", ta2m_nmr[t]);                         sp=6, label="NicheMapR", color=:black)
+    display(p_atm)
+end
