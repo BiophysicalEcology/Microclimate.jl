@@ -634,16 +634,14 @@ function get_soil_water_balance!(buffers, soil_moisture_model::CampbellSoilHydra
     surf_evap = max(0.0u"kg/m^2", infil_out.evaporation)
     water_flux = max(0.0u"kg/m^2", infil_out.surface_water_flux)
     pool = clamp(pool - water_flux - surf_evap, 0.0u"kg/m^2", maxpool) # pooling surface water
-    # Saturate top layer only when pool has enough water to fill node 1 to saturation.
-    # The refill volume is subtracted from the pool before forcing saturation.
+    # Saturate top layer when pool > 0 (triggers infiltration). Deduct the water
+    # needed to bring node 1 to saturation from the pool, flooring at zero.
     if pool > 0.0u"kg/m^2"
         sat = 1 - bulk_density[1] / mineral_density[1]
         half_thickness = (depths[2] - depths[1]) / 2   # Δz₁/2 for node 1
         refill = max(0.0u"kg/m^2", uconvert(u"kg/m^2", (sat - soil_moisture[1]) * half_thickness * 1000.0u"kg/m^3"))
-        if pool >= refill
-            pool -= refill
-            soil_moisture[1] = sat
-        end
+        pool = max(0.0u"kg/m^2", pool - refill)
+        soil_moisture[1] = sat
     end
     for _ in 1:(niter_moist-1)
         infil_out = soil_water_balance!(buffers.soil_water_balance, soil_moisture_model;
@@ -664,10 +662,8 @@ function get_soil_water_balance!(buffers, soil_moisture_model::CampbellSoilHydra
             sat = 1 - bulk_density[1] / mineral_density[1]
             half_thickness = (depths[2] - depths[1]) / 2   # Δz₁/2 for node 1
             refill = max(0.0u"kg/m^2", uconvert(u"kg/m^2", (sat - soil_moisture[1]) * half_thickness * 1000.0u"kg/m^3"))
-            if pool >= refill
-                pool -= refill
-                soil_moisture[1] = sat
-            end
+            pool = max(0.0u"kg/m^2", pool - refill)
+            soil_moisture[1] = sat
         end
     end
     # Fortran OSUB.f line 1239: ptwet = surflux / (ep * timestep) * 100
