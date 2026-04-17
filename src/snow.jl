@@ -369,6 +369,14 @@ function snow_phase_transition(snow_model::SnowModel{N}, state::SnowState, scrat
     if state.current_depth >= 200.0u"cm"
         return (state, snow_temperature, soil_surface_temperature)
     end
+    # No snow: skip phase transition entirely. mean_temperature/mean_temperature_past in
+    # scratch are only updated inside snow_thermal_melt, which is skipped when depth <
+    # min_snow_depth. They stay at their initialized 0°C, making the freeze condition
+    # (mean_temp_past >= 0 AND mean_temp <= 0) always true, which would spuriously set
+    # clamp_soil_surface and force T0[1] = 0°C every step.
+    if state.current_depth < snow_model.min_snow_depth
+        return (state, snow_temperature, soil_surface_temperature)
+    end
 
     specific_heat = snow_specific_heat(state.density, atmospheric_pressure)
     freeze = u"K"(0.0u"°C")
@@ -488,9 +496,11 @@ function update_snow(snow_model::SnowModel{N}, state::SnowState, scratch,
         sublimation = uconvert(u"cm", gwsurf * 1.0u"hr" / new_dens)
     end
 
+    previous_depth = step > 1 ? snow_depth_hourly[step - 1] : 0.0u"cm"
+
     # ── Rain melt (Anderson model) ──
     rain_melt = 0.0u"cm"
-    if u"°C"(air_temperature) >= snow_model.snow_temperature_threshold && rainfall > 0.0u"kg/m^2"
+    if u"°C"(air_temperature) >= snow_model.snow_temperature_threshold && rainfall > 0.0u"kg/m^2" && previous_depth >= snow_model.min_snow_depth
         if is_midnight || hourly_rainfall
             water_depth = uconvert(u"cm", rainfall / water_density)
             density_fraction = ustrip(u"g/cm^3", new_dens)
@@ -506,7 +516,6 @@ function update_snow(snow_model::SnowModel{N}, state::SnowState, scratch,
     # ── Thermal melt ──
     # Fortran OSUB.f lines 836-837: only compute thermal melt if prevsnow >= minsnow
     state_for_melt = setproperties(state, (; density=new_dens))
-    previous_depth = step > 1 ? snow_depth_hourly[step - 1] : 0.0u"cm"
     thermal_melt = if is_first_step || previous_depth < snow_model.min_snow_depth
         0.0u"cm"
     else
@@ -532,7 +541,6 @@ function update_snow(snow_model::SnowModel{N}, state::SnowState, scratch,
     extra_snow = 0.0u"kg/m^2"
 
     # ── Snow depth update ──
-    previous_depth = step > 1 ? snow_depth_hourly[step - 1] : 0.0u"cm"
     new_depth = max(0.0u"cm", previous_depth + net_accumulation - rain_melt - thermal_melt)
 
     if new_depth < snow_model.min_snow_depth && (step <= 1 || snow_depth_hourly[step - 1] < 1e-8u"cm")
@@ -553,7 +561,7 @@ function update_snow(snow_model::SnowModel{N}, state::SnowState, scratch,
 
     new_state = SnowState(new_depth, snow_age, days_since_snow, new_dens, new_dens,
                           cumulative_melt, extra_snow, state.active_nodes, state.sum_phase)
-    return (new_state, snowfall, thermal_melt)
+    return (new_state, snowfall, thermal_melt, rain_melt)
 end
 
 # ── Adjust snow depth near node boundaries ────────────────────────────────

@@ -92,7 +92,7 @@ println("  Wrote nmr_hourly.csv ($(nrow(nmr)) rows × $(ncol(nmr)) cols)")
 
 # ── 4. SNOTEL 329 observations ────────────────────────────────────────────────
 # Subset to simulation period 2010-01-01 to 2013-12-31.
-# Raw units: SNWD.I = mm snow depth, WTEQ.I = in (tenths-of-inches SWE → cm via ×2.54/10)
+# Raw units: SNWD.I = snow depth in inches, WTEQ.I = SWE in inches (both convert ×2.54 → cm)
 # Soil temp STO.I_* in °C, soil moisture SMS.I_* in % volumetric
 println("\nReading SNOTEL 329 observations...")
 # normalizenames=true converts "STO.I_2" → "STO_I_2" etc.
@@ -113,7 +113,7 @@ obs_sub = obs_raw[mask, [:DateTime, :SNWD_I, :WTEQ_I,
 # Rename to depth-labelled identifiers
 rename!(obs_sub,
     :SNWD_I   => :SNWD_mm,
-    :WTEQ_I   => :WTEQ_in10,   # tenths of inches; convert ×2.54/10 → cm in test script
+    :WTEQ_I   => :WTEQ_in,     # inches; convert ×2.54 → cm in test script
     :STO_I_2  => :STO_5cm,
     :STO_I_8  => :STO_20cm,
     :STO_I_20 => :STO_50cm,

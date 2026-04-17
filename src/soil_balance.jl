@@ -65,11 +65,14 @@ function soil_energy_balance(
             thermal_conductance[i] = iszero(d2) ? zero(bulk_thermal_conductivity[1] / oneunit(d2)) : bulk_thermal_conductivity[1] / d2
         else
             Δd = layer_depths[i+1] - layer_depths[i]
-            # Fortran DSUB.f special case: when a node sits at depth 0 with snow
+            # Fortran DSUB.f special case: when a snow node sits at depth 0 with snow
             # active (depp(i) < 1e-8 and maxsnode1 > 0), the heat capacity uses the
             # full distance to the next node rather than the centered half-cell.
             # This is the first active snow node acting as the surface.
-            if iszero(layer_depths[i]) && !iszero(layer_depths[i+1])
+            # Guard: only applies to snow nodes (i <= n_snow). When snow model is active
+            # but no snow exists, the first soil node is at depth 0 and must NOT trigger
+            # this — its heat capacity uses the normal half-cell formula.
+            if i <= n_snow && iszero(layer_depths[i]) && !iszero(layer_depths[i+1])
                 heat_capacity[i] = volumetric_heat_capacity * layer_depths[i+1]
             else
                 heat_capacity[i] = volumetric_heat_capacity * (layer_depths[i+1] - layer_depths[i-1]) / 2.0
@@ -631,8 +634,17 @@ function get_soil_water_balance!(buffers, soil_moisture_model::CampbellSoilHydra
     surf_evap = max(0.0u"kg/m^2", infil_out.evaporation)
     water_flux = max(0.0u"kg/m^2", infil_out.surface_water_flux)
     pool = clamp(pool - water_flux - surf_evap, 0.0u"kg/m^2", maxpool) # pooling surface water
-    if pool > 0.0u"kg/m^2" # surface is wet - saturate it for infiltration
-        soil_moisture[1] = 1 - bulk_density[1] / mineral_density[1]
+    # Saturate top layer only when pool > 0 — matches Fortran OSUB.f condep > 0 check.
+    # Note: the water added to node 1 to bring it to saturation is not subtracted from the
+    # pool here; pool is only reduced by surface_water_flux (downward drainage) and evaporation.
+    # This is a minor mass imbalance (~2.5 kg/m² max per sub-step for the thin surface node)
+    # inherited from NicheMapR/Fortran, which does the same thing.
+    if pool > 0.0u"kg/m^2"
+        sat = 1 - bulk_density[1] / mineral_density[1]
+        half_thickness = (depths[2] - depths[1]) / 2   # Δz₁/2 for node 1
+        refill = max(0.0u"kg/m^2", uconvert(u"kg/m^2", (sat - soil_moisture[1]) * half_thickness * 1000.0u"kg/m^3"))
+        pool = clamp(pool - refill, 0.0u"kg/m^2", maxpool)
+        soil_moisture[1] = sat
     end
     for _ in 1:(niter_moist-1)
         infil_out = soil_water_balance!(buffers.soil_water_balance, soil_moisture_model;
@@ -650,7 +662,11 @@ function get_soil_water_balance!(buffers, soil_moisture_model::CampbellSoilHydra
         water_flux = max(0.0u"kg/m^2", infil_out.surface_water_flux)
         pool = clamp(pool - water_flux - surf_evap, 0.0u"kg/m^2", maxpool)
         if pool > 0.0u"kg/m^2"
-            soil_moisture[1] = 1 - bulk_density[1] / mineral_density[1]
+            sat = 1 - bulk_density[1] / mineral_density[1]
+            half_thickness = (depths[2] - depths[1]) / 2   # Δz₁/2 for node 1
+            refill = max(0.0u"kg/m^2", uconvert(u"kg/m^2", (sat - soil_moisture[1]) * half_thickness * 1000.0u"kg/m^3"))
+            pool = clamp(pool - refill, 0.0u"kg/m^2", maxpool)
+            soil_moisture[1] = sat
         end
     end
     # Fortran OSUB.f line 1239: ptwet = surflux / (ep * timestep) * 100

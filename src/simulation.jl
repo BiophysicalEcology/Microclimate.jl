@@ -482,7 +482,7 @@ function solve_soil!(cache::MicroCache)
 
     # simulate all days
     pool = 0.0u"kg/m^2"
-    qfreze = 0.0u"W/m^2"  # Fortran COMMON/melt/QFREZE: persists across hours
+    qfreze = 0.0u"W/m^2"  # Fortran COMMON/melt/QFREZE: persists across hours TODO make it Q_freeze
     niter_moist = ustrip(u"s^-1", 3600 / moist_step)
     infil_out = nothing
     for j in 1:ndays
@@ -491,6 +491,11 @@ function solve_soil!(cache::MicroCache)
         environment_day = get_day(environment_daily, iday)
         forcing = forcing_day(solar_radiation_out, output, iday)
         niter = iterations_for_day(time_mode, convergence, j)
+        # Find solar midnight: noon is the hour with minimum zenith angle (sun highest),
+        # midnight is 12 hours later. This correctly handles longitude offsets.
+        day_range = (j-1)*nhours+1 : j*nhours
+        noon_i = argmin(ustrip.(solar_radiation_out.zenith_angle[day_range]))
+        midnight_i = mod(noon_i - 1 + 12, nhours) + 1
         if independent_days(time_mode)
             ∑phase .= 0.0u"J"
             sub2 = (iday*nhours-nhours+1):(iday*nhours)
@@ -598,7 +603,7 @@ function solve_soil!(cache::MicroCache)
                         soil_wetness=effective_wetness,
                         vapour_pressure_equation,
                     )
-                    snow_state, snowfall_hour, thermal_melt = update_snow(snow_model, snow_state, snow_scratch, T_snow, T_snow_before, environment_instant, step,
+                    snow_state, snowfall_hour, thermal_melt, rain_melt_snow = update_snow(snow_model, snow_state, snow_scratch, T_snow, T_snow_before, environment_instant, step,
                         T0[1], T0_before[1], Q_evap;
                         hourly_rainfall, shade=environment_instant.shade, day_of_year=days[j])
                     # Fortran OSUB.f lines 938-943: QFREZE = melted*(1-snowmelt)*79.7/60/10000
@@ -665,21 +670,34 @@ function solve_soil!(cache::MicroCache)
                 init_soil_obukhov!(buffers, forcing, micro_terrain, heights, T0, i)
                 # Fortran OSUB.f: soil moisture runs only on final iteration (after line 353 guard)
                 if is_last_iter
-                    rain = hourly_rainfall ? mp.environment_hourly.rainfall[step] : environment_instant.rainfall
+                    rain = if hourly_rainfall
+                        mp.environment_hourly.rainfall[step]
+                    elseif i == midnight_i # daily rainfall falls at solar midnight
+                        environment_instant.rainfall
+                    else
+                        0.0u"kg/m^2"
+                    end
                     # Fortran OSUB.f: apply rainmult to rainfall entering condep
                     if n_snow > 0
                         rain = rain * snow_model.rain_multiplier
                     end
-                    # Fortran OSUB.f lines 1111-1129: when snow is present and air temp < snow temp,
-                    # only melt enters condep (rain is intercepted by snowpack). Otherwise rain + melt.
+                    # Pool update:
+                    # Cold snow (air_temp < snow_threshold): rain → snowfall (handled in update_snow); only thermal melt enters pool.
+                    # Warm snow or no snow: rain passes through pack to soil surface, rain_melt snow water also drains to surface.
+                    #   Fortran OSUB.f line 1116 zeros rainfallb when cursnow > 0 for non-hourly rain (mass conservation
+                    #   violation — rain water discarded). Julia instead routes rain to pool, and also tracks rain_melt water
+                    #   (snow melted by rain energy; OSUB.f line 950 subtracts rainmelt from cursnow but never adds it to condep
+                    #   — another mass loss). Both rain and rain_melt water physically reach the soil surface.
                     snow_present = n_snow > 0 && snow_scratch.snow_depth_hourly[step] > 0.0u"cm"
                     snow_temp_threshold = n_snow > 0 ? snow_model.snow_temperature_threshold : 0.0u"°C"
                     melted_water = n_snow > 0 ? uconvert(u"kg/m^2", thermal_melt * 1.0u"g/cm^3") : 0.0u"kg/m^2"
+                    rain_melt_water = n_snow > 0 ? uconvert(u"kg/m^2", rain_melt_snow * snow_state.density) : 0.0u"kg/m^2"
                     if snow_present && u"°C"(environment_instant.reference_temperature) < snow_temp_threshold
-                        # Snow intercepts rain; only melt enters pool
+                        # Cold snow: rain absorbed into snowpack (handled in update_snow as snowfall); only thermal melt enters pool
                         pool = clamp(pool + melted_water, 0.0u"kg/m^2", soil_moisture_model.maxpool)
                     else
-                        pool = clamp(pool + rain + melted_water, 0.0u"kg/m^2", soil_moisture_model.maxpool)
+                        # Warm snow or no snow: rain + rain_melt water + thermal melt enter pool
+                        pool = clamp(pool + rain + rain_melt_water + melted_water, 0.0u"kg/m^2", soil_moisture_model.maxpool)
                     end
                     (; pool, soil_moisture) = step_soil_moisture!(moisture_mode, buffers, soil_moisture_model, output, step;
                         depths, micro_terrain, environment_instant, T0, niter_moist, pool, soil_moisture, vapour_pressure_equation, snow_present,

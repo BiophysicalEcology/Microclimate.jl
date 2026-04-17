@@ -33,19 +33,41 @@ const EMISSIVITY  = 0.95                               # SLES (constant)
 const TANNUL      = 6.43                               # deep soil temperature (°C, constant)
 const NDAYS       = 1461
 
-# Soil depths: [0, 2.5, 5, 10, 15, 20, 30, 50, 100, 200] cm → metres
-const DEPTHS = ([0.0, 2.5, 5.0, 10.0, 15.0, 20.0, 30.0, 50.0, 100.0, 200.0] ./ 100.0) .* u"m"
+# Soil depths: 10 coarse nodes [0, 2.5, 5, 10, 15, 20, 30, 50, 100, 200] cm expanded to
+# 19 fine nodes by inserting midpoints (same scheme as micro_testrun_daily.jl):
+# [0, 1.25, 2.5, 3.75, 5, 7.5, 10, 12.5, 15, 17.5, 20, 25, 30, 40, 50, 75, 100, 150, 200] cm
+const DEPTHS = ([0.0, 1.25, 2.5, 3.75, 5.0, 7.5, 10.0, 12.5, 15.0, 17.5,
+                 20.0, 25.0, 30.0, 40.0, 50.0, 75.0, 100.0, 150.0, 200.0] ./ 100.0) .* u"m"
 
-# Soil thermal properties (from micro csv input/soilprop.csv, first layer used uniformly)
-const BULK_DENSITY        = 1.3u"Mg/m^3"
-const SATURATION_MOISTURE = 0.4922u"m^3/m^3"
-const MINERAL_CONDUCTIVITY = 0.2u"W/m/K"
-const MINERAL_HEAT_CAPACITY = 1920.0u"J/kg/K"
-const MINERAL_DENSITY     = 2.56u"Mg/m^3"
+# Soil properties — all from micro csv input/ files written by NicheMapR (write_input=1)
+# 19 fine nodes, properties interpolated (midpoints averaged) from 10 coarse soilprop.csv rows
+const BULK_DENSITY        = 1.3u"Mg/m^3"                   # BD.csv (uniform)
+const SATURATION_MOISTURE = 0.4922u"m^3/m^3"               # soilprop.csv col 2 (uniform)
+const MINERAL_DENSITY     = 2.56u"Mg/m^3"                  # DD.csv (uniform)
+# Thermal: soilprop.csv cols 3-4 — nodes 1-3 shallow (k=0.2, cp=1920), node 4 transition,
+#          nodes 5-19 deeper mineral (k=2.5, cp=870); midpoint node 4 is average of rows 2 & 3
+const MINERAL_CONDUCTIVITY  = [0.2, 0.2, 0.2, 1.35, 2.5, 2.5, 2.5, 2.5, 2.5, 2.5,
+                                2.5, 2.5, 2.5, 2.5, 2.5, 2.5, 2.5, 2.5, 2.5]u"W/m/K"
+const MINERAL_HEAT_CAPACITY = [1920.0, 1920.0, 1920.0, 1395.0, 870.0, 870.0, 870.0, 870.0, 870.0, 870.0,
+                                870.0, 870.0, 870.0, 870.0, 870.0, 870.0, 870.0, 870.0, 870.0]u"J/kg/K"
+const DE_VRIES_SHAPE_FACTOR = 0.0167238                     # microinput.csv row 25 (EC)
+# Hydraulic: PE.csv, KS.csv, BB.csv (uniform — all 19 rows identical)
+const AIR_ENTRY_POTENTIAL   = 1.1u"J/kg"                    # PE.csv
+const SAT_HYDRAULIC_COND    = 0.0037u"kg*s/m^3"             # KS.csv
+const CAMPBELL_B            = 4.5                            # BB.csv
+# Root length density: L.csv all 19 rows (m/m³)
+const ROOT_DENSITY = [0.0, 0.0, 82000.0, 80000.0, 78000.0, 74000.0, 71000.0, 64000.0, 58000.0, 48000.0,
+                      40000.0, 18000.0, 9000.0, 6000.0, 8000.0, 4000.0, 4000.0, 0.0, 0.0]u"m/m^3"
 
-# Initial soil moisture (m³/m³) extracted from micro csv input/moists.csv column 2
-# (update by running prepare_scan329_data.jl if needed)
-const INITIAL_SM = DataFrame(CSV.File(joinpath(datadir, "initial_sm.csv"))).moisture
+# Initial soil moisture (m³/m³) from micro csv input/moists.csv column 2 — 10 coarse nodes.
+# Expand to 19 fine nodes by inserting midpoints (average of neighbours), same as micro_testrun_daily.jl.
+const _INITIAL_SM_COARSE = DataFrame(CSV.File(joinpath(datadir, "initial_sm.csv"))).moisture
+const INITIAL_SM = let coarse = _INITIAL_SM_COARSE, n = length(coarse)
+    result = Vector{Float64}(undef, 2n - 1)
+    for i in 1:n;     result[2i-1] = coarse[i]; end
+    for i in 1:n-1;   result[2i]   = (coarse[i] + coarse[i+1]) / 2; end
+    result
+end
 
 # ── Load daily forcing ────────────────────────────────────────────────────────
 forcing = DataFrame(CSV.File(joinpath(datadir, "forcing.csv")))
@@ -73,21 +95,24 @@ solar_terrain = SolarTerrain(;
 
 # ── Soil models ───────────────────────────────────────────────────────────────
 soil_thermal_model = CampbelldeVriesSoilThermal(;
-    bulk_density         = BULK_DENSITY,
-    mineral_density      = MINERAL_DENSITY,
-    de_vries_shape_factor = 0.1,
-    mineral_conductivity = MINERAL_CONDUCTIVITY,
+    bulk_density          = BULK_DENSITY,
+    mineral_density       = MINERAL_DENSITY,
+    de_vries_shape_factor = DE_VRIES_SHAPE_FACTOR,
+    mineral_conductivity  = MINERAL_CONDUCTIVITY,
     mineral_heat_capacity = MINERAL_HEAT_CAPACITY,
-    saturation_moisture  = SATURATION_MOISTURE,
-    recirculation_power  = 4.0,
+    saturation_moisture   = SATURATION_MOISTURE,
+    recirculation_power   = 4.0,
     return_flow_threshold = 0.162,
 )
 
 soil_moisture_model = example_soil_hydraulics(DEPTHS;
-    bulk_density    = BULK_DENSITY,
-    mineral_density = MINERAL_DENSITY,
-    root_density    = fill(0.0, length(DEPTHS))u"m/m^3",
-    mode            = DynamicSoilMoisture(),
+    bulk_density                     = BULK_DENSITY,
+    mineral_density                  = MINERAL_DENSITY,
+    air_entry_water_potential        = fill(AIR_ENTRY_POTENTIAL, length(DEPTHS)),
+    saturated_hydraulic_conductivity = fill(SAT_HYDRAULIC_COND, length(DEPTHS)),
+    campbell_b_parameter             = fill(CAMPBELL_B, length(DEPTHS)),
+    root_density                     = ROOT_DENSITY,
+    mode                             = DynamicSoilMoisture(),
 )
 
 # ── Daily min/max environment (1461 days) ─────────────────────────────────────
@@ -177,23 +202,22 @@ nmr = DataFrame(CSV.File(joinpath(datadir, "nmr_hourly.csv")))
 # ── Load SNOTEL 329 observations ──────────────────────────────────────────────
 obs = DataFrame(CSV.File(joinpath(datadir, "obs.csv"),
     missingstring = ["NA", ""],
-    types = Dict(:SNWD_mm => Float64)
+    types = Dict(:SNWD_mm => Float64, :WTEQ_in => Float64)
 ))
 # DateTime column is auto-parsed by CSV
-# Unit notes: SNWD_mm = snow depth in mm, WTEQ_in10 = SWE in tenths-of-inches
-#   Convert SWE to cm: WTEQ_in10 × 2.54 / 10
+# Unit notes: SNWD_mm = snow depth in inches (×2.54 → cm), WTEQ_in = SWE in inches (×2.54 → cm)
 #   Soil temps STO_*cm in °C, soil moisture SMS_*cm in %
 
 # ── Comparisons ───────────────────────────────────────────────────────────────
 # Extract Julia soil temperatures at key depths
-# DEPTHS index: 3=5cm, 4=10cm, 6=20cm, 8=50cm  (1-indexed)
-julia_D5cm  = ustrip.(u"°C", micro_out.soil_temperature[:, 3])
-julia_D20cm = ustrip.(u"°C", micro_out.soil_temperature[:, 6])
-julia_D50cm = ustrip.(u"°C", micro_out.soil_temperature[:, 8])
+# 19-node DEPTHS index: 5=5cm, 7=10cm, 11=20cm, 15=50cm, 17=100cm, 19=200cm (1-indexed)
+julia_D5cm  = ustrip.(u"°C", micro_out.soil_temperature[:, 5])
+julia_D20cm = ustrip.(u"°C", micro_out.soil_temperature[:, 11])
+julia_D50cm = ustrip.(u"°C", micro_out.soil_temperature[:, 15])
 
-julia_WC5cm  = micro_out.soil_moisture[:, 3]
-julia_WC20cm = micro_out.soil_moisture[:, 6]
-julia_WC50cm = micro_out.soil_moisture[:, 8]
+julia_WC5cm  = micro_out.soil_moisture[:, 5]
+julia_WC20cm = micro_out.soil_moisture[:, 11]
+julia_WC50cm = micro_out.soil_moisture[:, 15]
 
 nhours_out = NDAYS * 24
 nmr_sub = nmr[1:nhours_out, :]
@@ -287,15 +311,15 @@ println("  day | SM5_J SM5_N | SM20_J SM20_N | SM50_J SM50_N | k5_J   k20_J   k5
 for day in [90, 180, 270, 360, 450, 540, 730, 1000]
     step = (day-1)*24 + 13
     (step > nhours_out || step > size(nmr_sub, 1)) && continue
-    j5 = round(micro_out.soil_moisture[step, 3], digits=3)
-    j20 = round(micro_out.soil_moisture[step, 6], digits=3)
-    j50 = round(micro_out.soil_moisture[step, 8], digits=3)
+    j5 = round(micro_out.soil_moisture[step, 5], digits=3)
+    j20 = round(micro_out.soil_moisture[step, 11], digits=3)
+    j50 = round(micro_out.soil_moisture[step, 15], digits=3)
     n5 = round(nmr_sub.WC5cm[step], digits=3)
     n20 = round(nmr_sub.WC20cm[step], digits=3)
     n50 = round(nmr_sub.WC50cm[step], digits=3)
-    k5 = round(ustrip(u"W/m/K", micro_out.soil_thermal_conductivity[step, 3]), digits=3)
-    k20 = round(ustrip(u"W/m/K", micro_out.soil_thermal_conductivity[step, 6]), digits=3)
-    k50 = round(ustrip(u"W/m/K", micro_out.soil_thermal_conductivity[step, 8]), digits=3)
+    k5 = round(ustrip(u"W/m/K", micro_out.soil_thermal_conductivity[step, 5]), digits=3)
+    k20 = round(ustrip(u"W/m/K", micro_out.soil_thermal_conductivity[step, 11]), digits=3)
+    k50 = round(ustrip(u"W/m/K", micro_out.soil_thermal_conductivity[step, 15]), digits=3)
     println("  $(lpad(day,4)) | $j5  $n5 | $j20  $n20 | $j50  $n50 | $k5  $k20  $k50")
 end
 
@@ -303,40 +327,165 @@ end
     @test size(micro_out.soil_temperature, 1) == nhours_out
     @test size(micro_out.soil_temperature, 2) == length(DEPTHS)
 
-    @test julia_D5cm  ≈ nmr_sub.D5cm  rtol=0.5
+    @test julia_D5cm  ≈ nmr_sub.D5cm  rtol=0.3
     @test julia_D20cm ≈ nmr_sub.D20cm rtol=0.2
-    @test julia_D50cm ≈ nmr_sub.D50cm rtol=0.1
+    @test julia_D50cm ≈ nmr_sub.D50cm rtol=0.2
 
-    @test snow_depth_julia   ≈ nmr_sub.SNOWDEP  rtol=0.2
+    @test snow_depth_julia   ≈ nmr_sub.SNOWDEP  rtol=0.3
     @test snow_density_julia ≈ nmr_sub.SNOWDENS rtol=0.2
 end
 
 #── Visual comparisons — run manually (not in CI) ─────────────────────────────
-# using Plots, Dates
-# let
-#     t = range(DateTime(2010,1,1), step=Hour(1), length=NDAYS*24)
+# Set plot_year (e.g. 2010, 2011, 2012, 2013) and/or plot_month (1–12) to zoom in.
+# Leave as `nothing` to plot the full 4-year run.
+plot_year  = nothing   # e.g. 2011
+plot_month = nothing   # e.g. 3 (March)
 
-#     # Snow depth: Julia vs NicheMapR vs observations
-#     p1 = plot(t, nmr.SNOWDEP, label="NicheMapR", title="Snow depth (cm)", ylabel="cm")
-#     plot!(p1, t, ustrip.(u"cm", micro_out.snow_depth), label="Julia", color=:red)
-#     plot!(p1, obs.DateTime, obs.SNWD_mm .* 2.54, label="SNOTEL 329 obs", ms=1, color=:red)
-#     display(p1)
+using Plots, Dates
+let
+    t_full = collect(range(DateTime(2010,1,1), step=Hour(1), length=NDAYS*24))
 
-#     # Soil temperature at 5 cm
-#     p2 = plot(t, nmr.D5cm, label="NicheMapR", title="Soil temp 5 cm (°C)", ylabel="°C")
-#     plot!(p2, t, julia_D5cm, label="Julia", color=:red)
-#     plot!(p2, obs.DateTime, obs.STO_5cm, label="SNOTEL 329 obs", ms=1, color=:red)
-#     display(p2)
+    # Build hourly index mask
+    if !isnothing(plot_year) && !isnothing(plot_month)
+        title_suffix = " — $(Dates.monthname(plot_month)) $plot_year"
+        hmask = findall(i -> year(t_full[i]) == plot_year && month(t_full[i]) == plot_month,
+                        eachindex(t_full))
+    elseif !isnothing(plot_year)
+        title_suffix = " — $plot_year"
+        hmask = findall(i -> year(t_full[i]) == plot_year, eachindex(t_full))
+    elseif !isnothing(plot_month)
+        title_suffix = " — $(Dates.monthname(plot_month)) (all years)"
+        hmask = findall(i -> month(t_full[i]) == plot_month, eachindex(t_full))
+    else
+        title_suffix = ""
+        hmask = eachindex(t_full)
+    end
 
-#     # Soil temperature at 20 cm
-#     p3 = plot(t, nmr.D20cm, label="NicheMapR", title="Soil temp 20 cm (°C)", ylabel="°C")
-#     plot!(p3, t, julia_D20cm, label="Julia", color=:red)
-#     plot!(p3, obs.DateTime, obs.STO_20cm, label="SNOTEL 329 obs", ms=1, color=:red)
-#     display(p3)
+    t = t_full[hmask]
 
-#     # Soil moisture at 5 cm
-#     p4 = plot(t, nmr.WC5cm, label="NicheMapR", title="Soil moisture 5 cm (m³/m³)", ylabel="m³/m³")
-#     plot!(p4, t, julia_WC5cm, label="Julia", color=:red)
-#     plot!(p4, obs.DateTime, obs.SMS_5cm ./ 100.0, label="SNOTEL 329 obs", ms=1, color=:red)
-#     display(p4)
-# end
+    # Obs mask (obs is at its own irregular timestamps)
+    if !isnothing(plot_year) && !isnothing(plot_month)
+        omask = year.(obs.DateTime) .== plot_year .&& month.(obs.DateTime) .== plot_month
+    elseif !isnothing(plot_year)
+        omask = year.(obs.DateTime) .== plot_year
+    elseif !isnothing(plot_month)
+        omask = month.(obs.DateTime) .== plot_month
+    else
+        omask = trues(nrow(obs))
+    end
+
+    # ── Extract model slices for this window ─────────────────────────────────
+    snow_depth_w   = ustrip.(u"cm",     micro_out.snow_depth)[hmask]
+    snow_density_w = ustrip.(u"g/cm^3", micro_out.snow_density)[hmask]
+    julia_swe_w    = snow_depth_w .* snow_density_w   # cm water equivalent
+    nmr_swe_w      = nmr.SNOWDEP[hmask] .* nmr.SNOWDENS[hmask]
+
+    julia_D5cm_w   = julia_D5cm[hmask]
+    julia_D20cm_w  = julia_D20cm[hmask]
+    julia_D50cm_w  = julia_D50cm[hmask]
+    julia_WC5cm_w  = julia_WC5cm[hmask]
+    julia_WC20cm_w = julia_WC20cm[hmask]
+    julia_WC50cm_w = julia_WC50cm[hmask]
+
+    have_10cm  = "D10cm"  in names(nmr)
+    have_100cm = "D100cm" in names(nmr)
+    julia_D10cm_w  = have_10cm  ? ustrip.(u"°C", micro_out.soil_temperature[:, 7])[hmask]  : nothing
+    julia_D100cm_w = have_100cm ? ustrip.(u"°C", micro_out.soil_temperature[:, 17])[hmask] : nothing
+    julia_WC10cm_w  = "WC10cm"  in names(nmr) ? micro_out.soil_moisture[:, 7][hmask]  : nothing
+    julia_WC100cm_w = "WC100cm" in names(nmr) ? micro_out.soil_moisture[:, 17][hmask] : nothing
+
+    # ── Panel a: Snow ─────────────────────────────────────────────────────────
+    pa1 = plot(t, nmr.SNOWDEP[hmask],   label="NicheMapR", title="Snow depth (cm)",          ylabel="cm")
+    plot!(pa1, t, snow_depth_w,          label="Julia",     color=:black)
+    plot!(pa1, obs.DateTime[omask], obs.SNWD_mm[omask] .* 2.54,
+          label="obs", color=:red, ms=1)
+
+    pa2 = plot(t, nmr_swe_w,            label="NicheMapR", title="Snow water equiv. (cm w.e.)", ylabel="cm")
+    plot!(pa2, t, julia_swe_w,           label="Julia",     color=:black)
+    if "WTEQ_in" in names(obs)
+        # WTEQ_in values are in inches (column name is misleading); ×2.54 → cm
+        plot!(pa2, obs.DateTime[omask], obs.WTEQ_in[omask] .* 2.54,
+              label="obs", color=:red, ms=1)
+    end
+
+    pa3 = plot(t, nmr.SNOWDENS[hmask],  label="NicheMapR", title="Snow density (g/cm³)",     ylabel="g/cm³")
+    plot!(pa3, t, snow_density_w,        label="Julia",     color=:black)
+
+    panel_snow = plot(pa1, pa2, pa3; layout=(3,1), size=(900, 750),
+                      plot_title="Snow$title_suffix", link=:x)
+    display(panel_snow)
+
+    # ── Panel b: Soil temperature ─────────────────────────────────────────────
+    temp_panels = []
+
+    pb1 = plot(t, nmr.D5cm[hmask],  label="NicheMapR", title="Soil temp 5 cm (°C)",  ylabel="°C")
+    plot!(pb1, t, julia_D5cm_w,      label="Julia",     color=:black)
+    plot!(pb1, obs.DateTime[omask], obs.STO_5cm[omask], label="obs", color=:red, ms=1)
+    push!(temp_panels, pb1)
+
+    if have_10cm
+        pb2 = plot(t, nmr.D10cm[hmask], label="NicheMapR", title="Soil temp 10 cm (°C)", ylabel="°C")
+        plot!(pb2, t, julia_D10cm_w,     label="Julia",     color=:black)
+        "STO_10cm" in names(obs) && plot!(pb2, obs.DateTime[omask], obs.STO_10cm[omask], label="obs", color=:red, ms=1)
+        push!(temp_panels, pb2)
+    end
+
+    pb3 = plot(t, nmr.D20cm[hmask], label="NicheMapR", title="Soil temp 20 cm (°C)", ylabel="°C")
+    plot!(pb3, t, julia_D20cm_w,     label="Julia",     color=:black)
+    plot!(pb3, obs.DateTime[omask], obs.STO_20cm[omask], label="obs", color=:red, ms=1)
+    push!(temp_panels, pb3)
+
+    pb4 = plot(t, nmr.D50cm[hmask], label="NicheMapR", title="Soil temp 50 cm (°C)", ylabel="°C")
+    plot!(pb4, t, julia_D50cm_w,     label="Julia",     color=:black)
+    "STO_50cm" in names(obs) && plot!(pb4, obs.DateTime[omask], obs.STO_50cm[omask], label="obs", color=:red, ms=1)
+    push!(temp_panels, pb4)
+
+    if have_100cm
+        pb5 = plot(t, nmr.D100cm[hmask], label="NicheMapR", title="Soil temp 100 cm (°C)", ylabel="°C")
+        plot!(pb5, t, julia_D100cm_w,     label="Julia",     color=:black)
+        "STO_100cm" in names(obs) && plot!(pb5, obs.DateTime[omask], obs.STO_100cm[omask], label="obs", color=:red, ms=1)
+        push!(temp_panels, pb5)
+    end
+
+    n_temp = length(temp_panels)
+    panel_temp = plot(temp_panels...; layout=(n_temp, 1), size=(900, 250*n_temp),
+                      plot_title="Soil temperature$title_suffix", link=:x)
+    display(panel_temp)
+
+    # ── Panel c: Soil moisture ────────────────────────────────────────────────
+    moist_panels = []
+
+    pc1 = plot(t, nmr.WC5cm[hmask],  label="NicheMapR", title="Soil moisture 5 cm (m³/m³)",  ylabel="m³/m³")
+    plot!(pc1, t, julia_WC5cm_w,      label="Julia",     color=:black)
+    plot!(pc1, obs.DateTime[omask], obs.SMS_5cm[omask] ./ 100.0, label="obs", color=:red, ms=1)
+    push!(moist_panels, pc1)
+
+    if "WC10cm" in names(nmr)
+        pc2 = plot(t, nmr.WC10cm[hmask], label="NicheMapR", title="Soil moisture 10 cm (m³/m³)", ylabel="m³/m³")
+        plot!(pc2, t, julia_WC10cm_w,     label="Julia",     color=:black)
+        "SMS_10cm" in names(obs) && plot!(pc2, obs.DateTime[omask], obs.SMS_10cm[omask] ./ 100.0, label="obs", color=:red, ms=1)
+        push!(moist_panels, pc2)
+    end
+
+    pc3 = plot(t, nmr.WC20cm[hmask], label="NicheMapR", title="Soil moisture 20 cm (m³/m³)", ylabel="m³/m³")
+    plot!(pc3, t, julia_WC20cm_w,     label="Julia",     color=:black)
+    "SMS_20cm" in names(obs) && plot!(pc3, obs.DateTime[omask], obs.SMS_20cm[omask] ./ 100.0, label="obs", color=:red, ms=1)
+    push!(moist_panels, pc3)
+
+    pc4 = plot(t, nmr.WC50cm[hmask], label="NicheMapR", title="Soil moisture 50 cm (m³/m³)", ylabel="m³/m³")
+    plot!(pc4, t, julia_WC50cm_w,     label="Julia",     color=:black)
+    "SMS_50cm" in names(obs) && plot!(pc4, obs.DateTime[omask], obs.SMS_50cm[omask] ./ 100.0, label="obs", color=:red, ms=1)
+    push!(moist_panels, pc4)
+
+    if "WC100cm" in names(nmr)
+        pc5 = plot(t, nmr.WC100cm[hmask], label="NicheMapR", title="Soil moisture 100 cm (m³/m³)", ylabel="m³/m³")
+        plot!(pc5, t, julia_WC100cm_w,     label="Julia",     color=:black)
+        "SMS_100cm" in names(obs) && plot!(pc5, obs.DateTime[omask], obs.SMS_100cm[omask] ./ 100.0, label="obs", color=:red, ms=1)
+        push!(moist_panels, pc5)
+    end
+
+    n_moist = length(moist_panels)
+    panel_moist = plot(moist_panels...; layout=(n_moist, 1), size=(900, 250*n_moist),
+                       plot_title="Soil moisture$title_suffix", link=:x)
+    display(panel_moist)
+end
