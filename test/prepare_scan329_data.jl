@@ -72,6 +72,42 @@ soil   = DataFrame(CSV.File(joinpath(DATADIR, "soil.csv"),       normalizenames=
 smoist = DataFrame(CSV.File(joinpath(DATADIR, "soilmoist.csv"),  normalizenames=true))
 println("  metout rows: $(nrow(metout)),  soil rows: $(nrow(soil)),  soilmoist rows: $(nrow(smoist))")
 
+# ── 3b. Snow node temperatures from sunsnow.csv ───────────────────────────────
+# sunsnow matrix (from OSUB.f): 11 cols = JULDAY, TIME, TT(1)..TT(8) [snow], TT(9) [soil surface]
+# Nodes 1-8 are snow nodes (top→bottom), node 9 is the soil surface.
+# With maxsnode=4 and thresholds [2,5,10,20]cm: inactive nodes 1-4 = surface temp,
+# active nodes 5-8 = 2, 5, 10, 20 cm depth from snow surface.
+sunsnow_path = joinpath(DATADIR, "sunsnow.csv")
+if isfile(sunsnow_path)
+    println("\nReading sunsnow.csv (snow node temperatures)...")
+    sunsnow_raw = DataFrame(CSV.File(sunsnow_path, normalizenames=true))
+    println("  sunsnow rows: $(nrow(sunsnow_raw)),  cols: $(ncol(sunsnow_raw))")
+    println("  Column names: $(names(sunsnow_raw))")
+
+    # sunsnow.csv written by NicheMapR write.csv: col1=row_index, col2=dates (string),
+    # col3=DOY, col4=TIME (minutes 0-1380), col5-13=SN1-SN9 (8 snow nodes + soil surface).
+    # Column names after normalizenames=true: Column1, dates, DOY, TIME, SN1-SN9.
+    println("  Reading DOY/TIME from named columns :DOY and :TIME")
+
+    snowtemp_df = DataFrame(
+        DOY  = Int.(sunsnow_raw[!, :DOY]),
+        HOUR = Int.(round.(Float64.(sunsnow_raw[!, :TIME]) ./ 60.0)),  # TIME (min) → hour
+    )
+    # SN1-SN8 are snow nodes (top→bottom), SN9 is the soil surface temperature
+    for k in 1:8
+        col_sym = Symbol("SN$(k)")
+        snowtemp_df[!, col_sym] = round.(Float64.(sunsnow_raw[!, col_sym]), digits=3)
+    end
+    # SN9 = soil surface node — rename to SSOIL
+    snowtemp_df[!, :SSOIL] = round.(Float64.(sunsnow_raw[!, :SN9]), digits=3)
+    CSV.write(joinpath(outdir, "nmr_snowtemp.csv"), snowtemp_df)
+    println("  Wrote nmr_snowtemp.csv ($(nrow(snowtemp_df)) rows × $(ncol(snowtemp_df)) cols)")
+    println("  Columns: $(names(snowtemp_df))")
+else
+    println("\nWARNING: sunsnow.csv not found at $sunsnow_path — skipping snow node temperatures")
+    println("  Add  write.csv(micro_out\$sunsnow, file.path(path, 'sunsnow.csv'))  to snow_test.R")
+end
+
 # TIME is in minutes (0,60,...,1380); convert to hour (0-23) for alignment
 nmr = DataFrame(
     DOY      = Int.(metout.DOY),

@@ -287,7 +287,8 @@ snow_surface_overrides(::NoSnow, _, _, _) = (;
     albedo=nothing, emissivity=nothing, soil_wetness=nothing, shade=nothing
 )
 function snow_surface_overrides(::SnowModel, state::SnowState, scratch, step)
-    if step > 1 && scratch.snow_depth_hourly[step - 1] > 0.0u"cm"
+    prev_depth = step > 1 ? scratch.snow_depth_hourly[step - 1] : state.current_depth
+    if prev_depth > 0.0u"cm"
         return (;
             albedo    = snow_albedo(state.days_since_snow),
             emissivity = 0.98,  # Fortran OSUB.f line 1028: SLE = 0.98
@@ -385,36 +386,50 @@ function snow_phase_transition(snow_model::SnowModel{N}, state::SnowState, scrat
     specific_heat = snow_specific_heat(state.density, atmospheric_pressure)
     freeze = u"K"(0.0u"°C")
 
-    # Track which nodes to clamp to 0°C (Fortran: t(cnd)=0, t(cnd+1)=0)
-    clamp_to_zero = fill(false, N)
+    # Fortran OSUB.f lines 872-882: when meanTpast(cnd) >= 0 AND meanT(cnd) <= 0,
+    # set tt(cnd)=0, tt(cnd+1)=0, y(cnd)=0, y(cnd+1)=0. OSUB line 1087 then records
+    # tt_past=tt (the clamped 0°C), so meanTpast = 0°C next hour → condition re-fires →
+    # persistent 0°C floor while latent heat is available. Julia replicates this by
+    # clamping T_snow[node_index] to 0°C (plus the next node / soil surface).
     clamp_soil_surface = false
+    clamp_snow = fill(false, N)
 
     phase_heat .= 0.0u"J/m^2"
     layer_mass .= 0.0u"kg/m^2"
     for j in 1:(maxsnode + 1)
         j <= N || continue
         (; node_index, thickness) = snow_layer_geometry(snow_model, state, scratch, j)
+        # Skip inactive nodes (depth = 0): they have no real snow mass and must not
+        # contribute to sum_phase or receive temperature clamping.
+        scratch.node_depths[node_index] > 0.0u"cm" || continue
         mass = uconvert(u"kg/m^2", thickness * state.density)
 
         if mean_temperature_past[node_index] >= 0.0u"°C" && mean_temperature[node_index] <= 0.0u"°C"
             layer_mass[node_index] = max(0.0u"kg/m^2", mass)
             phase_heat[node_index] = uconvert(u"J/m^2",
                 (mean_temperature_past[node_index] - mean_temperature[node_index]) * specific_heat * layer_mass[node_index])
-            # Fortran OSUB.f lines 876-895: set t(cnd)=0, t(cnd+1)=0
-            clamp_to_zero[node_index] = true
-            if node_index < N
-                clamp_to_zero[node_index + 1] = true
-            else
-                # cnd+1 is the first soil node
+            # Fortran OSUB.f lines 877-882: tt(cnd)=0; y(cnd)=0 — clamp this snow node to 0°C.
+            # Combined with OSUB line 1087 (tt_past=tt), this records 0°C as meanTpast for the
+            # next hour, re-triggering the condition. The persistent 0°C floor holds the snowpack
+            # at freezing while latent heat is available. The sumphase accumulator (lines 914-931)
+            # limits the duration: when budget exhausted, nodes drop to -0.5°C.
+            clamp_snow[node_index] = true
+            if node_index == N
+                # cnd+1 = soil surface (Fortran node 9): t(cnd+1)=0
                 clamp_soil_surface = true
+            else
+                # cnd+1 = next deeper snow node: t(cnd+1)=0
+                clamp_snow[node_index + 1] = true
             end
         end
     end
 
-    # Apply temperature clamping to 0°C
+    # Clamp snow nodes to 0°C (Fortran: tt(cnd)=0, y(cnd)=0)
     snow_temperature = SVector(ntuple(Val(N)) do i
-        clamp_to_zero[i] ? freeze : snow_temperature[i]
+        clamp_snow[i] ? freeze : snow_temperature[i]
     end)
+
+    # Clamp soil surface (Fortran: t(cnd+1)=0 at snow-soil interface)
     if clamp_soil_surface
         soil_surface_temperature = freeze
     end
@@ -500,7 +515,7 @@ function update_snow(snow_model::SnowModel{N}, state::SnowState, scratch,
         sublimation = uconvert(u"cm", gwsurf * 1.0u"hr" / new_dens)
     end
 
-    previous_depth = step > 1 ? snow_depth_hourly[step - 1] : 0.0u"cm"
+    previous_depth = step > 1 ? snow_depth_hourly[step - 1] : state.current_depth
 
     # ── Rain melt (Anderson model) ──
     rain_melt = 0.0u"cm"

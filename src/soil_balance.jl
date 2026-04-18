@@ -77,7 +77,20 @@ function soil_energy_balance(
             else
                 heat_capacity[i] = volumetric_heat_capacity * (layer_depths[i+1] - layer_depths[i-1]) / 2.0
             end
-            thermal_conductance[i] = iszero(Δd) ? zero(bulk_thermal_conductivity[i] / oneunit(Δd)) : bulk_thermal_conductivity[i] / Δd
+            # Co-located nodes (Δd = 0) occur at the snow-soil interface: the last active
+            # snow node and the soil surface node share the same depth (= snow depth).
+            # Fortran DSUB.f computes C = k/0 = ∞, which forces the stiff ODE solver to
+            # keep the two co-located nodes at the same temperature (perfect thermal coupling).
+            # Julia guards against /0 with zero conductance, which completely decouples
+            # the snow bottom from the soil surface — breaking the snow insulation effect.
+            # Fix: when Δd = 0, use the conductance of the preceding interval so the
+            # snow-soil interface maintains thermal coupling (approximates Fortran's ∞).
+            prev_Δd = layer_depths[i] - layer_depths[i-1]
+            thermal_conductance[i] = if iszero(Δd)
+                iszero(prev_Δd) ? zero(bulk_thermal_conductivity[i] / oneunit(Δd)) : bulk_thermal_conductivity[i] / prev_Δd
+            else
+                bulk_thermal_conductivity[i] / Δd
+            end
         end
     end
 
@@ -726,6 +739,7 @@ function phase_transition!(
         if soil_moisture[i] <= 0.0 || layer_mass[i] <= 0.0u"kg"
             accumulated_latent_heat[i] = 0.0u"J"
             phase_change_heat[i] = 0.0u"J"
+            continue
         end
 
         # ==============================
