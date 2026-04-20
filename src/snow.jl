@@ -424,28 +424,17 @@ function snow_phase_transition(snow_model::SnowModel{N}, state::SnowState, scrat
         end
     end
 
-    # Clamp snow nodes to 0°C (Fortran: tt(cnd)=0, y(cnd)=0)
-    snow_temperature = SVector(ntuple(Val(N)) do i
-        clamp_snow[i] ? freeze : snow_temperature[i]
-    end)
-
-    # Clamp soil surface (Fortran: t(cnd+1)=0 at snow-soil interface)
-    if clamp_soil_surface
-        soil_surface_temperature = freeze
-    end
-
     new_sum_phase = state.sum_phase + sum(phase_heat)
     total_mass = sum(layer_mass)
 
-    # Fortran OSUB.f lines 914-931: if sumphase exceeds latent heat budget,
-    # set nodes AND their neighbors to -0.5°C, reset individual qphase entries,
-    # and reset phase accumulator.
+    # Fortran OSUB.f lines 914-931: check budget BEFORE clamping so overshoot nodes
+    # receive -0.5°C instead of 0°C (the prior code checked post-clamp temperatures,
+    # so the condition could never fire — nodes were already at freeze).
     if total_mass > 0.0u"kg/m^2" && new_sum_phase > uconvert(u"J/m^2", LATENT_HEAT_FUSION * total_mass)
         freeze_overshoot = u"K"(-0.5u"°C")
-        # Mark nodes that overshoot AND their neighbors (Fortran: t(cnd)=-0.5, t(cnd+1)=-0.5)
         overshoot_node = fill(false, N)
         for i in 1:N
-            if snow_temperature[i] < freeze - 1e-8u"K" && phase_heat[i] > 0.0u"J/m^2"
+            if clamp_snow[i] && phase_heat[i] > 0.0u"J/m^2"
                 overshoot_node[i] = true
                 phase_heat[i] = 0.0u"J/m^2"  # Fortran: qphase(cnd)=0
                 if i < N
@@ -456,7 +445,18 @@ function snow_phase_transition(snow_model::SnowModel{N}, state::SnowState, scrat
         snow_temperature = SVector(ntuple(Val(N)) do i
             overshoot_node[i] ? freeze_overshoot : snow_temperature[i]
         end)
+        if clamp_soil_surface
+            soil_surface_temperature = freeze_overshoot
+        end
         new_sum_phase = 0.0u"J/m^2"
+    else
+        # Normal case: clamp triggered nodes to 0°C (Fortran: tt(cnd)=0, y(cnd)=0)
+        snow_temperature = SVector(ntuple(Val(N)) do i
+            clamp_snow[i] ? freeze : snow_temperature[i]
+        end)
+        if clamp_soil_surface
+            soil_surface_temperature = freeze
+        end
     end
 
     return (setproperties(state, (; sum_phase=new_sum_phase)), snow_temperature, soil_surface_temperature)
