@@ -7,7 +7,7 @@
 # Reads forcing inputs and NicheMapR outputs from the external SCAN_SNOTEL_TEST
 # directory and saves compact CSV files to test/data/scan329/.
 # Also reads observations from the SNOTEL 329 data file and subsets to the
-# simulation period (2010-01-01 to 2013-12-31).
+# simulation period (2013-01-01 to 2016-12-31).
 
 using CSV, DataFrames, Dates
 
@@ -82,7 +82,7 @@ if isfile(sunsnow_path)
     println("\nReading sunsnow.csv (snow node temperatures)...")
     sunsnow_raw = DataFrame(CSV.File(sunsnow_path, normalizenames=true))
     println("  sunsnow rows: $(nrow(sunsnow_raw)),  cols: $(ncol(sunsnow_raw))")
-    println("  Column names: $(names(sunsnow_raw))")
+    println("  Column names: $(propertynames(sunsnow_raw))")
 
     # sunsnow.csv written by NicheMapR write.csv: col1=row_index, col2=dates (string),
     # col3=DOY, col4=TIME (minutes 0-1380), col5-13=SN1-SN9 (8 snow nodes + soil surface).
@@ -102,7 +102,7 @@ if isfile(sunsnow_path)
     snowtemp_df[!, :SSOIL] = round.(Float64.(sunsnow_raw[!, :SN9]), digits=3)
     CSV.write(joinpath(outdir, "nmr_snowtemp.csv"), snowtemp_df)
     println("  Wrote nmr_snowtemp.csv ($(nrow(snowtemp_df)) rows × $(ncol(snowtemp_df)) cols)")
-    println("  Columns: $(names(snowtemp_df))")
+    println("  Columns: $(propertynames(snowtemp_df))")
 else
     println("\nWARNING: sunsnow.csv not found at $sunsnow_path — skipping snow node temperatures")
     println("  Add  write.csv(micro_out\$sunsnow, file.path(path, 'sunsnow.csv'))  to snow_test.R")
@@ -118,6 +118,7 @@ nmr = DataFrame(
     D10cm    = round.(soil.D10cm,      digits=1),
     D20cm    = round.(soil.D20cm,      digits=1),
     D50cm    = round.(soil.D50cm,      digits=1),
+    D200cm   = round.(soil.D200cm,     digits=1),
     WC5cm    = round.(smoist.WC5cm,    digits=3),
     WC10cm   = round.(smoist.WC10cm,   digits=3),
     WC20cm   = round.(smoist.WC20cm,   digits=3),
@@ -127,7 +128,7 @@ CSV.write(joinpath(outdir, "nmr_hourly.csv"), nmr)
 println("  Wrote nmr_hourly.csv ($(nrow(nmr)) rows × $(ncol(nmr)) cols)")
 
 # ── 4. SNOTEL 329 observations ────────────────────────────────────────────────
-# Subset to simulation period 2010-01-01 to 2013-12-31.
+# Subset to simulation period 2013-01-01 to 2016-12-31.
 # Raw units: SNWD.I = snow depth in inches, WTEQ.I = SWE in inches (both convert ×2.54 → cm)
 # Soil temp STO.I_* in °C, soil moisture SMS.I_* in % volumetric
 println("\nReading SNOTEL 329 observations...")
@@ -137,8 +138,8 @@ obs_raw = DataFrame(CSV.File(joinpath(DATADIR, "climate/329/329.csv"),
 obs_raw[!, :DateTime] = DateTime.(string.(obs_raw[!, :DateTime]),
     dateformat"yyyy-mm-dd HH:MM:SS")
 
-t_start = DateTime(2010, 1, 1)
-t_end   = DateTime(2013, 12, 31, 23, 0, 0)
+t_start = DateTime(2013, 1, 1)
+t_end   = DateTime(2016, 12, 31, 23, 0, 0)
 mask    = (obs_raw[!, :DateTime] .>= t_start) .& (obs_raw[!, :DateTime] .<= t_end)
 
 # After normalizenames: "SNWD.I"→"SNWD_I", "STO.I_2"→"STO_I_2", etc.
