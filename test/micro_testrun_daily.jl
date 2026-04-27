@@ -214,6 +214,7 @@ coarse_indices = [1, 3, 5, 7, 9, 11, 13, 15, 17, 19] # indices of original 10 co
 end
 
 # Visual comparisons — run manually (not in CI)
+#=
 using Plots
 let
     t = 1:hours2do
@@ -259,3 +260,4 @@ let
     plot!(p_atm, t, ustrip.(u"°C", ta2m_nmr[t]);                    sp=6, label="NicheMapR", color=:black)
     display(p_atm)
 end
+=#

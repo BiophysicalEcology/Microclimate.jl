@@ -13,7 +13,7 @@ function soil_energy_balance(
     t::Quantity,           # timestep
 ) where U <: SVector{N} where N
     # extract parameters
-    (; forcing, buffers, heights, depths, environment_instant, solar_terrain, micro_terrain, soil_wetness, vapour_pressure_equation, longwave_sky, qfreze) = p
+    (; forcing, buffers, heights, depths, environment_instant, solar_terrain, micro_terrain, soil_wetness, vapour_pressure_equation, longwave_sky, qfreze, maxsurf) = p
     (; layer_depths, heat_capacity, thermal_conductance) = buffers.soil_energy_balance
     (; shade) = environment_instant
     # Get environmental data at time t
@@ -25,8 +25,12 @@ function soil_energy_balance(
     reference_height = last(heights)
     absorptivity = 1.0 - albedo
 
-    # check for unstable conditions of ground surface temperature
-    soil_temperature = clamped_temperature = map(t -> clamp(t, (-81.0+273.15)u"K", (85.0+273.15)u"K"), temperature_state)::U
+    # check for unstable conditions of ground surface temperature.
+    # Fortran microinput(74)=maxsurf (MICROCLIMATE.f:482); −81°C lower bound matches
+    # DSUB.f:551.
+    T_lo = u"K"(-81.0u"°C")
+    T_hi = u"K"(maxsurf)
+    soil_temperature = clamped_temperature = map(t -> clamp(t, T_lo, T_hi), temperature_state)::U
 
     # Recompute soil/snow properties at current temperatures on every ODE sub-step,
     # matching Fortran DSUB.f lines 274-337 which calls SOILPROPS on every evaluation.
@@ -154,17 +158,18 @@ function soil_energy_balance(
     # QFREZE: snow melt energy correction, matching Fortran DSUB.f line 567
     surface_dtdt = u"K/minute"((Q_solar + Q_infrared + Q_conduction + convective_heat_flux + qfreze - Q_evaporation) / heat_capacity[j])
 
-    # Build derivative vector: inactive nodes follow surface, active nodes use conduction
-    # Fortran DSUB.f: the loop runs DO 10 I=2,N with the same conduction formula for all
-    # interior nodes including N. For node N, T(N) is pinned to TDS (deep soil temperature)
-    # and the formula references T(N+1). Since T(N) is pinned, DTDT(N) doesn't matter in
-    # practice. We set it to 0 since Julia's SVector has no T(N+1) element.
+    # Build derivative vector: inactive nodes follow surface, active nodes use conduction.
+    # Fortran DSUB.f:591-606 runs DO 10 I=2,N. T(N) is pinned to TDS at every RHS call
+    # (DSUB.f:579), so any DTDT(N) the integrator computes is overwritten next step —
+    # effectively a Dirichlet BC. Julia matches that by holding `dt[N] = 0`; T(N) is set
+    # once per hour to `environment_instant.deep_soil_temperature` and stays there for
+    # the integration interval.
     dt = SVector{N}(ntuple(Val{N}()) do i
         if i <= j
             # Inactive nodes (i < j) follow surface; node j IS the surface
             surface_dtdt
         elseif i == N
-            # Lower boundary: T(N) is pinned to deep soil temperature
+            # Lower boundary: pinned at TDS (Dirichlet). Matches Fortran DSUB.f:579.
             0.0u"K/minute"
         else
             # Internal conduction
@@ -493,9 +498,12 @@ function soil_water_balance!(buffers, smm::CampbellSoilHydraulics;
         vapor_flux[1] = evaporation_potential * (soil_humidity[2] - relative_humidity_local) / (1.0 - relative_humidity_local) # vapour flux at soil surface, EQ9.14
         vapor_flux_derivative[1] = evaporation_potential * water_molar_mass * soil_humidity[2] / (R * soil_temperature[1] * (1.0 - relative_humidity_local)) # derivative of vapour flux at soil surface, combination of EQ9.14 and EQ5.14
 
+        # Campbell (1985) Soil Physics with BASIC, Eq. 3.10: ε(ψ_g) = b·ψ_g^m with b=0.66, m=1 (p. 99).
+        # Matches Fortran INFIL.f:236 literal `KV = 0.66 * DV * ...` — keep the two in sync if m ≠ 1 is ever used.
+        tortuosity_b = 0.66
         for i in 2:num_layers
             vapor_density = wet_air_properties(u"K"(soil_temperature[i]), 1.0, atmospheric_pressure; vapour_pressure_equation).vapour_density # vapor_density is vapour density = c'_v in EQ9.7
-            vapor_conductivity = 0.66 * vapor_diffusivity * vapor_density * (saturation_water_content[i] - (water_content_new[i] + water_content_new[i+1]) / 2.0) / (depth[i+1] - depth[i]) # vapour conductivity, EQ9.7, assuming epsilon(psi_g) = b*psi_g^m (eq. 3.10) where b = 0.66 and m = 1 (p.99)
+            vapor_conductivity = tortuosity_b * vapor_diffusivity * vapor_density * (saturation_water_content[i] - (water_content_new[i] + water_content_new[i+1]) / 2.0) / (depth[i+1] - depth[i]) # vapour conductivity, EQ9.7
             vapor_flux[i] = vapor_conductivity * (soil_humidity[i+1] - soil_humidity[i]) # fluxes of vapour within soil, EQ9.14
             vapor_flux_derivative[i] = water_molar_mass * soil_humidity[i] * vapor_conductivity / (R * soil_temperature[i-1]) # derivatives of vapour fluxes within soil, combination of EQ9.14 and EQ5.14
             hydraulic_capacitance[i] = -1.0 * layer_water_mass[i] * water_content_new[i] / (campbell_b[i] * water_potential[i] * dt) # hydraulic capacity = capacitance, d_theta/d_psi
@@ -632,6 +640,21 @@ function get_soil_water_balance!(buffers, soil_moisture_model::CampbellSoilHydra
         evaporation_potential = 1e-7u"kg/m^2/s"
     end
 
+    # When pool > 0, top boundary is saturated. Establish that BC before the
+    # first infil call so iter 1 uses the same top BC as iters 2..N. Matches
+    # Fortran OSUB.f:1198-1206 (commit fbf9a91): refill mass is debited from
+    # pool, soil node 1 set to saturation. Half-thickness uses the coarse
+    # spacing (depths[3]-depths[1])/2 to match Fortran's (dep(2)-dep(1))/2,
+    # since `depths` here is the fine 19-node grid in which depths[3] is the
+    # first user-specified depth below the surface.
+    sat = 1 - bulk_density[1] / mineral_density[1]
+    half_thickness = (depths[3] - depths[1]) / 2
+    if pool > 0.0u"kg/m^2"
+        refill = max(0.0u"kg/m^2", uconvert(u"kg/m^2", (sat - soil_moisture[1]) * half_thickness * 1000.0u"kg/m^3"))
+        pool = max(0.0u"kg/m^2", pool - refill)
+        soil_moisture[1] = sat
+    end
+
     # run infiltration algorithm
     infil_out = soil_water_balance!(buffers.soil_water_balance, soil_moisture_model;
         depths,
@@ -647,11 +670,7 @@ function get_soil_water_balance!(buffers, soil_moisture_model::CampbellSoilHydra
     surf_evap = max(0.0u"kg/m^2", infil_out.evaporation)
     water_flux = max(0.0u"kg/m^2", infil_out.surface_water_flux)
     pool = clamp(pool - water_flux - surf_evap, 0.0u"kg/m^2", maxpool) # pooling surface water
-    # Saturate top layer when pool > 0 (triggers infiltration). Deduct the water
-    # needed to bring node 1 to saturation from the pool, flooring at zero.
     if pool > 0.0u"kg/m^2"
-        sat = 1 - bulk_density[1] / mineral_density[1]
-        half_thickness = (depths[2] - depths[1]) / 2   # Δz₁/2 for node 1
         refill = max(0.0u"kg/m^2", uconvert(u"kg/m^2", (sat - soil_moisture[1]) * half_thickness * 1000.0u"kg/m^3"))
         pool = max(0.0u"kg/m^2", pool - refill)
         soil_moisture[1] = sat
@@ -672,18 +691,19 @@ function get_soil_water_balance!(buffers, soil_moisture_model::CampbellSoilHydra
         water_flux = max(0.0u"kg/m^2", infil_out.surface_water_flux)
         pool = clamp(pool - water_flux - surf_evap, 0.0u"kg/m^2", maxpool)
         if pool > 0.0u"kg/m^2"
-            sat = 1 - bulk_density[1] / mineral_density[1]
-            half_thickness = (depths[2] - depths[1]) / 2   # Δz₁/2 for node 1
             refill = max(0.0u"kg/m^2", uconvert(u"kg/m^2", (sat - soil_moisture[1]) * half_thickness * 1000.0u"kg/m^3"))
             pool = max(0.0u"kg/m^2", pool - refill)
             soil_moisture[1] = sat
         end
     end
     # Fortran OSUB.f line 1239: ptwet = surflux / (ep * timestep) * 100
-    # Uses infiltration flux (surface_water_flux), not evaporation flux.
-    # Use raw (unclamped) surface_water_flux, matching Fortran's surflux.
-    raw_surface_flux = infil_out.surface_water_flux
-    soil_wetness = clamp(abs(raw_surface_flux / (evaporation_potential * moist_step) * 1.0), 0, 1.0)
+    # Note Fortran's `surflux` is INFIL's FL output (the humidity-gradient
+    # evaporation flux EP*(H(2)-HA)/(1-HA)*DT, INFIL.f:300), NOT the Darcy
+    # surface_water_flux (INFIL's SW). In Julia these map to `infil_out.evaporation`
+    # and `infil_out.surface_water_flux` respectively.
+    # Fortran OSUB.f:1223-1225 clamps `surflux >= 0` before this expression.
+    raw_surflux = max(0.0u"kg/m^2", infil_out.evaporation)
+    soil_wetness = clamp(raw_surflux / (evaporation_potential * moist_step), 0, 1.0)
 
     return (; infil_out, soil_wetness, pool, soil_moisture)
 end
@@ -712,9 +732,7 @@ function phase_transition!(
     specific_heat_water = 4184.0u"J/kg/K"
     num_nodes = length(depths)
     temperature = MVector(temperatures)
-    tolerance = 1.0e-4u"°C"
-    freeze_point = u"K"(0.0u"°C")
-    tol_K = 1.0e-4u"K"
+    tolerance = 1.0e-4u"K"  # tolerance is a temperature *difference*, so use K directly
 
     for i in 1:num_nodes
         # --- Always compute mean layer temperatures ---
@@ -744,31 +762,17 @@ function phase_transition!(
             continue
         end
 
-        # ==============================
-        #  PHASE CHANGE CALCULATIONS
-        # ==============================
+        # Zero-point used for signed comparison of mean temperatures.
+        # Expressed in the same absolute units as the mean (K) so `Δ > tolerance`
+        # means "the mean is more than 0.0001°C above 0°C".
+        zero_c_abs = u"K"(0.0u"°C")
 
-        # --- Classify this node's thermal state ---
-        # Use the node's own past temperature (not the inter-layer mean) to detect whether it
-        # was held at 0°C by prior clamping. The mean can be dragged below 0°C by an already-frozen
-        # neighbour node, causing the check to miss a node that still has latent heat.
-        at_freeze_past = abs(temperatures_past[i] - freeze_point) <= tol_K
-        # freezing: T is going/staying below 0°C while buffer is not yet full
-        freezing = (mean_temperature_past[i] > tolerance ||
-                    (at_freeze_past && accumulated_latent_heat[i] > 0.0u"J" && accumulated_latent_heat[i] < max_latent_heat)) &&
-                   mean_temperature[i] <= -tolerance
-        # thawing: T is going above 0°C while frozen water remains
-        thawing = (mean_temperature_past[i] < -tolerance ||
-                   (at_freeze_past && accumulated_latent_heat[i] > 0.0u"J")) &&
-                  mean_temperature[i] >= tolerance
-
-        # --- FREEZING ---
-        if freezing
-            # When node was held at 0°C (at_freeze_past), mean_temperature_past can be dragged
-            # below 0°C by a cold neighbour. Use freeze_point directly so we account for the full
-            # temperature drop from the freeze point, not just the mean-to-mean delta.
-            t_past_ref = (at_freeze_past && !(mean_temperature_past[i] > tolerance)) ? freeze_point : mean_temperature_past[i]
-            phase_change_heat[i] = (t_past_ref - mean_temperature[i]) * layer_mass[i] * specific_heat_water
+        # Fortran OSUB.f:571-602 fires these branches ONLY on an actual crossing.
+        # Once a node has been clamped to 0°C, meanTpast becomes ≈ 0 and neither
+        # branch fires — the node then cools/warms freely on subsequent hours.
+        # --- FREEZING (above → below 0°C) ---
+        if (mean_temperature_past[i] - zero_c_abs > tolerance) && (mean_temperature[i] - zero_c_abs <= -tolerance)
+            phase_change_heat[i] = (mean_temperature_past[i] - mean_temperature[i]) * layer_mass[i] * specific_heat_water
             accumulated_latent_heat[i] += phase_change_heat[i]
             if accumulated_latent_heat[i] >= max_latent_heat
                 accumulated_latent_heat[i] = max_latent_heat
@@ -780,10 +784,9 @@ function phase_transition!(
                 temperature[i+1] = 0.0u"°C"
             end
 
-        # --- THAWING ---
-        elseif thawing
-            t_past_ref = (at_freeze_past && !(mean_temperature_past[i] < -tolerance)) ? freeze_point : mean_temperature_past[i]
-            phase_change_heat[i] = (mean_temperature[i] - t_past_ref) * layer_mass[i] * specific_heat_water
+        # --- THAWING (below → above 0°C) ---
+        elseif (mean_temperature_past[i] - zero_c_abs < -tolerance) && (mean_temperature[i] - zero_c_abs >= tolerance)
+            phase_change_heat[i] = (mean_temperature[i] - mean_temperature_past[i]) * layer_mass[i] * specific_heat_water
             accumulated_latent_heat[i] -= phase_change_heat[i]
 
             if accumulated_latent_heat[i] <= 0.0u"J"

@@ -12,7 +12,7 @@ Microclimate simulation problem specification.
 - `diffuse_fraction_model`: `ErbsDiffuseFraction()` (default)
 - `vapour_pressure_equation`: `GoffGratch()` (default), `Teten()`, or `Huang()`
 """
-@kwdef struct MicroProblem{D,H,Dep,Ht,Lat,SM,ST,MT,SMM,STM,EMM,EH,ED,IST,ISM,VP,SOS,SOK,TM,Conv,DFM,SNM,ISD,ISNT,ISND}
+@kwdef struct MicroProblem{D,H,Dep,Ht,Lat,SM,ST,MT,SMM,STM,EMM,EH,ED,IST,ISM,VP,SOS,SOK,TM,Conv,DFM,SNM,ISD,ISNT,ISND,MS}
     # locations, times, depths and heights
     days::D = [15, 46, 74, 105, 135, 166, 196, 227, 258, 288, 319, 349] # days of year to simulate - TODO leap years - why not use real dates?
     hours::H = collect(0.0:1:23.0) # hour of day for solar_radiation
@@ -48,6 +48,9 @@ Microclimate simulation problem specification.
     initial_snow_depth::ISD = 0.0u"cm"
     initial_snow_temperature::ISNT = u"K"(0.0u"°C")
     initial_snow_density::ISND = nothing  # nothing → use snow_model.snow_density
+    # Safety clamp on soil surface temperature during ODE integration.
+    # Matches Fortran microinput(74)=MAXSURF (MICROCLIMATE.f:482). Default 85°C.
+    maxsurf::MS = 85.0u"°C"
 end
 
 function example_microclimate_problem(;
@@ -214,14 +217,14 @@ end
 
 function build_soil_energy_inputs(; forcing, buffers, soil_thermal_model, depths, heights, solar_terrain, micro_terrain,
     n_snow, num_soil_nodes, nodes, environment_instant, effective_wetness, vapour_pressure_equation,
-    longwave_sky, albedo, qfreze, snow_model, snow_state, snow_scratch, soil_moisture,
+    longwave_sky, albedo, qfreze, snow_model, snow_state, snow_scratch, soil_moisture, maxsurf,
 )
     return SoilEnergyInputs(; forcing, buffers, soil_thermal_model,
         depths, heights, solar_terrain, micro_terrain,
         nodes=n_snow > 0 ? zeros(n_snow + num_soil_nodes) : nodes,
         environment_instant, soil_wetness=effective_wetness,
         vapour_pressure_equation, longwave_sky, albedo, qfreze,
-        snow_model, snow_state, snow_scratch, soil_moisture, n_snow,
+        snow_model, snow_state, snow_scratch, soil_moisture, n_snow, maxsurf,
     )
 end
 
@@ -310,6 +313,7 @@ function CommonSolve.init(mp::MicroProblem)
         longwave_sky, albedo=mp.solar_terrain.albedo,
         soil_moisture, n_snow=n_snow,
         snow_model, snow_state=initial_snow_state(snow_model), snow_scratch,
+        maxsurf=mp.maxsurf,
     )
     ode_integrator = allocate_ode_integrator(T0_ode, inputs_proto, mp.soil_ode_solver, mp.soil_ode_kwargs)
 
@@ -449,16 +453,12 @@ function solve_soil!(cache::MicroCache)
     num_soil_nodes = length(depths)
 
     # initial conditions — T0 is always SVector{N_soil}
-    # Default: initialise all nodes to the deep soil (annual mean) temperature,
-    # which is a much better starting point than the first day's air temperature.
+    # Default fallback (initial_soil_temperature=nothing): uniform daily mean of the
+    # first day's reference air temperature, matching Fortran SINEC.f's TINS computation
+    # (TIN = mean of the 25-element TAIRRY array; SINEC.f:124-138).
     if isnothing(initial_soil_temperature)
-        if independent_days(time_mode)
-            t = mean(u"K", [view(output.reference_temperature, 1:nhours); output.reference_temperature[1]])
-            T0 = SVector(ntuple(_ -> t, num_soil_nodes))
-        else
-            t_deep = u"K"(environment_daily.deep_soil_temperature[1])
-            T0 = SVector(ntuple(_ -> t_deep, num_soil_nodes))
-        end
+        t = mean(u"K", [view(output.reference_temperature, 1:nhours); output.reference_temperature[1]])
+        T0 = SVector(ntuple(_ -> t, num_soil_nodes))
     else
         if num_soil_nodes != length(initial_soil_temperature)
             error("Initial soil temperature must match length of 'depths'")
@@ -515,8 +515,27 @@ function solve_soil!(cache::MicroCache)
         day_range = (j-1)*nhours+1 : j*nhours
         noon_i = argmin(ustrip.(solar_radiation_out.zenith_angle[day_range]))
         midnight_i = mod(noon_i - 1 + 12, nhours) + 1
-        if independent_days(time_mode)
+        # Per-day state resets, split by what they touch so each TimeMode can opt in
+        # independently. Phase reset matches Fortran MICROCLIMATE.f:1206-1209
+        # (`qphase(:)=0; sumphase2(:)=0` every monthly-mode pass). Moisture/snow
+        # resets are NonConsecutive-only — Fortran preserves these across passes
+        # in monthly mode (verified: skipped OSUB returns at L353 before any
+        # zeroing of moisture/snow accumulators).
+        if reset_phase_per_iter(time_mode)
             ∑phase .= 0.0u"J"
+        end
+        if reset_moisture_per_day(time_mode)
+            reset_day_soil_moisture!(moisture_mode, soil_moisture, initial_soil_moisture, j)
+        end
+        if reset_snow_per_day(time_mode)
+            snow_state = initial_snow_state(snow_model)
+            reset_snow_scratch!(snow_model, snow_scratch)
+        end
+        # Soil-temperature reset (TINS-style uniform fill from this day's mean reference
+        # air temperature). Matches Fortran MICROCLIMATE.f:909-916: `T(1:ii) = TINS(1:ii, doy)`
+        # fires when `IFINAL == 1`. NonConsecutiveDayMode resets every day; ConsecutiveDayMode
+        # never resets after pre-loop init.
+        if is_reset_day(time_mode, j)
             sub2 = (iday*nhours-nhours+1):(iday*nhours)
             if isnothing(initial_soil_temperature)
                 t = mean(u"K", [output.reference_temperature[sub2]; output.reference_temperature[sub2][1]])
@@ -527,9 +546,6 @@ function solve_soil!(cache::MicroCache)
             if n_snow > 0
                 T_snow = SVector(ntuple(_ -> u"K"(0.0u"°C"), n_snow))
             end
-            reset_day_soil_moisture!(moisture_mode, soil_moisture, initial_soil_moisture, j)
-            snow_state = initial_snow_state(snow_model)
-            reset_snow_scratch!(snow_model, snow_scratch)
         end
         T0 = setindex(T0, environment_instant.deep_soil_temperature, num_soil_nodes)
         use_multi_iter  = may_iterate(convergence)
@@ -546,13 +562,63 @@ function solve_soil!(cache::MicroCache)
             T0_iter_start = T0
             is_last_iter = is_converged(convergence, iter, niter, T0, T0_prev_start)
             T0_prev_start = T0_iter_start
-            # Reset T0 to start-of-day on each iteration (matching Fortran)
-            T0 = T0_day_start
-            T_snow = T_snow_day_start
-            ∑phase .= ∑phase_day_start  # restore carry-over, not zero
+            # ConsecutiveDayMode with spinup_first_day: each iter restarts day 1
+            # from T0_day_start. NonConsecutiveDayMode (Fortran monthly): T continues
+            # across spinup passes via the integrator's Y array, so don't reset.
+            if iter_resets_T(time_mode)
+                T0 = T0_day_start
+                T_snow = T_snow_day_start
+            end
+            ∑phase .= ∑phase_day_start  # restore carry-over (zeros under reset_phase_per_iter)
             T0_before = T0
             T_snow_before = T_snow
             T0_output = T0  # phase-transition-clamped temperatures for output (see NOTE below)
+
+            # ── Pre-fill day j's row 1 with the start-of-day state (NMR convention).
+            # NMR records state at minute (i-1)*60 of each day, so row 1 of each day
+            # is the *initial* state at minute 0. Hour i's integration result is then
+            # written to row i+1 below (state at minute i*60 = start of hour i+1).
+            day_init_step = (j - 1) * length(hours) + 1
+            if is_last_iter
+                # T0 here is the state at the start of the *output* pass — for
+                # ConsecutiveDayMode that equals T0_day_start; for NonConsecutiveDayMode
+                # it's the post-prior-spinup-pass state, which is what Fortran writes
+                # at OUT(4) = T(1) at TIME=0 of the output pass.
+                output.soil_temperature[day_init_step, :] .= T0
+                output.surface_water[day_init_step] = pool
+                output.soil_moisture[day_init_step, :] .= soil_moisture
+                output.soil_water_potential[day_init_step, :] .= air_entry_water_potential .*
+                    (soil_saturation_moisture ./ soil_moisture) .^ campbell_b_parameter
+                initialise_soil_humidity!(moisture_mode, output,
+                    view(output.soil_water_potential, day_init_step, :), T0)
+                # Recompute longwave_sky from the forcing at minute 0 of day j so the
+                # sky_temperature we record matches NMR's TIME=0 row exactly. The longwave_sky
+                # variable in scope here may be stale from a previous iteration's last hour.
+                env_init = get_instant(environment_day, mp.environment_hourly, output, soil_moisture, day_init_step)
+                (; longwave_sky_init) = let
+                    overrides_init = snow_surface_overrides(snow_model, snow_state, snow_scratch, day_init_step)
+                    env_for_lw = env_init
+                    if !isnothing(overrides_init.shade)
+                        env_for_lw = merge(env_for_lw, (; shade=overrides_init.shade))
+                    end
+                    if !isnothing(overrides_init.emissivity)
+                        env_for_lw = merge(env_for_lw, (; surface_emissivity=overrides_init.emissivity))
+                    end
+                    (; longwave_sky_init=precompute_longwave_sky(; micro_terrain, environment_instant=env_for_lw, vapour_pressure_equation))
+                end
+                output.sky_temperature[day_init_step] = longwave_sky_init.sky_temperature
+                update_soil_properties!(output, soil_prop_view, soil_thermal_model;
+                    soil_temperature=T0, soil_moisture,
+                    atmospheric_pressure=output.pressure[day_init_step],
+                    step=day_init_step, vapour_pressure_equation,
+                )
+                if n_snow > 0
+                    output.snow_temperature[day_init_step, :] .= T_snow
+                    output.snow_depth[day_init_step] = snow_state.current_depth
+                    output.snow_density[day_init_step] = snow_state.density
+                    output.snow_fall[day_init_step] = 0.0u"cm/hr"
+                end
+            end
 
             # ── Set up first hour's inputs and initialize integrator for full day ──
             step = (j - 1) * length(hours) + 1
@@ -576,7 +642,7 @@ function solve_soil!(cache::MicroCache)
                 depths=ode_depths, heights, solar_terrain, micro_terrain,
                 n_snow, num_soil_nodes, nodes, environment_instant, effective_wetness,
                 vapour_pressure_equation, longwave_sky, albedo, qfreze,
-                snow_model, snow_state, snow_scratch, soil_moisture,
+                snow_model, snow_state, snow_scratch, soil_moisture, maxsurf=mp.maxsurf,
             )
 
             # Initialize integrator for full day (0-1440 min), matching Fortran SFODE
@@ -680,7 +746,7 @@ function solve_soil!(cache::MicroCache)
                         depths=ode_depths, heights, solar_terrain, micro_terrain,
                         n_snow, num_soil_nodes, nodes, environment_instant, effective_wetness,
                         vapour_pressure_equation, longwave_sky, albedo, qfreze,
-                        snow_model, snow_state, snow_scratch, soil_moisture,
+                        snow_model, snow_state, snow_scratch, soil_moisture, maxsurf=mp.maxsurf,
                     )
                 end
                 T0_ode = combine_ode_state(T_snow, T0, n_snow)
@@ -719,24 +785,36 @@ function solve_soil!(cache::MicroCache)
                         # Warm snow or no snow: rain + rain_melt water + thermal melt enter pool
                         pool = clamp(pool + rain + rain_melt_water + melted_water, 0.0u"kg/m^2", soil_moisture_model.maxpool)
                     end
-                    (; pool, soil_moisture) = step_soil_moisture!(moisture_mode, buffers, soil_moisture_model, output, step;
+                    # Soil moisture physics; output write happens below at output_step
+                    (; pool, soil_moisture, infil_out) = step_soil_moisture!(moisture_mode, buffers, soil_moisture_model;
                         depths, micro_terrain, environment_instant, T0, niter_moist, pool, soil_moisture, vapour_pressure_equation, snow_present,
                     )
                 end
-                # Write to output
-                if is_last_iter
-                    output.surface_water[step] = pool
-                    output.soil_temperature[step, :] .= T0_output
-                    output.sky_temperature[step] = longwave_sky.sky_temperature
+                # Write hour i's result to step + 1 (NMR convention: state at minute i*60
+                # belongs in row (j-1)*nhours + i + 1 = start of hour i+1). Skip when
+                # step+1 would land at row 1 of a future day that is going to reset T —
+                # the next day's pre-fill will overwrite that slot anyway.
+                output_step = step + 1
+                in_bounds = output_step <= ndays * length(hours)
+                crosses_day = (i == length(hours))
+                next_day_resets = crosses_day && j < ndays && is_reset_day(time_mode, j + 1)
+                write_output = is_last_iter && in_bounds && !next_day_resets
+                if write_output
+                    output.surface_water[output_step] = pool
+                    output.soil_temperature[output_step, :] .= T0_output
+                    output.sky_temperature[output_step] = longwave_sky.sky_temperature
                     if n_snow > 0
-                        output.snow_fall[step] = uconvert(u"cm/hr", snowfall_hour / 1.0u"hr")
-                        output.snow_depth[step] = uconvert(u"cm", snow_scratch.snow_depth_hourly[step])
-                        output.snow_density[step] = uconvert(u"g/cm^3", snow_state.density)
-                        output.snow_temperature[step, :] .= T_snow
+                        output.snow_fall[output_step] = uconvert(u"cm/hr", snowfall_hour / 1.0u"hr")
+                        output.snow_depth[output_step] = uconvert(u"cm", snow_scratch.snow_depth_hourly[step])
+                        output.snow_density[output_step] = uconvert(u"g/cm^3", snow_state.density)
+                        output.snow_temperature[output_step, :] .= T_snow
                     end
-                    environment_instant = get_instant(environment_day, mp.environment_hourly, output, soil_moisture, step)
+                    if !isnothing(infil_out)
+                        update_soil_water!(output, infil_out, output_step)
+                    end
+                    environment_instant = get_instant(environment_day, mp.environment_hourly, output, soil_moisture, output_step)
                     update_soil_properties!(output, soil_prop_view, soil_thermal_model;
-                        soil_temperature=T0, soil_moisture, atmospheric_pressure=environment_instant.atmospheric_pressure, step, vapour_pressure_equation
+                        soil_temperature=T0, soil_moisture, atmospheric_pressure=environment_instant.atmospheric_pressure, step=output_step, vapour_pressure_equation
                     )
                 end
             end
@@ -808,7 +886,7 @@ end
 
 # ── Soil moisture stepping dispatch ───────────────────────────────────────
 
-function step_soil_moisture!(mode::DynamicSoilMoisture, buffers, soil_moisture_model, output, step;
+function step_soil_moisture!(mode::DynamicSoilMoisture, buffers, soil_moisture_model;
     depths, micro_terrain, environment_instant, T0, niter_moist, pool, soil_moisture, vapour_pressure_equation, snow_present=false,
 )
     (; infil_out, soil_wetness, pool, soil_moisture) = get_soil_water_balance!(buffers, soil_moisture_model;
@@ -816,11 +894,10 @@ function step_soil_moisture!(mode::DynamicSoilMoisture, buffers, soil_moisture_m
         soil_wetness=mode.soil_wetness, soil_moisture, vapour_pressure_equation, snow_present,
     )
     mode.soil_wetness = soil_wetness
-    update_soil_water!(output, infil_out, step)
-    return (; pool, soil_moisture)
+    return (; pool, soil_moisture, infil_out)
 end
 
-step_soil_moisture!(::PrescribedSoilMoisture, args...; pool, soil_moisture, snow_present=false, kw...) = (; pool, soil_moisture)
+step_soil_moisture!(::PrescribedSoilMoisture, args...; pool, soil_moisture, kw...) = (; pool, soil_moisture, infil_out=nothing)
 
 # TODO eventually make environment a type,
 # and this can just be `getindex` on that type.
