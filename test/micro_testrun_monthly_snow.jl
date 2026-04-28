@@ -170,6 +170,8 @@ ta1cm_nmr = collect(metout_nmr[:, 4] .+ 273.15) .* 1u"K"
 ta2m_nmr = collect(metout_nmr[:, 5] .+ 273.15) .* 1u"K"
 rh1cm_nmr = collect(metout_nmr[:, 6]) ./ 100.0
 rh2m_nmr = collect(metout_nmr[:, 7]) ./ 100.0
+tskyC_nmr = collect(metout_nmr[:, 15]) .* u"°C"
+solr_nmr = collect(metout_nmr[:, 14]) .* u"W/m^2"
 
 # Snow columns may contain missing values (NA in R output)
 snowfall_nmr = metout_nmr[:, 18] .* 1u"cm/hr"
@@ -229,4 +231,5 @@ let
     plot!(p_atm, t, snow_density_matrix[t, 1];                           sp=8, label="Julia",     color=:red,   title="Snow density")
     plot!(p_atm, t, snowdensity_nmr[t];                                  sp=8, label="NicheMapR", color=:black)
     display(p_atm)
-end =#
+end
+ =#
