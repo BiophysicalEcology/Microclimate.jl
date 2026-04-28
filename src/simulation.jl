@@ -50,7 +50,7 @@ Microclimate simulation problem specification.
     initial_snow_density::ISND = nothing  # nothing → use snow_model.snow_density
     # Safety clamp on soil surface temperature during ODE integration.
     # Matches Fortran microinput(74)=MAXSURF (MICROCLIMATE.f:482). Default 85°C.
-    maxsurf::MS = 85.0u"°C"
+    maximum_surface_temperature::MS = 85.0u"°C"
 end
 
 function example_microclimate_problem(;
@@ -217,14 +217,14 @@ end
 
 function build_soil_energy_inputs(; forcing, buffers, soil_thermal_model, depths, heights, solar_terrain, micro_terrain,
     n_snow, num_soil_nodes, nodes, environment_instant, effective_wetness, vapour_pressure_equation,
-    longwave_sky, albedo, qfreze, snow_model, snow_state, snow_scratch, soil_moisture, maxsurf,
+    longwave_sky, albedo, qfreze, snow_model, snow_state, snow_scratch, soil_moisture, maximum_surface_temperature,
 )
     return SoilEnergyInputs(; forcing, buffers, soil_thermal_model,
         depths, heights, solar_terrain, micro_terrain,
         nodes=n_snow > 0 ? zeros(n_snow + num_soil_nodes) : nodes,
         environment_instant, soil_wetness=effective_wetness,
         vapour_pressure_equation, longwave_sky, albedo, qfreze,
-        snow_model, snow_state, snow_scratch, soil_moisture, n_snow, maxsurf,
+        snow_model, snow_state, snow_scratch, soil_moisture, n_snow, maximum_surface_temperature,
     )
 end
 
@@ -313,7 +313,7 @@ function CommonSolve.init(mp::MicroProblem)
         longwave_sky, albedo=mp.solar_terrain.albedo,
         soil_moisture, n_snow=n_snow,
         snow_model, snow_state=initial_snow_state(snow_model), snow_scratch,
-        maxsurf=mp.maxsurf,
+        maximum_surface_temperature=mp.maximum_surface_temperature,
     )
     ode_integrator = allocate_ode_integrator(T0_ode, inputs_proto, mp.soil_ode_solver, mp.soil_ode_kwargs)
 
@@ -642,7 +642,7 @@ function solve_soil!(cache::MicroCache)
                 depths=ode_depths, heights, solar_terrain, micro_terrain,
                 n_snow, num_soil_nodes, nodes, environment_instant, effective_wetness,
                 vapour_pressure_equation, longwave_sky, albedo, qfreze,
-                snow_model, snow_state, snow_scratch, soil_moisture, maxsurf=mp.maxsurf,
+                snow_model, snow_state, snow_scratch, soil_moisture, maximum_surface_temperature=mp.maximum_surface_temperature,
             )
 
             # Initialize integrator for full day (0-1440 min), matching Fortran SFODE
@@ -746,7 +746,7 @@ function solve_soil!(cache::MicroCache)
                         depths=ode_depths, heights, solar_terrain, micro_terrain,
                         n_snow, num_soil_nodes, nodes, environment_instant, effective_wetness,
                         vapour_pressure_equation, longwave_sky, albedo, qfreze,
-                        snow_model, snow_state, snow_scratch, soil_moisture, maxsurf=mp.maxsurf,
+                        snow_model, snow_state, snow_scratch, soil_moisture, maximum_surface_temperature=mp.maximum_surface_temperature,
                     )
                 end
                 T0_ode = combine_ode_state(T_snow, T0, n_snow)
