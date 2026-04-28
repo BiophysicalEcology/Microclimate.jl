@@ -126,7 +126,7 @@ soilprops[1, 3]<-Thcond # insert thermal conductivity to profile 1
 soilprops[1, 4]<-SpecHeat # insert specific heat to profile 1
 soilprops[1, 5]<-Density # insert mineral density to profile 1
 soilinit<-rep(tannul, 20) # make initial soil temps equal to mean annual
-soilinit<-rep((TMINN[1] + TMAXX[1])/2, 20) # make initial soil temps equal to mean annual
+#soilinit<-rep((TMINN[1] + TMAXX[1])/2, 20) # make initial soil temps equal to mean annual
 
 # note that these are set for sand (Table 9.1 in Campbell and Norman, 1995)
 PE <- rep(0.7, 19) #air entry potential J/kg

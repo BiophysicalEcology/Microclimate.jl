@@ -6,3 +6,11 @@ Manifest.toml
 docs/Manifest.toml
 .claude/settings.local.json
 .claude/settings.json
+bash.exe.stackdump
+.vscode/settings.json
+test/data/scan329.zip
+test/data/scan329/obs.csv
+test/data/scan329/initial_sm.csv
+test/data/scan329/nmr_hourly.csv
+test/data/scan329/forcing.csv
+test/data/scan329/nmr_snowtemp.csv

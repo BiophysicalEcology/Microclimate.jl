@@ -530,6 +530,7 @@ function solve_soil!(cache::MicroCache)
         # values after every SFODE call. Save initial conditions for reset.
         T0_day_start    = T0
         T_snow_day_start = T_snow
+        ∑phase_day_start = copy(∑phase)  # carry frozen-water state from previous day
         while !is_last_iter
             iter += 1
             T0_iter_start = T0
@@ -538,7 +539,7 @@ function solve_soil!(cache::MicroCache)
             # Reset T0 to start-of-day on each iteration (matching Fortran)
             T0 = T0_day_start
             T_snow = T_snow_day_start
-            ∑phase .= 0.0u"J"
+            ∑phase .= ∑phase_day_start  # restore carry-over, not zero
             T0_before = T0
             T_snow_before = T_snow
             T0_output = T0  # phase-transition-clamped temperatures for output (see NOTE below)
@@ -624,6 +625,12 @@ function solve_soil!(cache::MicroCache)
                     else
                         qfreze = 0.0u"W/m^2"
                     end
+                    # Fortran SNOWLAYER.f lines 67-71, 93-97: reset deactivated node temps to T(1)
+                    prev_active = snow_state.active_nodes
+                    snow_state = activate_snow_nodes(snow_model, snow_state, snow_scratch, T_snow, step)
+                    if snow_state.active_nodes < prev_active
+                        T_snow = sync_inactive_snow_temps(T_snow, snow_scratch)
+                    end                    
                     snow_state, T_snow, soil_surf_temp = snow_phase_transition(snow_model, snow_state, snow_scratch, T_snow, T_snow_before, environment_instant.atmospheric_pressure, T0[1])
                     if !isnothing(soil_surf_temp)
                         T0 = setindex(T0, soil_surf_temp, 1)
@@ -635,12 +642,6 @@ function solve_soil!(cache::MicroCache)
                     T_snow, freeze_soil = freeze_new_snow(snow_model, T_snow, snow_scratch, step)
                     if freeze_soil && T0[1] > u"K"(0.0u"°C")
                         T0 = setindex(T0, u"K"(0.0u"°C"), 1)
-                    end
-                    # Fortran SNOWLAYER.f lines 67-71, 93-97: reset deactivated node temps to T(1)
-                    prev_active = snow_state.active_nodes
-                    snow_state = activate_snow_nodes(snow_model, snow_state, snow_scratch, T_snow, step)
-                    if snow_state.active_nodes < prev_active
-                        T_snow = sync_inactive_snow_temps(T_snow, snow_scratch)
                     end
                     snow_state = adjust_snow_near_nodes(snow_model, snow_state, snow_scratch, T_snow, step)
                     prev_active2 = snow_state.active_nodes

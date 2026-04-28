@@ -1,129 +1,148 @@
 # prepare_scan329_data.jl
 #
-# One-time data preparation script for the SNOTEL 329 snow comparison test.
+# Generates the NicheMapR comparison data for the SNOTEL 329 snow test.
 # Run manually from the repo root:
 #   julia test/prepare_scan329_data.jl
 #
-# Reads forcing inputs and NicheMapR outputs from the external SCAN_SNOTEL_TEST
-# directory and saves compact CSV files to test/data/scan329/.
-# Also reads observations from the SNOTEL 329 data file and subsets to the
-# simulation period (2010-01-01 to 2013-12-31).
+# Reads forcing, initial soil moisture, and observations from
+# test/data/scan329/ (all self-contained in the package — no Dropbox needed),
+# writes NicheMapR input CSVs, calls test/R/run_nmr.R via Rscript, then saves
+# the NicheMapR outputs as nmr_hourly.csv for use by snow_obs_comparison.jl.
 
 using CSV, DataFrames, Dates
 
-const DATADIR  = "C:/Users/mrke/Dropbox/Completed Research Projects/SCAN_SNOTEL_TEST"
-const INPUTDIR = joinpath(DATADIR, "micro csv input")
+const NDAYS = 365   # 2013 only
+
+# Soil properties (19 fine nodes) — must match snow_obs_comparison.jl
+const _MINERAL_CONDUCTIVITY  = [0.2, 0.2, 0.2, 1.35, 2.5, 2.5, 2.5, 2.5, 2.5, 2.5,
+                                 2.5, 2.5, 2.5, 2.5, 2.5, 2.5, 2.5, 2.5, 2.5]
+const _MINERAL_HEAT_CAPACITY = [1920.0, 1920.0, 1920.0, 1395.0, 870.0, 870.0, 870.0, 870.0, 870.0, 870.0,
+                                 870.0, 870.0, 870.0, 870.0, 870.0, 870.0, 870.0, 870.0, 870.0]
+const _ROOT_DENSITY = [0.0, 0.0, 82000.0, 80000.0, 78000.0, 74000.0, 71000.0, 64000.0, 58000.0, 48000.0,
+                       40000.0, 18000.0, 9000.0, 6000.0, 8000.0, 4000.0, 4000.0, 0.0, 0.0]
+# Indices of the 10 NMR coarse nodes in the 19-node fine array
+const _NMR_IDX = [1, 3, 5, 7, 9, 11, 13, 15, 17, 19]
+# Initial soil temperature at each of the 10 NMR nodes (°C) — matches INITIAL_ST in snow_obs_comparison.jl
+const _INIT_ST = [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 3.0, 3.0, 6.4]
 
 testdir = realpath(joinpath(@__DIR__))
 outdir  = joinpath(testdir, "data", "scan329")
-mkpath(outdir)
-println("Writing output to: $outdir")
+println("Working in: $outdir")
 
-# ── 1. Daily forcing ──────────────────────────────────────────────────────────
-println("\nReading daily forcing inputs...")
+# ── 1. Load daily forcing (already trimmed to 365 days) ───────────────────────
+println("\nReading forcing.csv...")
+forcing = DataFrame(CSV.File(joinpath(outdir, "forcing.csv")))
+@assert nrow(forcing) == NDAYS "forcing.csv must have $NDAYS rows, got $(nrow(forcing))"
+println("  $(nrow(forcing)) days loaded")
 
-doy    = DataFrame(CSV.File(joinpath(INPUTDIR, "doy.csv")))[:, 2]
-tminn  = DataFrame(CSV.File(joinpath(INPUTDIR, "TMINN.csv")))[:, 2]
-tmaxx  = DataFrame(CSV.File(joinpath(INPUTDIR, "TMAXX.csv")))[:, 2]
-wnminn = DataFrame(CSV.File(joinpath(INPUTDIR, "WNMINN.csv")))[:, 2]
-wnmaxx = DataFrame(CSV.File(joinpath(INPUTDIR, "WNMAXX.csv")))[:, 2]
-rhminn = DataFrame(CSV.File(joinpath(INPUTDIR, "RHMINN.csv")))[:, 2]
-rhmaxx = DataFrame(CSV.File(joinpath(INPUTDIR, "RHMAXX.csv")))[:, 2]
-ccmaxx = DataFrame(CSV.File(joinpath(INPUTDIR, "CCMAXX.csv")))[:, 2]
-rain   = DataFrame(CSV.File(joinpath(INPUTDIR, "rain.csv")))[:, 2]
+# ── 2. Load initial soil moisture ─────────────────────────────────────────────
+println("\nReading initial_sm.csv...")
+initial_sm = DataFrame(CSV.File(joinpath(outdir, "initial_sm.csv"))).moisture
+println("  Initial soil moisture (m³/m³): $initial_sm")
 
-ndays = length(doy)
-println("  ndays = $ndays")
+# ── 3. Write NicheMapR input CSVs ─────────────────────────────────────────────
+println("\nWriting NicheMapR input files...")
 
-forcing = DataFrame(
-    DOY      = Int.(round.(doy)),
-    TMINN    = round.(tminn,   digits=2),
-    TMAXX    = round.(tmaxx,   digits=2),
-    WNMINN   = round.(wnminn,  digits=3),
-    WNMAXX   = round.(wnmaxx,  digits=3),
-    RHMINN   = round.(rhminn,  digits=2),
-    RHMAXX   = round.(rhmaxx,  digits=2),
-    CCMAXX   = round.(ccmaxx,  digits=2),
-    RAINFALL = round.(rain,    digits=2),
+# nmr_forcing.csv — same forcing as Julia, in the column names run_nmr.R expects
+CSV.write(joinpath(outdir, "nmr_forcing.csv"), DataFrame(
+    doy       = forcing.DOY,
+    Tmin_C    = forcing.TMINN,
+    Tmax_C    = forcing.TMAXX,
+    RHmin_pct = forcing.RHMINN,
+    RHmax_pct = forcing.RHMAXX,
+    Wind_ms   = forcing.WNMAXX,   # run_nmr.R uses this for both WNMINN and WNMAXX
+    Rain_mm   = forcing.RAINFALL,
+    CCmax_pct = forcing.CCMAXX,
+    CCmin_pct = zeros(NDAYS),
+    tannul_C  = fill(6.43, NDAYS),
+))
+println("  Wrote nmr_forcing.csv")
+
+# nmr_params.csv — scalar site and model parameters
+CSV.write(joinpath(outdir, "nmr_params.csv"), DataFrame(
+    latitude    = [39.1368],
+    longitude   = [-111.5580],
+    elevation_m = [2435.35],
+    dstart      = ["01/01/2013"],
+    dfinish     = ["31/12/2013"],
+    nyears      = [1],
+    snowtemp    = [1.5],
+    snowdens    = [0.375],
+    snowmelt    = [1.0],
+    undercatch  = [1.0],
+    rainmelt    = [0.0125],
+    densfun1    = [0.5979],
+    densfun2    = [0.2178],
+    densfun3    = [0.001],
+    densfun4    = [0.0038],
+    snowcond    = [0.0],
+    intercept   = [0.0],
+    REFL        = [0.15],
+    SLE         = [0.95],
+    RUF         = [0.004],
+))
+println("  Wrote nmr_params.csv")
+
+# nmr_soil.csv — 10 NMR coarse thermal nodes
+CSV.write(joinpath(outdir, "nmr_soil.csv"), DataFrame(
+    DEP            = [0, 2.5, 5, 10, 15, 20, 30, 50, 100, 200],
+    Thcond         = _MINERAL_CONDUCTIVITY[_NMR_IDX],
+    SpecHeat       = _MINERAL_HEAT_CAPACITY[_NMR_IDX],
+    BulkDensity    = fill(1.3, 10),
+    MineralDensity = fill(2.56, 10),
+))
+println("  Wrote nmr_soil.csv")
+
+# nmr_soil19.csv — 19-node hydraulic properties
+CSV.write(joinpath(outdir, "nmr_soil19.csv"), DataFrame(
+    node = 1:19,
+    PE   = fill(1.1,    19),
+    KS   = fill(0.0037, 19),
+    BB   = fill(4.5,    19),
+    BD   = fill(1.3,    19),
+    DD   = fill(2.56,   19),
+    L    = _ROOT_DENSITY,
+))
+println("  Wrote nmr_soil19.csv")
+
+# nmr_initial.csv — initial T (°C) and SM (m³/m³) at 10 NMR nodes
+init_row = DataFrame(
+    reshape(vcat(_INIT_ST, Float64.(initial_sm)), 1, 20),
+    vcat(["ST$i" for i in 1:10], ["SM$i" for i in 1:10]),
 )
-CSV.write(joinpath(outdir, "forcing.csv"), forcing)
-println("  Wrote forcing.csv ($(nrow(forcing)) rows × $(ncol(forcing)) cols)")
+CSV.write(joinpath(outdir, "nmr_initial.csv"), init_row)
+println("  Wrote nmr_initial.csv")
 
-# ── 2. Initial soil moisture from moists.csv ──────────────────────────────────
-# moists.csv: 10 rows (soil layers) × ndays columns; col 2 = day-1 initial values
-println("\nReading moists.csv (large file, may be slow)...")
-moists_df = DataFrame(CSV.File(joinpath(INPUTDIR, "moists.csv")))
-initial_sm = round.(Float64.(moists_df[1:10, 2]), digits=4)
-println("  Initial soil moisture (m³/m³):")
-println("  $initial_sm")
-CSV.write(joinpath(outdir, "initial_sm.csv"),
-    DataFrame(; layer=1:10, moisture=initial_sm))
-println("  Wrote initial_sm.csv")
+# ── 4. Run NicheMapR via R ────────────────────────────────────────────────────
+println("\nCalling run_nmr.R...")
+rscript = joinpath(testdir, "R", "NicheMapR_micro_testrun_scan329.R")
+run(`Rscript $rscript $outdir`)
+println("  R run complete.")
 
-# ── 3. NicheMapR hourly outputs ───────────────────────────────────────────────
-# Columns needed: SNOWDEP, SNOWDENS from metout; DEP3/4/6/8 from soil; WC3/4/6/8 from soilmoist
-# Depth mapping (DEP.csv = [0,2.5,5,10,15,20,30,50,100,200] cm):
-#   DEP3/WC3 = 5 cm, DEP4/WC4 = 10 cm, DEP6/WC6 = 20 cm, DEP8/WC8 = 50 cm
+# ── 5. Read NicheMapR outputs and save nmr_hourly.csv ────────────────────────
 println("\nReading NicheMapR output files...")
-# R write.csv format: row index + dates + DOY + TIME(minutes) + named depth columns
-# normalizenames=true handles dots in names like "WC2.5cm" → "WC2_5cm"
-metout = DataFrame(CSV.File(joinpath(DATADIR, "metout.csv"),     normalizenames=true))
-soil   = DataFrame(CSV.File(joinpath(DATADIR, "soil.csv"),       normalizenames=true))
-smoist = DataFrame(CSV.File(joinpath(DATADIR, "soilmoist.csv"),  normalizenames=true))
+metout = DataFrame(CSV.File(joinpath(outdir, "metout.csv"),     normalizenames=true))
+soil   = DataFrame(CSV.File(joinpath(outdir, "soil.csv"),       normalizenames=true))
+smoist = DataFrame(CSV.File(joinpath(outdir, "soilmoist.csv"),  normalizenames=true))
 println("  metout rows: $(nrow(metout)),  soil rows: $(nrow(soil)),  soilmoist rows: $(nrow(smoist))")
 
-# TIME is in minutes (0,60,...,1380); convert to hour (0-23) for alignment
+nhours = NDAYS * 24
 nmr = DataFrame(
-    DOY      = Int.(metout.DOY),
-    HOUR     = Int.(round.(metout.TIME ./ 60.0)),
-    SNOWDEP  = round.(metout.SNOWDEP,  digits=1),
-    SNOWDENS = round.(metout.SNOWDENS, digits=3),
-    D5cm     = round.(soil.D5cm,       digits=1),
-    D10cm    = round.(soil.D10cm,      digits=1),
-    D20cm    = round.(soil.D20cm,      digits=1),
-    D50cm    = round.(soil.D50cm,      digits=1),
-    WC5cm    = round.(smoist.WC5cm,    digits=3),
-    WC10cm   = round.(smoist.WC10cm,   digits=3),
-    WC20cm   = round.(smoist.WC20cm,   digits=3),
-    WC50cm   = round.(smoist.WC50cm,   digits=3),
+    DOY      = Int.(metout.DOY[1:nhours]),
+    HOUR     = Int.(round.(metout.TIME[1:nhours] ./ 60.0)),
+    SNOWDEP  = round.(Float64.(metout.SNOWDEP[1:nhours]),  digits=1),
+    SNOWDENS = round.(Float64.(metout.SNOWDENS[1:nhours]), digits=3),
+    D5cm     = round.(Float64.(soil.D5cm[1:nhours]),       digits=1),
+    D10cm    = round.(Float64.(soil.D10cm[1:nhours]),      digits=1),
+    D20cm    = round.(Float64.(soil.D20cm[1:nhours]),      digits=1),
+    D50cm    = round.(Float64.(soil.D50cm[1:nhours]),      digits=1),
+    D200cm   = round.(Float64.(soil.D200cm[1:nhours]),     digits=1),
+    WC5cm    = round.(Float64.(smoist.WC5cm[1:nhours]),    digits=3),
+    WC10cm   = round.(Float64.(smoist.WC10cm[1:nhours]),   digits=3),
+    WC20cm   = round.(Float64.(smoist.WC20cm[1:nhours]),   digits=3),
+    WC50cm   = round.(Float64.(smoist.WC50cm[1:nhours]),   digits=3),
 )
 CSV.write(joinpath(outdir, "nmr_hourly.csv"), nmr)
 println("  Wrote nmr_hourly.csv ($(nrow(nmr)) rows × $(ncol(nmr)) cols)")
 
-# ── 4. SNOTEL 329 observations ────────────────────────────────────────────────
-# Subset to simulation period 2010-01-01 to 2013-12-31.
-# Raw units: SNWD.I = snow depth in inches, WTEQ.I = SWE in inches (both convert ×2.54 → cm)
-# Soil temp STO.I_* in °C, soil moisture SMS.I_* in % volumetric
-println("\nReading SNOTEL 329 observations...")
-# normalizenames=true converts "STO.I_2" → "STO_I_2" etc.
-obs_raw = DataFrame(CSV.File(joinpath(DATADIR, "climate/329/329.csv"),
-    normalizenames=true))
-obs_raw[!, :DateTime] = DateTime.(string.(obs_raw[!, :DateTime]),
-    dateformat"yyyy-mm-dd HH:MM:SS")
-
-t_start = DateTime(2010, 1, 1)
-t_end   = DateTime(2013, 12, 31, 23, 0, 0)
-mask    = (obs_raw[!, :DateTime] .>= t_start) .& (obs_raw[!, :DateTime] .<= t_end)
-
-# After normalizenames: "SNWD.I"→"SNWD_I", "STO.I_2"→"STO_I_2", etc.
-obs_sub = obs_raw[mask, [:DateTime, :SNWD_I, :WTEQ_I,
-    :STO_I_2, :STO_I_8, :STO_I_20,
-    :SMS_I_2, :SMS_I_8, :SMS_I_20]]
-
-# Rename to depth-labelled identifiers
-rename!(obs_sub,
-    :SNWD_I   => :SNWD_mm,
-    :WTEQ_I   => :WTEQ_in,     # inches; convert ×2.54 → cm in test script
-    :STO_I_2  => :STO_5cm,
-    :STO_I_8  => :STO_20cm,
-    :STO_I_20 => :STO_50cm,
-    :SMS_I_2  => :SMS_5cm,
-    :SMS_I_8  => :SMS_20cm,
-    :SMS_I_20 => :SMS_50cm,
-)
-CSV.write(joinpath(outdir, "obs.csv"), obs_sub)
-println("  Wrote obs.csv ($(nrow(obs_sub)) rows)")
-
-println("\nDone. Data files written to $outdir")
-println("Hard-wire initial_soil_moisture in snow_obs_comparison.jl:")
-println("  $initial_sm")
+println("\nDone.")

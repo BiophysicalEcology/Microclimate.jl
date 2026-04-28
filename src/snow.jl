@@ -287,7 +287,8 @@ snow_surface_overrides(::NoSnow, _, _, _) = (;
     albedo=nothing, emissivity=nothing, soil_wetness=nothing, shade=nothing
 )
 function snow_surface_overrides(::SnowModel, state::SnowState, scratch, step)
-    if step > 1 && scratch.snow_depth_hourly[step - 1] > 0.0u"cm"
+    prev_depth = step > 1 ? scratch.snow_depth_hourly[step - 1] : state.current_depth
+    if prev_depth > 0.0u"cm"
         return (;
             albedo    = snow_albedo(state.days_since_snow),
             emissivity = 0.98,  # Fortran OSUB.f line 1028: SLE = 0.98
@@ -385,52 +386,55 @@ function snow_phase_transition(snow_model::SnowModel{N}, state::SnowState, scrat
     specific_heat = snow_specific_heat(state.density, atmospheric_pressure)
     freeze = u"K"(0.0u"°C")
 
-    # Track which nodes to clamp to 0°C (Fortran: t(cnd)=0, t(cnd+1)=0)
-    clamp_to_zero = fill(false, N)
+    # Fortran OSUB.f lines 872-882: when meanTpast(cnd) >= 0 AND meanT(cnd) <= 0,
+    # set tt(cnd)=0, tt(cnd+1)=0, y(cnd)=0, y(cnd+1)=0. OSUB line 1087 then records
+    # tt_past=tt (the clamped 0°C), so meanTpast = 0°C next hour → condition re-fires →
+    # persistent 0°C floor while latent heat is available. Julia replicates this by
+    # clamping T_snow[node_index] to 0°C (plus the next node / soil surface).
     clamp_soil_surface = false
+    clamp_snow = fill(false, N)
 
     phase_heat .= 0.0u"J/m^2"
     layer_mass .= 0.0u"kg/m^2"
     for j in 1:(maxsnode + 1)
         j <= N || continue
         (; node_index, thickness) = snow_layer_geometry(snow_model, state, scratch, j)
+        # Skip inactive nodes (depth = 0): they have no real snow mass and must not
+        # contribute to sum_phase or receive temperature clamping.
+        scratch.node_depths[node_index] > 0.0u"cm" || continue
         mass = uconvert(u"kg/m^2", thickness * state.density)
 
         if mean_temperature_past[node_index] >= 0.0u"°C" && mean_temperature[node_index] <= 0.0u"°C"
             layer_mass[node_index] = max(0.0u"kg/m^2", mass)
             phase_heat[node_index] = uconvert(u"J/m^2",
                 (mean_temperature_past[node_index] - mean_temperature[node_index]) * specific_heat * layer_mass[node_index])
-            # Fortran OSUB.f lines 876-895: set t(cnd)=0, t(cnd+1)=0
-            clamp_to_zero[node_index] = true
-            if node_index < N
-                clamp_to_zero[node_index + 1] = true
-            else
-                # cnd+1 is the first soil node
+            # Fortran OSUB.f lines 877-882: tt(cnd)=0; y(cnd)=0 — clamp this snow node to 0°C.
+            # Combined with OSUB line 1087 (tt_past=tt), this records 0°C as meanTpast for the
+            # next hour, re-triggering the condition. The persistent 0°C floor holds the snowpack
+            # at freezing while latent heat is available. The sumphase accumulator (lines 914-931)
+            # limits the duration: when budget exhausted, nodes drop to -0.5°C.
+            clamp_snow[node_index] = true
+            if node_index == N
+                # cnd+1 = soil surface (Fortran node 9): t(cnd+1)=0
                 clamp_soil_surface = true
+            else
+                # cnd+1 = next deeper snow node: t(cnd+1)=0
+                clamp_snow[node_index + 1] = true
             end
         end
-    end
-
-    # Apply temperature clamping to 0°C
-    snow_temperature = SVector(ntuple(Val(N)) do i
-        clamp_to_zero[i] ? freeze : snow_temperature[i]
-    end)
-    if clamp_soil_surface
-        soil_surface_temperature = freeze
     end
 
     new_sum_phase = state.sum_phase + sum(phase_heat)
     total_mass = sum(layer_mass)
 
-    # Fortran OSUB.f lines 914-931: if sumphase exceeds latent heat budget,
-    # set nodes AND their neighbors to -0.5°C, reset individual qphase entries,
-    # and reset phase accumulator.
+    # Fortran OSUB.f lines 914-931: check budget BEFORE clamping so overshoot nodes
+    # receive -0.5°C instead of 0°C (the prior code checked post-clamp temperatures,
+    # so the condition could never fire — nodes were already at freeze).
     if total_mass > 0.0u"kg/m^2" && new_sum_phase > uconvert(u"J/m^2", LATENT_HEAT_FUSION * total_mass)
         freeze_overshoot = u"K"(-0.5u"°C")
-        # Mark nodes that overshoot AND their neighbors (Fortran: t(cnd)=-0.5, t(cnd+1)=-0.5)
         overshoot_node = fill(false, N)
         for i in 1:N
-            if snow_temperature[i] < freeze - 1e-8u"K" && phase_heat[i] > 0.0u"J/m^2"
+            if clamp_snow[i] && phase_heat[i] > 0.0u"J/m^2"
                 overshoot_node[i] = true
                 phase_heat[i] = 0.0u"J/m^2"  # Fortran: qphase(cnd)=0
                 if i < N
@@ -441,7 +445,18 @@ function snow_phase_transition(snow_model::SnowModel{N}, state::SnowState, scrat
         snow_temperature = SVector(ntuple(Val(N)) do i
             overshoot_node[i] ? freeze_overshoot : snow_temperature[i]
         end)
+        if clamp_soil_surface
+            soil_surface_temperature = freeze_overshoot
+        end
         new_sum_phase = 0.0u"J/m^2"
+    else
+        # Normal case: clamp triggered nodes to 0°C (Fortran: tt(cnd)=0, y(cnd)=0)
+        snow_temperature = SVector(ntuple(Val(N)) do i
+            clamp_snow[i] ? freeze : snow_temperature[i]
+        end)
+        if clamp_soil_surface
+            soil_surface_temperature = freeze
+        end
     end
 
     return (setproperties(state, (; sum_phase=new_sum_phase)), snow_temperature, soil_surface_temperature)
@@ -500,7 +515,7 @@ function update_snow(snow_model::SnowModel{N}, state::SnowState, scratch,
         sublimation = uconvert(u"cm", gwsurf * 1.0u"hr" / new_dens)
     end
 
-    previous_depth = step > 1 ? snow_depth_hourly[step - 1] : 0.0u"cm"
+    previous_depth = step > 1 ? snow_depth_hourly[step - 1] : state.current_depth
 
     # ── Rain melt (Anderson model) ──
     rain_melt = 0.0u"cm"

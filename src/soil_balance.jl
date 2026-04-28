@@ -77,7 +77,20 @@ function soil_energy_balance(
             else
                 heat_capacity[i] = volumetric_heat_capacity * (layer_depths[i+1] - layer_depths[i-1]) / 2.0
             end
-            thermal_conductance[i] = iszero(Δd) ? zero(bulk_thermal_conductivity[i] / oneunit(Δd)) : bulk_thermal_conductivity[i] / Δd
+            # Co-located nodes (Δd = 0) occur at the snow-soil interface: the last active
+            # snow node and the soil surface node share the same depth (= snow depth).
+            # Fortran DSUB.f computes C = k/0 = ∞, which forces the stiff ODE solver to
+            # keep the two co-located nodes at the same temperature (perfect thermal coupling).
+            # Julia guards against /0 with zero conductance, which completely decouples
+            # the snow bottom from the soil surface — breaking the snow insulation effect.
+            # Fix: when Δd = 0, use the conductance of the preceding interval so the
+            # snow-soil interface maintains thermal coupling (approximates Fortran's ∞).
+            prev_Δd = layer_depths[i] - layer_depths[i-1]
+            thermal_conductance[i] = if iszero(Δd)
+                iszero(prev_Δd) ? zero(bulk_thermal_conductivity[i] / oneunit(Δd)) : bulk_thermal_conductivity[i] / prev_Δd
+            else
+                bulk_thermal_conductivity[i] / Δd
+            end
         end
     end
 
@@ -700,6 +713,8 @@ function phase_transition!(
     num_nodes = length(depths)
     temperature = MVector(temperatures)
     tolerance = 1.0e-4u"°C"
+    freeze_point = u"K"(0.0u"°C")
+    tol_K = 1.0e-4u"K"
 
     for i in 1:num_nodes
         # --- Always compute mean layer temperatures ---
@@ -726,20 +741,34 @@ function phase_transition!(
         if soil_moisture[i] <= 0.0 || layer_mass[i] <= 0.0u"kg"
             accumulated_latent_heat[i] = 0.0u"J"
             phase_change_heat[i] = 0.0u"J"
+            continue
         end
 
         # ==============================
         #  PHASE CHANGE CALCULATIONS
         # ==============================
 
-        # --- FREEZING (above → below 0°C) ---
-        # NOTE: this condition only fires on the exact hour the temperature crosses 0°C,
-        # matching the Fortran NicheMapR behaviour. A more physically correct approach
-        # would use `>= -tolerance` so that nodes previously clamped to 0°C continue
-        # accumulating latent heat while unfrozen water remains, but that changes the
-        # snow melt dynamics. TODO: revisit once we have NicheMapR parity.
-        if (mean_temperature_past[i] > tolerance) && (mean_temperature[i] <= -tolerance)
-            phase_change_heat[i] = (mean_temperature_past[i] - mean_temperature[i]) * layer_mass[i] * specific_heat_water
+        # --- Classify this node's thermal state ---
+        # Use the node's own past temperature (not the inter-layer mean) to detect whether it
+        # was held at 0°C by prior clamping. The mean can be dragged below 0°C by an already-frozen
+        # neighbour node, causing the check to miss a node that still has latent heat.
+        at_freeze_past = abs(temperatures_past[i] - freeze_point) <= tol_K
+        # freezing: T is going/staying below 0°C while buffer is not yet full
+        freezing = (mean_temperature_past[i] > tolerance ||
+                    (at_freeze_past && accumulated_latent_heat[i] > 0.0u"J" && accumulated_latent_heat[i] < max_latent_heat)) &&
+                   mean_temperature[i] <= -tolerance
+        # thawing: T is going above 0°C while frozen water remains
+        thawing = (mean_temperature_past[i] < -tolerance ||
+                   (at_freeze_past && accumulated_latent_heat[i] > 0.0u"J")) &&
+                  mean_temperature[i] >= tolerance
+
+        # --- FREEZING ---
+        if freezing
+            # When node was held at 0°C (at_freeze_past), mean_temperature_past can be dragged
+            # below 0°C by a cold neighbour. Use freeze_point directly so we account for the full
+            # temperature drop from the freeze point, not just the mean-to-mean delta.
+            t_past_ref = (at_freeze_past && !(mean_temperature_past[i] > tolerance)) ? freeze_point : mean_temperature_past[i]
+            phase_change_heat[i] = (t_past_ref - mean_temperature[i]) * layer_mass[i] * specific_heat_water
             accumulated_latent_heat[i] += phase_change_heat[i]
             if accumulated_latent_heat[i] >= max_latent_heat
                 accumulated_latent_heat[i] = max_latent_heat
@@ -751,9 +780,10 @@ function phase_transition!(
                 temperature[i+1] = 0.0u"°C"
             end
 
-        # --- THAWING (below → above 0°C) ---
-        elseif (mean_temperature_past[i] < -tolerance) && (mean_temperature[i] >= tolerance)
-            phase_change_heat[i] = (mean_temperature[i] - mean_temperature_past[i]) * layer_mass[i] * specific_heat_water
+        # --- THAWING ---
+        elseif thawing
+            t_past_ref = (at_freeze_past && !(mean_temperature_past[i] < -tolerance)) ? freeze_point : mean_temperature_past[i]
+            phase_change_heat[i] = (mean_temperature[i] - t_past_ref) * layer_mass[i] * specific_heat_water
             accumulated_latent_heat[i] -= phase_change_heat[i]
 
             if accumulated_latent_heat[i] <= 0.0u"J"
