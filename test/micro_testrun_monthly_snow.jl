@@ -164,10 +164,13 @@ problem = MicroProblem(;
 @time micro_out = Microclimate.solve(problem);
 
 # subset NicheMapR predictions
+vel1cm_nmr = collect(metout_nmr[:, 8]) .* 1u"m/s"
 vel2m_nmr = collect(metout_nmr[:, 9]) .* 1u"m/s"
+ta1cm_nmr = collect(metout_nmr[:, 4] .+ 273.15) .* 1u"K"
+ta2m_nmr = collect(metout_nmr[:, 5] .+ 273.15) .* 1u"K"
+rh1cm_nmr = collect(metout_nmr[:, 6]) ./ 100.0
 rh2m_nmr = collect(metout_nmr[:, 7]) ./ 100.0
-tskyC_nmr = collect(metout_nmr[:, 15]) .* u"°C"
-solr_nmr = collect(metout_nmr[:, 14]) .* u"W/m^2"
+
 # Snow columns may contain missing values (NA in R output)
 snowfall_nmr = metout_nmr[:, 18] .* 1u"cm/hr"
 snowdepth_nmr = metout_nmr[:, 19] .* 1u"cm"
@@ -194,7 +197,7 @@ snow_valid = .!ismissing.(snowdepth_nmr)
 end
 
 # Visual comparisons — run manually (not in CI)
-# using Plots
+#= using Plots
 let
     t = 1:length(days2do)*24
     depth_labels = ["$(round(ustrip(u"cm", depths[i]); digits=1)) cm" for i in 1:length(depths)]
@@ -226,4 +229,4 @@ let
     plot!(p_atm, t, snow_density_matrix[t, 1];                           sp=8, label="Julia",     color=:red,   title="Snow density")
     plot!(p_atm, t, snowdensity_nmr[t];                                  sp=8, label="NicheMapR", color=:black)
     display(p_atm)
-end
+end =#
