@@ -13,7 +13,7 @@ function soil_energy_balance(
     t::Quantity,           # timestep
 ) where U <: SVector{N} where N
     # extract parameters
-    (; forcing, buffers, heights, depths, environment_instant, solar_terrain, micro_terrain, soil_wetness, vapour_pressure_equation, longwave_sky, qfreze, maxsurf) = p
+    (; forcing, buffers, heights, depths, environment_instant, solar_terrain, micro_terrain, soil_wetness, vapour_pressure_equation, longwave_sky, qfreze, maximum_surface_temperature) = p
     (; layer_depths, heat_capacity, thermal_conductance) = buffers.soil_energy_balance
     (; shade) = environment_instant
     # Get environmental data at time t
@@ -26,10 +26,10 @@ function soil_energy_balance(
     absorptivity = 1.0 - albedo
 
     # check for unstable conditions of ground surface temperature.
-    # Fortran microinput(74)=maxsurf (MICROCLIMATE.f:482); −81°C lower bound matches
+    # Fortran microinput(74)=maximum_surface_temperature (MICROCLIMATE.f:482); −81°C lower bound matches
     # DSUB.f:551.
     T_lo = u"K"(-81.0u"°C")
-    T_hi = u"K"(maxsurf)
+    T_hi = u"K"(maximum_surface_temperature)
     soil_temperature = clamped_temperature = map(t -> clamp(t, T_lo, T_hi), temperature_state)::U
 
     # Recompute soil/snow properties at current temperatures on every ODE sub-step,
