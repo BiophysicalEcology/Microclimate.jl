@@ -1,4 +1,4 @@
-@kwdef struct SoilEnergyInputs{F,B,SP,D<:Vector{<:Number},H<:Vector{<:Number},ST,MT,EI,SW,VP,LW}
+@kwdef struct SoilEnergyInputs{F,B,SP,D<:Vector{<:Number},H<:Vector{<:Number},ST,MT,EI,SW,VP,LW,QF,SNM,SNS,SNSC,SM}
     forcing::F
     buffers::B
     soil_thermal_model::SP
@@ -11,6 +11,14 @@
     soil_wetness::SW
     vapour_pressure_equation::VP = GoffGratch()
     longwave_sky::LW
+    albedo::Float64
+    qfreze::QF = 0.0u"W/m^2"  # Fortran COMMON/melt/QFREZE: snow melt energy fed back to surface node
+    # Snow/soil property recomputation inside ODE (matching Fortran DSUB calling SOILPROPS)
+    snow_model::SNM = nothing
+    snow_state::SNS = nothing
+    snow_scratch::SNSC = nothing
+    soil_moisture::SM = nothing
+    n_snow::Int = 0
 end
 
 @kwdef struct MicroForcing{
@@ -47,7 +55,7 @@ function MicroProfile(nsteps::Int, nheights::Int)
     )
 end
 
-@kwdef struct MicroResult{P,AT,WS,RH,CC,GS,DF,SkT,SoT,SM,SWP,SH,STC,SPH,SBD,SW,SR,Pr} <: AbstractEnvironment
+@kwdef struct MicroResult{P,AT,WS,RH,CC,GS,DF,SkT,SoT,SM,SWP,SH,STC,SPH,SBD,SW,SR,Pr,SF,SD,SDN,SNT} <: AbstractEnvironment
     pressure::P
     reference_temperature::AT
     reference_wind_speed::WS
@@ -56,19 +64,22 @@ end
     global_radiation::GS
     diffuse_fraction::DF
     sky_temperature::SkT
-    # TODO: should things like soil_temperature be sub-components? soil.temperature ?
     soil_temperature::SoT
     soil_moisture::SM
     soil_water_potential::SWP
-    soil_humidity::SH 
+    soil_humidity::SH
     soil_thermal_conductivity::STC
-    soil_heat_capacity::SPH 
-    soil_bulk_density::SBD 
+    soil_heat_capacity::SPH
+    soil_bulk_density::SBD
     surface_water::SW
     solar_radiation::SR
     profile::Pr
+    snow_fall::SF
+    snow_depth::SD
+    snow_density::SDN
+    snow_temperature::SNT  # nsteps × n_snow matrix; size (nsteps, 0) when NoSnow
 end
-function MicroResult(nsteps::Int, num_nodes::Int, nheights::Int, solar_radiation::NamedTuple)
+function MicroResult(nsteps::Int, num_nodes::Int, nheights::Int, solar_radiation::NamedTuple, n_snow::Int=0)
 
     return MicroResult(;
         pressure = Array{typeof(1.0u"Pa")}(undef, nsteps),
@@ -89,10 +100,14 @@ function MicroResult(nsteps::Int, num_nodes::Int, nheights::Int, solar_radiation
         surface_water = Array{typeof(1.0u"kg/m^2")}(undef, nsteps),
         solar_radiation = solar_radiation,
         profile = MicroProfile(nsteps, nheights),
+        snow_fall = zeros(typeof(1.0u"cm/hr"), nsteps),
+        snow_depth = zeros(typeof(1.0u"cm"), nsteps),
+        snow_density = zeros(typeof(1.0u"g/cm^3"), nsteps),
+        snow_temperature = zeros(typeof(1.0u"K"), nsteps, n_snow),
     )
 end
 
-Base.show(io::IO, mr::MicroResult) = print(io, "MicroResult")
+Base.show(io::IO, ::MicroResult) = print(io, "MicroResult")
 
 
 abstract type AbstractSoilThermalModel end

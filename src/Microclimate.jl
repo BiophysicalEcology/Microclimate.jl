@@ -23,6 +23,9 @@ export MicroProblem, MicroCache
 export GoffGratch, Teten, Huang
 export Tsit5
 
+# Snow model
+export NoSnow, SnowModel, SnowState
+
 # Soil thermal model
 export CampbelldeVriesSoilThermal
 
@@ -58,12 +61,13 @@ export solve, solve!, init, reinit!
 
 
 include("constants.jl")
-include("landscape.jl")   
+include("landscape.jl")
 include("interpolation.jl")
 include("soil_properties.jl")
 include("radiation.jl")
 include("boundary_layer.jl")
 include("soil_balance.jl")
+include("snow.jl")
 include("simulation.jl")
 
 end
