@@ -256,9 +256,19 @@ function CommonSolve.init(mp::MicroProblem)
     snow_state = initial_snow_state(snow_model, mp.initial_snow_depth, mp.initial_snow_density)
     snow_scratch = allocate_snow_scratch(snow_model, nsteps, num_ode_nodes, depths)
 
-    # Soil buffers (unchanged — all soil-node sized)
-    nodes_day = zeros(num_soil_nodes, ndays)
-    nodes_day[1, 1:ndays] .= num_soil_nodes
+    # Fill output weather arrays with placeholder values so the prototype ODE integrator
+    # can be allocated without NaNs. Real values are set at the start of solve!.
+    fill!(output.pressure, 101325.0u"Pa")
+    fill!(output.reference_temperature, 293.0u"K")
+    fill!(output.reference_wind_speed, 1.0u"m/s")
+    fill!(output.reference_humidity, 0.5)
+    fill!(output.cloud_cover, 0.0)
+    fill!(output.global_radiation, 300.0u"W/m^2")
+
+    # Soil buffers
+    nodes_day = zeros(num_nodes, ndays)
+    nodes_day[1, 1:ndays] .= num_nodes
+    
     nodes = nodes_day[:, 1]
     buffers = (;
         profile = allocate_profile(heights),
