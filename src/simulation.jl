@@ -269,8 +269,8 @@ function CommonSolve.init(mp::MicroProblem)
     fill!(output.global_radiation, 300.0u"W/m^2")
 
     # Soil buffers
-    nodes_day = zeros(num_nodes, ndays)
-    nodes_day[1, 1:ndays] .= num_nodes
+    nodes_day = zeros(num_ode_nodes, ndays)
+    nodes_day[1, 1:ndays] .= num_ode_nodes
     
     nodes = nodes_day[:, 1]
     buffers = (;
