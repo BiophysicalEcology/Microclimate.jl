@@ -640,6 +640,21 @@ function get_soil_water_balance!(buffers, soil_moisture_model::CampbellSoilHydra
         evaporation_potential = 1e-7u"kg/m^2/s"
     end
 
+    # When pool > 0, top boundary is saturated. Establish that BC before the
+    # first infil call so iter 1 uses the same top BC as iters 2..N. Matches
+    # Fortran OSUB.f:1198-1206 (commit fbf9a91): refill mass is debited from
+    # pool, soil node 1 set to saturation. Half-thickness uses the coarse
+    # spacing (depths[3]-depths[1])/2 to match Fortran's (dep(2)-dep(1))/2,
+    # since `depths` here is the fine 19-node grid in which depths[3] is the
+    # first user-specified depth below the surface.
+    sat = 1 - bulk_density[1] / mineral_density[1]
+    half_thickness = (depths[3] - depths[1]) / 2
+    if pool > 0.0u"kg/m^2"
+        refill = max(0.0u"kg/m^2", uconvert(u"kg/m^2", (sat - soil_moisture[1]) * half_thickness * 1000.0u"kg/m^3"))
+        pool = max(0.0u"kg/m^2", pool - refill)
+        soil_moisture[1] = sat
+    end
+
     # run infiltration algorithm
     infil_out = soil_water_balance!(buffers.soil_water_balance, soil_moisture_model;
         depths,
@@ -655,11 +670,7 @@ function get_soil_water_balance!(buffers, soil_moisture_model::CampbellSoilHydra
     surf_evap = max(0.0u"kg/m^2", infil_out.evaporation)
     water_flux = max(0.0u"kg/m^2", infil_out.surface_water_flux)
     pool = clamp(pool - water_flux - surf_evap, 0.0u"kg/m^2", maxpool) # pooling surface water
-    # Saturate top layer when pool > 0 (triggers infiltration). Deduct the water
-    # needed to bring node 1 to saturation from the pool, flooring at zero.
     if pool > 0.0u"kg/m^2"
-        sat = 1 - bulk_density[1] / mineral_density[1]
-        half_thickness = (depths[2] - depths[1]) / 2   # Δz₁/2 for node 1
         refill = max(0.0u"kg/m^2", uconvert(u"kg/m^2", (sat - soil_moisture[1]) * half_thickness * 1000.0u"kg/m^3"))
         pool = max(0.0u"kg/m^2", pool - refill)
         soil_moisture[1] = sat
@@ -680,8 +691,6 @@ function get_soil_water_balance!(buffers, soil_moisture_model::CampbellSoilHydra
         water_flux = max(0.0u"kg/m^2", infil_out.surface_water_flux)
         pool = clamp(pool - water_flux - surf_evap, 0.0u"kg/m^2", maxpool)
         if pool > 0.0u"kg/m^2"
-            sat = 1 - bulk_density[1] / mineral_density[1]
-            half_thickness = (depths[2] - depths[1]) / 2   # Δz₁/2 for node 1
             refill = max(0.0u"kg/m^2", uconvert(u"kg/m^2", (sat - soil_moisture[1]) * half_thickness * 1000.0u"kg/m^3"))
             pool = max(0.0u"kg/m^2", pool - refill)
             soil_moisture[1] = sat

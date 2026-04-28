@@ -53,7 +53,8 @@ const MINERAL_CONDUCTIVITY  = [0.2, 0.2, 0.2, 1.35, 2.5, 2.5, 2.5, 2.5, 2.5, 2.5
                                 2.5, 2.5, 2.5, 2.5, 2.5, 2.5, 2.5, 2.5, 2.5]u"W/m/K"
 const MINERAL_HEAT_CAPACITY = [1920.0, 1920.0, 1920.0, 1395.0, 870.0, 870.0, 870.0, 870.0, 870.0, 870.0,
                                 870.0, 870.0, 870.0, 870.0, 870.0, 870.0, 870.0, 870.0, 870.0]u"J/kg/K"
-const DE_VRIES_SHAPE_FACTOR = 0.0167238                     # microinput.csv row 25 (EC)
+const DE_VRIES_SHAPE_FACTOR = 0.1                           # SOILPROPS.f:207 — 0.1 for mineral soil
+                                                            # (microinput.csv row 25 is `EC` = orbital eccentricity, not de Vries g_a)
 # Hydraulic: PE.csv, KS.csv, BB.csv (uniform — all 19 rows identical)
 const AIR_ENTRY_POTENTIAL   = 1.1u"J/kg"                    # PE.csv
 const SAT_HYDRAULIC_COND    = 0.0037u"kg*s/m^3"             # KS.csv
@@ -147,7 +148,25 @@ environment_daily = DailyTimeseries(;
     surface_emissivity    = fill(EMISSIVITY, NDAYS),
     cloud_emissivity      = fill(EMISSIVITY, NDAYS),
     rainfall              = forcing.RAINFALL[days2do] .* u"kg/m^2",
-    deep_soil_temperature = nmr.D200cm[1:24:size(nmr, 1)] .* u"°C",
+    # Mirror R's tannulrun (micro_usa.R:1099-1115): 365-day trailing rolling mean of
+    # daily (TMAX+TMIN)/2. Days 1-365 use the simple mean of days 1-365; from day 366
+    # onward use the trailing 365-day window. This is the per-day deep-soil boundary
+    # Fortran reads via TANNULRUN(IDAY) (SOLRAD.f:1253) → TDS (SINEC.f:132).
+    deep_soil_temperature = let
+        avetemp = (forcing.TMAXX[days2do] .+ forcing.TMINN[days2do]) ./ 2
+        n = length(avetemp)
+        tannulrun = Vector{Float64}(undef, n)
+        if n >= 365
+            yearone_mean = sum(view(avetemp, 1:365)) / 365
+            for i in 1:min(365, n); tannulrun[i] = yearone_mean; end
+            for i in 366:n
+                tannulrun[i] = sum(view(avetemp, (i - 364):i)) / 365
+            end
+        else
+            fill!(tannulrun, sum(avetemp) / n)
+        end
+        tannulrun .* u"°C"
+    end,
     leaf_area_index       = fill(0.1, NDAYS),
 )
 
@@ -210,8 +229,11 @@ println("Simulation complete.")
 # ── Load SNOTEL 329 observations ──────────────────────────────────────────────
 obs = DataFrame(CSV.File(joinpath(datadir, "obs.csv"),
     missingstring = ["NA", ""],
-    types = Dict(:SNWD_mm => Float64, :WTEQ_in => Float64)
 ))
+# Older snapshots of obs.csv use the column name `WTEQ_in10`; rename for forward compatibility
+if "WTEQ_in10" in String.(propertynames(obs)) && !("WTEQ_in" in String.(propertynames(obs)))
+    rename!(obs, :WTEQ_in10 => :WTEQ_in)
+end
 # DateTime column is auto-parsed by CSV
 # Unit notes: SNWD_mm = snow depth in inches (×2.54 → cm), WTEQ_in = SWE in inches (×2.54 → cm)
 #   Soil temps STO_*cm in °C, soil moisture SMS_*cm in %
@@ -349,8 +371,15 @@ end
 plot_year  = nothing   # e.g. 2014
 plot_month = nothing   # e.g. 3 (March)
 
-using Plots, Dates
-let
+const PLOTS_AVAILABLE = try
+    @eval using Plots
+    true
+catch
+    @info "Plots not available — skipping visualization"
+    false
+end
+
+PLOTS_AVAILABLE && let
     t_full = collect(range(DateTime(2013, 1, 1), step=Hour(1), length=NDAYS * 24))
 
     # Build hourly index mask
