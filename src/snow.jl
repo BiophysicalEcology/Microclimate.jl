@@ -569,7 +569,6 @@ function update_snow(snow_model::SnowModel{N}, state::SnowState, scratch,
 
     snow_depth_hourly[step] = new_depth
 
-
     # ── Snow age tracking ──
     snow_age = if is_first_step
         0.0
