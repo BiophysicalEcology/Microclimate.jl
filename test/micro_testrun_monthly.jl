@@ -111,7 +111,9 @@ _runmoist = Bool(Int(microinput[:runmoist]))
 soil_moisture_model = example_soil_hydraulics(depths; bulk_density, mineral_density,
     root_density = fill(0.0, length(depths))u"m/m^3",
     mode = _runmoist ? DynamicSoilMoisture() : PrescribedSoilMoisture(; precomputed_soil_moisture))
-solar_model = SolarProblem(; scattered_uv = Bool(Int(microinput[:IUV])))
+solar_model = SolarProblem(;
+    diffuse_model = Bool(Int(microinput[:IUV])) ? SolarRadiation.ChandrasekharScattering() : SolarRadiation.NoScattering(),
+)
 
 # Set up time mode from the daily/spinup flags.
 # Fortran's monthly mode (microdaily=0) integrates each output day through SFODE

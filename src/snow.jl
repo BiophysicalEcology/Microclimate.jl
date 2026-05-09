@@ -43,6 +43,13 @@ end
 n_snow_nodes(::NoSnow) = 0
 n_snow_nodes(::SnowModel{N}) where N = N
 
+# Dispatching constructor for the per-node snow-temperature SVector. Callers
+# must use this so `T_snow`'s type is `Nothing` for NoSnow and
+# `SVector{N, T_init}` for SnowModel{N} — never a runtime Union.
+init_snow_temperatures(::NoSnow, _) = nothing
+init_snow_temperatures(::SnowModel{N}, T_init) where N =
+    SVector(ntuple(_ -> T_init, Val(N)))
+
 # ── Immutable snow state ─────────────────────────────────────────────────
 
 struct SnowState
