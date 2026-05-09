@@ -60,11 +60,15 @@ end
 initial_snow_state(::NoSnow) = nothing
 initial_snow_state(::NoSnow, ::Any, ::Any) = nothing
 function initial_snow_state(sm::SnowModel)
-    SnowState(0.0u"cm", 0.0, 0.3, sm.snow_density, 1.0u"g/cm^3",
+    # Matches Fortran MICROCLIMATE.f: prevden=densfun(2), so density ratio = 1 on first call
+    initial_density = sm.density_function[1] > 0 ? sm.density_function[2] * u"g/cm^3" : sm.snow_density
+    SnowState(0.0u"cm", 0.0, 0.3, initial_density, initial_density,
               0.0u"cm", 0.0u"kg/m^2", 0, 0.0u"J/m^2")
 end
 function initial_snow_state(sm::SnowModel, depth, density_or_nothing)
-    density = isnothing(density_or_nothing) ? sm.snow_density : density_or_nothing
+    # Matches Fortran MICROCLIMATE.f: prevden=densfun(2), so density ratio = 1 on first call
+    default_density = sm.density_function[1] > 0 ? sm.density_function[2] * u"g/cm^3" : sm.snow_density
+    density = isnothing(density_or_nothing) ? default_density : density_or_nothing
     SnowState(depth, 0.0, 0.3, density, density,
               0.0u"cm", 0.0u"kg/m^2", 0, 0.0u"J/m^2")
 end
@@ -536,6 +540,11 @@ function update_snow(snow_model::SnowModel{N}, state::SnowState, scratch,
     # Fortran OSUB.f lines 836-837: only compute thermal melt if prevsnow >= minsnow
     state_for_melt = setproperties(state, (; density=new_dens))
     thermal_melt = if is_first_step || previous_depth < snow_model.min_snow_depth
+        # Still update mean_temperature scratch so snow_phase_transition sees real temps,
+        # not the 0°C initialisation (which would spuriously clamp all nodes to 0°C).
+        snow_thermal_melt(snow_model, state_for_melt, scratch, snow_temperature, snow_temperature_before,
+            environment_instant.atmospheric_pressure,
+            soil_surface_temperature, soil_surface_temperature_before)
         0.0u"cm"
     else
         raw_melt = snow_thermal_melt(snow_model, state_for_melt, scratch, snow_temperature, snow_temperature_before,

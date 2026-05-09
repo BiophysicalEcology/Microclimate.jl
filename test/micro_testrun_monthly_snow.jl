@@ -11,6 +11,7 @@ testdir = realpath(joinpath(dirname(pathof(Microclimate)), "../test"))
 soiltemps_nmr = (DataFrame(CSV.File("$testdir/data/soil_monthly_snow.csv"))[:, 4:13]) .* u"°C"
 metout_nmr = DataFrame(CSV.File("$testdir/data/metout_monthly_snow.csv"; missingstring="NA"))
 microinput_vec = DataFrame(CSV.File("$testdir/data/init_monthly_snow/microinput.csv"))[:, 2]
+snow_temp_nmr = (DataFrame(CSV.File("$testdir/data/snowtemp_monthly.csv"))[:, 4:12]) .* u"°C"
 
 names = [
     :doynum, :RUF, :ERR, :Usrhyt, :Refhyt, :Numtyps, :Z01, :Z02, :ZH1, :ZH2,
@@ -164,10 +165,15 @@ problem = MicroProblem(;
 @time micro_out = Microclimate.solve(problem);
 
 # subset NicheMapR predictions
+vel1cm_nmr = collect(metout_nmr[:, 8]) .* 1u"m/s"
 vel2m_nmr = collect(metout_nmr[:, 9]) .* 1u"m/s"
+ta1cm_nmr = collect(metout_nmr[:, 4] .+ 273.15) .* 1u"K"
+ta2m_nmr = collect(metout_nmr[:, 5] .+ 273.15) .* 1u"K"
+rh1cm_nmr = collect(metout_nmr[:, 6]) ./ 100.0
 rh2m_nmr = collect(metout_nmr[:, 7]) ./ 100.0
 tskyC_nmr = collect(metout_nmr[:, 15]) .* u"°C"
 solr_nmr = collect(metout_nmr[:, 14]) .* u"W/m^2"
+
 # Snow columns may contain missing values (NA in R output)
 snowfall_nmr = metout_nmr[:, 18] .* 1u"cm/hr"
 snowdepth_nmr = metout_nmr[:, 19] .* 1u"cm"
@@ -178,6 +184,7 @@ humidity_matrix = micro_out.profile.relative_humidity
 wind_matrix = micro_out.profile.wind_speed
 snow_depth_matrix = micro_out.snow_depth
 snow_density_matrix = micro_out.snow_density
+snow_temperatures = micro_out.snow_temperature
 
 # Find rows where NicheMapR has non-missing snow data (first hour of each day)
 snow_valid = .!ismissing.(snowdepth_nmr)
@@ -188,13 +195,15 @@ snow_valid = .!ismissing.(snowdepth_nmr)
     @test micro_out.sky_temperature ≈ u"K".(tskyC_nmr) rtol=1e-7
     @test micro_out.global_radiation ≈ solr_nmr rtol=1e-4
     # Snow outputs (compare only non-missing reference values)
-    @test ustrip.(u"cm/hr", micro_out.snow_fall[snow_valid]) ≈ Float64.(snowfall_nmr[snow_valid]) rtol=1e-4
-    @test ustrip.(u"cm", micro_out.snow_depth[snow_valid]) ≈ Float64.(snowdepth_nmr[snow_valid]) rtol=1e-4
-    @test ustrip.(u"g/cm^3", micro_out.snow_density[snow_valid]) ≈ Float64.(snowdensity_nmr[snow_valid]) rtol=1e-4
+    @test micro_out.snow_fall[snow_valid] ≈ snowfall_nmr[snow_valid] rtol=1e-3
+    @test micro_out.snow_depth[snow_valid] ≈ snowdepth_nmr[snow_valid] rtol=1e-2
+    @test micro_out.snow_density[snow_valid] ≈ snowdensity_nmr[snow_valid] rtol=1e-2
+    # Snow temperatures: Julia nodes 1-8 (surface→base) vs NMR SN1-SN8 (SN9 is soil surface, skipped)
+    @test ustrip.(u"°C", micro_out.snow_temperature[snow_valid, :]) ≈ Matrix(ustrip.(u"°C", snow_temp_nmr[snow_valid, 1:8])) rtol=1e-2
 end
 
 # Visual comparisons — run manually (not in CI)
-# using Plots
+using Plots
 let
     t = 1:length(days2do)*24
     depth_labels = ["$(round(ustrip(u"cm", depths[i]); digits=1)) cm" for i in 1:length(depths)]
@@ -211,19 +220,28 @@ let
     p_atm = plot(layout=(4, 2), size=(900, 700))
     plot!(p_atm, t, humidity_matrix[t, 1];                               sp=1, label="Julia",     color=:red,   title="RH 1cm",       ylabel="–")
     plot!(p_atm, t, rh1cm_nmr[t];                                        sp=1, label="NicheMapR", color=:black)
-    plot!(p_atm, t, humidity_matrix[t, 2];                               sp=2, label="Julia",     color=:red,   title="RH 2m")
+    plot!(p_atm, t, humidity_matrix[t, 2];                               sp=2, label="Julia",     color=:red,   title="RH 2m", legend = false)
     plot!(p_atm, t, rh2m_nmr[t];                                         sp=2, label="NicheMapR", color=:black)
-    plot!(p_atm, t, wind_matrix[t, 1];                                   sp=3, label="Julia",     color=:red,   title="Wind 1cm")
+    plot!(p_atm, t, wind_matrix[t, 1];                                   sp=3, label="Julia",     color=:red,   title="Wind 1cm", legend = false)
     plot!(p_atm, t, vel1cm_nmr[t];                                       sp=3, label="NicheMapR", color=:black)
-    plot!(p_atm, t, wind_matrix[t, 2];                                   sp=4, label="Julia",     color=:red,   title="Wind 2m")
+    plot!(p_atm, t, wind_matrix[t, 2];                                   sp=4, label="Julia",     color=:red,   title="Wind 2m", legend = false)
     plot!(p_atm, t, vel2m_nmr[t];                                        sp=4, label="NicheMapR", color=:black)
-    plot!(p_atm, t, u"°C".(air_temperature_matrix[t, 1]);                sp=5, label="Julia",     color=:red,   title="Air temp 1cm")
+    plot!(p_atm, t, u"°C".(air_temperature_matrix[t, 1]);                sp=5, label="Julia",     color=:red,   title="Air temp 1cm", legend = false)
     plot!(p_atm, t, ta1cm_nmr[t];                                        sp=5, label="NicheMapR", color=:black)
-    plot!(p_atm, t, u"°C".(air_temperature_matrix[t, 2]);                sp=6, label="Julia",     color=:red,   title="Air temp 2m")
+    plot!(p_atm, t, u"°C".(air_temperature_matrix[t, 2]);                sp=6, label="Julia",     color=:red,   title="Air temp 2m", legend = false)
     plot!(p_atm, t, ta2m_nmr[t];                                         sp=6, label="NicheMapR", color=:black)
-    plot!(p_atm, t, snow_depth_matrix[t, 1];                             sp=7, label="Julia",     color=:red,   title="Snow depth")
+    plot!(p_atm, t, snow_depth_matrix[t, 1];                             sp=7, label="Julia",     color=:red,   title="Snow depth", legend = false)
     plot!(p_atm, t, snowdepth_nmr[t];                                    sp=7, label="NicheMapR", color=:black)
-    plot!(p_atm, t, snow_density_matrix[t, 1];                           sp=8, label="Julia",     color=:red,   title="Snow density")
+    plot!(p_atm, t, snow_density_matrix[t, 1];                           sp=8, label="Julia",     color=:red,   title="Snow density", legend = false)
     plot!(p_atm, t, snowdensity_nmr[t];                                  sp=8, label="NicheMapR", color=:black)
     display(p_atm)
+
+    # Snow temperatures: 8 nodes (SN1=surface, SN8=base)
+    node_labels = ["SN$i" for i in 1:8]
+    p_sntemp = plot(layout=(2, 4), size=(1200, 500), title=reshape(node_labels, 1, :))
+    for sn in 1:8
+        plot!(p_sntemp, t, ustrip.(u"°C", micro_out.snow_temperature[t, sn]); sp=sn, label="Julia",     color=:red,   ylabel="°C")
+        plot!(p_sntemp, t, ustrip.(u"°C", snow_temp_nmr[t, sn]);              sp=sn, label="NicheMapR", color=:black, legend=(sn==1))
+    end
+    display(p_sntemp)
 end

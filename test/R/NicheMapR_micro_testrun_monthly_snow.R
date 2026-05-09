@@ -241,6 +241,7 @@ soilpot <- as.data.frame(microut$soilpot) # retrieve soil water potential, minim
 drlam <- as.data.frame(microut$drlam)
 drrlam <- as.data.frame(microut$drrlam)
 srlam <- as.data.frame(microut$srlam)
+snowtemps <- as.data.frame(microut$sunsnow)
 
 plot(metout$TSKYC[1:24], type = 'l')
 # for(i in 1:10){
@@ -270,4 +271,5 @@ plot(metout$SNOWDEP, type = 'l')
 
 write.csv(metout, file = 'c:/git/Microclimate.jl/test/data/metout_monthly_snow.csv')
 write.csv(soil, file = 'c:/git/Microclimate.jl/test/data/soil_monthly_snow.csv')
+write.csv(snowtemps, file = 'c:/git/Microclimate.jl/test/data/snowtemp_monthly.csv')
 

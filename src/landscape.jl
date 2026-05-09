@@ -396,7 +396,7 @@ reset_moisture_per_day(::NonConsecutiveDayMode) = true
 reset_moisture_per_day(::ConsecutiveDayMode) = false
 
 # Whether snow state/scratch should be reset to defaults at the start of each day.
-reset_snow_per_day(::NonConsecutiveDayMode) = true
+reset_snow_per_day(::NonConsecutiveDayMode) = false
 reset_snow_per_day(::ConsecutiveDayMode) = false
 
 # Whether T should be reset to T0_day_start at the start of every iteration within
