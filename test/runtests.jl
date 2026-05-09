@@ -10,4 +10,5 @@ using Microclimate, Test, SafeTestsets
 
 # Tests
 @safetestset "monthly simulation" begin include("micro_testrun_monthly.jl") end
+@safetestset "monthly snow simulation" begin include("micro_testrun_monthly_snow.jl") end
 @safetestset "daily simulation" begin include("micro_testrun_daily.jl") end
