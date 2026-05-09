@@ -113,10 +113,15 @@ soil_moisture_model = example_soil_hydraulics(depths; bulk_density, mineral_dens
     mode = _runmoist ? DynamicSoilMoisture() : PrescribedSoilMoisture(; precomputed_soil_moisture))
 solar_model = SolarProblem(; scattered_uv = Bool(Int(microinput[:IUV])))
 
-# Set up time mode from the daily/spinup flags
+# Set up time mode from the daily/spinup flags.
+# Fortran's monthly mode (microdaily=0) integrates each output day through SFODE
+# `ndmax` times back-to-back, with T continuing across the spinup passes within
+# a day. Each new day re-fires the TINS uniform reset. NonConsecutiveDayMode
+# replicates this — see its docstring for the IFINAL trace.
 _daily = Bool(Int(microinput[:microdaily]))
-_spinup = true#Bool(Int(microinput[:spinup]))
-time_mode = _daily ? ConsecutiveDayMode(; spinup_first_day=_spinup) : NonConsecutiveDayMode()
+_spinup = Bool(Int(microinput[:spinup]))
+time_mode = _daily ? ConsecutiveDayMode(; spinup_first_day=_spinup) :
+    NonConsecutiveDayMode(; ndmax=Int(microinput[:ndmax]))
 
 # Set up convergence strategy
 #convergence = FixedSoilTemperatureIterations(Int(microinput[:ndmax]))
@@ -201,6 +206,7 @@ end
 end
 
 # Visual comparisons — run manually (not in CI)
+#=
 using Plots
 let
     t = 1:length(days2do)*24
@@ -234,3 +240,4 @@ let
     plot!(p_atm, t, solr_nmr;                                            sp=8, label="NicheMapR", color=:black)
     display(p_atm)
 end
+=#

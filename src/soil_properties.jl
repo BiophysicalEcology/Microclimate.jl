@@ -18,7 +18,7 @@ and bulk density — for a given soil layer.
 
 A named tuple `(bulk_thermal_conductivity, bulk_heat_capacity, bulk_density)`:
 - `bulk_thermal_conductivity::Quantity`: Bulk thermal conductivity (W/m/K)
-- `bulk_heat_capacity::Quantity`: Bulk volumetric heat capacity (J/kg/K)
+- `bulk_heat_capacity::Quantity`: Bulk mass-specific heat capacity (J/kg/K). Multiply by `bulk_density` for the volumetric form (J/m³/K) used in the surface energy balance.
 - `bulk_density::Quantity`: Bulk density (kg/m³)
 
 # Theory
