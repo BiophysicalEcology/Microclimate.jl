@@ -19,7 +19,7 @@
     snow_scratch::SNSC = nothing
     soil_moisture::SM = nothing
     n_snow::Int = 0
-    maxsurf::MSF = 85.0u"°C"  # Fortran microinput(74) surface-temperature safety clamp
+    maximum_surface_temperature::MSF = 85.0u"°C"  # Fortran microinput(74) surface-temperature safety clamp
 end
 
 @kwdef struct MicroForcing{
