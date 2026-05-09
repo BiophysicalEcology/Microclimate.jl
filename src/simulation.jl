@@ -632,7 +632,7 @@ function solve_soil!(cache::MicroCache)
             environment_instant = get_instant(environment_day, mp.environment_hourly, output, soil_moisture, step)
             T0 = setindex(T0, environment_instant.deep_soil_temperature, num_soil_nodes)
             (; albedo, effective_wetness, longwave_sky) = apply_snow_overrides(
-                snow_model, snow_state, snow_scratch, step, solar_terrain, moisture_mode, environment_instant, micro_terrain, vapour_pressure_equation)
+                is_last_iter ? snow_model : NoSnow(), snow_state, snow_scratch, step, solar_terrain, moisture_mode, environment_instant, micro_terrain, vapour_pressure_equation)
             if n_snow > 0
                 if !is_last_iter
                     snow_scratch.snow_depth_hourly[step] = snow_state.current_depth
@@ -746,7 +746,7 @@ function solve_soil!(cache::MicroCache)
                     environment_instant = get_instant(environment_day, mp.environment_hourly, output, soil_moisture, next_step)
                     T0 = setindex(T0, environment_instant.deep_soil_temperature, num_soil_nodes)
                     (; albedo, effective_wetness, longwave_sky) = apply_snow_overrides(
-                        snow_model, snow_state, snow_scratch, next_step, solar_terrain, moisture_mode, environment_instant, micro_terrain, vapour_pressure_equation)
+                        is_last_iter ? snow_model : NoSnow(), snow_state, snow_scratch, next_step, solar_terrain, moisture_mode, environment_instant, micro_terrain, vapour_pressure_equation)
                     if n_snow > 0
                         if !is_last_iter
                             snow_scratch.snow_depth_hourly[next_step] = snow_state.current_depth
