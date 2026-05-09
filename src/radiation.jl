@@ -111,38 +111,28 @@ function cloud_adjust_radiation(output, cloud::AbstractArray, diffuse_clear_sky,
     diffuse_fraction_model::AbstractDiffuseFractionModel=ErbsDiffuseFraction(),
     a=0.36, b=0.64, gamma=1.0,
 )
-    (; global_horizontal, diffuse_horizontal, direct_horizontal) = output.solar_radiation
+    (; global_horizontal) = output.solar_radiation
     global_radiation = global_horizontal
-    # Solar geometry
-    cos_zenith = cos.(zenith)
-    cos_zenith_positive = max.(cos_zenith, 0.0)
-
-    # 1) Extraterrestrial horizontal irradiance (W/m²)
+    diffuse_fraction = output.diffuse_fraction
     solar_constant = 1367.0u"W/m^2"
-    eccentricity_correction = 1.00011 .+ 0.034221*cosd.(360.0 .* (doy .- 1) ./ 365.0) .+
-                     0.00128*sind.(360.0 .* (doy .- 1) ./ 365.0) .+
-                     0.000719*cosd.(2 .* 360.0 .* (doy .- 1) ./ 365.0) .+
-                     0.000077*sind.(2 .* 360.0 .* (doy .- 1) ./ 365.0)
-    extraterrestrial_horizontal = solar_constant .* eccentricity_correction
-
-    # 2) Ångström–Prescott scaling of clear-sky global by cloud cover
-    sunshine_fraction = (1 .- cloud).^gamma
-    transmittance = a .+ b .* sunshine_fraction
-    global_clear_sky = diffuse_clear_sky .+ direct_clear_sky
-    global_radiation .= max.(transmittance .* global_clear_sky, 0.0u"W/m^2")
-
-    # 3) Split global into diffuse/direct using clearness index
     ϵ = 1e-9u"W/m^2"
-    clearness_index = global_radiation ./ max.(extraterrestrial_horizontal, ϵ)
-    clearness_index = clamp.(clearness_index, 0.0, 1.2)
-    diffuse_fraction = similar(clearness_index)
-    for i in eachindex(clearness_index)
-        diffuse_fraction[i] = calc_diffuse_fraction(diffuse_fraction_model, clearness_index[i])
+    @inbounds for i in eachindex(global_radiation)
+        # 1) Extraterrestrial horizontal irradiance for this hour's day
+        d = doy[i]
+        θ1 = 360.0 * (d - 1) / 365.0
+        θ2 = 2.0 * θ1
+        ec = 1.00011 + 0.034221*cosd(θ1) + 0.00128*sind(θ1) +
+                       0.000719*cosd(θ2) + 0.000077*sind(θ2)
+        eth = solar_constant * ec
+        # 2) Ångström–Prescott scaling
+        sf = (1.0 - cloud[i])^gamma
+        t  = a + b * sf
+        gcs = diffuse_clear_sky[i] + direct_clear_sky[i]
+        gr = max(t * gcs, 0.0u"W/m^2")
+        global_radiation[i] = gr
+        # 3) Split global into diffuse/direct via clearness index
+        ci = clamp(gr / max(eth, ϵ), 0.0, 1.2)
+        diffuse_fraction[i] = clamp(calc_diffuse_fraction(diffuse_fraction_model, ci), 0.0, 1.0)
     end
-    diffuse_fraction .= clamp.(diffuse_fraction, zero(eltype(diffuse_fraction)), oneunit(eltype(diffuse_fraction)))
-
-    return (;
-        global_radiation,
-        diffuse_fraction,
-    )
+    return (; global_radiation, diffuse_fraction)
 end

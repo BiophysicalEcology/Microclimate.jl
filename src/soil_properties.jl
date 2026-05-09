@@ -139,18 +139,18 @@ function soil_properties!(buffers::NamedTuple, soil_thermal;
     num_layers = length(soil_temperature)
     @assert length(soil_moisture) == num_layers
     (; bulk_thermal_conductivity, bulk_heat_capacity, bulk_density) = buffers
-    soil_props_i(i) = soil_properties(maybegetindex(soil_thermal, i);
-        atmospheric_pressure,
-        soil_temperature = soil_temperature[i],
-        soil_moisture = soil_moisture[i],
-        vapour_pressure_equation,
-    )
-
-    results = soil_props_i.(1:num_layers)
-
-    bulk_thermal_conductivity .= getindex.(results, 1)
-    bulk_heat_capacity .= getindex.(results, 2)
-    bulk_density .= uconvert.(unit(bulk_density[1]), getindex.(results, 3))
+    bd_unit = unit(eltype(bulk_density))
+    @inbounds for i in 1:num_layers
+        result = soil_properties(maybegetindex(soil_thermal, i);
+            atmospheric_pressure,
+            soil_temperature = soil_temperature[i],
+            soil_moisture = soil_moisture[i],
+            vapour_pressure_equation,
+        )
+        bulk_thermal_conductivity[i] = result.bulk_thermal_conductivity
+        bulk_heat_capacity[i]        = result.bulk_heat_capacity
+        bulk_density[i]              = uconvert(bd_unit, result.bulk_density)
+    end
 
     return (; bulk_thermal_conductivity, bulk_heat_capacity, bulk_density)
 end

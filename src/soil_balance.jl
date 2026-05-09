@@ -1,3 +1,11 @@
+@inline function _first_active_node(heat_capacity, N)
+    j = 1
+    while j < N && iszero(heat_capacity[j])
+        j += 1
+    end
+    return j
+end
+
 function allocate_soil_energy_balance(num_nodes::Int)
     layer_depths = fill(0.0u"cm", num_nodes + 1)
     heat_capacity = fill(1.0u"J/K/m^2", num_nodes)
@@ -98,11 +106,11 @@ function soil_energy_balance(
         end
     end
 
-    # Find first active node (first with nonzero heat capacity)
-    j = 1
-    while j < N && iszero(heat_capacity[j])
-        j += 1
-    end
+    # Find first active node (first with nonzero heat capacity).
+    # Extracted to a helper so `j` is not both mutated and captured by the
+    # ntuple do-block below — that combination boxes `j` and propagates
+    # ::Any through every downstream computation.
+    j = _first_active_node(heat_capacity, N)
 
     # Solar radiation
     Q_solar = absorptivity * solar_radiation * (1.0 - shade)
@@ -234,9 +242,11 @@ function surface_convection_evaporation(;
     log_z_ratio = log(reference_height / roughness_height + 1)
     ΔT = air_temperature - surface_temperature
     ρ_cp = calc_ρ_cp((surface_temperature + air_temperature) / 2)
+    # Both branches must produce convective_heat_flux in the same concrete unit
+    # (W/m²); otherwise Unitful promotes at the merge point and heap-allocates.
     if air_temperature ≥ surface_temperature || zenith_angle ≥ 90°
         friction_velocity = calc_friction_velocity(; reference_wind_speed=wind_speed, log_z_ratio, κ=karman_constant)
-        convective_heat_flux = calc_convection(; friction_velocity, log_z_ratio, ΔT, ρ_cp, z0=roughness_height)
+        convective_heat_flux = uconvert(u"W/m^2", calc_convection(; friction_velocity, log_z_ratio, ΔT, ρ_cp, z0=roughness_height))
     else
         initial_L = isnothing(obukhov_length_prev) ? -0.3u"m" : obukhov_length_prev[]
         Obukhov_out = calc_soil_obukhov(air_temperature, surface_temperature, wind_speed, roughness_height, reference_height, karman_constant; initial_obukhov_length=initial_L)
@@ -287,8 +297,10 @@ function evaporation(;
     # Latent heat of vaporization (J/kg)
     latent_heat_vaporisation = enthalpy_of_vaporisation(clamped_surface_temperature)
 
-    # Energy flux due to evaporation (W/m²)
-    Q_evaporation = water_flux * latent_heat_vaporisation
+    # Energy flux due to evaporation (W/m²). uconvert keeps the return type
+    # stable as W/m² so callers can mix it with other W/m² fluxes without
+    # triggering Unitful's runtime unit-promotion heap allocation.
+    Q_evaporation = uconvert(u"W/m^2", water_flux * latent_heat_vaporisation)
 
     # Mass flux (g/s/m²)
     evaporation_mass_flux = u"g/s/m^2"(water_flux)
@@ -713,7 +725,9 @@ function allocate_phase_transition(num_nodes)
     phase_change_heat = zeros(Float64, num_nodes)u"J"
     mean_temperature = zeros(typeof(0.0u"K"), num_nodes)
     mean_temperature_past = zeros(typeof(0.0u"K"), num_nodes)
-    return (; layer_mass, phase_change_heat, mean_temperature, mean_temperature_past)
+    # Mutable scratch for `phase_transition!`; reused across hourly calls.
+    temperature_scratch = MVector{num_nodes, typeof(0.0u"K")}(undef)
+    return (; layer_mass, phase_change_heat, mean_temperature, mean_temperature_past, temperature_scratch)
 end
 
 phase_transition(; depths, kw...) =
@@ -727,11 +741,14 @@ function phase_transition!(
     soil_moisture::AbstractVector,
     depths::AbstractVector,
 )
-    (; layer_mass, phase_change_heat, mean_temperature, mean_temperature_past) = buffers
+    (; layer_mass, phase_change_heat, mean_temperature, mean_temperature_past, temperature_scratch) = buffers
     latent_heat_fusion = 333550.0u"J/kg"
     specific_heat_water = 4184.0u"J/kg/K"
     num_nodes = length(depths)
-    temperature = MVector(temperatures)
+    temperature = temperature_scratch
+    @inbounds for i in eachindex(temperatures)
+        temperature[i] = temperatures[i]
+    end
     tolerance = 1.0e-4u"K"  # tolerance is a temperature *difference*, so use K directly
 
     for i in 1:num_nodes
@@ -803,5 +820,8 @@ function phase_transition!(
             phase_change_heat[i] = 0.0u"J"
         end
     end
-    return (; accumulated_latent_heat, phase_change_heat, temperature=SVector(temperature))
+    # `accumulated_latent_heat` and `phase_change_heat` are mutated in place via the
+    # passed buffers — caller already has them. We only return the new temperature
+    # SVector so we avoid the heap-allocated NamedTuple wrapper.
+    return SVector(temperature)
 end
