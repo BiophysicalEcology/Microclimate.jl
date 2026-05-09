@@ -93,7 +93,7 @@ function atmospheric_surface_profile!(buffers;
     (; atmospheric_pressure, reference_temperature, reference_wind_speed, reference_humidity, zenith_angle) = environment_instant
 
     (; heights, height_array, air_temperature, wind_speed, relative_humidity, obukhov_length_prev) = buffers
-    N_heights = length(heights)
+    N_heights = length(heights) # TODO this is duplicated below
     if minimum(heights) < roughness_height
         throw(ArgumentError("The minimum height is not greater than the roughness height."))
     end
@@ -124,20 +124,20 @@ function atmospheric_surface_profile!(buffers;
     log_z_ratio = log(z / z0 + 1)
     ΔT = reference_temp - surface_temp
     mean_temp = (surface_temp + reference_temp) / 2
-    # TODO call calc_ρ_cp method specific to elevation and RH in final version but do it this way for NicheMapR comparison
+    # TODO call calc_ρ_cp method specific to elevation and RH in final version (if doesn't reduce performance - make it an option?) but do it this way for NicheMapR comparison
     ρ_cp = calc_ρ_cp(mean_temp)#, elevation, reference_humidity)
 
 
-    # TODO name and explain this check, why `|| zenith_angle`
-    if reference_temp ≥ surface_temp || zenith_angle ≥ 90°
-        friction_velocity = calc_friction_velocity(; reference_wind_speed, log_z_ratio, κ)
-        convective_heat_flux = calc_convection(; friction_velocity, log_z_ratio, ΔT, ρ_cp, z0)
+    # stability check (assume this is so at night i.e. zenith_angle ≥ 90°)
+    if reference_temp ≥ surface_temp || zenith_angle ≥ 90° # stable conditions
+        friction_velocity = calc_friction_velocity(; reference_wind_speed, log_z_ratio, κ) # TODO can this function be "friction_velocity"?
+        convective_heat_flux = calc_convection(; friction_velocity, log_z_ratio, ΔT, ρ_cp, z0) # TODO can this function be "convection"
+        roughness_height_temp = (reference_temp * bulk_stanton(log_z_ratio) + surface_temp * sublayer_stanton(z0, friction_velocity)) / (bulk_stanton(log_z_ratio) + sublayer_stanton(z0, friction_velocity))
         for i in 2:N_heights
-            wind_speed[i] = calc_wind(height_array[i], z0, κ, friction_velocity, 1.0)
-            roughness_height_temp = (reference_temp * bulk_stanton(log_z_ratio) + surface_temp * sublayer_stanton(z0, friction_velocity)) / (bulk_stanton(log_z_ratio) + sublayer_stanton(z0, friction_velocity))
+            wind_speed[i] = calc_wind(height_array[i], z0, κ, friction_velocity, 1.0) # TODO can this function be "wind"
             air_temperature[i] = roughness_height_temp + (reference_temp - roughness_height_temp) * log(height_array[i] / z0 + 1.0) / log_z_ratio
         end
-    else
+    else # unstable conditions, use MOST theory
         Obukhov_out = calc_Obukhov_length(reference_temp, surface_temp, v_ref_height, z0, z, ρcpTκg, κ, log_z_ratio, ΔT, ρ_cp; max_iter=30, tol=1e-2, initial_obukhov_length=obukhov_length_prev[])
         obukhov_length = Obukhov_out.obukhov_length
         obukhov_length_prev[] = obukhov_length
@@ -161,7 +161,7 @@ function atmospheric_surface_profile!(buffers;
     reverse!(wind_speed)
     reverse!(air_temperature)
     reference_vapor_pressure = wet_air_properties(reference_temp, reference_humidity, atmospheric_pressure; vapour_pressure_equation).vapour_pressure
-    relative_humidity .= clamp.(reference_vapor_pressure ./ vapour_pressure.(Ref(vapour_pressure_equation), air_temperature) .* 1.0, 0.0, 1.0)
+    relative_humidity .= clamp.(reference_vapor_pressure ./ vapour_pressure.(Ref(vapour_pressure_equation), air_temperature) .* 1.0, 0.0, 1.0) # TODO use @. macro here and elsewhere?
 
     return (;
         wind_speed,
