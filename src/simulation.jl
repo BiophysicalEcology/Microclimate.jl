@@ -575,6 +575,9 @@ function solve_soil!(cache::MicroCache)
                 T_snow = T_snow_day_start
             end
             ∑phase .= ∑phase_day_start  # restore carry-over (zeros under reset_phase_per_iter)
+            if !isnothing(snow_state) && reset_phase_per_iter(time_mode)
+                snow_state = setproperties(snow_state, (; sum_phase=0.0u"J/m^2"))
+            end
             T0_before = T0
             T_snow_before = T_snow
             T0_output = T0  # phase-transition-clamped temperatures for output (see NOTE below)
