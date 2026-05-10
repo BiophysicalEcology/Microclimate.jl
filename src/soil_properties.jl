@@ -1,5 +1,5 @@
 """
-    soil_properties(soil_thermal; atmospheric_pressure, soil_temperature, soil_moisture)
+    soil_properties(soil_thermal; atmospheric_pressure, soil_temperature, soil_moisture, bulk_density, mineral_density)
 
 Compute bulk soil properties — thermal conductivity, volumetric heat capacity,
 and bulk density — for a given soil layer.
@@ -13,6 +13,8 @@ and bulk density — for a given soil layer.
 - `atmospheric_pressure::Quantity`: Atmospheric pressure.
 - `soil_temperature::Quantity`: Soil temperature in Kelvin.
 - `soil_moisture::Real`: Volumetric soil moisture (m³/m³).
+- `bulk_density::Quantity`: Dry soil bulk density (kg/m³). Owned by the soil hydraulics model.
+- `mineral_density::Quantity`: Soil mineral density (kg/m³). Owned by the soil hydraulics model.
 
 # Returns
 
@@ -56,9 +58,11 @@ function soil_properties(soil_thermal::CampbelldeVriesSoilThermal;
     atmospheric_pressure::Quantity,
     soil_temperature::Quantity,
     soil_moisture::Number,
+    bulk_density::Quantity,
+    mineral_density::Quantity,
     vapour_pressure_equation=GoffGratch(),
 )
-    (; bulk_density, mineral_conductivity, mineral_heat_capacity, mineral_density,
+    (; mineral_conductivity, mineral_heat_capacity,
        recirculation_power, return_flow_threshold, de_vries_shape_factor) = soil_thermal
 
     standard_pressure = Unitful.atm
@@ -114,8 +118,9 @@ function soil_properties(soil_thermal::CampbelldeVriesSoilThermal;
     return (; bulk_thermal_conductivity, bulk_heat_capacity, bulk_density=bulk_density_total)
 end
 
-function allocate_soil_properties(nodes, soil_thermal)
-    (; mineral_conductivity, mineral_heat_capacity, mineral_density) = soil_thermal
+function allocate_soil_properties(nodes, soil_thermal, soil_hydraulics)
+    (; mineral_conductivity, mineral_heat_capacity) = soil_thermal
+    mineral_density = soil_hydraulics.mineral_density
     num_nodes = length(nodes)
 
     bulk_thermal_conductivity = fill(mineral_conductivity[1], num_nodes)
@@ -134,23 +139,28 @@ Returns three arrays: `bulk_thermal_conductivity`, `bulk_heat_capacity`, `bulk_d
 """
 function soil_properties!(buffers::NamedTuple, soil_thermal;
     atmospheric_pressure::Quantity, soil_temperature::AbstractVector, soil_moisture::AbstractVector,
+    bulk_density::AbstractVector,
+    mineral_density::AbstractVector,
     vapour_pressure_equation=GoffGratch(),
 )
     num_layers = length(soil_temperature)
     @assert length(soil_moisture) == num_layers
-    (; bulk_thermal_conductivity, bulk_heat_capacity, bulk_density) = buffers
-    bd_unit = unit(eltype(bulk_density))
+    (; bulk_thermal_conductivity, bulk_heat_capacity) = buffers
+    out_bulk_density = buffers.bulk_density
+    bd_unit = unit(eltype(out_bulk_density))
     @inbounds for i in 1:num_layers
         result = soil_properties(maybegetindex(soil_thermal, i);
             atmospheric_pressure,
             soil_temperature = soil_temperature[i],
             soil_moisture = soil_moisture[i],
+            bulk_density = bulk_density[i],
+            mineral_density = mineral_density[i],
             vapour_pressure_equation,
         )
         bulk_thermal_conductivity[i] = result.bulk_thermal_conductivity
         bulk_heat_capacity[i]        = result.bulk_heat_capacity
-        bulk_density[i]              = uconvert(bd_unit, result.bulk_density)
+        out_bulk_density[i]          = uconvert(bd_unit, result.bulk_density)
     end
 
-    return (; bulk_thermal_conductivity, bulk_heat_capacity, bulk_density)
+    return (; bulk_thermal_conductivity, bulk_heat_capacity, bulk_density=out_bulk_density)
 end

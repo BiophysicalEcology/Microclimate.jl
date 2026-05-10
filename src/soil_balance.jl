@@ -1,4 +1,4 @@
-@kwdef struct SoilEnergyInputs{F,B,SP,D<:Vector{<:Number},H<:Vector{<:Number},S,BLM,EI,SW,VP,LW,QF,SNM,SNS,SNSC,SM,MSF}
+@kwdef struct SoilEnergyInputs{F,B,SP,D<:Vector{<:Number},H<:Vector{<:Number},S,BLM,EI,SW,VP,LW,QF,SNM,SNS,SNSC,SM,BD,MD,MSF}
     forcing::F
     buffers::B
     soil_thermal_model::SP
@@ -18,6 +18,8 @@
     snow_state::SNS = nothing
     snow_scratch::SNSC = nothing
     soil_moisture::SM = nothing
+    bulk_density::BD       # per-depth profile from soil hydraulics
+    mineral_density::MD    # per-depth profile from soil hydraulics
     n_snow::Int = 0
     maximum_surface_temperature::MSF = 85.0u"°C"  # Fortran microinput(74) surface-temperature safety clamp
 end
@@ -76,6 +78,7 @@ function soil_energy_balance(
         soil_properties!(soil_view, p.soil_thermal_model;
             soil_temperature=SVector(ntuple(k -> soil_temperature[n_snow + k], N - n_snow)),
             soil_moisture=p.soil_moisture,
+            bulk_density=p.bulk_density, mineral_density=p.mineral_density,
             atmospheric_pressure, vapour_pressure_equation,
         )
         write_snow_properties!(p.snow_model, p.snow_state, p.snow_scratch,
@@ -84,6 +87,7 @@ function soil_energy_balance(
     else
         soil_properties!(buffers.soil_properties, p.soil_thermal_model;
             soil_temperature=soil_temperature, soil_moisture=p.soil_moisture,
+            bulk_density=p.bulk_density, mineral_density=p.mineral_density,
             atmospheric_pressure, vapour_pressure_equation,
         )
     end
@@ -393,8 +397,8 @@ function soil_water_balance!(buffers, smm::CampbellSoilHydraulics;
     dt = smm.moist_step
     saturated_conductivity = smm.saturated_hydraulic_conductivity
     campbell_b = smm.campbell_b_parameter
-    bulk_density = smm.soil_bulk_density2
-    mineral_density = smm.soil_mineral_density2
+    bulk_density = smm.bulk_density
+    mineral_density = smm.mineral_density
     root_density = smm.root_density
     root_resistance_param = smm.root_resistance
     stomatal_closure_potential = smm.stomatal_closure_potential
@@ -636,10 +640,8 @@ function get_soil_water_balance!(buffers, soil_moisture_model::CampbellSoilHydra
     relative_humidity = environment_instant.reference_humidity
     leaf_area_index = environment_instant.leaf_area_index
 
-    (; maxpool, moist_step, soil_bulk_density2, soil_mineral_density2) = soil_moisture_model
+    (; maxpool, moist_step, bulk_density, mineral_density) = soil_moisture_model
 
-    bulk_density = soil_bulk_density2
-    mineral_density = soil_mineral_density2
     θ_soil = soil_moisture
     surface_temperature = T0[1]
 

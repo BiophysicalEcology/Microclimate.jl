@@ -55,12 +55,9 @@ mineral_density = (CSV.File("$testdir/data/init_monthly/soilprop.csv")[1, 1][6])
 bulk_density = (CSV.File("$testdir/data/init_monthly/soilprop.csv")[1, 1][2]) * 1.0u"Mg/m^3" # dry soil bulk density (Mg/m3)
 
 soil_thermal_model = CampbelldeVriesSoilThermal(;
-    bulk_density, 
-    mineral_density,
     de_vries_shape_factor = 0.1, # de Vries shape factor, 0.33 for organic soils, 0.1 for mineral
     mineral_conductivity = (CSV.File("$testdir/data/init_monthly/soilprop.csv")[1, 1][4]) * 1.0u"W/m/K", # soil minerals thermal conductivity (W/mC)
     mineral_heat_capacity = (CSV.File("$testdir/data/init_monthly/soilprop.csv")[1, 1][5]) * 1.0u"J/kg/K", # soil minerals specific heat (J/kg-K)
-    saturation_moisture = (CSV.File("$testdir/data/init_monthly/soilprop.csv")[1, 1][3]) * 1.0u"m^3/m^3", # volumetric water content at saturation (0.1 bar matric potential) (m3/m3)
     recirculation_power = 4.0, # power for recirculation function
     return_flow_threshold = 0.162, # return-flow cutoff soil moisture, m^3/m^3
 )

@@ -119,32 +119,26 @@ end
 
 function example_soil_thermal_parameters(;
     de_vries_shape_factor = 0.1, # de Vries shape factor, 0.33 for organic soils, 0.1 for mineral
-    soil_mineral_conductivity = 1.25u"W/m/K", # soil minerals thermal conductivity
-    soil_mineral_density = 2.560u"Mg/m^3", # soil minerals density
-    soil_mineral_heat_capacity = 870.0u"J/kg/K", # soil minerals specific heat
-    soil_bulk_density = 2.56u"Mg/m^3", # dry soil bulk density
-    # TODO why is this calculated elsewhere but also specified here
-    soil_saturation_moisture = 0.26u"m^3/m^3", # volumetric water content at saturation (0.1 bar matric potential)
+    mineral_conductivity = 1.25u"W/m/K", # soil minerals thermal conductivity
+    mineral_heat_capacity = 870.0u"J/kg/K", # soil minerals specific heat
     recirculation_power = 4.0, # power for recirculation function
     return_flow_threshold = 0.162, # return-flow cutoff soil moisture, m^3/m^3
 )
-    CampbelldeVriesSoilThermal(
-        de_vries_shape_factor, soil_mineral_conductivity, soil_mineral_density, soil_mineral_heat_capacity,
-        soil_bulk_density, soil_saturation_moisture, recirculation_power, return_flow_threshold
+    CampbelldeVriesSoilThermal(;
+        de_vries_shape_factor, mineral_conductivity, mineral_heat_capacity,
+        recirculation_power, return_flow_threshold,
     )
 end
 
 # TODO move real defaults to the struct keywords
 function example_soil_hydraulics(depths=DEFAULT_DEPTHS;
+    # Scalars get broadcast to a per-depth vector; an AbstractVector is taken as-is.
     bulk_density = 2.56u"Mg/m^3",
     mineral_density = 2.560u"Mg/m^3",
     # soil hydraulic parameters
     air_entry_water_potential = fill(0.7, length(depths))u"J/kg", #air entry potential
     saturated_hydraulic_conductivity = fill(0.0058, length(depths))u"kg*s/m^3", #saturated conductivity
     campbell_b_parameter = fill(1.7, length(depths)), #soil 'b' parameter
-    # bulk_density / mineral_density already carry units; don't multiply by u"Mg/m^3" again.
-    soil_bulk_density2 = fill(bulk_density, length(depths)),
-    soil_mineral_density2 = fill(mineral_density, length(depths)),
     # plant parameters
     root_density = [0, 0, 8.2, 8.0, 7.8, 7.4, 7.1, 6.4, 5.8, 4.8, 4.0, 1.8, 0.9, 0.6, 0.8, 0.4, 0.4, 0, 0] * 1e4u"m/m^3", # root density at each node (from Campell 1985 Soil Physics with Basic, p. 131)
     root_resistance = 2.5e+10u"m^3/kg/s", # resistance per unit length of root
@@ -160,8 +154,10 @@ function example_soil_hydraulics(depths=DEFAULT_DEPTHS;
     mode::AbstractSoilMoistureMode = PrescribedSoilMoisture(),
 )
     CampbellSoilHydraulics(;
-        air_entry_water_potential, saturated_hydraulic_conductivity, campbell_b_parameter, soil_bulk_density2,
-        soil_mineral_density2, root_density, root_resistance, stomatal_closure_potential, leaf_resistance, stomatal_stability_parameter,
+        air_entry_water_potential, saturated_hydraulic_conductivity, campbell_b_parameter,
+        bulk_density = bulk_density isa AbstractVector ? bulk_density : fill(bulk_density, length(depths)),
+        mineral_density = mineral_density isa AbstractVector ? mineral_density : fill(mineral_density, length(depths)),
+        root_density, root_resistance, stomatal_closure_potential, leaf_resistance, stomatal_stability_parameter,
         root_radius, moist_error, moist_count, moist_step, maxpool, mode,
     )
 end
@@ -279,14 +275,16 @@ end
 
 function build_soil_energy_inputs(; forcing, buffers, soil_thermal_model, depths, heights, site, boundary_layer_model,
     n_snow, num_soil_nodes, nodes, environment_instant, effective_wetness, vapour_pressure_equation,
-    longwave_sky, albedo, qfreze, snow_model, snow_state, snow_scratch, soil_moisture, maximum_surface_temperature,
+    longwave_sky, albedo, qfreze, snow_model, snow_state, snow_scratch, soil_moisture,
+    bulk_density, mineral_density, maximum_surface_temperature,
 )
     return SoilEnergyInputs(; forcing, buffers, soil_thermal_model,
         depths, heights, site, boundary_layer_model,
         nodes=n_snow > 0 ? zeros(n_snow + num_soil_nodes) : nodes,
         environment_instant, soil_wetness=effective_wetness,
         vapour_pressure_equation, longwave_sky, albedo, qfreze,
-        snow_model, snow_state, snow_scratch, soil_moisture, n_snow, maximum_surface_temperature,
+        snow_model, snow_state, snow_scratch, soil_moisture,
+        bulk_density, mineral_density, n_snow, maximum_surface_temperature,
     )
 end
 
@@ -376,7 +374,7 @@ function CommonSolve.init(mp::MicroProblem)
     buffers = (;
         profile = allocate_profile(heights),
         soil_energy_balance = allocate_soil_energy_balance(num_ode_nodes),
-        soil_properties = allocate_soil_properties(zeros(num_ode_nodes), mp.soil_thermal_model),
+        soil_properties = allocate_soil_properties(zeros(num_ode_nodes), mp.soil_thermal_model, mp.soil_moisture_model),
         phase_transition = allocate_phase_transition(num_soil_nodes),
         soil_water_balance = allocate_soil_water_balance(num_soil_nodes),
     )
@@ -417,7 +415,10 @@ function CommonSolve.init(mp::MicroProblem)
         nodes=zeros(num_ode_nodes), environment_instant,
         soil_wetness=0.0, vapour_pressure_equation=mp.vapour_pressure_equation,
         longwave_sky, albedo=mp.site.albedo,
-        soil_moisture, n_snow=n_snow,
+        soil_moisture,
+        bulk_density=mp.soil_moisture_model.bulk_density,
+        mineral_density=mp.soil_moisture_model.mineral_density,
+        n_snow=n_snow,
         snow_model, snow_state=initial_snow_state(snow_model), snow_scratch,
         maximum_surface_temperature=mp.maximum_surface_temperature,
     )
@@ -552,7 +553,7 @@ function solve_soil!(cache::MicroCache)
 
     (; site, boundary_layer_model, soil_thermal_model, soil_moisture_model, environment_minmax, environment_daily, initial_soil_temperature, initial_soil_moisture, hourly_rainfall, vapour_pressure_equation, soil_ode_solver, soil_ode_kwargs, time_mode, convergence) = mp
     moisture_mode = soil_moisture_model.mode
-    (; moist_step, campbell_b_parameter, soil_bulk_density2, soil_mineral_density2, air_entry_water_potential) = soil_moisture_model
+    (; moist_step, campbell_b_parameter, bulk_density, mineral_density, air_entry_water_potential) = soil_moisture_model
     init_soil_wetness!(moisture_mode)
 
     ndays = length(days)
@@ -596,10 +597,11 @@ function solve_soil!(cache::MicroCache)
         buffers.soil_properties
     end
     update_soil_properties!(output, soil_prop_view, soil_thermal_model;
-        soil_temperature=T0, soil_moisture, atmospheric_pressure=101325.0u"Pa", step=1
+        soil_temperature=T0, soil_moisture, bulk_density, mineral_density,
+        atmospheric_pressure=101325.0u"Pa", step=1
     )
 
-    soil_saturation_moisture = 1.0 .- soil_bulk_density2 ./ soil_mineral_density2
+    soil_saturation_moisture = 1.0 .- bulk_density ./ mineral_density
     output.soil_water_potential[1, :] .= air_entry_water_potential .* (soil_saturation_moisture ./ soil_moisture) .^ campbell_b_parameter
     output.soil_temperature[1, :] .= T0
     output.soil_moisture[1, :] = soil_moisture
@@ -732,7 +734,7 @@ function solve_soil!(cache::MicroCache)
                 end
                 output.sky_temperature[day_init_step] = longwave_sky_init.sky_temperature
                 update_soil_properties!(output, soil_prop_view, soil_thermal_model;
-                    soil_temperature=T0, soil_moisture,
+                    soil_temperature=T0, soil_moisture, bulk_density, mineral_density,
                     atmospheric_pressure=output.pressure[day_init_step],
                     step=day_init_step, vapour_pressure_equation,
                 )
@@ -764,7 +766,9 @@ function solve_soil!(cache::MicroCache)
                 depths=ode_depths, heights, site, boundary_layer_model,
                 n_snow, num_soil_nodes, nodes, environment_instant, effective_wetness,
                 vapour_pressure_equation, longwave_sky, albedo, qfreze,
-                snow_model, snow_state, snow_scratch, soil_moisture, maximum_surface_temperature=mp.maximum_surface_temperature,
+                snow_model, snow_state, snow_scratch, soil_moisture,
+                bulk_density, mineral_density,
+                maximum_surface_temperature=mp.maximum_surface_temperature,
             )
 
             # Initialize integrator for full day (0-1440 min), matching Fortran SFODE.
@@ -866,7 +870,9 @@ function solve_soil!(cache::MicroCache)
                         depths=ode_depths, heights, site, boundary_layer_model,
                         n_snow, num_soil_nodes, nodes, environment_instant, effective_wetness,
                         vapour_pressure_equation, longwave_sky, albedo, qfreze,
-                        snow_model, snow_state, snow_scratch, soil_moisture, maximum_surface_temperature=mp.maximum_surface_temperature,
+                        snow_model, snow_state, snow_scratch, soil_moisture,
+                        bulk_density, mineral_density,
+                        maximum_surface_temperature=mp.maximum_surface_temperature,
                     )
                 end
                 T0_ode = combine_ode_state(T_snow, T0, n_snow)
@@ -937,7 +943,8 @@ function solve_soil!(cache::MicroCache)
                     end
                     environment_instant = get_instant(environment_day, mp.environment_hourly, output, soil_moisture, output_step)
                     update_soil_properties!(output, soil_prop_view, soil_thermal_model;
-                        soil_temperature=T0, soil_moisture, atmospheric_pressure=environment_instant.atmospheric_pressure, step=output_step, vapour_pressure_equation
+                        soil_temperature=T0, soil_moisture, bulk_density, mineral_density,
+                        atmospheric_pressure=environment_instant.atmospheric_pressure, step=output_step, vapour_pressure_equation
                     )
                 end
             end

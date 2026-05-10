@@ -59,10 +59,7 @@ boundary_layer_model = MoninObukhov(; karman_constant=0.4, dyer_constant=16.0)
 soil_thermal_model = CampbelldeVriesSoilThermal(;
     de_vries_shape_factor = 0.1, # de Vries shape factor, 0.33 for organic soils, 0.1 for mineral
     mineral_conductivity = (CSV.File("$testdir/data/init_daily/soilprop.csv")[1, 1][4]) * 1.0u"W/m/K", # soil minerals thermal conductivity (W/mC)
-    mineral_density = (CSV.File("$testdir/data/init_daily/soilprop.csv")[1, 1][6]) * 1.0u"Mg/m^3", # soil minerals density (Mg/m3)
     mineral_heat_capacity = (CSV.File("$testdir/data/init_daily/soilprop.csv")[1, 1][5]) * 1.0u"J/kg/K", # soil minerals specific heat (J/kg-K)
-    bulk_density = (CSV.File("$testdir/data/init_daily/soilprop.csv")[1, 1][2]) * 1.0u"Mg/m^3", # dry soil bulk density (Mg/m3)
-    saturation_moisture = (CSV.File("$testdir/data/init_daily/soilprop.csv")[1, 1][3]) * 1.0u"m^3/m^3", # volumetric water content at saturation (0.1 bar matric potential) (m3/m3)
     recirculation_power = 4.0, # power for recirculation function
     return_flow_threshold = 0.162, # return-flow cutoff soil moisture, m^3/m^3
 )
@@ -87,8 +84,8 @@ soil_moisture_model = CampbellSoilHydraulics(;
     air_entry_water_potential = (DataFrame(CSV.File("$testdir/data/init_daily/PE.csv"))[:, 2] * 1.0u"J/kg"),
     saturated_hydraulic_conductivity = (DataFrame(CSV.File("$testdir/data/init_daily/KS.csv"))[:, 2] * 1.0u"kg*s/m^3"),
     campbell_b_parameter = (DataFrame(CSV.File("$testdir/data/init_daily/BB.csv"))[:, 2] * 1.0),
-    soil_bulk_density2 = (DataFrame(CSV.File("$testdir/data/init_daily/BD.csv"))[:, 2] * 1.0u"Mg/m^3"),
-    soil_mineral_density2 = (DataFrame(CSV.File("$testdir/data/init_daily/DD.csv"))[:, 2] * 1.0u"Mg/m^3"),
+    bulk_density = (DataFrame(CSV.File("$testdir/data/init_daily/BD.csv"))[:, 2] * 1.0u"Mg/m^3"),
+    mineral_density = (DataFrame(CSV.File("$testdir/data/init_daily/DD.csv"))[:, 2] * 1.0u"Mg/m^3"),
     # plant parameters
     root_density = DataFrame(CSV.File("$testdir/data/init_daily/L.csv"))[:, 2] * u"m/m^3",
     root_resistance = microinput[:RW] * u"m^3/kg/s",

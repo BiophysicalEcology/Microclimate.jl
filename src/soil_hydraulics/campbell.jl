@@ -10,12 +10,12 @@ The `mode` field controls how soil moisture is handled during simulation:
 # References
 Campbell, G. S. (1985). Soil Physics with BASIC. Elsevier.
 """
-@kwdef struct CampbellSoilHydraulics{AEWP,SHC,CBP,SBD,SMD,RDen,RRes,SCP,LRes,SSP,RRad,ME,MC,MS,MP,Mode<:AbstractSoilMoistureMode} <: AbstractSoilMoistureModel
+@kwdef struct CampbellSoilHydraulics{AEWP,SHC,CBP,BD,MD,RDen,RRes,SCP,LRes,SSP,RRad,ME,MC,MS,MP,Mode<:AbstractSoilMoistureMode} <: AbstractSoilMoistureModel
     air_entry_water_potential::AEWP
     saturated_hydraulic_conductivity::SHC
     campbell_b_parameter::CBP
-    soil_bulk_density2::SBD
-    soil_mineral_density2::SMD
+    bulk_density::BD       # per-depth profile (Vector); also consumed by the soil thermal model
+    mineral_density::MD    # per-depth profile (Vector); also consumed by the soil thermal model
     root_density::RDen
     root_resistance::RRes
     stomatal_closure_potential::SCP
