@@ -100,8 +100,7 @@ environment_minmax = MonthlyMinMaxEnvironment(;
 
 _runmoist = Bool(Int(microinput[:runmoist]))
 soil_moisture_model = example_soil_hydraulics(depths; bulk_density, mineral_density,
-    root_density = fill(0.0, length(depths))u"m/m^3",
-    mode = _runmoist ? DynamicSoilMoisture() : PrescribedSoilMoisture(; precomputed_soil_moisture))
+    root_density = fill(0.0, length(depths))u"m/m^3")
 solar_model = SolarProblem(;
     diffuse_model = Bool(Int(microinput[:IUV])) ? SolarRadiation.ChandrasekharScattering() : SolarRadiation.NoScattering(),
 )
@@ -116,9 +115,14 @@ _spinup = Bool(Int(microinput[:spinup]))
 time_mode = _daily ? ConsecutiveDayMode(; spinup_first_day=_spinup) :
     NonConsecutiveDayMode(; ndmax=Int(microinput[:ndmax]))
 
-# Set up convergence strategy
-#convergence = FixedSoilTemperatureIterations(Int(microinput[:ndmax]))
-convergence = FixedSoilTemperatureIterations(10)
+config = MicroConfig(;
+    boundary_layer_model,
+    time_mode,
+    convergence = FixedSoilTemperatureIterations(10),
+    hourly_rainfall = Bool(Int(microinput[:rainhourly])),
+    soil_moisture_mode = _runmoist ? DynamicSoilMoisture() :
+        PrescribedSoilMoisture(; precomputed_soil_moisture),
+)
 
 # now try the simulation function
 problem = MicroProblem(;
@@ -130,15 +134,12 @@ problem = MicroProblem(;
     # Objects defined above
     solar_model,
     site,
-    boundary_layer_model,
     soil_moisture_model,
     soil_thermal_model,
     environment_minmax,
     environment_daily,
     environment_hourly,
-    time_mode,
-    convergence,
-    hourly_rainfall = Bool(Int(microinput[:rainhourly])), # use hourly rainfall?
+    config,
     # intial conditions
     initial_soil_temperature = nothing, # initial soil temperature
     initial_soil_moisture = precomputed_soil_moisture[1:10, 1], # initial soil moisture

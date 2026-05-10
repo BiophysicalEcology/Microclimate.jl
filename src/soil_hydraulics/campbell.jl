@@ -1,16 +1,15 @@
 """
-    CampbellSoilHydraulics(; ..., mode=PrescribedSoilMoisture())
+    CampbellSoilHydraulics(; ...)
 
 Soil hydraulic parameters for Campbell's (1985) soil water balance model.
-The `mode` field controls how soil moisture is handled during simulation:
-
-- `PrescribedSoilMoisture()` — use prescribed wetness from environment data (default)
-- `DynamicSoilMoisture()` — run the full Campbell soil water balance solver
+Holds parameters only — the moisture-solver mode (`PrescribedSoilMoisture` /
+`DynamicSoilMoisture`) and tuning (`moist_*`, `maxpool`) live on
+`MicroConfig`, since they are solver/strategy choices, not Campbell-specific.
 
 # References
 Campbell, G. S. (1985). Soil Physics with BASIC. Elsevier.
 """
-@kwdef struct CampbellSoilHydraulics{AEWP,SHC,CBP,BD,MD,RDen,RRes,SCP,LRes,SSP,RRad,ME,MC,MS,MP,Mode<:AbstractSoilMoistureMode} <: AbstractSoilMoistureModel
+@kwdef struct CampbellSoilHydraulics{AEWP,SHC,CBP,BD,MD,RDen,RRes,SCP,LRes,SSP,RRad} <: AbstractSoilMoistureModel
     air_entry_water_potential::AEWP
     saturated_hydraulic_conductivity::SHC
     campbell_b_parameter::CBP
@@ -22,9 +21,4 @@ Campbell, G. S. (1985). Soil Physics with BASIC. Elsevier.
     leaf_resistance::LRes
     stomatal_stability_parameter::SSP
     root_radius::RRad
-    moist_error::ME
-    moist_count::MC
-    moist_step::MS
-    maxpool::MP
-    mode::Mode = PrescribedSoilMoisture()
 end

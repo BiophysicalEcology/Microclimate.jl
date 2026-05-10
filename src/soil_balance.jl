@@ -387,6 +387,9 @@ function soil_water_balance!(buffers, smm::CampbellSoilHydraulics;
     leaf_area_index,
     evapotranspiration,
     input_soil_temperature,
+    moist_step,    # solver tuning, lives on MicroConfig
+    moist_error,
+    moist_count,
     vapour_pressure_equation=GoffGratch(),
 )
     # Local variable names
@@ -394,7 +397,7 @@ function soil_water_balance!(buffers, smm::CampbellSoilHydraulics;
     lai = leaf_area_index
     relative_humidity_local = local_relative_humidity
 
-    dt = smm.moist_step
+    dt = moist_step
     saturated_conductivity = smm.saturated_hydraulic_conductivity
     campbell_b = smm.campbell_b_parameter
     bulk_density = smm.bulk_density
@@ -405,8 +408,6 @@ function soil_water_balance!(buffers, smm::CampbellSoilHydraulics;
     leaf_resistance = smm.leaf_resistance
     stomatal_stability = smm.stomatal_stability_parameter
     root_radius = smm.root_radius
-    moist_error = smm.moist_error
-    moist_count = smm.moist_count
 
     (; water_potential, depth, layer_water_mass, water_content, water_content_new,
        hydraulic_conductivity, soil_humidity, soil_temperature,
@@ -632,6 +633,10 @@ function get_soil_water_balance!(buffers, soil_moisture_model::CampbellSoilHydra
     niter_moist,
     soil_wetness,
     soil_moisture,
+    moist_step,    # solver tuning, lives on MicroConfig
+    moist_error,
+    moist_count,
+    maxpool,
     vapour_pressure_equation=GoffGratch(),
     snow_present=false,
 )
@@ -640,7 +645,7 @@ function get_soil_water_balance!(buffers, soil_moisture_model::CampbellSoilHydra
     relative_humidity = environment_instant.reference_humidity
     leaf_area_index = environment_instant.leaf_area_index
 
-    (; maxpool, moist_step, bulk_density, mineral_density) = soil_moisture_model
+    (; bulk_density, mineral_density) = soil_moisture_model
 
     θ_soil = soil_moisture
     surface_temperature = T0[1]
@@ -704,6 +709,7 @@ function get_soil_water_balance!(buffers, soil_moisture_model::CampbellSoilHydra
         soil_moisture,
         evapotranspiration=evaporation_potential,
         input_soil_temperature=T0,
+        moist_step, moist_error, moist_count,
         vapour_pressure_equation,
     )
     soil_moisture = infil_out.soil_moisture
@@ -724,6 +730,7 @@ function get_soil_water_balance!(buffers, soil_moisture_model::CampbellSoilHydra
             leaf_area_index,
             evapotranspiration=evaporation_potential,
             input_soil_temperature=T0,
+            moist_step, moist_error, moist_count,
             vapour_pressure_equation,
         )
         soil_moisture = infil_out.soil_moisture

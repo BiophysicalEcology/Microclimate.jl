@@ -93,12 +93,6 @@ soil_moisture_model = CampbellSoilHydraulics(;
     leaf_resistance = microinput[:RL] * u"m^4/kg/s",
     stomatal_stability_parameter = microinput[:SP],
     root_radius = microinput[:R1]u"m",
-    # simulation controls
-    moist_error = microinput[:IM]u"kg/m^2/s",
-    moist_count = microinput[:MAXCOUNT],
-    moist_step = microinput[:moiststep]u"s",
-    maxpool = microinput[:maxpool] * 1000.0u"kg/m^2",
-    mode = _runmoist ? DynamicSoilMoisture() : PrescribedSoilMoisture(),
 )
 
 environment_daily = DailyTimeseries(;
@@ -131,8 +125,17 @@ _daily = Bool(Int(microinput[:microdaily]))
 _spinup = Bool(Int(microinput[:spinup]))
 time_mode = _daily ? ConsecutiveDayMode(; spinup_first_day=_spinup) : NonConsecutiveDayMode()
 
-# Set up convergence strategy
-convergence = FixedSoilTemperatureIterations(Int(microinput[:ndmax]))
+config = MicroConfig(;
+    boundary_layer_model,
+    time_mode,
+    convergence = FixedSoilTemperatureIterations(Int(microinput[:ndmax])),
+    hourly_rainfall = Bool(Int(microinput[:rainhourly])),
+    soil_moisture_mode = _runmoist ? DynamicSoilMoisture() : PrescribedSoilMoisture(),
+    moist_error = microinput[:IM]u"kg/m^2/s",
+    moist_count = Int(microinput[:MAXCOUNT]),
+    moist_step = microinput[:moiststep]u"s",
+    maxpool = microinput[:maxpool] * 1000.0u"kg/m^2",
+)
 
 # now try the simulation function
 problem = MicroProblem(;
@@ -144,15 +147,12 @@ problem = MicroProblem(;
     # Objects defined above
     solar_model,
     site,
-    boundary_layer_model,
     soil_moisture_model,
     soil_thermal_model,
     environment_minmax,
     environment_daily,
     environment_hourly,
-    time_mode,
-    convergence,
-    hourly_rainfall = Bool(Int(microinput[:rainhourly])), # use hourly rainfall?
+    config,
     # initial conditions
     initial_soil_temperature = let coarse = u"K".((DataFrame(CSV.File("$testdir/data/init_daily/soilinit.csv"))[:, 2] * 1.0)u"°C"), n = length(coarse)
         result = Vector{eltype(coarse)}(undef, 2n - 1)
