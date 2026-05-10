@@ -6,7 +6,7 @@ Per-day analogue of `MonthlyMinMaxEnvironment` for consecutive-day simulations
 Passing this to `simulate_microclimate` automatically sets `daily=true` so that
 consecutive days inherit soil state and iterate once.
 """
-@kwdef struct DailyMinMaxEnvironment{AT,W,H,C,M}
+@kwdef struct DailyMinMaxEnvironment{AT,W,H,C,M} <: AbstractEnvironment
     reference_temperature_min::AT
     reference_temperature_max::AT
     reference_wind_min::W

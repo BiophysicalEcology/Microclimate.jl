@@ -51,7 +51,7 @@ export AbstractCloudAdjustModel, Angstrom, sunshine_fraction
 # Rainfall schedule
 export AbstractRainfallSchedule, DailyRainfall, HourlyRainfall, is_hourly
 
-export MonthlyMinMaxEnvironment, DailyMinMaxEnvironment, DailyTimeseries, HourlyTimeseries
+export AbstractEnvironment, MonthlyMinMaxEnvironment, DailyMinMaxEnvironment, DailyTimeseries, HourlyTimeseries
 export Site, AbstractSite
 export AbstractBoundaryLayerModel, MoninObukhov
 

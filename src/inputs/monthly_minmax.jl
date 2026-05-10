@@ -1,7 +1,7 @@
 # TODO: this should be more generic.
 # We could possible make a field type that is either interpolated or indexed
 # so we just mix min-max fields with e.g. daily fields in a single environment object
-@kwdef struct MonthlyMinMaxEnvironment{AT,W,H,C,M}# <: AbstractEnvironment
+@kwdef struct MonthlyMinMaxEnvironment{AT,W,H,C,M} <: AbstractEnvironment
     reference_temperature_min::AT
     reference_temperature_max::AT
     reference_wind_min::W

@@ -15,7 +15,7 @@ function MicroProfile(nsteps::Int, nheights::Int)
     )
 end
 
-@kwdef struct MicroResult{P,AT,WS,RH,CC,GS,DF,SkT,SoT,SM,SWP,SH,STC,SPH,SBD,SW,SR,Pr,SF,SD,SDN,SNT} <: AbstractEnvironment
+@kwdef struct MicroResult{P,AT,WS,RH,CC,GS,DF,SkT,SoT,SM,SWP,SH,STC,SPH,SBD,SW,SR,Pr,SF,SD,SDN,SNT}
     pressure::P
     reference_temperature::AT
     reference_wind_speed::WS
