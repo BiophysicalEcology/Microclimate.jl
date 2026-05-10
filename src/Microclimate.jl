@@ -18,7 +18,7 @@ using Interpolations: AbstractInterpolation
 using SolarRadiation
 
 
-export MicroProblem, MicroCache, MicroConfig
+export MicroProblem, MicroCache, MicroConfig, MicroParameters
 
 export GoffGratch, Teten, Huang
 export Tsit5
@@ -121,8 +121,9 @@ include("boundary_layer.jl")
 include("soil_balance.jl")
 include("snow.jl")
 
-# Top-level config and problem
+# Top-level config, parameters, and problem
 include("config.jl")
+include("parameters.jl")
 include("simulation.jl")
 
 end

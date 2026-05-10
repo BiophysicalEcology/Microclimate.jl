@@ -56,7 +56,7 @@ site = Site(;
 )
 boundary_layer_model = MoninObukhov(; karman_constant=0.4, dyer_constant=16.0)
 
-soil_thermal_model = CampbelldeVriesSoilThermal(;
+soil_thermal = CampbelldeVriesSoilThermal(;
     de_vries_shape_factor = 0.1, # de Vries shape factor, 0.33 for organic soils, 0.1 for mineral
     mineral_conductivity = (CSV.File("$testdir/data/init_daily/soilprop.csv")[1, 1][4]) * 1.0u"W/m/K", # soil minerals thermal conductivity (W/mC)
     mineral_heat_capacity = (CSV.File("$testdir/data/init_daily/soilprop.csv")[1, 1][5]) * 1.0u"J/kg/K", # soil minerals specific heat (J/kg-K)
@@ -79,7 +79,7 @@ environment_minmax = nothing
 # )
 
 _runmoist = Bool(Int(microinput[:runmoist]))
-soil_moisture_model = CampbellSoilHydraulics(;
+soil_hydraulics = CampbellSoilHydraulics(;
     # soil hydraulic parameters
     air_entry_water_potential = (DataFrame(CSV.File("$testdir/data/init_daily/PE.csv"))[:, 2] * 1.0u"J/kg"),
     saturated_hydraulic_conductivity = (DataFrame(CSV.File("$testdir/data/init_daily/KS.csv"))[:, 2] * 1.0u"kg*s/m^3"),
@@ -147,8 +147,7 @@ problem = MicroProblem(;
     # Objects defined above
     solar_model,
     site,
-    soil_moisture_model,
-    soil_thermal_model,
+    parameters = MicroParameters(; soil_thermal, soil_hydraulics),
     environment_minmax,
     environment_daily,
     environment_hourly,

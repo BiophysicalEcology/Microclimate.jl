@@ -620,10 +620,10 @@ function soil_water_balance!(buffers, smm::CampbellSoilHydraulics;
 end
 
 
-get_soil_water_balance(soil_moisture_model; num_layers=18, kw...) =
-    get_soil_water_balance!(allocate_soil_water_balance(num_layers), soil_moisture_model; kw...)
+get_soil_water_balance(soil_hydraulics; num_layers=18, kw...) =
+    get_soil_water_balance!(allocate_soil_water_balance(num_layers), soil_hydraulics; kw...)
 
-function get_soil_water_balance!(buffers, soil_moisture_model::CampbellSoilHydraulics;
+function get_soil_water_balance!(buffers, soil_hydraulics::CampbellSoilHydraulics;
     depths,
     site,
     boundary_layer_model,
@@ -645,7 +645,7 @@ function get_soil_water_balance!(buffers, soil_moisture_model::CampbellSoilHydra
     relative_humidity = environment_instant.reference_humidity
     leaf_area_index = environment_instant.leaf_area_index
 
-    (; bulk_density, mineral_density) = soil_moisture_model
+    (; bulk_density, mineral_density) = soil_hydraulics
 
     θ_soil = soil_moisture
     surface_temperature = T0[1]
@@ -701,7 +701,7 @@ function get_soil_water_balance!(buffers, soil_moisture_model::CampbellSoilHydra
     end
 
     # run infiltration algorithm
-    infil_out = soil_water_balance!(buffers.soil_water_balance, soil_moisture_model;
+    infil_out = soil_water_balance!(buffers.soil_water_balance, soil_hydraulics;
         depths,
         atmospheric_pressure,
         local_relative_humidity,
@@ -722,7 +722,7 @@ function get_soil_water_balance!(buffers, soil_moisture_model::CampbellSoilHydra
         soil_moisture[1] = sat
     end
     for _ in 1:(niter_moist-1)
-        infil_out = soil_water_balance!(buffers.soil_water_balance, soil_moisture_model;
+        infil_out = soil_water_balance!(buffers.soil_water_balance, soil_hydraulics;
             depths,
             atmospheric_pressure,
             local_relative_humidity,
