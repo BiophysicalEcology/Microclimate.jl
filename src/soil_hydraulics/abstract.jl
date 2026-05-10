@@ -1,1 +1,1 @@
-abstract type AbstractSoilMoistureModel end
+abstract type AbstractSoilHydraulicsModel end

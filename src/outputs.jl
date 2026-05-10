@@ -1,12 +1,12 @@
-struct MicroProfile{AT,WS,RH,CHF,FV}
+struct AtmosphericProfile{AT,WS,RH,CHF,FV}
     air_temperature::AT        # Matrix (nsteps × nheights)
     wind_speed::WS             # Matrix (nsteps × nheights)
     relative_humidity::RH      # Matrix (nsteps × nheights)
     convective_heat_flux::CHF  # Vector (nsteps)
     friction_velocity::FV      # Vector (nsteps)
 end
-function MicroProfile(nsteps::Int, nheights::Int)
-    MicroProfile(
+function AtmosphericProfile(nsteps::Int, nheights::Int)
+    AtmosphericProfile(
         Matrix{typeof(1.0u"K")}(undef, nsteps, nheights),
         Matrix{typeof(1.0u"m/s")}(undef, nsteps, nheights),
         Matrix{Float64}(undef, nsteps, nheights),
@@ -58,7 +58,7 @@ function MicroResult(nsteps::Int, num_nodes::Int, nheights::Int, solar_radiation
         soil_bulk_density = Array{typeof(1.0u"kg/m^3")}(undef, nsteps, num_nodes),
         surface_water = Array{typeof(1.0u"kg/m^2")}(undef, nsteps),
         solar_radiation = solar_radiation,
-        profile = MicroProfile(nsteps, nheights),
+        profile = AtmosphericProfile(nsteps, nheights),
         snow_fall = zeros(typeof(1.0u"cm/hr"), nsteps),
         snow_depth = zeros(typeof(1.0u"cm"), nsteps),
         snow_density = zeros(typeof(1.0u"g/cm^3"), nsteps),

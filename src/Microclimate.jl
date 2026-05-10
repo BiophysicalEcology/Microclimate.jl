@@ -29,9 +29,11 @@ export AbstractSnowModel, NoSnow, SnowModel, SnowState
 # Soil thermal model
 export CampbelldeVriesSoilThermal
 
-# Soil hydraulics and moisture mode
-export CampbellSoilHydraulics
-export PrescribedSoilMoisture, DynamicSoilMoisture
+# Soil hydraulics
+export AbstractSoilHydraulicsModel, CampbellSoilHydraulics
+
+# Soil moisture strategy (lives on MicroConfig.soil_moisture_strategy)
+export AbstractSoilMoistureStrategy, PrescribedSoilMoisture, DynamicSoilMoisture
 
 # Convergence strategies
 export AbstractSoilTemperatureConvergence, FixedSoilTemperatureIterations, SoilTemperatureConvergenceTolerance
@@ -54,6 +56,7 @@ export AbstractRainfallSchedule, DailyRainfall, HourlyRainfall, is_hourly
 export AbstractEnvironment, MonthlyMinMaxEnvironment, DailyMinMaxEnvironment, DailyTimeseries, HourlyTimeseries
 export Site, AbstractSite
 export AbstractBoundaryLayerModel, MoninObukhov
+export Forcing, AtmosphericProfile
 
 export daily_cycle_sine_exponential, daily_cycle_linear, hourly_from_min_max
 

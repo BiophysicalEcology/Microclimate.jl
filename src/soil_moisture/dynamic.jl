@@ -5,7 +5,7 @@ Run the Campbell soil water balance solver to dynamically compute soil moisture
 at each hourly timestep. Tracks the evolving surface soil wetness fraction
 internally.
 """
-mutable struct DynamicSoilMoisture <: AbstractSoilMoistureMode
+mutable struct DynamicSoilMoisture <: AbstractSoilMoistureStrategy
     soil_wetness::Float64
 end
 DynamicSoilMoisture() = DynamicSoilMoisture(0.0)

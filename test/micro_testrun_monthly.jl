@@ -113,14 +113,14 @@ solar_model = SolarProblem(;
 _daily = Bool(Int(microinput[:microdaily]))
 _spinup = Bool(Int(microinput[:spinup]))
 time_mode = _daily ? ConsecutiveDayMode(; spinup_first_day=_spinup) :
-    NonConsecutiveDayMode(; ndmax=Int(microinput[:ndmax]))
+    NonConsecutiveDayMode(; iterations_per_day=Int(microinput[:ndmax]))
 
 config = MicroConfig(;
     boundary_layer_model,
     time_mode,
     convergence = FixedSoilTemperatureIterations(10),
     rainfall_schedule = Bool(Int(microinput[:rainhourly])) ? HourlyRainfall() : DailyRainfall(),
-    soil_moisture_mode = _runmoist ? DynamicSoilMoisture() :
+    soil_moisture_strategy = _runmoist ? DynamicSoilMoisture() :
         PrescribedSoilMoisture(; precomputed_soil_moisture),
 )
 

@@ -7,7 +7,7 @@ Soil wetness is taken from the daily environment timeseries.
 When `precomputed_soil_moisture` is provided as a matrix (ndepths × ndays), those values
 override `initial_soil_moisture` at the start of each day (monthly-representative mode only).
 """
-struct PrescribedSoilMoisture{PSM} <: AbstractSoilMoistureMode
+struct PrescribedSoilMoisture{PSM} <: AbstractSoilMoistureStrategy
     precomputed_soil_moisture::PSM
 end
 PrescribedSoilMoisture(; precomputed_soil_moisture=nothing) =

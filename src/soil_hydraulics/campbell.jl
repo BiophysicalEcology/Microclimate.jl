@@ -2,14 +2,15 @@
     CampbellSoilHydraulics(; ...)
 
 Soil hydraulic parameters for Campbell's (1985) soil water balance model.
-Holds parameters only — the moisture-solver mode (`PrescribedSoilMoisture` /
-`DynamicSoilMoisture`) and tuning (`moist_*`, `maxpool`) live on
-`MicroConfig`, since they are solver/strategy choices, not Campbell-specific.
+Holds parameters only — the moisture-solver strategy (`PrescribedSoilMoisture` /
+`DynamicSoilMoisture`) and tuning (`moisture_tolerance`, `moisture_max_iterations`,
+`moisture_timestep`, `max_surface_pool`) live on `MicroConfig`, since they are
+solver/strategy choices, not Campbell-specific.
 
 # References
 Campbell, G. S. (1985). Soil Physics with BASIC. Elsevier.
 """
-@kwdef struct CampbellSoilHydraulics{AEWP,SHC,CBP,BD,MD,RDen,RRes,SCP,LRes,SSP,RRad} <: AbstractSoilMoistureModel
+@kwdef struct CampbellSoilHydraulics{AEWP,SHC,CBP,BD,MD,RDen,RRes,SCP,LRes,SSP,RRad} <: AbstractSoilHydraulicsModel
     air_entry_water_potential::AEWP
     saturated_hydraulic_conductivity::SHC
     campbell_b_parameter::CBP

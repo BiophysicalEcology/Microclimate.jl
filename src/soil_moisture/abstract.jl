@@ -1,4 +1,4 @@
-abstract type AbstractSoilMoistureMode end
+abstract type AbstractSoilMoistureStrategy end
 
 function get_soil_wetness end
 function init_soil_wetness! end

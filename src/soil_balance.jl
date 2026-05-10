@@ -12,7 +12,7 @@
     vapour_pressure_equation::VP = GoffGratch()
     longwave_sky::LW
     albedo::Float64
-    qfreze::QF = 0.0u"W/m^2"  # Fortran COMMON/melt/QFREZE: snow melt energy fed back to surface node
+    Q_freeze::QF = 0.0u"W/m^2"  # Fortran COMMON/melt/QFREZE: snow melt energy fed back to surface node
     # Snow/soil property recomputation inside ODE (matching Fortran DSUB calling SOILPROPS)
     snow_model::SNM = nothing
     snow_state::SNS = nothing
@@ -47,7 +47,7 @@ function soil_energy_balance(
     t::Quantity,           # timestep
 ) where U <: SVector{N} where N
     # extract parameters
-    (; forcing, buffers, heights, depths, environment_instant, site, boundary_layer_model, soil_wetness, vapour_pressure_equation, longwave_sky, qfreze, maximum_surface_temperature) = p
+    (; forcing, buffers, heights, depths, environment_instant, site, boundary_layer_model, soil_wetness, vapour_pressure_equation, longwave_sky, Q_freeze, maximum_surface_temperature) = p
     (; layer_depths, heat_capacity, thermal_conductance) = buffers.soil_energy_balance
     (; shade) = environment_instant
     # Get environmental data at time t
@@ -192,7 +192,7 @@ function soil_energy_balance(
 
     # Surface energy derivative for the first active node
     # QFREZE: snow melt energy correction, matching Fortran DSUB.f line 567
-    surface_dtdt = u"K/minute"((Q_solar + Q_infrared + Q_conduction + convective_heat_flux + qfreze - Q_evaporation) / heat_capacity[j])
+    surface_dtdt = u"K/minute"((Q_solar + Q_infrared + Q_conduction + convective_heat_flux + Q_freeze - Q_evaporation) / heat_capacity[j])
 
     # Build derivative vector: inactive nodes follow surface, active nodes use conduction.
     # Fortran DSUB.f:591-606 runs DO 10 I=2,N. T(N) is pinned to TDS at every RHS call
@@ -247,14 +247,14 @@ end
 function interpolate_forcings(f, t)
     t_m = ustrip(u"minute", t)
     return (;
-        atmospheric_pressure = f.interpolate_pressure(t_m),
-        air_temperature = f.interpolate_temperature(t_m),
-        wind_speed = f.interpolate_wind(t_m),
-        zenith_angle = min(90.0u"°", u"°"(round(f.interpolate_zenith(t_m), digits=3))),
-        solar_radiation = max(0.0u"W/m^2", f.interpolate_solar(t_m)),
-        cloud_cover = clamp(f.interpolate_cloud(t_m), 0.0, 1.0),
-        relative_humidity = clamp(f.interpolate_humidity(t_m), 0.0, 1.0),
-        slope_zenith_angle = min(90.0u"°", f.interpolate_slope_zenith(t_m)),
+        atmospheric_pressure = f.pressure(t_m),
+        air_temperature = f.temperature(t_m),
+        wind_speed = f.wind(t_m),
+        zenith_angle = min(90.0u"°", u"°"(round(f.zenith(t_m), digits=3))),
+        solar_radiation = max(0.0u"W/m^2", f.solar(t_m)),
+        cloud_cover = clamp(f.cloud(t_m), 0.0, 1.0),
+        relative_humidity = clamp(f.humidity(t_m), 0.0, 1.0),
+        slope_zenith_angle = min(90.0u"°", f.slope_zenith(t_m)),
     )
 end
 
@@ -387,9 +387,9 @@ function soil_water_balance!(buffers, smm::CampbellSoilHydraulics;
     leaf_area_index,
     evapotranspiration,
     input_soil_temperature,
-    moist_step,    # solver tuning, lives on MicroConfig
-    moist_error,
-    moist_count,
+    moisture_timestep,    # solver tuning, lives on MicroConfig
+    moisture_tolerance,
+    moisture_max_iterations,
     vapour_pressure_equation=GoffGratch(),
 )
     # Local variable names
@@ -397,7 +397,7 @@ function soil_water_balance!(buffers, smm::CampbellSoilHydraulics;
     lai = leaf_area_index
     relative_humidity_local = local_relative_humidity
 
-    dt = moist_step
+    dt = moisture_timestep
     saturated_conductivity = smm.saturated_hydraulic_conductivity
     campbell_b = smm.campbell_b_parameter
     bulk_density = smm.bulk_density
@@ -508,7 +508,7 @@ function soil_water_balance!(buffers, smm::CampbellSoilHydraulics;
 
     # Newton-Raphson to estimate leaf_water_potential
     counter = 0
-    while counter < moist_count
+    while counter < moisture_max_iterations
         if leaf_water_potential > mean_soil_potential
             # Seems we need to force the units here or leaf_water_potential is type unstable in the loop
             leaf_water_potential = uconvert(u"J/kg", mean_soil_potential - transpiration_potential * (mean_resistance + leaf_resistance)) # variation on EQ11.18
@@ -530,7 +530,7 @@ function soil_water_balance!(buffers, smm::CampbellSoilHydraulics;
 
     # Convergence loop
     counter = 0
-    while counter < moist_count
+    while counter < moisture_max_iterations
         mass_balance_error = 0.0u"kg/m^2/s"
         counter += 1
         for i in 2:num_layers
@@ -589,7 +589,7 @@ function soil_water_balance!(buffers, smm::CampbellSoilHydraulics;
             soil_humidity[i] = exp(water_molar_mass * water_potential[i] / (R * soil_temperature[i-1]))
         end
         soil_humidity[num_layers+1] = soil_humidity[num_layers]
-        if mass_balance_error <= moist_error
+        if mass_balance_error <= moisture_tolerance
             break
         end
     end
@@ -633,10 +633,10 @@ function get_soil_water_balance!(buffers, soil_hydraulics::CampbellSoilHydraulic
     niter_moist,
     soil_wetness,
     soil_moisture,
-    moist_step,    # solver tuning, lives on MicroConfig
-    moist_error,
-    moist_count,
-    maxpool,
+    moisture_timestep,    # solver tuning, lives on MicroConfig
+    moisture_tolerance,
+    moisture_max_iterations,
+    max_surface_pool,
     vapour_pressure_equation=GoffGratch(),
     snow_present=false,
 )
@@ -709,13 +709,13 @@ function get_soil_water_balance!(buffers, soil_hydraulics::CampbellSoilHydraulic
         soil_moisture,
         evapotranspiration=evaporation_potential,
         input_soil_temperature=T0,
-        moist_step, moist_error, moist_count,
+        moisture_timestep, moisture_tolerance, moisture_max_iterations,
         vapour_pressure_equation,
     )
     soil_moisture = infil_out.soil_moisture
     surf_evap = max(0.0u"kg/m^2", infil_out.evaporation)
     water_flux = max(0.0u"kg/m^2", infil_out.surface_water_flux)
-    pool = clamp(pool - water_flux - surf_evap, 0.0u"kg/m^2", maxpool) # pooling surface water
+    pool = clamp(pool - water_flux - surf_evap, 0.0u"kg/m^2", max_surface_pool) # pooling surface water
     if pool > 0.0u"kg/m^2"
         refill = max(0.0u"kg/m^2", uconvert(u"kg/m^2", (sat - soil_moisture[1]) * half_thickness * 1000.0u"kg/m^3"))
         pool = max(0.0u"kg/m^2", pool - refill)
@@ -730,13 +730,13 @@ function get_soil_water_balance!(buffers, soil_hydraulics::CampbellSoilHydraulic
             leaf_area_index,
             evapotranspiration=evaporation_potential,
             input_soil_temperature=T0,
-            moist_step, moist_error, moist_count,
+            moisture_timestep, moisture_tolerance, moisture_max_iterations,
             vapour_pressure_equation,
         )
         soil_moisture = infil_out.soil_moisture
         surf_evap = max(0.0u"kg/m^2", infil_out.evaporation)
         water_flux = max(0.0u"kg/m^2", infil_out.surface_water_flux)
-        pool = clamp(pool - water_flux - surf_evap, 0.0u"kg/m^2", maxpool)
+        pool = clamp(pool - water_flux - surf_evap, 0.0u"kg/m^2", max_surface_pool)
         if pool > 0.0u"kg/m^2"
             refill = max(0.0u"kg/m^2", uconvert(u"kg/m^2", (sat - soil_moisture[1]) * half_thickness * 1000.0u"kg/m^3"))
             pool = max(0.0u"kg/m^2", pool - refill)
@@ -750,7 +750,7 @@ function get_soil_water_balance!(buffers, soil_hydraulics::CampbellSoilHydraulic
     # and `infil_out.surface_water_flux` respectively.
     # Fortran OSUB.f:1223-1225 clamps `surflux >= 0` before this expression.
     raw_surflux = max(0.0u"kg/m^2", infil_out.evaporation)
-    soil_wetness = clamp(raw_surflux / (evaporation_potential * moist_step), 0, 1.0)
+    soil_wetness = clamp(raw_surflux / (evaporation_potential * moisture_timestep), 0, 1.0)
 
     return (; infil_out, soil_wetness, pool, soil_moisture)
 end

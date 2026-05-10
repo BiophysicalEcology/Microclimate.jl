@@ -222,7 +222,7 @@ reinit!(cache, modified_problem)
 output = solve!(cache)
 ```
 """
-mutable struct MicroCache{MP<:MicroProblem,O<:MicroResult,S<:MicroState,B<:MicroBuffers,F<:MicroForcing,I,Nsoil}
+mutable struct MicroCache{MP<:MicroProblem,O<:MicroResult,S<:MicroState,B<:MicroBuffers,F<:Forcing,I,Nsoil}
     problem::MP
     output::O
     state::S
@@ -278,14 +278,14 @@ end
 
 function build_soil_energy_inputs(; forcing, buffers, soil_thermal_model, depths, heights, site, boundary_layer_model,
     n_snow, num_soil_nodes, nodes, environment_instant, effective_wetness, vapour_pressure_equation,
-    longwave_sky, albedo, qfreze, snow_model, snow_state, snow_scratch, soil_moisture,
+    longwave_sky, albedo, Q_freeze, snow_model, snow_state, snow_scratch, soil_moisture,
     bulk_density, mineral_density, maximum_surface_temperature,
 )
     return SoilEnergyInputs(; forcing, buffers, soil_thermal_model,
         depths, heights, site, boundary_layer_model,
         nodes=n_snow > 0 ? zeros(n_snow + num_soil_nodes) : nodes,
         environment_instant, soil_wetness=effective_wetness,
-        vapour_pressure_equation, longwave_sky, albedo, qfreze,
+        vapour_pressure_equation, longwave_sky, albedo, Q_freeze,
         snow_model, snow_state, snow_scratch, soil_moisture,
         bulk_density, mineral_density, n_snow, maximum_surface_temperature,
     )
@@ -566,8 +566,8 @@ function solve_soil!(cache::MicroCache)
     (; soil_thermal, soil_hydraulics) = mp.parameters
     soil_thermal_model = soil_thermal
     (; boundary_layer_model, vapour_pressure_equation, time_mode, convergence,
-       atmospheric_radiation_model, rainfall_schedule, moist_step, maxpool) = mp.config
-    moisture_mode = mp.config.soil_moisture_mode
+       atmospheric_radiation_model, rainfall_schedule, moisture_timestep, max_surface_pool) = mp.config
+    moisture_mode = mp.config.soil_moisture_strategy
     (; campbell_b_parameter, bulk_density, mineral_density, air_entry_water_potential) = soil_hydraulics
     init_soil_wetness!(moisture_mode)
 
@@ -629,8 +629,8 @@ function solve_soil!(cache::MicroCache)
 
     # simulate all days
     pool = 0.0u"kg/m^2" # TODO make this an initialisation option
-    qfreze = 0.0u"W/m^2"  # Fortran COMMON/melt/QFREZE: persists across hours TODO make it Q_freeze
-    niter_moist = ustrip(u"s^-1", 3600 / moist_step)
+    Q_freeze = 0.0u"W/m^2"  # Fortran COMMON/melt/QFREZE: persists across hours
+    niter_moist = ustrip(u"s^-1", 3600 / moisture_timestep)
     infil_out = nothing
     for j in 1:ndays
         iday = j
@@ -780,7 +780,7 @@ function solve_soil!(cache::MicroCache)
             inputs = build_soil_energy_inputs(; forcing, buffers, soil_thermal_model,
                 depths=ode_depths, heights, site, boundary_layer_model,
                 n_snow, num_soil_nodes, nodes, environment_instant, effective_wetness,
-                vapour_pressure_equation, longwave_sky, albedo, qfreze,
+                vapour_pressure_equation, longwave_sky, albedo, Q_freeze,
                 snow_model, snow_state, snow_scratch, soil_moisture,
                 bulk_density, mineral_density,
                 maximum_surface_temperature=mp.config.maximum_surface_temperature,
@@ -836,9 +836,9 @@ function solve_soil!(cache::MicroCache)
                     # melt depth (cm) × water density (kg/m³ → kg/m²/cm) × Lf (J/kg) / 1 hr → W/m²
                     melt_factor = snow_model.snow_melt_factor
                     if days[j] > 1 && melt_factor <= 1.0
-                        qfreze = uconvert(u"W/m^2", thermal_melt * water_density * LATENT_HEAT_FUSION / 1u"hr" * (1.0 - melt_factor))
+                        Q_freeze = uconvert(u"W/m^2", thermal_melt * water_density * LATENT_HEAT_FUSION / 1u"hr" * (1.0 - melt_factor))
                     else
-                        qfreze = 0.0u"W/m^2"
+                        Q_freeze = 0.0u"W/m^2"
                     end
                     # Fortran SNOWLAYER.f lines 67-71, 93-97: reset deactivated node temps to T(1)
                     prev_active = snow_state.active_nodes
@@ -884,7 +884,7 @@ function solve_soil!(cache::MicroCache)
                     ode_integrator.p = build_soil_energy_inputs(; forcing, buffers, soil_thermal_model,
                         depths=ode_depths, heights, site, boundary_layer_model,
                         n_snow, num_soil_nodes, nodes, environment_instant, effective_wetness,
-                        vapour_pressure_equation, longwave_sky, albedo, qfreze,
+                        vapour_pressure_equation, longwave_sky, albedo, Q_freeze,
                         snow_model, snow_state, snow_scratch, soil_moisture,
                         bulk_density, mineral_density,
                         maximum_surface_temperature=mp.config.maximum_surface_temperature,
@@ -924,15 +924,15 @@ function solve_soil!(cache::MicroCache)
                     rain_melt_water = n_snow > 0 ? uconvert(u"kg/m^2", rain_melt_snow * snow_state.density) : 0.0u"kg/m^2"
                     if snow_present && u"°C"(environment_instant.reference_temperature) < snow_temp_threshold
                         # Cold snow: rain absorbed into snowpack (handled in update_snow as snowfall); only thermal melt enters pool
-                        pool = clamp(pool + melted_water, 0.0u"kg/m^2", maxpool)
+                        pool = clamp(pool + melted_water, 0.0u"kg/m^2", max_surface_pool)
                     else
                         # Warm snow or no snow: rain + rain_melt water + thermal melt enter pool
-                        pool = clamp(pool + rain + rain_melt_water + melted_water, 0.0u"kg/m^2", maxpool)
+                        pool = clamp(pool + rain + rain_melt_water + melted_water, 0.0u"kg/m^2", max_surface_pool)
                     end
                     # Soil moisture physics; output write happens below at output_step
                     (; pool, soil_moisture, infil_out) = step_soil_moisture!(moisture_mode, buffers, soil_hydraulics;
                         depths, site, boundary_layer_model, environment_instant, T0, niter_moist, pool, soil_moisture,
-                        moist_step, moist_error=mp.config.moist_error, moist_count=mp.config.moist_count, maxpool,
+                        moisture_timestep, moisture_tolerance=mp.config.moisture_tolerance, moisture_max_iterations=mp.config.moisture_max_iterations, max_surface_pool,
                         vapour_pressure_equation, snow_present,
                     )
                 end
@@ -1044,13 +1044,13 @@ end
 
 function step_soil_moisture!(mode::DynamicSoilMoisture, buffers, soil_hydraulics;
     depths, site, boundary_layer_model, environment_instant, T0, niter_moist, pool, soil_moisture,
-    moist_step, moist_error, moist_count, maxpool,
+    moisture_timestep, moisture_tolerance, moisture_max_iterations, max_surface_pool,
     vapour_pressure_equation, snow_present=false,
 )
     (; infil_out, soil_wetness, pool, soil_moisture) = get_soil_water_balance!(buffers, soil_hydraulics;
         depths, site, boundary_layer_model, environment_instant, T0, niter_moist, pool,
         soil_wetness=mode.soil_wetness, soil_moisture,
-        moist_step, moist_error, moist_count, maxpool,
+        moisture_timestep, moisture_tolerance, moisture_max_iterations, max_surface_pool,
         vapour_pressure_equation, snow_present,
     )
     mode.soil_wetness = soil_wetness
@@ -1060,7 +1060,7 @@ end
 step_soil_moisture!(::PrescribedSoilMoisture, args...; pool, soil_moisture, kw...) = (; pool, soil_moisture, infil_out=nothing)
 
 """
-Build a single `MicroForcing` whose 8 `ScaledInterpolation`s wrap freshly-allocated
+Build a single `Forcing` whose 8 `ScaledInterpolation`s wrap freshly-allocated
 25-element coefficient buffers. Built ONCE in `init` and reused across every
 day-iter via `update_forcing_day!` which only mutates the underlying `itp.coefs`.
 
@@ -1070,18 +1070,15 @@ The 25th node repeats the 24th hour's value (TD(36)=TAIRhr1(DOYF)).
 function allocate_forcing(output, solar_radiation_out)
     tspan = 0.0:60:(60*24)  # 0, 60, ..., 1440
     _scaled(buf) = scale(interpolate(buf, BSpline(Linear())), tspan)
-    interpolate_solar         = _scaled(zeros(eltype(output.global_radiation), 25))
-    interpolate_zenith        = _scaled(zeros(eltype(solar_radiation_out.zenith_angle), 25))
-    interpolate_slope_zenith  = _scaled(zeros(eltype(solar_radiation_out.zenith_slope_angle), 25))
-    interpolate_temperature   = _scaled(zeros(typeof(1.0u"K"), 25))
-    interpolate_wind          = _scaled(zeros(eltype(output.reference_wind_speed), 25))
-    interpolate_humidity      = _scaled(zeros(eltype(output.reference_humidity), 25))
-    interpolate_cloud         = _scaled(zeros(eltype(output.cloud_cover), 25))
-    interpolate_pressure      = _scaled(zeros(eltype(output.pressure), 25))
-    return MicroForcing(;
-        interpolate_solar, interpolate_zenith, interpolate_slope_zenith,
-        interpolate_temperature, interpolate_wind, interpolate_humidity,
-        interpolate_cloud, interpolate_pressure,
+    return Forcing(
+        _scaled(zeros(eltype(output.global_radiation), 25)),                  # solar
+        _scaled(zeros(eltype(solar_radiation_out.zenith_angle), 25)),         # zenith
+        _scaled(zeros(eltype(solar_radiation_out.zenith_slope_angle), 25)),   # slope_zenith
+        _scaled(zeros(typeof(1.0u"K"), 25)),                                  # temperature
+        _scaled(zeros(eltype(output.reference_wind_speed), 25)),              # wind
+        _scaled(zeros(eltype(output.reference_humidity), 25)),                # humidity
+        _scaled(zeros(eltype(output.cloud_cover), 25)),                       # cloud
+        _scaled(zeros(eltype(output.pressure), 25)),                          # pressure
     )
 end
 
@@ -1102,22 +1099,22 @@ end
 end
 
 """
-Update the in-place `MicroForcing` for day `iday` by writing into each
+Update the in-place `Forcing` for day `iday` by writing into each
 `itp.coefs` buffer. No allocation.
 """
-function update_forcing_day!(forcing::MicroForcing, solar_radiation_out, output, iday::Int)
+function update_forcing_day!(forcing::Forcing, solar_radiation_out, output, iday::Int)
     nhours = 24
     sub1 = (iday*nhours - nhours + 1):(iday*nhours)
-    # `forcing.interpolate_*.itp.coefs` is the 25-element buffer underneath the
+    # `forcing.<field>.itp.coefs` is the 25-element buffer underneath the
     # ScaledInterpolation, mutated in place.
-    _copy_day_into!(forcing.interpolate_solar.itp.coefs,        output.global_radiation,            sub1)
-    _copy_day_into!(forcing.interpolate_zenith.itp.coefs,       solar_radiation_out.zenith_angle,   sub1)
-    _copy_day_into!(forcing.interpolate_slope_zenith.itp.coefs, solar_radiation_out.zenith_slope_angle, sub1)
-    _copy_day_into!(forcing.interpolate_temperature.itp.coefs,  output.reference_temperature,       sub1, uconvert, u"K")
-    _copy_day_into!(forcing.interpolate_wind.itp.coefs,         output.reference_wind_speed,        sub1)
-    _copy_day_into!(forcing.interpolate_humidity.itp.coefs,     output.reference_humidity,          sub1)
-    _copy_day_into!(forcing.interpolate_cloud.itp.coefs,        output.cloud_cover,                 sub1)
-    _copy_day_into!(forcing.interpolate_pressure.itp.coefs,     output.pressure,                    sub1)
+    _copy_day_into!(forcing.solar.itp.coefs,        output.global_radiation,                sub1)
+    _copy_day_into!(forcing.zenith.itp.coefs,       solar_radiation_out.zenith_angle,       sub1)
+    _copy_day_into!(forcing.slope_zenith.itp.coefs, solar_radiation_out.zenith_slope_angle, sub1)
+    _copy_day_into!(forcing.temperature.itp.coefs,  output.reference_temperature,           sub1, uconvert, u"K")
+    _copy_day_into!(forcing.wind.itp.coefs,         output.reference_wind_speed,            sub1)
+    _copy_day_into!(forcing.humidity.itp.coefs,     output.reference_humidity,              sub1)
+    _copy_day_into!(forcing.cloud.itp.coefs,        output.cloud_cover,                     sub1)
+    _copy_day_into!(forcing.pressure.itp.coefs,     output.pressure,                        sub1)
     return forcing
 end
 

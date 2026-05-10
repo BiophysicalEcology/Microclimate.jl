@@ -130,11 +130,11 @@ config = MicroConfig(;
     time_mode,
     convergence = FixedSoilTemperatureIterations(Int(microinput[:ndmax])),
     rainfall_schedule = Bool(Int(microinput[:rainhourly])) ? HourlyRainfall() : DailyRainfall(),
-    soil_moisture_mode = _runmoist ? DynamicSoilMoisture() : PrescribedSoilMoisture(),
-    moist_error = microinput[:IM]u"kg/m^2/s",
-    moist_count = Int(microinput[:MAXCOUNT]),
-    moist_step = microinput[:moiststep]u"s",
-    maxpool = microinput[:maxpool] * 1000.0u"kg/m^2",
+    soil_moisture_strategy = _runmoist ? DynamicSoilMoisture() : PrescribedSoilMoisture(),
+    moisture_tolerance = microinput[:IM]u"kg/m^2/s",
+    moisture_max_iterations = Int(microinput[:MAXCOUNT]),
+    moisture_timestep = microinput[:moiststep]u"s",
+    max_surface_pool = microinput[:maxpool] * 1000.0u"kg/m^2",
 )
 
 # now try the simulation function
