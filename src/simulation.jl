@@ -172,6 +172,37 @@ function example_hourly_environment(days=DEFAULT_DAYS, hours=DEFAULT_HOURS;
 end
 
 """
+    MicroState
+
+Mutable simulation state that evolves during `solve!`. Lives on `MicroCache.state`.
+"""
+mutable struct MicroState{NS,SM,N,ND,SP}
+    snow_state::NS
+    soil_moisture::SM
+    nodes::N
+    nodes_day::ND
+    ∑phase::SP
+end
+
+"""
+    MicroBuffers
+
+Pre-allocated workspace. Every buffer the hot path touches lands here once
+in `init`. Lives on `MicroCache.buffers`.
+"""
+struct MicroBuffers{SO,SOB,P,PB,SEB,SP,PT,SWB,SS}
+    solar_out::SO                  # SolarRadiation output (NamedTuple of arrays)
+    solar::SOB                     # SolarRadiation internal buffers (NamedTuple)
+    profile::P                     # atmospheric profile scratch used by the moisture solver
+    air_profile::PB                # atmospheric profile scratch used by solve_air!
+    soil_energy_balance::SEB
+    soil_properties::SP
+    phase_transition::PT
+    soil_water_balance::SWB
+    snow_scratch::SS               # NamedTuple for SnowModel; nothing for NoSnow
+end
+
+"""
     MicroCache
 
 Pre-allocated workspace for solving a `MicroProblem` without repeated allocation.
@@ -191,21 +222,13 @@ reinit!(cache, modified_problem)
 output = solve!(cache)
 ```
 """
-mutable struct MicroCache{MP<:MicroProblem,O<:MicroResult,SR,SB,B,I,SM,N,ND,SP,PB,SS,SC,F<:MicroForcing,Nsoil}
+mutable struct MicroCache{MP<:MicroProblem,O<:MicroResult,S<:MicroState,B<:MicroBuffers,F<:MicroForcing,I,Nsoil}
     problem::MP
     output::O
-    solar_radiation_out::SR
-    solar_buffers::SB
+    state::S
     buffers::B
-    ode_integrator::I
-    soil_moisture::SM
-    nodes::N
-    nodes_day::ND
-    ∑phase::SP
-    profile_buffers::PB
-    snow_state::SS
-    snow_scratch::SC
     forcing::F
+    ode_integrator::I
     # Type-level soil-node count, used for `SVector(ntuple(f, Val(N_soil)))` in
     # the day loop so T0 reconstruction is type-stable.
     num_soil_nodes_val::Val{Nsoil}
@@ -344,16 +367,20 @@ function CommonSolve.init(mp::MicroProblem)
     fill!(output.cloud_cover, 0.0)
     fill!(output.global_radiation, 300.0u"W/m^2")
 
-    # Soil buffers (unchanged — all soil-node sized)
+    # All up-front allocation lands in one MicroBuffers struct.
     nodes_day = zeros(num_soil_nodes, ndays)
     nodes_day[1, 1:ndays] .= num_soil_nodes
     nodes = nodes_day[:, 1]
-    buffers = (;
-        profile = allocate_profile(heights),
-        soil_energy_balance = allocate_soil_energy_balance(num_ode_nodes),
-        soil_properties = allocate_soil_properties(zeros(num_ode_nodes), mp.parameters.soil_thermal, mp.parameters.soil_hydraulics),
-        phase_transition = allocate_phase_transition(num_soil_nodes),
-        soil_water_balance = allocate_soil_water_balance(num_soil_nodes),
+    buffers = MicroBuffers(
+        solar_radiation_out,
+        solar_buffers,
+        allocate_profile(heights),
+        allocate_profile(heights),
+        allocate_soil_energy_balance(num_ode_nodes),
+        allocate_soil_properties(zeros(num_ode_nodes), mp.parameters.soil_thermal, mp.parameters.soil_hydraulics),
+        allocate_phase_transition(num_soil_nodes),
+        allocate_soil_water_balance(num_soil_nodes),
+        snow_scratch,
     )
 
     # ODE integrator — sized for the combined (snow + soil) vector
@@ -401,20 +428,19 @@ function CommonSolve.init(mp::MicroProblem)
     )
     ode_integrator = allocate_ode_integrator(T0_ode, inputs_proto, mp.config.soil_ode_solver, mp.config.soil_ode_kwargs)
 
-    # Profile buffers for solve_air!
-    profile_buffers = allocate_profile(heights)
+    state = MicroState(snow_state, soil_moisture, nodes, nodes_day, ∑phase)
 
-    return MicroCache(mp, output, solar_radiation_out, solar_buffers, buffers, ode_integrator, soil_moisture, nodes, nodes_day, ∑phase, profile_buffers, snow_state, snow_scratch, forcing, Val(num_soil_nodes))
+    return MicroCache(mp, output, state, buffers, forcing, ode_integrator, Val(num_soil_nodes))
 end
 
 function CommonSolve.solve!(cache::MicroCache)
     mp = cache.problem
     (; environment_minmax, environment_daily, environment_hourly, days, hours, depths, heights) = mp
     output = cache.output
-    solar_radiation_out = cache.solar_radiation_out
+    solar_radiation_out = cache.buffers.solar_out
 
     # Recompute solar in place into the pre-allocated cache buffers.
-    solve_solar!(solar_radiation_out, cache.solar_buffers, mp)
+    solve_solar!(solar_radiation_out, cache.buffers.solar, mp)
 
     populate_weather!(output, mp, solar_radiation_out)
     # Solve soil temperature and moisture
@@ -516,17 +542,17 @@ function solve_soil!(cache::MicroCache)
     (; days, hours, depths, heights) = mp
     snow_model = mp.parameters.snow
     n_snow = n_snow_nodes(snow_model)
-    snow_state = cache.snow_state
-    snow_scratch = cache.snow_scratch
+    snow_state = cache.state.snow_state
+    soil_moisture = cache.state.soil_moisture
+    nodes = cache.state.nodes
+    nodes_day = cache.state.nodes_day
+    ∑phase = cache.state.∑phase
     output = cache.output
-    solar_radiation_out = cache.solar_radiation_out
+    solar_radiation_out = cache.buffers.solar_out
+    snow_scratch = cache.buffers.snow_scratch
     buffers = cache.buffers
     ode_integrator = cache.ode_integrator
-    soil_moisture = cache.soil_moisture
-    nodes = cache.nodes
-    nodes_day = cache.nodes_day
     forcing = cache.forcing
-    ∑phase = cache.∑phase
 
     (; site, environment_minmax, environment_daily, initial_soil_temperature, initial_soil_moisture) = mp
     (; soil_thermal, soil_hydraulics) = mp.parameters
@@ -940,10 +966,10 @@ end
 function solve_air!(cache::MicroCache)
     mp = cache.problem
     output = cache.output
-    solar_radiation_out = cache.solar_radiation_out
+    solar_radiation_out = cache.buffers.solar_out
     site = mp.site
     (; boundary_layer_model, vapour_pressure_equation) = mp.config
-    profile_buffers = cache.profile_buffers
+    profile_buffers = cache.buffers.air_profile
     for i in 1:size(output.profile.air_temperature, 1)
         surface_temperature = u"°C"(output.soil_temperature[i, 1])
         environment_instant = (;
