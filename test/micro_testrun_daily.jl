@@ -42,25 +42,19 @@ heights = [microinput[:Usrhyt], microinput[:Refhyt]]u"m" # air nodes for tempera
 days2do = 30
 hours2do = days2do * 24
 
-#TODO make one terrain object via BiophysicalEcologyBase or BiophysicalGrids
-micro_terrain = MicroTerrain(;
-    elevation = microinput[:ALTT] * 1.0u"m", # elevation (m)
-    roughness_height = microinput[:RUF] * 1.0u"m", # roughness height for standard mode TODO dispatch based on roughness pars
-    karman_constant = 0.4, # Kármán constant
-    dyer_constant = 16.0, # coefficient from Dyer and Hicks for Φ_m (momentum), γ
-    viewfactor = 1.0, # view factor to sky
-)
-
-solar_terrain = SolarTerrain(;
-    slope = (microinput[:slope])*1.0u"°",
-    aspect = (microinput[:azmuth])*1.0u"°",
-    elevation = (microinput[:ALTT])*1.0u"m",
-    horizon_angles = (DataFrame(CSV.File("$testdir/data/init_daily/hori.csv"))[:, 2])*1.0u"°",
-    albedo = (DataFrame(CSV.File("$testdir/data/init_daily/REFLS.csv"))[1, 2] * 1.0),
-    atmospheric_pressure = atmospheric_pressure((microinput[:ALTT])*1.0u"m"),
+site = Site(;
     latitude = (microinput[:ALAT] + microinput[:AMINUT] / 60) * 1.0u"°",
     longitude = (microinput[:ALONG] + microinput[:ALMINT] / 60) * 1.0u"°",
+    elevation = microinput[:ALTT] * 1.0u"m",
+    slope = microinput[:slope] * 1.0u"°",
+    aspect = microinput[:azmuth] * 1.0u"°",
+    horizon_angles = (DataFrame(CSV.File("$testdir/data/init_daily/hori.csv"))[:, 2]) * 1.0u"°",
+    sky_view_fraction = 1.0,
+    albedo = DataFrame(CSV.File("$testdir/data/init_daily/REFLS.csv"))[1, 2] * 1.0,
+    roughness_height = microinput[:RUF] * 1.0u"m",
+    atmospheric_pressure = atmospheric_pressure(microinput[:ALTT] * 1.0u"m"),
 )
+boundary_layer_model = MoninObukhov(; karman_constant=0.4, dyer_constant=16.0)
 
 soil_thermal_model = CampbelldeVriesSoilThermal(;
     de_vries_shape_factor = 0.1, # de Vries shape factor, 0.33 for organic soils, 0.1 for mineral
@@ -146,15 +140,14 @@ convergence = FixedSoilTemperatureIterations(Int(microinput[:ndmax]))
 # now try the simulation function
 problem = MicroProblem(;
     # locations, times, depths and heights
-    latitude = (microinput[:ALAT] + microinput[:AMINUT] / 60) * 1.0u"°", # latitude
     days = days[1:days2do], # days of year to simulate - TODO leap years
     hours = 0:1:23, # hour of day for solar_radiation
     depths, # soil nodes - keep spacing close near the surface
     heights, # air nodes for temperature, wind speed and humidity profile
     # Objects defined above
     solar_model,
-    solar_terrain,
-    micro_terrain, #TODO combine terrains via a generic terrain in BiophysicalEcologyBase
+    site,
+    boundary_layer_model,
     soil_moisture_model,
     soil_thermal_model,
     environment_minmax,

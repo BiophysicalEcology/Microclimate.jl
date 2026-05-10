@@ -1,3 +1,27 @@
+@kwdef struct SoilEnergyInputs{F,B,SP,D<:Vector{<:Number},H<:Vector{<:Number},S,BLM,EI,SW,VP,LW,QF,SNM,SNS,SNSC,SM,MSF}
+    forcing::F
+    buffers::B
+    soil_thermal_model::SP
+    depths::D
+    heights::H
+    nodes::Vector{Float64}
+    site::S
+    boundary_layer_model::BLM
+    environment_instant::EI
+    soil_wetness::SW
+    vapour_pressure_equation::VP = GoffGratch()
+    longwave_sky::LW
+    albedo::Float64
+    qfreze::QF = 0.0u"W/m^2"  # Fortran COMMON/melt/QFREZE: snow melt energy fed back to surface node
+    # Snow/soil property recomputation inside ODE (matching Fortran DSUB calling SOILPROPS)
+    snow_model::SNM = nothing
+    snow_state::SNS = nothing
+    snow_scratch::SNSC = nothing
+    soil_moisture::SM = nothing
+    n_snow::Int = 0
+    maximum_surface_temperature::MSF = 85.0u"°C"  # Fortran microinput(74) surface-temperature safety clamp
+end
+
 @inline function _first_active_node(heat_capacity, N)
     j = 1
     while j < N && iszero(heat_capacity[j])
@@ -21,13 +45,13 @@ function soil_energy_balance(
     t::Quantity,           # timestep
 ) where U <: SVector{N} where N
     # extract parameters
-    (; forcing, buffers, heights, depths, environment_instant, solar_terrain, micro_terrain, soil_wetness, vapour_pressure_equation, longwave_sky, qfreze, maximum_surface_temperature) = p
+    (; forcing, buffers, heights, depths, environment_instant, site, boundary_layer_model, soil_wetness, vapour_pressure_equation, longwave_sky, qfreze, maximum_surface_temperature) = p
     (; layer_depths, heat_capacity, thermal_conductance) = buffers.soil_energy_balance
     (; shade) = environment_instant
     # Get environmental data at time t
     (; atmospheric_pressure, air_temperature, wind_speed, zenith_angle, solar_radiation, cloud_cover, relative_humidity, slope_zenith_angle) = interpolate_forcings(forcing, t)
-    (; roughness_height, karman_constant, dyer_constant) = micro_terrain
-    (; slope) = solar_terrain
+    (; roughness_height, slope) = site
+    (; karman_constant, dyer_constant) = boundary_layer_model
     albedo = p.albedo
 
     reference_height = last(heights)
@@ -124,7 +148,7 @@ function soil_energy_balance(
     # matching Fortran DSUB.f lines 396-465 which recomputes at every call.
     # Use interpolated cloud_cover (from line 20), not the hourly snapshot.
     (; surface_emissivity, cloud_emissivity) = environment_instant
-    (; viewfactor) = micro_terrain
+    sky_view_fraction = site.sky_view_fraction
     wet_air_out = wet_air_properties(u"K"(air_temperature), relative_humidity, atmospheric_pressure; vapour_pressure_equation)
     _, atmospheric_longwave = atmospheric_radiation(longwave_sky.radiation_model, wet_air_out.vapour_pressure, air_temperature)
     cloud_radiation = σ * cloud_emissivity * (u"K"(air_temperature) - 2.0u"K")^4
@@ -132,8 +156,8 @@ function soil_energy_balance(
     clear_sky_fraction = 1.0 - cloud_cover
     longwave_radiation_sky = (atmospheric_longwave * clear_sky_fraction + cloud_radiation * cloud_cover) * (1.0 - shade)
     longwave_radiation_vegetation = shade * hillshade_radiation
-    incoming_longwave = (longwave_radiation_sky + longwave_radiation_vegetation) * viewfactor +
-                        hillshade_radiation * (1.0 - viewfactor)
+    incoming_longwave = (longwave_radiation_sky + longwave_radiation_vegetation) * sky_view_fraction +
+                        hillshade_radiation * (1.0 - sky_view_fraction)
     outgoing_coeff = (1.0 - shade) * σ * surface_emissivity
     ground_shade_term = shade * hillshade_radiation
     Q_infrared = incoming_longwave - outgoing_coeff * (u"K"(soil_temperature[j]))^4 - ground_shade_term
@@ -203,12 +227,13 @@ function calc_soil_obukhov(air_temperature, surface_temperature, wind_speed, rou
     return calc_Obukhov_length(air_temperature, surface_temperature, wind_speed, roughness_height, reference_height, ρcpTκg, karman_constant, log_z_ratio, ΔT, ρ_cp; initial_obukhov_length=L0)
 end
 
-function init_soil_obukhov!(buffers, forcing, micro_terrain, heights, T0, i)
+function init_soil_obukhov!(buffers, forcing, site, boundary_layer_model, heights, T0, i)
     t_next = ((i - 1) * 60)u"minute"
     (; air_temperature, wind_speed, zenith_angle) = interpolate_forcings(forcing, t_next)
     surface_temperature = T0[1]
     if air_temperature < surface_temperature && zenith_angle < 90u"°"
-        (; roughness_height, karman_constant) = micro_terrain
+        roughness_height = site.roughness_height
+        karman_constant = boundary_layer_model.karman_constant
         reference_height = last(heights)
         Obukhov_out = calc_soil_obukhov(air_temperature, surface_temperature, wind_speed, roughness_height, reference_height, karman_constant; initial_obukhov_length=buffers.soil_energy_balance.obukhov_length_prev[])
         buffers.soil_energy_balance.obukhov_length_prev[] = Obukhov_out.obukhov_length
@@ -595,7 +620,8 @@ get_soil_water_balance(soil_moisture_model; num_layers=18, kw...) =
 
 function get_soil_water_balance!(buffers, soil_moisture_model::CampbellSoilHydraulics;
     depths,
-    micro_terrain,
+    site,
+    boundary_layer_model,
     environment_instant,
     T0,
     pool,
@@ -619,7 +645,7 @@ function get_soil_water_balance!(buffers, soil_moisture_model::CampbellSoilHydra
 
     # compute scalar profiles
     profile_out = atmospheric_surface_profile!(buffers.profile;
-        micro_terrain, environment_instant, surface_temperature, vapour_pressure_equation,
+        site, boundary_layer_model, environment_instant, surface_temperature, vapour_pressure_equation,
     )
 
     # convection

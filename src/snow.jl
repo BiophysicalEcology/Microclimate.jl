@@ -1,8 +1,10 @@
 # ── Snow model types ──────────────────────────────────────────────────────
 
-struct NoSnow end
+abstract type AbstractSnowModel end
 
-struct SnowModel{N}
+struct NoSnow <: AbstractSnowModel end
+
+struct SnowModel{N} <: AbstractSnowModel
     snow_temperature_threshold::typeof(1.0u"°C")
     snow_density::typeof(1.0u"g/cm^3")
     snow_melt_factor::Float64
@@ -628,14 +630,7 @@ end
 
 # ── Phase transition dispatch ────────────────────────────────────────────
 
-function apply_phase_transition(::NoSnow, soil_temperature, soil_temperature_past, buffers, accumulated_latent_heat, soil_moisture, depths)
-    phase_transition!(buffers;
-        temperatures=soil_temperature, temperatures_past=soil_temperature_past,
-        accumulated_latent_heat, soil_moisture, depths,
-    )
-end
-
-function apply_phase_transition(::SnowModel, soil_temperature, soil_temperature_past, buffers, accumulated_latent_heat, soil_moisture, depths)
+function apply_phase_transition(::AbstractSnowModel, soil_temperature, soil_temperature_past, buffers, accumulated_latent_heat, soil_moisture, depths)
     phase_transition!(buffers;
         temperatures=soil_temperature, temperatures_past=soil_temperature_past,
         accumulated_latent_heat, soil_moisture, depths,

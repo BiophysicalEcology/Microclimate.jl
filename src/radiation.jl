@@ -24,11 +24,11 @@ The `net_longwave_radiation` at any surface temperature `T` can then be recovere
     net_Q = incoming_longwave - outgoing_coeff * T^4 - ground_shade_term
 """
 function precompute_longwave_sky(radiation_model=CampbellNormanAtmosphericRadiation();
-    micro_terrain,
+    site,
     environment_instant,
     vapour_pressure_equation=GoffGratch(),
 )
-    (; viewfactor) = micro_terrain
+    sky_view_fraction = site.sky_view_fraction
     (; atmospheric_pressure, reference_humidity, reference_temperature, surface_emissivity, cloud_emissivity, cloud_cover, shade) = environment_instant
 
     wet_air_out = wet_air_properties(u"K"(reference_temperature), reference_humidity, atmospheric_pressure; vapour_pressure_equation)
@@ -44,8 +44,8 @@ function precompute_longwave_sky(radiation_model=CampbellNormanAtmosphericRadiat
     longwave_radiation_vegetation = shade * hillshade_radiation
     longwave_radiation_hillshade = hillshade_radiation
 
-    incoming_longwave = (longwave_radiation_sky + longwave_radiation_vegetation) * viewfactor +
-                        longwave_radiation_hillshade * (1.0 - viewfactor)
+    incoming_longwave = (longwave_radiation_sky + longwave_radiation_vegetation) * sky_view_fraction +
+                        longwave_radiation_hillshade * (1.0 - sky_view_fraction)
     outgoing_coeff = (1.0 - shade) * σ * surface_emissivity
     ground_shade_term = shade * hillshade_radiation
     sky_temperature = (incoming_longwave / σ)^(1//4)
@@ -63,12 +63,12 @@ function precompute_longwave_sky(radiation_model=CampbellNormanAtmosphericRadiat
 end
 
 function longwave_radiation(radiation_model=CampbellNormanAtmosphericRadiation();
-    micro_terrain,
+    site,
     environment_instant,
     surface_temperature,
     vapour_pressure_equation=GoffGratch(),
 )
-    sky = precompute_longwave_sky(radiation_model; micro_terrain, environment_instant, vapour_pressure_equation)
+    sky = precompute_longwave_sky(radiation_model; site, environment_instant, vapour_pressure_equation)
     (; incoming_longwave, ground_shade_term) = sky
 
     surface_radiation = σ * environment_instant.surface_emissivity * (u"K"(surface_temperature))^4
