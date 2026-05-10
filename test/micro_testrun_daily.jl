@@ -129,7 +129,7 @@ config = MicroConfig(;
     boundary_layer_model,
     time_mode,
     convergence = FixedSoilTemperatureIterations(Int(microinput[:ndmax])),
-    hourly_rainfall = Bool(Int(microinput[:rainhourly])),
+    rainfall_schedule = Bool(Int(microinput[:rainhourly])) ? HourlyRainfall() : DailyRainfall(),
     soil_moisture_mode = _runmoist ? DynamicSoilMoisture() : PrescribedSoilMoisture(),
     moist_error = microinput[:IM]u"kg/m^2/s",
     moist_count = Int(microinput[:MAXCOUNT]),

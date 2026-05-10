@@ -42,6 +42,15 @@ export AbstractTimeMode, NonConsecutiveDayMode, ConsecutiveDayMode
 # Diffuse fraction models
 export AbstractDiffuseFractionModel, ErbsDiffuseFraction
 
+# Atmospheric radiation models
+export AbstractAtmosphericRadiationModel, SwinbankAtmosphericRadiation, CampbellNormanAtmosphericRadiation, atmospheric_radiation
+
+# Cloud adjustment models
+export AbstractCloudAdjustModel, Angstrom, sunshine_fraction
+
+# Rainfall schedule
+export AbstractRainfallSchedule, DailyRainfall, HourlyRainfall, is_hourly
+
 export MonthlyMinMaxEnvironment, DailyMinMaxEnvironment, DailyTimeseries, HourlyTimeseries
 export Site, AbstractSite
 export AbstractBoundaryLayerModel, MoninObukhov
@@ -108,6 +117,20 @@ include("time_mode/consecutive.jl")
 # Diffuse fraction
 include("diffuse/abstract.jl")
 include("diffuse/erbs.jl")
+
+# Atmospheric radiation
+include("atmospheric_radiation/abstract.jl")
+include("atmospheric_radiation/swinbank.jl")
+include("atmospheric_radiation/campbell_norman.jl")
+
+# Cloud-cover adjustment of clear-sky radiation
+include("cloud_adjust/abstract.jl")
+include("cloud_adjust/angstrom.jl")
+
+# Rainfall schedule
+include("rainfall/abstract.jl")
+include("rainfall/daily_rainfall.jl")
+include("rainfall/hourly_rainfall.jl")
 
 # Outputs and forcing (depend on AbstractEnvironment / AbstractInterpolation)
 include("outputs.jl")

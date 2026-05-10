@@ -479,7 +479,7 @@ function update_snow(snow_model::SnowModel{N}, state::SnowState, scratch,
     snow_temperature, snow_temperature_before, environment_instant, step,
     soil_surface_temperature, soil_surface_temperature_before,
     Q_evaporation;
-    hourly_rainfall=false, shade=0.0, day_of_year=1,
+    rainfall_schedule::AbstractRainfallSchedule=DailyRainfall(), shade=0.0, day_of_year=1,
 ) where N
     (; snow_depth_hourly) = scratch
 
@@ -487,6 +487,7 @@ function update_snow(snow_model::SnowModel{N}, state::SnowState, scratch,
     rainfall = environment_instant.rainfall
     is_first_step = (step == 1)
     is_midnight = (mod(step - 1, 24) == 0)
+    hourly = is_hourly(rainfall_schedule)
 
     # Density evolution
     prev_dens = state.density
@@ -500,7 +501,7 @@ function update_snow(snow_model::SnowModel{N}, state::SnowState, scratch,
     snowfall = 0.0u"cm"
     days_since_snow = state.days_since_snow
     if u"°C"(air_temperature) <= snow_model.snow_temperature_threshold && rainfall > 0.0u"kg/m^2"
-        if is_midnight || hourly_rainfall
+        if is_midnight || hourly
             snowfall = uconvert(u"cm", rainfall * snow_model.rain_multiplier * snow_model.undercatch / new_dens)
             if shade > 0
                 snowfall *= (1.0 - snow_model.canopy_interception)
@@ -529,12 +530,12 @@ function update_snow(snow_model::SnowModel{N}, state::SnowState, scratch,
     # ── Rain melt (Anderson model) ──
     rain_melt = 0.0u"cm"
     if u"°C"(air_temperature) >= snow_model.snow_temperature_threshold && rainfall > 0.0u"kg/m^2" && previous_depth >= snow_model.min_snow_depth
-        if is_midnight || hourly_rainfall
+        if is_midnight || hourly
             water_depth = uconvert(u"cm", rainfall / water_density)
             density_fraction = ustrip(u"g/cm^3", new_dens)
             air_temp_C = ustrip(u"°C", air_temperature)
             rain_melt = snow_model.rain_melt_factor * water_depth * air_temp_C * 24.0 / density_fraction
-            if hourly_rainfall
+            if hourly
                 rain_melt /= 24.0
             end
             rain_melt = max(0.0u"cm", rain_melt)

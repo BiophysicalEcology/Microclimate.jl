@@ -12,6 +12,9 @@ independently.
 - `time_mode`: `NonConsecutiveDayMode()` or `ConsecutiveDayMode(; spinup_first_day=false)`
 - `convergence`: `FixedSoilTemperatureIterations(3)` or `SoilTemperatureConvergenceTolerance(; tolerance, max_iterations_per_day)`
 - `diffuse_fraction_model`: `ErbsDiffuseFraction()`
+- `atmospheric_radiation_model`: `CampbellNormanAtmosphericRadiation()` or `SwinbankAtmosphericRadiation()`
+- `cloud_adjust_model`: `Angstrom(; a, b, gamma)` — Ångström–Prescott scaling
+- `rainfall_schedule`: `DailyRainfall()` (default) or `HourlyRainfall()`
 - `soil_moisture_mode`: `PrescribedSoilMoisture()` or `DynamicSoilMoisture()`
 
 # Solver options
@@ -25,20 +28,21 @@ independently.
 - `maxpool`: maximum surface-pool depth
 
 # Other
-- `hourly_rainfall`: feed rainfall hourly rather than as a daily total at solar midnight
 - `maximum_surface_temperature`: surface-temperature safety clamp (Fortran microinput[74])
 """
-@kwdef struct MicroConfig{VPE,BLM,TM,CV,DFM,SMM,SOS,SOK,MSF,ME,MS,MP}
+@kwdef struct MicroConfig{VPE,BLM,TM,CV,DFM,ARM,CAM,RFS,SMM,SOS,SOK,MSF,ME,MS,MP}
     vapour_pressure_equation::VPE = GoffGratch()
     boundary_layer_model::BLM = MoninObukhov()
     time_mode::TM = NonConsecutiveDayMode()
     convergence::CV = FixedSoilTemperatureIterations(3)
     diffuse_fraction_model::DFM = ErbsDiffuseFraction()
+    atmospheric_radiation_model::ARM = CampbellNormanAtmosphericRadiation()
+    cloud_adjust_model::CAM = Angstrom()
+    rainfall_schedule::RFS = DailyRainfall()
     soil_moisture_mode::SMM = PrescribedSoilMoisture()
     soil_ode_solver::SOS = Tsit5()
     soil_ode_kwargs::SOK = (; reltol=1e-6u"K", abstol=0.1u"K")
     maximum_surface_temperature::MSF = 85.0u"°C"
-    hourly_rainfall::Bool = false
     moist_error::ME = 1e-6u"kg/m^2/s"
     moist_count::Int = 500
     moist_step::MS = 360.0u"s"
