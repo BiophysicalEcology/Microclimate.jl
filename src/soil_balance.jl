@@ -154,7 +154,7 @@ function soil_energy_balance(
     (; surface_emissivity, cloud_emissivity) = environment_instant
     sky_view_fraction = site.sky_view_fraction
     wet_air_out = wet_air_properties(u"K"(air_temperature), relative_humidity, atmospheric_pressure; vapour_pressure_equation)
-    _, atmospheric_longwave = atmospheric_radiation(longwave_sky.radiation_model, wet_air_out.vapour_pressure, air_temperature)
+    atmospheric_longwave = atmospheric_radiation(longwave_sky.radiation_model, wet_air_out.vapour_pressure, air_temperature)
     cloud_radiation = σ * cloud_emissivity * (u"K"(air_temperature) - 2.0u"K")^4
     hillshade_radiation = σ * cloud_emissivity * (u"K"(air_temperature))^4
     clear_sky_fraction = 1.0 - cloud_cover
