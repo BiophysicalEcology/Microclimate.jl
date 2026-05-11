@@ -36,37 +36,28 @@ days2do = 1:12
 
 precomputed_soil_moisture = (Array(DataFrame(CSV.File("$testdir/data/init_monthly/moists.csv"))[:, 2:13]) .* 1.0)
 
-#TODO make one terrain object via BiophysicalEcologyBase or BiophysicalGrids
 #TODO make P_atmos time a varying input
-micro_terrain = MicroTerrain(;
-    elevation = microinput[:ALTT] * 1.0u"m", # elevation (m)
-    roughness_height = microinput[:RUF] * 1.0u"m", # roughness height for standard mode TODO dispatch based on roughness pars
-    karman_constant = 0.4, # Kármán constant
-    dyer_constant = 16.0, # coefficient from Dyer and Hicks for Φ_m (momentum), γ
-    viewfactor = 1.0, # view factor to sky
+site = Site(;
+    latitude = longlat[2] * 1.0u"°",
+    longitude = longlat[1] * 1.0u"°",
+    elevation = microinput[:ALTT] * 1.0u"m",
+    slope = microinput[:slope] * 1.0u"°",
+    aspect = microinput[:azmuth] * 1.0u"°",
+    horizon_angles = (DataFrame(CSV.File("$testdir/data/init_monthly/hori.csv"))[:, 2]) * 1.0u"°",
+    sky_view_fraction = 1.0,
+    albedo = DataFrame(CSV.File("$testdir/data/init_monthly/REFLS.csv"))[1, 2] * 1.0,
+    roughness_height = microinput[:RUF] * 1.0u"m",
+    atmospheric_pressure = atmospheric_pressure(microinput[:ALTT] * 1.0u"m"),
 )
-
-solar_terrain = SolarTerrain(;
-    slope = (microinput[:slope])*1.0u"°",
-    aspect = (microinput[:azmuth])*1.0u"°",
-    elevation = (microinput[:ALTT])*1.0u"m",
-    horizon_angles = (DataFrame(CSV.File("$testdir/data/init_monthly/hori.csv"))[:, 2])*1.0u"°",
-    albedo = (DataFrame(CSV.File("$testdir/data/init_monthly/REFLS.csv"))[1, 2] * 1.0),
-    atmospheric_pressure = atmospheric_pressure((microinput[:ALTT])*1.0u"m"),
-    latitude = longlat[2]*1.0u"°",
-    longitude = longlat[1]*1.0u"°",
-)
+boundary_layer_model = MoninObukhov(; karman_constant=0.4, dyer_constant=16.0)
 
 mineral_density = (CSV.File("$testdir/data/init_monthly/soilprop.csv")[1, 1][6]) * 1.0u"Mg/m^3" # soil minerals density (Mg/m3)
 bulk_density = (CSV.File("$testdir/data/init_monthly/soilprop.csv")[1, 1][2]) * 1.0u"Mg/m^3" # dry soil bulk density (Mg/m3)
 
-soil_thermal_model = CampbelldeVriesSoilThermal(;
-    bulk_density, 
-    mineral_density,
+soil_thermal = CampbelldeVriesSoilThermal(;
     de_vries_shape_factor = 0.1, # de Vries shape factor, 0.33 for organic soils, 0.1 for mineral
     mineral_conductivity = (CSV.File("$testdir/data/init_monthly/soilprop.csv")[1, 1][4]) * 1.0u"W/m/K", # soil minerals thermal conductivity (W/mC)
     mineral_heat_capacity = (CSV.File("$testdir/data/init_monthly/soilprop.csv")[1, 1][5]) * 1.0u"J/kg/K", # soil minerals specific heat (J/kg-K)
-    saturation_moisture = (CSV.File("$testdir/data/init_monthly/soilprop.csv")[1, 1][3]) * 1.0u"m^3/m^3", # volumetric water content at saturation (0.1 bar matric potential) (m3/m3)
     recirculation_power = 4.0, # power for recirculation function
     return_flow_threshold = 0.162, # return-flow cutoff soil moisture, m^3/m^3
 )
@@ -108,9 +99,8 @@ environment_minmax = MonthlyMinMaxEnvironment(;
 )
 
 _runmoist = Bool(Int(microinput[:runmoist]))
-soil_moisture_model = example_soil_hydraulics(depths; bulk_density, mineral_density,
-    root_density = fill(0.0, length(depths))u"m/m^3",
-    mode = _runmoist ? DynamicSoilMoisture() : PrescribedSoilMoisture(; precomputed_soil_moisture))
+soil_hydraulics = example_soil_hydraulics(depths; bulk_density, mineral_density,
+    root_density = fill(0.0, length(depths))u"m/m^3")
 solar_model = SolarProblem(;
     diffuse_model = Bool(Int(microinput[:IUV])) ? SolarRadiation.ChandrasekharScattering() : SolarRadiation.NoScattering(),
 )
@@ -123,32 +113,32 @@ solar_model = SolarProblem(;
 _daily = Bool(Int(microinput[:microdaily]))
 _spinup = Bool(Int(microinput[:spinup]))
 time_mode = _daily ? ConsecutiveDayMode(; spinup_first_day=_spinup) :
-    NonConsecutiveDayMode(; ndmax=Int(microinput[:ndmax]))
+    NonConsecutiveDayMode(; iterations_per_day=Int(microinput[:ndmax]))
 
-# Set up convergence strategy
-#convergence = FixedSoilTemperatureIterations(Int(microinput[:ndmax]))
-convergence = FixedSoilTemperatureIterations(10)
+config = MicroConfig(;
+    boundary_layer_model,
+    time_mode,
+    convergence = FixedSoilTemperatureIterations(10),
+    rainfall_schedule = Bool(Int(microinput[:rainhourly])) ? HourlyRainfall() : DailyRainfall(),
+    soil_moisture_strategy = _runmoist ? DynamicSoilMoisture() :
+        PrescribedSoilMoisture(; precomputed_soil_moisture),
+)
 
 # now try the simulation function
 problem = MicroProblem(;
     # locations, times, depths and heights
-    latitude = longlat[2]*1.0u"°",
     days = days[days2do], # days of year for solar_radiation
     hours = collect(0.0:1:23.0), # hour of day for solar_radiation
     depths,
     heights, # air nodes for temperature, wind speed and humidity profile
     # Objects defined above
     solar_model,
-    solar_terrain,
-    micro_terrain, #TODO combine terrains via a generic terrain in BiophysicalEcologyBase
-    soil_moisture_model,
-    soil_thermal_model,
+    site,
+    parameters = MicroParameters(; soil_thermal, soil_hydraulics),
     environment_minmax,
     environment_daily,
     environment_hourly,
-    time_mode,
-    convergence,
-    hourly_rainfall = Bool(Int(microinput[:rainhourly])), # use hourly rainfall?
+    config,
     # intial conditions
     initial_soil_temperature = nothing, # initial soil temperature
     initial_soil_moisture = precomputed_soil_moisture[1:10, 1], # initial soil moisture

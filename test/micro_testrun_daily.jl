@@ -42,33 +42,24 @@ heights = [microinput[:Usrhyt], microinput[:Refhyt]]u"m" # air nodes for tempera
 days2do = 30
 hours2do = days2do * 24
 
-#TODO make one terrain object via BiophysicalEcologyBase or BiophysicalGrids
-micro_terrain = MicroTerrain(;
-    elevation = microinput[:ALTT] * 1.0u"m", # elevation (m)
-    roughness_height = microinput[:RUF] * 1.0u"m", # roughness height for standard mode TODO dispatch based on roughness pars
-    karman_constant = 0.4, # Kármán constant
-    dyer_constant = 16.0, # coefficient from Dyer and Hicks for Φ_m (momentum), γ
-    viewfactor = 1.0, # view factor to sky
-)
-
-solar_terrain = SolarTerrain(;
-    slope = (microinput[:slope])*1.0u"°",
-    aspect = (microinput[:azmuth])*1.0u"°",
-    elevation = (microinput[:ALTT])*1.0u"m",
-    horizon_angles = (DataFrame(CSV.File("$testdir/data/init_daily/hori.csv"))[:, 2])*1.0u"°",
-    albedo = (DataFrame(CSV.File("$testdir/data/init_daily/REFLS.csv"))[1, 2] * 1.0),
-    atmospheric_pressure = atmospheric_pressure((microinput[:ALTT])*1.0u"m"),
+site = Site(;
     latitude = (microinput[:ALAT] + microinput[:AMINUT] / 60) * 1.0u"°",
     longitude = (microinput[:ALONG] + microinput[:ALMINT] / 60) * 1.0u"°",
+    elevation = microinput[:ALTT] * 1.0u"m",
+    slope = microinput[:slope] * 1.0u"°",
+    aspect = microinput[:azmuth] * 1.0u"°",
+    horizon_angles = (DataFrame(CSV.File("$testdir/data/init_daily/hori.csv"))[:, 2]) * 1.0u"°",
+    sky_view_fraction = 1.0,
+    albedo = DataFrame(CSV.File("$testdir/data/init_daily/REFLS.csv"))[1, 2] * 1.0,
+    roughness_height = microinput[:RUF] * 1.0u"m",
+    atmospheric_pressure = atmospheric_pressure(microinput[:ALTT] * 1.0u"m"),
 )
+boundary_layer_model = MoninObukhov(; karman_constant=0.4, dyer_constant=16.0)
 
-soil_thermal_model = CampbelldeVriesSoilThermal(;
+soil_thermal = CampbelldeVriesSoilThermal(;
     de_vries_shape_factor = 0.1, # de Vries shape factor, 0.33 for organic soils, 0.1 for mineral
     mineral_conductivity = (CSV.File("$testdir/data/init_daily/soilprop.csv")[1, 1][4]) * 1.0u"W/m/K", # soil minerals thermal conductivity (W/mC)
-    mineral_density = (CSV.File("$testdir/data/init_daily/soilprop.csv")[1, 1][6]) * 1.0u"Mg/m^3", # soil minerals density (Mg/m3)
     mineral_heat_capacity = (CSV.File("$testdir/data/init_daily/soilprop.csv")[1, 1][5]) * 1.0u"J/kg/K", # soil minerals specific heat (J/kg-K)
-    bulk_density = (CSV.File("$testdir/data/init_daily/soilprop.csv")[1, 1][2]) * 1.0u"Mg/m^3", # dry soil bulk density (Mg/m3)
-    saturation_moisture = (CSV.File("$testdir/data/init_daily/soilprop.csv")[1, 1][3]) * 1.0u"m^3/m^3", # volumetric water content at saturation (0.1 bar matric potential) (m3/m3)
     recirculation_power = 4.0, # power for recirculation function
     return_flow_threshold = 0.162, # return-flow cutoff soil moisture, m^3/m^3
 )
@@ -88,13 +79,13 @@ environment_minmax = nothing
 # )
 
 _runmoist = Bool(Int(microinput[:runmoist]))
-soil_moisture_model = CampbellSoilHydraulics(;
+soil_hydraulics = CampbellSoilHydraulics(;
     # soil hydraulic parameters
     air_entry_water_potential = (DataFrame(CSV.File("$testdir/data/init_daily/PE.csv"))[:, 2] * 1.0u"J/kg"),
     saturated_hydraulic_conductivity = (DataFrame(CSV.File("$testdir/data/init_daily/KS.csv"))[:, 2] * 1.0u"kg*s/m^3"),
     campbell_b_parameter = (DataFrame(CSV.File("$testdir/data/init_daily/BB.csv"))[:, 2] * 1.0),
-    soil_bulk_density2 = (DataFrame(CSV.File("$testdir/data/init_daily/BD.csv"))[:, 2] * 1.0u"Mg/m^3"),
-    soil_mineral_density2 = (DataFrame(CSV.File("$testdir/data/init_daily/DD.csv"))[:, 2] * 1.0u"Mg/m^3"),
+    bulk_density = (DataFrame(CSV.File("$testdir/data/init_daily/BD.csv"))[:, 2] * 1.0u"Mg/m^3"),
+    mineral_density = (DataFrame(CSV.File("$testdir/data/init_daily/DD.csv"))[:, 2] * 1.0u"Mg/m^3"),
     # plant parameters
     root_density = DataFrame(CSV.File("$testdir/data/init_daily/L.csv"))[:, 2] * u"m/m^3",
     root_resistance = microinput[:RW] * u"m^3/kg/s",
@@ -102,12 +93,6 @@ soil_moisture_model = CampbellSoilHydraulics(;
     leaf_resistance = microinput[:RL] * u"m^4/kg/s",
     stomatal_stability_parameter = microinput[:SP],
     root_radius = microinput[:R1]u"m",
-    # simulation controls
-    moist_error = microinput[:IM]u"kg/m^2/s",
-    moist_count = microinput[:MAXCOUNT],
-    moist_step = microinput[:moiststep]u"s",
-    maxpool = microinput[:maxpool] * 1000.0u"kg/m^2",
-    mode = _runmoist ? DynamicSoilMoisture() : PrescribedSoilMoisture(),
 )
 
 environment_daily = DailyTimeseries(;
@@ -140,29 +125,33 @@ _daily = Bool(Int(microinput[:microdaily]))
 _spinup = Bool(Int(microinput[:spinup]))
 time_mode = _daily ? ConsecutiveDayMode(; spinup_first_day=_spinup) : NonConsecutiveDayMode()
 
-# Set up convergence strategy
-convergence = FixedSoilTemperatureIterations(Int(microinput[:ndmax]))
+config = MicroConfig(;
+    boundary_layer_model,
+    time_mode,
+    convergence = FixedSoilTemperatureIterations(Int(microinput[:ndmax])),
+    rainfall_schedule = Bool(Int(microinput[:rainhourly])) ? HourlyRainfall() : DailyRainfall(),
+    soil_moisture_strategy = _runmoist ? DynamicSoilMoisture() : PrescribedSoilMoisture(),
+    moisture_tolerance = microinput[:IM]u"kg/m^2/s",
+    moisture_max_iterations = Int(microinput[:MAXCOUNT]),
+    moisture_timestep = microinput[:moiststep]u"s",
+    max_surface_pool = microinput[:maxpool] * 1000.0u"kg/m^2",
+)
 
 # now try the simulation function
 problem = MicroProblem(;
     # locations, times, depths and heights
-    latitude = (microinput[:ALAT] + microinput[:AMINUT] / 60) * 1.0u"°", # latitude
     days = days[1:days2do], # days of year to simulate - TODO leap years
     hours = 0:1:23, # hour of day for solar_radiation
     depths, # soil nodes - keep spacing close near the surface
     heights, # air nodes for temperature, wind speed and humidity profile
     # Objects defined above
     solar_model,
-    solar_terrain,
-    micro_terrain, #TODO combine terrains via a generic terrain in BiophysicalEcologyBase
-    soil_moisture_model,
-    soil_thermal_model,
+    site,
+    parameters = MicroParameters(; soil_thermal, soil_hydraulics),
     environment_minmax,
     environment_daily,
     environment_hourly,
-    time_mode,
-    convergence,
-    hourly_rainfall = Bool(Int(microinput[:rainhourly])), # use hourly rainfall?
+    config,
     # initial conditions
     initial_soil_temperature = let coarse = u"K".((DataFrame(CSV.File("$testdir/data/init_daily/soilinit.csv"))[:, 2] * 1.0)u"°C"), n = length(coarse)
         result = Vector{eltype(coarse)}(undef, 2n - 1)

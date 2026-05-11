@@ -9,5 +9,6 @@ using Microclimate, Test, SafeTestsets
 # end
 
 # Tests
+@safetestset "example constructors" begin include("example_constructors.jl") end
 @safetestset "monthly simulation" begin include("micro_testrun_monthly.jl") end
 @safetestset "daily simulation" begin include("micro_testrun_daily.jl") end

@@ -1,0 +1,3 @@
+abstract type AbstractDiffuseFractionModel end
+
+function calc_diffuse_fraction end

@@ -1,3 +1,29 @@
+@kwdef struct SoilEnergyInputs{F,B,SP,D<:Vector{<:Number},H<:Vector{<:Number},S,BLM,EI,SW,VP,LW,QF,SNM,SNS,SNSC,SM,BD,MD,MSF}
+    forcing::F
+    buffers::B
+    soil_thermal_model::SP
+    depths::D
+    heights::H
+    nodes::Vector{Float64}
+    site::S
+    boundary_layer_model::BLM
+    environment_instant::EI
+    soil_wetness::SW
+    vapour_pressure_equation::VP = GoffGratch()
+    longwave_sky::LW
+    albedo::Float64
+    Q_freeze::QF = 0.0u"W/m^2"  # Fortran COMMON/melt/QFREZE: snow melt energy fed back to surface node
+    # Snow/soil property recomputation inside ODE (matching Fortran DSUB calling SOILPROPS)
+    snow_model::SNM = nothing
+    snow_state::SNS = nothing
+    snow_scratch::SNSC = nothing
+    soil_moisture::SM = nothing
+    bulk_density::BD       # per-depth profile from soil hydraulics
+    mineral_density::MD    # per-depth profile from soil hydraulics
+    n_snow::Int = 0
+    maximum_surface_temperature::MSF = 85.0u"°C"  # Fortran microinput(74) surface-temperature safety clamp
+end
+
 @inline function _first_active_node(heat_capacity, N)
     j = 1
     while j < N && iszero(heat_capacity[j])
@@ -21,13 +47,13 @@ function soil_energy_balance(
     t::Quantity,           # timestep
 ) where U <: SVector{N} where N
     # extract parameters
-    (; forcing, buffers, heights, depths, environment_instant, solar_terrain, micro_terrain, soil_wetness, vapour_pressure_equation, longwave_sky, qfreze, maximum_surface_temperature) = p
+    (; forcing, buffers, heights, depths, environment_instant, site, boundary_layer_model, soil_wetness, vapour_pressure_equation, longwave_sky, Q_freeze, maximum_surface_temperature) = p
     (; layer_depths, heat_capacity, thermal_conductance) = buffers.soil_energy_balance
     (; shade) = environment_instant
     # Get environmental data at time t
     (; atmospheric_pressure, air_temperature, wind_speed, zenith_angle, solar_radiation, cloud_cover, relative_humidity, slope_zenith_angle) = interpolate_forcings(forcing, t)
-    (; roughness_height, karman_constant, dyer_constant) = micro_terrain
-    (; slope) = solar_terrain
+    (; roughness_height, slope) = site
+    (; karman_constant, dyer_constant) = boundary_layer_model
     albedo = p.albedo
 
     reference_height = last(heights)
@@ -52,6 +78,7 @@ function soil_energy_balance(
         soil_properties!(soil_view, p.soil_thermal_model;
             soil_temperature=SVector(ntuple(k -> soil_temperature[n_snow + k], N - n_snow)),
             soil_moisture=p.soil_moisture,
+            bulk_density=p.bulk_density, mineral_density=p.mineral_density,
             atmospheric_pressure, vapour_pressure_equation,
         )
         write_snow_properties!(p.snow_model, p.snow_state, p.snow_scratch,
@@ -60,6 +87,7 @@ function soil_energy_balance(
     else
         soil_properties!(buffers.soil_properties, p.soil_thermal_model;
             soil_temperature=soil_temperature, soil_moisture=p.soil_moisture,
+            bulk_density=p.bulk_density, mineral_density=p.mineral_density,
             atmospheric_pressure, vapour_pressure_equation,
         )
     end
@@ -124,16 +152,16 @@ function soil_energy_balance(
     # matching Fortran DSUB.f lines 396-465 which recomputes at every call.
     # Use interpolated cloud_cover (from line 20), not the hourly snapshot.
     (; surface_emissivity, cloud_emissivity) = environment_instant
-    (; viewfactor) = micro_terrain
+    sky_view_fraction = site.sky_view_fraction
     wet_air_out = wet_air_properties(u"K"(air_temperature), relative_humidity, atmospheric_pressure; vapour_pressure_equation)
-    _, atmospheric_longwave = atmospheric_radiation(longwave_sky.radiation_model, wet_air_out.vapour_pressure, air_temperature)
+    atmospheric_longwave = atmospheric_radiation(longwave_sky.radiation_model, wet_air_out.vapour_pressure, air_temperature)
     cloud_radiation = σ * cloud_emissivity * (u"K"(air_temperature) - 2.0u"K")^4
     hillshade_radiation = σ * cloud_emissivity * (u"K"(air_temperature))^4
     clear_sky_fraction = 1.0 - cloud_cover
     longwave_radiation_sky = (atmospheric_longwave * clear_sky_fraction + cloud_radiation * cloud_cover) * (1.0 - shade)
     longwave_radiation_vegetation = shade * hillshade_radiation
-    incoming_longwave = (longwave_radiation_sky + longwave_radiation_vegetation) * viewfactor +
-                        hillshade_radiation * (1.0 - viewfactor)
+    incoming_longwave = (longwave_radiation_sky + longwave_radiation_vegetation) * sky_view_fraction +
+                        hillshade_radiation * (1.0 - sky_view_fraction)
     outgoing_coeff = (1.0 - shade) * σ * surface_emissivity
     ground_shade_term = shade * hillshade_radiation
     Q_infrared = incoming_longwave - outgoing_coeff * (u"K"(soil_temperature[j]))^4 - ground_shade_term
@@ -164,7 +192,7 @@ function soil_energy_balance(
 
     # Surface energy derivative for the first active node
     # QFREZE: snow melt energy correction, matching Fortran DSUB.f line 567
-    surface_dtdt = u"K/minute"((Q_solar + Q_infrared + Q_conduction + convective_heat_flux + qfreze - Q_evaporation) / heat_capacity[j])
+    surface_dtdt = u"K/minute"((Q_solar + Q_infrared + Q_conduction + convective_heat_flux + Q_freeze - Q_evaporation) / heat_capacity[j])
 
     # Build derivative vector: inactive nodes follow surface, active nodes use conduction.
     # Fortran DSUB.f:591-606 runs DO 10 I=2,N. T(N) is pinned to TDS at every RHS call
@@ -203,12 +231,13 @@ function calc_soil_obukhov(air_temperature, surface_temperature, wind_speed, rou
     return calc_Obukhov_length(air_temperature, surface_temperature, wind_speed, roughness_height, reference_height, ρcpTκg, karman_constant, log_z_ratio, ΔT, ρ_cp; initial_obukhov_length=L0)
 end
 
-function init_soil_obukhov!(buffers, forcing, micro_terrain, heights, T0, i)
+function init_soil_obukhov!(buffers, forcing, site, boundary_layer_model, heights, T0, i)
     t_next = ((i - 1) * 60)u"minute"
     (; air_temperature, wind_speed, zenith_angle) = interpolate_forcings(forcing, t_next)
     surface_temperature = T0[1]
     if air_temperature < surface_temperature && zenith_angle < 90u"°"
-        (; roughness_height, karman_constant) = micro_terrain
+        roughness_height = site.roughness_height
+        karman_constant = boundary_layer_model.karman_constant
         reference_height = last(heights)
         Obukhov_out = calc_soil_obukhov(air_temperature, surface_temperature, wind_speed, roughness_height, reference_height, karman_constant; initial_obukhov_length=buffers.soil_energy_balance.obukhov_length_prev[])
         buffers.soil_energy_balance.obukhov_length_prev[] = Obukhov_out.obukhov_length
@@ -218,14 +247,14 @@ end
 function interpolate_forcings(f, t)
     t_m = ustrip(u"minute", t)
     return (;
-        atmospheric_pressure = f.interpolate_pressure(t_m),
-        air_temperature = f.interpolate_temperature(t_m),
-        wind_speed = f.interpolate_wind(t_m),
-        zenith_angle = min(90.0u"°", u"°"(round(f.interpolate_zenith(t_m), digits=3))),
-        solar_radiation = max(0.0u"W/m^2", f.interpolate_solar(t_m)),
-        cloud_cover = clamp(f.interpolate_cloud(t_m), 0.0, 1.0),
-        relative_humidity = clamp(f.interpolate_humidity(t_m), 0.0, 1.0),
-        slope_zenith_angle = min(90.0u"°", f.interpolate_slope_zenith(t_m)),
+        atmospheric_pressure = f.pressure(t_m),
+        air_temperature = f.temperature(t_m),
+        wind_speed = f.wind(t_m),
+        zenith_angle = min(90.0u"°", u"°"(round(f.zenith(t_m), digits=3))),
+        solar_radiation = max(0.0u"W/m^2", f.solar(t_m)),
+        cloud_cover = clamp(f.cloud(t_m), 0.0, 1.0),
+        relative_humidity = clamp(f.humidity(t_m), 0.0, 1.0),
+        slope_zenith_angle = min(90.0u"°", f.slope_zenith(t_m)),
     )
 end
 
@@ -358,6 +387,9 @@ function soil_water_balance!(buffers, smm::CampbellSoilHydraulics;
     leaf_area_index,
     evapotranspiration,
     input_soil_temperature,
+    moisture_timestep,    # solver tuning, lives on MicroConfig
+    moisture_tolerance,
+    moisture_max_iterations,
     vapour_pressure_equation=GoffGratch(),
 )
     # Local variable names
@@ -365,19 +397,17 @@ function soil_water_balance!(buffers, smm::CampbellSoilHydraulics;
     lai = leaf_area_index
     relative_humidity_local = local_relative_humidity
 
-    dt = smm.moist_step
+    dt = moisture_timestep
     saturated_conductivity = smm.saturated_hydraulic_conductivity
     campbell_b = smm.campbell_b_parameter
-    bulk_density = smm.soil_bulk_density2
-    mineral_density = smm.soil_mineral_density2
+    bulk_density = smm.bulk_density
+    mineral_density = smm.mineral_density
     root_density = smm.root_density
     root_resistance_param = smm.root_resistance
     stomatal_closure_potential = smm.stomatal_closure_potential
     leaf_resistance = smm.leaf_resistance
     stomatal_stability = smm.stomatal_stability_parameter
     root_radius = smm.root_radius
-    moist_error = smm.moist_error
-    moist_count = smm.moist_count
 
     (; water_potential, depth, layer_water_mass, water_content, water_content_new,
        hydraulic_conductivity, soil_humidity, soil_temperature,
@@ -478,7 +508,7 @@ function soil_water_balance!(buffers, smm::CampbellSoilHydraulics;
 
     # Newton-Raphson to estimate leaf_water_potential
     counter = 0
-    while counter < moist_count
+    while counter < moisture_max_iterations
         if leaf_water_potential > mean_soil_potential
             # Seems we need to force the units here or leaf_water_potential is type unstable in the loop
             leaf_water_potential = uconvert(u"J/kg", mean_soil_potential - transpiration_potential * (mean_resistance + leaf_resistance)) # variation on EQ11.18
@@ -500,7 +530,7 @@ function soil_water_balance!(buffers, smm::CampbellSoilHydraulics;
 
     # Convergence loop
     counter = 0
-    while counter < moist_count
+    while counter < moisture_max_iterations
         mass_balance_error = 0.0u"kg/m^2/s"
         counter += 1
         for i in 2:num_layers
@@ -559,7 +589,7 @@ function soil_water_balance!(buffers, smm::CampbellSoilHydraulics;
             soil_humidity[i] = exp(water_molar_mass * water_potential[i] / (R * soil_temperature[i-1]))
         end
         soil_humidity[num_layers+1] = soil_humidity[num_layers]
-        if mass_balance_error <= moist_error
+        if mass_balance_error <= moisture_tolerance
             break
         end
     end
@@ -590,18 +620,23 @@ function soil_water_balance!(buffers, smm::CampbellSoilHydraulics;
 end
 
 
-get_soil_water_balance(soil_moisture_model; num_layers=18, kw...) =
-    get_soil_water_balance!(allocate_soil_water_balance(num_layers), soil_moisture_model; kw...)
+get_soil_water_balance(soil_hydraulics; num_layers=18, kw...) =
+    get_soil_water_balance!(allocate_soil_water_balance(num_layers), soil_hydraulics; kw...)
 
-function get_soil_water_balance!(buffers, soil_moisture_model::CampbellSoilHydraulics;
+function get_soil_water_balance!(buffers, soil_hydraulics::CampbellSoilHydraulics;
     depths,
-    micro_terrain,
+    site,
+    boundary_layer_model,
     environment_instant,
     T0,
     pool,
     niter_moist,
     soil_wetness,
     soil_moisture,
+    moisture_timestep,    # solver tuning, lives on MicroConfig
+    moisture_tolerance,
+    moisture_max_iterations,
+    max_surface_pool,
     vapour_pressure_equation=GoffGratch(),
     snow_present=false,
 )
@@ -610,16 +645,14 @@ function get_soil_water_balance!(buffers, soil_moisture_model::CampbellSoilHydra
     relative_humidity = environment_instant.reference_humidity
     leaf_area_index = environment_instant.leaf_area_index
 
-    (; maxpool, moist_step, soil_bulk_density2, soil_mineral_density2) = soil_moisture_model
+    (; bulk_density, mineral_density) = soil_hydraulics
 
-    bulk_density = soil_bulk_density2
-    mineral_density = soil_mineral_density2
     θ_soil = soil_moisture
     surface_temperature = T0[1]
 
     # compute scalar profiles
     profile_out = atmospheric_surface_profile!(buffers.profile;
-        micro_terrain, environment_instant, surface_temperature, vapour_pressure_equation,
+        site, boundary_layer_model, environment_instant, surface_temperature, vapour_pressure_equation,
     )
 
     # convection
@@ -668,7 +701,7 @@ function get_soil_water_balance!(buffers, soil_moisture_model::CampbellSoilHydra
     end
 
     # run infiltration algorithm
-    infil_out = soil_water_balance!(buffers.soil_water_balance, soil_moisture_model;
+    infil_out = soil_water_balance!(buffers.soil_water_balance, soil_hydraulics;
         depths,
         atmospheric_pressure,
         local_relative_humidity,
@@ -676,19 +709,20 @@ function get_soil_water_balance!(buffers, soil_moisture_model::CampbellSoilHydra
         soil_moisture,
         evapotranspiration=evaporation_potential,
         input_soil_temperature=T0,
+        moisture_timestep, moisture_tolerance, moisture_max_iterations,
         vapour_pressure_equation,
     )
     soil_moisture = infil_out.soil_moisture
     surf_evap = max(0.0u"kg/m^2", infil_out.evaporation)
     water_flux = max(0.0u"kg/m^2", infil_out.surface_water_flux)
-    pool = clamp(pool - water_flux - surf_evap, 0.0u"kg/m^2", maxpool) # pooling surface water
+    pool = clamp(pool - water_flux - surf_evap, 0.0u"kg/m^2", max_surface_pool) # pooling surface water
     if pool > 0.0u"kg/m^2"
         refill = max(0.0u"kg/m^2", uconvert(u"kg/m^2", (sat - soil_moisture[1]) * half_thickness * 1000.0u"kg/m^3"))
         pool = max(0.0u"kg/m^2", pool - refill)
         soil_moisture[1] = sat
     end
     for _ in 1:(niter_moist-1)
-        infil_out = soil_water_balance!(buffers.soil_water_balance, soil_moisture_model;
+        infil_out = soil_water_balance!(buffers.soil_water_balance, soil_hydraulics;
             depths,
             atmospheric_pressure,
             local_relative_humidity,
@@ -696,12 +730,13 @@ function get_soil_water_balance!(buffers, soil_moisture_model::CampbellSoilHydra
             leaf_area_index,
             evapotranspiration=evaporation_potential,
             input_soil_temperature=T0,
+            moisture_timestep, moisture_tolerance, moisture_max_iterations,
             vapour_pressure_equation,
         )
         soil_moisture = infil_out.soil_moisture
         surf_evap = max(0.0u"kg/m^2", infil_out.evaporation)
         water_flux = max(0.0u"kg/m^2", infil_out.surface_water_flux)
-        pool = clamp(pool - water_flux - surf_evap, 0.0u"kg/m^2", maxpool)
+        pool = clamp(pool - water_flux - surf_evap, 0.0u"kg/m^2", max_surface_pool)
         if pool > 0.0u"kg/m^2"
             refill = max(0.0u"kg/m^2", uconvert(u"kg/m^2", (sat - soil_moisture[1]) * half_thickness * 1000.0u"kg/m^3"))
             pool = max(0.0u"kg/m^2", pool - refill)
@@ -715,7 +750,7 @@ function get_soil_water_balance!(buffers, soil_moisture_model::CampbellSoilHydra
     # and `infil_out.surface_water_flux` respectively.
     # Fortran OSUB.f:1223-1225 clamps `surflux >= 0` before this expression.
     raw_surflux = max(0.0u"kg/m^2", infil_out.evaporation)
-    soil_wetness = clamp(raw_surflux / (evaporation_potential * moist_step), 0, 1.0)
+    soil_wetness = clamp(raw_surflux / (evaporation_potential * moisture_timestep), 0, 1.0)
 
     return (; infil_out, soil_wetness, pool, soil_moisture)
 end

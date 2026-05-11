@@ -1,19 +1,5 @@
-abstract type AbstractAtmosphericRadiationModel end
-struct SwinbankAtmosphericRadiation <: AbstractAtmosphericRadiationModel end
-struct CampbellNormanAtmosphericRadiation <: AbstractAtmosphericRadiationModel end
-
-function atmospheric_radiation(::SwinbankAtmosphericRadiation, vapour_pressure, air_temperature)
-    # Swinbank, Eq. 10.11 in Campbell and Norman 1998
-    atmospheric_longwave = uconvert(u"W*m^-2", ((9.2e-6 * (u"K"(air_temperature))^2) * σ * (u"K"(air_temperature))^4) / 1u"K^2")
-    return vapour_pressure, atmospheric_longwave
-end
-function atmospheric_radiation(::CampbellNormanAtmosphericRadiation, vapour_pressure, air_temperature)
-    # Campbell and Norman 1998 eq. 10.10 to get emissivity of sky
-    atmospheric_longwave = u"W/m^2"((1.72 * (ustrip(u"kPa", vapour_pressure) / ustrip(u"K", air_temperature + 0.01u"K"))^(1//7)) * σ * (u"K"(air_temperature) + 0.01u"K")^4)
-    return vapour_pressure, atmospheric_longwave
-end
 """
-    precompute_longwave_sky([radiation_model]; micro_terrain, environment_instant, vapour_pressure_equation)
+    precompute_longwave_sky([radiation_model]; site, environment_instant, vapour_pressure_equation)
 
 Compute the per-hour sky/atmospheric longwave radiation terms that do not depend on surface
 temperature. Returns a named tuple that can be cached for the duration of a timestep and passed
@@ -24,15 +10,15 @@ The `net_longwave_radiation` at any surface temperature `T` can then be recovere
     net_Q = incoming_longwave - outgoing_coeff * T^4 - ground_shade_term
 """
 function precompute_longwave_sky(radiation_model=CampbellNormanAtmosphericRadiation();
-    micro_terrain,
+    site,
     environment_instant,
     vapour_pressure_equation=GoffGratch(),
 )
-    (; viewfactor) = micro_terrain
+    sky_view_fraction = site.sky_view_fraction
     (; atmospheric_pressure, reference_humidity, reference_temperature, surface_emissivity, cloud_emissivity, cloud_cover, shade) = environment_instant
 
     wet_air_out = wet_air_properties(u"K"(reference_temperature), reference_humidity, atmospheric_pressure; vapour_pressure_equation)
-    _, atmospheric_longwave = atmospheric_radiation(radiation_model, wet_air_out.vapour_pressure, reference_temperature)
+    atmospheric_longwave = atmospheric_radiation(radiation_model, wet_air_out.vapour_pressure, reference_temperature)
 
     cloud_radiation = σ * cloud_emissivity * (u"K"(reference_temperature) - 2.0u"K")^4
     hillshade_radiation = σ * cloud_emissivity * (u"K"(reference_temperature))^4
@@ -44,8 +30,8 @@ function precompute_longwave_sky(radiation_model=CampbellNormanAtmosphericRadiat
     longwave_radiation_vegetation = shade * hillshade_radiation
     longwave_radiation_hillshade = hillshade_radiation
 
-    incoming_longwave = (longwave_radiation_sky + longwave_radiation_vegetation) * viewfactor +
-                        longwave_radiation_hillshade * (1.0 - viewfactor)
+    incoming_longwave = (longwave_radiation_sky + longwave_radiation_vegetation) * sky_view_fraction +
+                        longwave_radiation_hillshade * (1.0 - sky_view_fraction)
     outgoing_coeff = (1.0 - shade) * σ * surface_emissivity
     ground_shade_term = shade * hillshade_radiation
     sky_temperature = (incoming_longwave / σ)^(1//4)
@@ -63,12 +49,12 @@ function precompute_longwave_sky(radiation_model=CampbellNormanAtmosphericRadiat
 end
 
 function longwave_radiation(radiation_model=CampbellNormanAtmosphericRadiation();
-    micro_terrain,
+    site,
     environment_instant,
     surface_temperature,
     vapour_pressure_equation=GoffGratch(),
 )
-    sky = precompute_longwave_sky(radiation_model; micro_terrain, environment_instant, vapour_pressure_equation)
+    sky = precompute_longwave_sky(radiation_model; site, environment_instant, vapour_pressure_equation)
     (; incoming_longwave, ground_shade_term) = sky
 
     surface_radiation = σ * environment_instant.surface_emissivity * (u"K"(surface_temperature))^4
@@ -109,13 +95,14 @@ Maxwell, E. L., "A Quasi-Physical Model for Converting Hourly
 """
 function cloud_adjust_radiation(output, cloud::AbstractArray, diffuse_clear_sky, direct_clear_sky, zenith::AbstractArray, doy;
     diffuse_fraction_model::AbstractDiffuseFractionModel=ErbsDiffuseFraction(),
-    a=0.36, b=0.64, gamma=1.0,
+    cloud_adjust_model::AbstractCloudAdjustModel=Angstrom(),
 )
     (; global_horizontal) = output.solar_radiation
     global_radiation = global_horizontal
     diffuse_fraction = output.diffuse_fraction
     solar_constant = 1367.0u"W/m^2"
     ϵ = 1e-9u"W/m^2"
+    a, b = cloud_adjust_model.a, cloud_adjust_model.b
     @inbounds for i in eachindex(global_radiation)
         # 1) Extraterrestrial horizontal irradiance for this hour's day
         d = doy[i]
@@ -125,7 +112,7 @@ function cloud_adjust_radiation(output, cloud::AbstractArray, diffuse_clear_sky,
                        0.000719*cosd(θ2) + 0.000077*sind(θ2)
         eth = solar_constant * ec
         # 2) Ångström–Prescott scaling
-        sf = (1.0 - cloud[i])^gamma
+        sf = sunshine_fraction(cloud_adjust_model, cloud[i])
         t  = a + b * sf
         gcs = diffuse_clear_sky[i] + direct_clear_sky[i]
         gr = max(t * gcs, 0.0u"W/m^2")
