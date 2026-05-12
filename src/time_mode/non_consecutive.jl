@@ -34,7 +34,10 @@ independent_days(::NonConsecutiveDayMode) = true
 is_reset_day(::NonConsecutiveDayMode, j::Int) = true
 reset_phase_per_iter(::NonConsecutiveDayMode) = true
 reset_moisture_per_day(::NonConsecutiveDayMode) = true
-reset_snow_per_day(::NonConsecutiveDayMode) = true
+# Snow accumulates across days in Fortran monthly mode (snow state lives in COMMON
+# blocks and persists from one output day to the next — verified by NMR snow_scan329
+# output where day j+1's snow_depth starts from day j's end-of-day value).
+reset_snow_per_day(::NonConsecutiveDayMode) = false
 iter_resets_T(::NonConsecutiveDayMode) = false
 
 # Each output day gets `iterations_per_day` SFODE passes — pass 1 starts from TINS,

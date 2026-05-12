@@ -13,9 +13,13 @@ function precompute_longwave_sky(radiation_model=CampbellNormanAtmosphericRadiat
     site,
     environment_instant,
     vapour_pressure_equation=GoffGratch(),
+    # Optional explicit overrides so callers (e.g. snow surface) can pass
+    # specific surface_emissivity / shade without rebuilding environment_instant.
+    surface_emissivity=environment_instant.surface_emissivity,
+    shade=environment_instant.shade,
 )
     sky_view_fraction = site.sky_view_fraction
-    (; atmospheric_pressure, reference_humidity, reference_temperature, surface_emissivity, cloud_emissivity, cloud_cover, shade) = environment_instant
+    (; atmospheric_pressure, reference_humidity, reference_temperature, cloud_emissivity, cloud_cover) = environment_instant
 
     wet_air_out = wet_air_properties(u"K"(reference_temperature), reference_humidity, atmospheric_pressure; vapour_pressure_equation)
     atmospheric_longwave = atmospheric_radiation(radiation_model, wet_air_out.vapour_pressure, reference_temperature)

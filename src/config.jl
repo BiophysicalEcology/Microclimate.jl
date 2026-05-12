@@ -18,7 +18,7 @@ independently.
 - `soil_moisture_strategy`: `PrescribedSoilMoisture()` or `DynamicSoilMoisture()`
 
 # Solver options
-- `soil_ode_solver`: any SciML algorithm (`Tsit5()`, `RK4()`, `Euler()`, …)
+- `soil_ode_solver`: any SciML algorithm (`Tsit5()`, `RK4()`, …)
 - `soil_ode_kwargs`: NamedTuple of kwargs forwarded to the integrator
 
 # Soil-moisture solver tuning (used only when `soil_moisture_strategy = DynamicSoilMoisture()`)
@@ -41,7 +41,7 @@ independently.
     rainfall_schedule::RFS = DailyRainfall()
     soil_moisture_strategy::SMM = PrescribedSoilMoisture()
     soil_ode_solver::SOS = Tsit5()
-    soil_ode_kwargs::SOK = (; reltol=1e-6u"K", abstol=0.1u"K")
+    soil_ode_kwargs::SOK = (; reltol=1e-6u"K", abstol=1e-3u"K")
     maximum_surface_temperature::MSF = 85.0u"°C"
     moisture_tolerance::MT = 1e-6u"kg/m^2/s"
     moisture_max_iterations::Int = 500
