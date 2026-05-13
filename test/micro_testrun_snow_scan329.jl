@@ -86,46 +86,37 @@ INITIAL_ST[15] = (273.15 + 3)u"K"
 forcing = DataFrame(CSV.File(joinpath(datadir, "forcing.csv")))
 days2do = 1:NDAYS
 
-# ── Terrain ───────────────────────────────────────────────────────────────────
-micro_terrain = MicroTerrain(;
+# ── Site ──────────────────────────────────────────────────────────────────────
+site = Site(;
+    latitude       = LATITUDE,
+    longitude      = LONGITUDE,
     elevation      = ELEVATION,
+    slope          = 0.0u"°",
+    aspect         = 0.0u"°",
+    horizon_angles = zeros(24)u"°",
+    sky_view_fraction = 1.0,
+    albedo         = ALBEDO,
     roughness_height = RUF,
-    karman_constant  = 0.4,
-    dyer_constant    = 16.0,
-    viewfactor       = 1.0,
-)
-
-solar_terrain = SolarTerrain(;
-    slope              = 0.0u"°",
-    aspect             = 0.0u"°",
-    elevation          = ELEVATION,
-    horizon_angles     = zeros(24)u"°",
-    albedo             = ALBEDO,
     atmospheric_pressure = atmospheric_pressure(ELEVATION),
-    latitude           = LATITUDE,
-    longitude          = LONGITUDE,
 )
+boundary_layer_model = MoninObukhov(; karman_constant=0.4, dyer_constant=16.0)
 
 # ── Soil models ───────────────────────────────────────────────────────────────
-soil_thermal_model = CampbelldeVriesSoilThermal(;
-    bulk_density          = BULK_DENSITY,
-    mineral_density       = MINERAL_DENSITY,
+soil_thermal = CampbelldeVriesSoilThermal(;
     de_vries_shape_factor = DE_VRIES_SHAPE_FACTOR,
     mineral_conductivity  = MINERAL_CONDUCTIVITY,
     mineral_heat_capacity = MINERAL_HEAT_CAPACITY,
-    saturation_moisture   = SATURATION_MOISTURE,
     recirculation_power   = 4.0,
     return_flow_threshold = 0.162,
 )
 
-soil_moisture_model = example_soil_hydraulics(DEPTHS;
+soil_hydraulics = example_soil_hydraulics(DEPTHS;
     bulk_density                     = BULK_DENSITY,
     mineral_density                  = MINERAL_DENSITY,
     air_entry_water_potential        = fill(AIR_ENTRY_POTENTIAL, length(DEPTHS)),
     saturated_hydraulic_conductivity = fill(SAT_HYDRAULIC_COND, length(DEPTHS)),
     campbell_b_parameter             = fill(CAMPBELL_B, length(DEPTHS)),
     root_density                     = ROOT_DENSITY,
-    mode                             = DynamicSoilMoisture(),
 )
 
 # ── Daily min/max environment (1461 days) ─────────────────────────────────────
@@ -167,7 +158,7 @@ environment_hourly = HourlyTimeseries(;
     longwave_radiation    = nothing,
 )
 
-solar_model = SolarProblem(; scattered_uv = false)
+solar_model = SolarProblem(; diffuse_model = SolarRadiation.NoScattering())
 
 snow_model = SnowModel(;
     snow_temperature_threshold = 1.5u"°C",
@@ -182,28 +173,28 @@ snow_model = SnowModel(;
 )
 
 # ── Build and solve ───────────────────────────────────────────────────────────
+config = MicroConfig(;
+    boundary_layer_model,
+    time_mode = ConsecutiveDayMode(; spinup_first_day=false),
+    convergence = FixedSoilTemperatureIterations(3),
+    rainfall_schedule = DailyRainfall(),
+    soil_moisture_strategy = DynamicSoilMoisture(),
+)
+
 problem = MicroProblem(;
-    latitude              = LATITUDE,
-    days                  = forcing.DOY[days2do],
-    hours                 = collect(0.0:1:23.0),
-    depths                = DEPTHS,
-    heights               = [USRHYT, REFHYT],
+    days    = forcing.DOY[days2do],
+    hours   = collect(0.0:1:23.0),
+    depths  = DEPTHS,
+    heights = [USRHYT, REFHYT],
     solar_model,
-    solar_terrain,
-    micro_terrain,
-    soil_moisture_model,
-    soil_thermal_model,
+    site,
+    parameters = MicroParameters(; soil_thermal, soil_hydraulics, snow=snow_model),
     environment_minmax,
     environment_daily,
     environment_hourly,
-    time_mode             = ConsecutiveDayMode(; spinup_first_day=false),
-    convergence           = FixedSoilTemperatureIterations(3),
-    hourly_rainfall       = false,
-    snow_model,
+    config,
     initial_soil_temperature = INITIAL_ST,
     initial_soil_moisture = Vector{Float64}(INITIAL_SM),
-    #initial_snow_depth = 78.0u"cm",
-    #initial_snow_temperature = u"K"(0.0u"°C"),
 )
 
 println("Running Julia microclimate model for $NDAYS days (2013)...")

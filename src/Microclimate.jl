@@ -3,8 +3,9 @@ module Microclimate
 using CommonSolve: CommonSolve
 using ConstructionBase
 using Interpolations, Statistics, Dates
-using SciMLBase, OrdinaryDiffEqTsit5
+using SciMLBase, OrdinaryDiffEqTsit5, OrdinaryDiffEqAdamsBashforthMoulton
 using OrdinaryDiffEqTsit5: Tsit5
+using OrdinaryDiffEqAdamsBashforthMoulton: AB3, AB4, AB5, ABM32, ABM43, ABM54
 using Unitful, UnitfulMoles
 using ModelParameters, DelimitedFiles
 using SpecialFunctions, StaticArrays
@@ -22,6 +23,7 @@ export MicroProblem, MicroCache, MicroConfig, MicroParameters
 
 export GoffGratch, Teten, Huang
 export Tsit5
+export AB3, AB4, AB5, ABM32, ABM43, ABM54
 
 # Snow model
 export AbstractSnowModel, NoSnow, SnowModel, SnowState
@@ -58,7 +60,6 @@ export Site, AbstractSite
 export AbstractBoundaryLayerModel, MoninObukhov
 export Forcing, AtmosphericProfile
 
-export daily_cycle_sine_exponential, daily_cycle_linear, hourly_from_min_max
 
 export cloud_adjust_radiation, longwave_radiation, precompute_longwave_sky
 

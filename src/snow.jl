@@ -68,12 +68,18 @@ end
 
 initial_snow_state(::NoSnow) = nothing
 initial_snow_state(::NoSnow, ::Any, ::Any) = nothing
+# Fortran MICROCLIMATE.f initialises `prevden = densfun(2)` (the second
+# coefficient of the density evolution function) so that on the first hour the
+# density ratio (snowdens/prevden) is 1. We mirror that here when a density
+# function is active; otherwise fall back to the configured `snow_density`.
 function initial_snow_state(sm::SnowModel)
-    SnowState(0.0u"cm", 0.0, 0.3, sm.snow_density, 1.0u"g/cm^3",
+    initial_density = sm.density_function[1] > 0 ? sm.density_function[2] * u"g/cm^3" : sm.snow_density
+    SnowState(0.0u"cm", 0.0, 0.3, initial_density, initial_density,
               0.0u"cm", 0.0u"kg/m^2", 0, 0.0u"J/m^2")
 end
 function initial_snow_state(sm::SnowModel, depth, density_or_nothing)
-    density = isnothing(density_or_nothing) ? sm.snow_density : density_or_nothing
+    default_density = sm.density_function[1] > 0 ? sm.density_function[2] * u"g/cm^3" : sm.snow_density
+    density = isnothing(density_or_nothing) ? default_density : density_or_nothing
     SnowState(depth, 0.0, 0.3, density, density,
               0.0u"cm", 0.0u"kg/m^2", 0, 0.0u"J/m^2")
 end
@@ -91,6 +97,10 @@ function allocate_snow_scratch(::SnowModel{N}, nsteps, num_ode_nodes, depths) wh
         phase_heat            = fill(0.0u"J/m^2", N),
         layer_mass            = fill(0.0u"kg/m^2", N),
         effective_depths      = fill(zero(eltype(depths)), num_ode_nodes),
+        # Per-call boolean masks for `snow_phase_transition` — pre-allocated
+        # so the hot path never calls `fill(false, N)`.
+        clamp_snow            = fill(false, N),
+        overshoot_node        = fill(false, N),
     )
 end
 
@@ -224,10 +234,12 @@ Returns `(snow_temperature, clamp_soil_surface::Bool)`.
 function clamp_snow_temperatures(snow_temperature::SVector{N}, scratch) where N
     freeze = u"K"(0.0u"°C")
     clamp_soil = scratch.node_depths[N] > 0.0u"cm" && snow_temperature[N] > freeze
-    snow_temperature = SVector(ntuple(Val(N)) do i
+    # Don't reassign snow_temperature here — that combined with the closure
+    # capture below would force Julia to box the variable. Use a new name.
+    clamped = SVector(ntuple(Val(N)) do i
         scratch.node_depths[i] > 0.0u"cm" && snow_temperature[i] > freeze ? freeze : snow_temperature[i]
     end)
-    return (snow_temperature, clamp_soil)
+    return (clamped, clamp_soil)
 end
 
 """
@@ -257,10 +269,12 @@ function freeze_new_snow(snow_model::SnowModel{N}, snow_temperature::SVector{N},
             # But since N=8, this is (9-maxsnode3):(8-maxsnode3), matching Fortran's node mapping
             lo = N + 1 - maxsnode3
             hi = N - maxsnode3
-            snow_temperature = SVector(ntuple(Val(N)) do i
+            # Don't reassign snow_temperature — closure capture + reassign would
+            # box the variable. Use a new name.
+            frozen = SVector(ntuple(Val(N)) do i
                 (i >= lo && i <= hi && snow_temperature[i] > freeze) ? freeze : snow_temperature[i]
             end)
-            return (snow_temperature, false)
+            return (frozen, false)
         end
     end
     return (snow_temperature, false)
@@ -401,7 +415,8 @@ function snow_phase_transition(snow_model::SnowModel{N}, state::SnowState, scrat
     # persistent 0°C floor while latent heat is available. Julia replicates this by
     # clamping T_snow[node_index] to 0°C (plus the next node / soil surface).
     clamp_soil_surface = false
-    clamp_snow = fill(false, N)
+    clamp_snow = scratch.clamp_snow
+    fill!(clamp_snow, false)
 
     phase_heat .= 0.0u"J/m^2"
     layer_mass .= 0.0u"kg/m^2"
@@ -439,9 +454,14 @@ function snow_phase_transition(snow_model::SnowModel{N}, state::SnowState, scrat
     # Fortran OSUB.f lines 914-931: check budget BEFORE clamping so overshoot nodes
     # receive -0.5°C instead of 0°C (the prior code checked post-clamp temperatures,
     # so the condition could never fire — nodes were already at freeze).
+    # Use new local names for the result SVector / soil surface temperature so
+    # closure capture below doesn't combine with reassignment of `snow_temperature`,
+    # which would force Julia to box that variable (and the boxing would propagate
+    # to every read of snow_temperature in the function — see Box-1 in ALLOCATION_AUDIT).
     if total_mass > 0.0u"kg/m^2" && new_sum_phase > uconvert(u"J/m^2", LATENT_HEAT_FUSION * total_mass)
         freeze_overshoot = u"K"(-0.5u"°C")
-        overshoot_node = fill(false, N)
+        overshoot_node = scratch.overshoot_node
+        fill!(overshoot_node, false)
         for i in 1:N
             if clamp_snow[i] && phase_heat[i] > 0.0u"J/m^2"
                 overshoot_node[i] = true
@@ -451,24 +471,20 @@ function snow_phase_transition(snow_model::SnowModel{N}, state::SnowState, scrat
                 end
             end
         end
-        snow_temperature = SVector(ntuple(Val(N)) do i
+        new_snow_temperature = SVector(ntuple(Val(N)) do i
             overshoot_node[i] ? freeze_overshoot : snow_temperature[i]
         end)
-        if clamp_soil_surface
-            soil_surface_temperature = freeze_overshoot
-        end
+        new_soil_surface_temperature = clamp_soil_surface ? freeze_overshoot : soil_surface_temperature
         new_sum_phase = 0.0u"J/m^2"
     else
         # Normal case: clamp triggered nodes to 0°C (Fortran: tt(cnd)=0, y(cnd)=0)
-        snow_temperature = SVector(ntuple(Val(N)) do i
+        new_snow_temperature = SVector(ntuple(Val(N)) do i
             clamp_snow[i] ? freeze : snow_temperature[i]
         end)
-        if clamp_soil_surface
-            soil_surface_temperature = freeze
-        end
+        new_soil_surface_temperature = clamp_soil_surface ? freeze : soil_surface_temperature
     end
 
-    return (setproperties(state, (; sum_phase=new_sum_phase)), snow_temperature, soil_surface_temperature)
+    return (setproperties(state, (; sum_phase=new_sum_phase)), new_snow_temperature, new_soil_surface_temperature)
 end
 
 # ── Snow mass balance ────────────────────────────────────────────────────
@@ -546,6 +562,13 @@ function update_snow(snow_model::SnowModel{N}, state::SnowState, scratch,
     # Fortran OSUB.f lines 836-837: only compute thermal melt if prevsnow >= minsnow
     state_for_melt = setproperties(state, (; density=new_dens))
     thermal_melt = if is_first_step || previous_depth < snow_model.min_snow_depth
+        # Still update mean_temperature scratch so snow_phase_transition sees real
+        # temps rather than the 0°C initialisation (which would spuriously clamp
+        # all nodes to 0°C). The returned melt value is discarded — only the
+        # mean_temperature side-effect matters here.
+        snow_thermal_melt(snow_model, state_for_melt, scratch, snow_temperature, snow_temperature_before,
+            environment_instant.atmospheric_pressure,
+            soil_surface_temperature, soil_surface_temperature_before)
         0.0u"cm"
     else
         raw_melt = snow_thermal_melt(snow_model, state_for_melt, scratch, snow_temperature, snow_temperature_before,
@@ -636,4 +659,36 @@ function apply_phase_transition(::AbstractSnowModel, soil_temperature, soil_temp
         temperatures=soil_temperature, temperatures_past=soil_temperature_past,
         accumulated_latent_heat, soil_moisture, depths,
     )
+end
+
+@inline _n_snow(::SnowModel{N}) where N = N
+@inline _n_snow(::NoSnow) = 0
+
+@inline _recompute_soil_snow_properties!(::NoSnow, p, st, ap, vpe) =
+    _recompute_soil_snow_properties_no_snow!(p, st, ap, vpe)
+
+# ── ODE-rhs soil-properties recompute (SnowModel branch) ─────────────────
+# Lives here because it dispatches on SnowModel{N}. The ::Nothing branch is
+# in soil_balance.jl. Using Val(N_snow) keeps the ntuple SVector sizes
+# compile-time so no boxing occurs inside the ODE rhs.
+@inline function _recompute_soil_snow_properties!(snow_model::SnowModel{N_snow}, p,
+    soil_temperature::SVector{N_total}, atmospheric_pressure, vapour_pressure_equation,
+) where {N_snow, N_total}
+    soil_props = p.buffers.soil_properties
+    soil_view = (;
+        bulk_thermal_conductivity = view(soil_props.bulk_thermal_conductivity, N_snow+1:N_total),
+        bulk_heat_capacity = view(soil_props.bulk_heat_capacity, N_snow+1:N_total),
+        bulk_density = view(soil_props.bulk_density, N_snow+1:N_total),
+    )
+    soil_temp_soil = SVector(ntuple(k -> soil_temperature[N_snow + k], Val(N_total - N_snow)))
+    soil_properties!(soil_view, p.soil_thermal_model;
+        soil_temperature=soil_temp_soil,
+        soil_moisture=p.soil_moisture,
+        bulk_density=p.bulk_density, mineral_density=p.mineral_density,
+        atmospheric_pressure, vapour_pressure_equation,
+    )
+    soil_temp_snow = SVector(ntuple(k -> soil_temperature[k], Val(N_snow)))
+    write_snow_properties!(snow_model, p.snow_state, p.snow_scratch,
+        soil_temp_snow, soil_props, atmospheric_pressure, vapour_pressure_equation)
+    return nothing
 end

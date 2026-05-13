@@ -19,7 +19,7 @@ initialise_soil_humidity!(::PrescribedSoilMoisture, output, soil_water_potential
 
 function reset_day_soil_moisture!(mode::PrescribedSoilMoisture, soil_moisture, initial_soil_moisture, day_index)
     if !isnothing(mode.precomputed_soil_moisture)
-        soil_moisture .= mode.precomputed_soil_moisture[:, day_index]
+        _read_col!(soil_moisture, mode.precomputed_soil_moisture, day_index)
     else
         soil_moisture .= initial_soil_moisture
     end

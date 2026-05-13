@@ -1,27 +1,66 @@
-@kwdef struct SoilEnergyInputs{F,B,SP,D<:Vector{<:Number},H<:Vector{<:Number},S,BLM,EI,SW,VP,LW,QF,SNM,SNS,SNSC,SM,BD,MD,MSF}
+"""
+    SoilEnergyInputs
+
+Mutable parameters passed to the ODE integrator via `integrator.p`. Mutable so
+the per-hour-changing fields (`environment_instant`, `longwave_sky`, `albedo`,
+`Q_freeze`, `snow_state`, `depths`, `soil_wetness`) can be updated in place
+instead of allocating a fresh struct each hour. All fields are concretely
+typed via the parametric `{F,B,…}` slots; the underlying heap object is the
+same across hours.
+"""
+mutable struct SoilEnergyInputs{F,B,SP,D<:Vector{<:Number},H<:Vector{<:Number},S,BLM,EI,SW,VP,LW,QF,SNM,SNS,SNSC,SM,BD,MD,MSF}
     forcing::F
     buffers::B
     soil_thermal_model::SP
     depths::D
     heights::H
-    nodes::Vector{Float64}
     site::S
     boundary_layer_model::BLM
     environment_instant::EI
     soil_wetness::SW
-    vapour_pressure_equation::VP = GoffGratch()
+    vapour_pressure_equation::VP
     longwave_sky::LW
     albedo::Float64
-    Q_freeze::QF = 0.0u"W/m^2"  # Fortran COMMON/melt/QFREZE: snow melt energy fed back to surface node
+    Q_freeze::QF
     # Snow/soil property recomputation inside ODE (matching Fortran DSUB calling SOILPROPS)
-    snow_model::SNM = nothing
-    snow_state::SNS = nothing
-    snow_scratch::SNSC = nothing
-    soil_moisture::SM = nothing
+    snow_model::SNM
+    snow_state::SNS
+    snow_scratch::SNSC
+    soil_moisture::SM
     bulk_density::BD       # per-depth profile from soil hydraulics
     mineral_density::MD    # per-depth profile from soil hydraulics
-    n_snow::Int = 0
-    maximum_surface_temperature::MSF = 85.0u"°C"  # Fortran microinput(74) surface-temperature safety clamp
+    maximum_surface_temperature::MSF  # Fortran microinput(74) surface-temperature safety clamp
+end
+
+# Keyword constructor (replaces the old @kwdef one).
+function SoilEnergyInputs(; forcing, buffers, soil_thermal_model, depths, heights, site,
+    boundary_layer_model, environment_instant, soil_wetness,
+    vapour_pressure_equation=GoffGratch(),
+    longwave_sky, albedo, Q_freeze=0.0u"W/m^2",
+    snow_model=nothing, snow_state=nothing, snow_scratch=nothing,
+    soil_moisture=nothing, bulk_density, mineral_density,
+    maximum_surface_temperature=85.0u"°C",
+)
+    SoilEnergyInputs(forcing, buffers, soil_thermal_model, depths, heights, site,
+        boundary_layer_model, environment_instant, soil_wetness, vapour_pressure_equation,
+        longwave_sky, albedo, Q_freeze, snow_model, snow_state, snow_scratch,
+        soil_moisture, bulk_density, mineral_density, maximum_surface_temperature)
+end
+
+# In-place per-hour update — no allocation. Only the fields that change per
+# hour are written; static fields stay put.
+@inline function update_soil_energy_inputs!(p::SoilEnergyInputs;
+    depths, environment_instant, soil_wetness, longwave_sky, albedo, Q_freeze,
+    snow_state,
+)
+    p.depths = depths
+    p.environment_instant = environment_instant
+    p.soil_wetness = soil_wetness
+    p.longwave_sky = longwave_sky
+    p.albedo = albedo
+    p.Q_freeze = Q_freeze
+    p.snow_state = snow_state
+    return p
 end
 
 @inline function _first_active_node(heat_capacity, N)
@@ -31,6 +70,26 @@ end
     end
     return j
 end
+
+# Dispatched soil-properties recompute. Methods for the no-snow case here; the
+# SnowModel{N} method lives in snow.jl (after SnowModel is defined). Both
+# `::Nothing` and `::NoSnow` use the same fall-through; the SnowModel branch
+# uses Val(N) so SVector sizes are compile-time.
+@inline function _recompute_soil_snow_properties_no_snow!(p, soil_temperature,
+    atmospheric_pressure, vapour_pressure_equation)
+    soil_properties!(p.buffers.soil_properties, p.soil_thermal_model;
+        soil_temperature, soil_moisture=p.soil_moisture,
+        bulk_density=p.bulk_density, mineral_density=p.mineral_density,
+        atmospheric_pressure, vapour_pressure_equation,
+    )
+    return nothing
+end
+@inline _recompute_soil_snow_properties!(::Nothing, p, st, ap, vpe) =
+    _recompute_soil_snow_properties_no_snow!(p, st, ap, vpe)
+
+# Compile-time snow node count for an ODE's `p.snow_model`. The `::SnowModel{N}`
+# method is in snow.jl; both ::Nothing and ::NoSnow return 0.
+@inline _n_snow(::Nothing) = 0
 
 function allocate_soil_energy_balance(num_nodes::Int)
     layer_depths = fill(0.0u"cm", num_nodes + 1)
@@ -68,29 +127,10 @@ function soil_energy_balance(
 
     # Recompute soil/snow properties at current temperatures on every ODE sub-step,
     # matching Fortran DSUB.f lines 274-337 which calls SOILPROPS on every evaluation.
-    n_snow = p.n_snow
-    if n_snow > 0 && !isnothing(p.snow_model)
-        soil_view = (;
-            bulk_thermal_conductivity = view(buffers.soil_properties.bulk_thermal_conductivity, n_snow+1:N),
-            bulk_heat_capacity = view(buffers.soil_properties.bulk_heat_capacity, n_snow+1:N),
-            bulk_density = view(buffers.soil_properties.bulk_density, n_snow+1:N),
-        )
-        soil_properties!(soil_view, p.soil_thermal_model;
-            soil_temperature=SVector(ntuple(k -> soil_temperature[n_snow + k], N - n_snow)),
-            soil_moisture=p.soil_moisture,
-            bulk_density=p.bulk_density, mineral_density=p.mineral_density,
-            atmospheric_pressure, vapour_pressure_equation,
-        )
-        write_snow_properties!(p.snow_model, p.snow_state, p.snow_scratch,
-            SVector(ntuple(k -> soil_temperature[k], n_snow)),
-            buffers.soil_properties, atmospheric_pressure, vapour_pressure_equation)
-    else
-        soil_properties!(buffers.soil_properties, p.soil_thermal_model;
-            soil_temperature=soil_temperature, soil_moisture=p.soil_moisture,
-            bulk_density=p.bulk_density, mineral_density=p.mineral_density,
-            atmospheric_pressure, vapour_pressure_equation,
-        )
-    end
+    # Dispatch on snow_model type so N_snow is compile-time (no runtime ntuple).
+    _recompute_soil_snow_properties!(p.snow_model, p, soil_temperature,
+        atmospheric_pressure, vapour_pressure_equation)
+    n_snow = _n_snow(p.snow_model)
     (; bulk_thermal_conductivity, bulk_heat_capacity, bulk_density) = buffers.soil_properties
 
 

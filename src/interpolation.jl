@@ -84,12 +84,14 @@ function daily_cycle_sine_exponential(
     return nothing
 end
 
-function daily_cycle_linear(daily_min, daily_max, time_sunrise, time_sunset, time_of_min, time_of_max, daily, iday, previous_value)
+# Writes the hourly daily-cycle interpolation into pre-allocated `result`,
+# `time_vector`, `times` (each length 24).
+function daily_cycle_linear!(result, time_vector, times,
+    daily_min, daily_max, time_sunrise, time_sunset, time_of_min, time_of_max,
+    daily, iday, previous_value,
+)
     nhours = 24
     initial_value = 0.0 * daily_min[1]
-    time_vector = fill(0.0, nhours)
-    result = fill(initial_value, nhours)
-    times = fill(0.0, nhours)  
     daily_mean = (daily_max + daily_min) / 2.0
 
     if daily == 1 && iday > 1
@@ -184,12 +186,14 @@ end
 # Convert solar times (in decimal hours) to HHMM format
 _hour_to_hhmm(hour::Real) = (floor(hour) * 100.0) + (hour % 1) * 60.0
 
-function _interpolate_variable(daily_min, daily_max, initial_value, minima_time, maxima_time, time_params, swap_times::Bool=false)
+function _interpolate_variable!(result_buf, time_vector, times, daily_min, daily_max,
+    initial_value, minima_time, maxima_time, time_params, swap_times::Bool=false,
+)
     (; half_day_length, hour_solar_noon, time_sunset, daily, iday) = time_params
 
     sunrise_offset = minima_time
     time_sunrise = _hour_to_hhmm(half_day_length + sunrise_offset)
-    
+
     solar_noon_offset = maxima_time
     time_max_temperature = _hour_to_hhmm(hour_solar_noon + solar_noon_offset)
 
@@ -200,8 +204,11 @@ function _interpolate_variable(daily_min, daily_max, initial_value, minima_time,
         time_of_min = time_sunrise
         time_of_max = time_max_temperature
     end
-    
-    return daily_cycle_linear(daily_min, daily_max, time_sunrise, time_sunset, time_of_min, time_of_max, daily, iday, initial_value)
+
+    daily_cycle_linear!(result_buf, time_vector, times,
+        daily_min, daily_max, time_sunrise, time_sunset, time_of_min, time_of_max,
+        daily, iday, initial_value)
+    return nothing
 end
 
 function _calculate_solar_times(hour_angle, hour_solar_noon)
@@ -219,86 +226,108 @@ function _calculate_solar_times(hour_angle, hour_solar_noon)
 end
 
 
-function interpolate_hourly_temperature(reference_temperature_min, reference_temperature_max, minima_times, maxima_times, solar_radiation_out, daily)
+# Writes hourly air temperatures directly into the caller's `air_temperatures`
+# buffer (length = 24 * ndays). `times` and `temperatures` are 24-element
+# scratch buffers (Float64 / element-type-of-output).
+function interpolate_hourly_temperature!(air_temperatures, times, temperatures,
+    reference_temperature_min, reference_temperature_max, minima_times, maxima_times,
+    solar_radiation_out, daily,
+)
     ndays = length(reference_temperature_min)
     nhours = 24
-    all_hours = nhours * ndays
-    air_temperatures = fill(reference_temperature_min[1], all_hours)
 
     for iday in 1:ndays
         initial_temperature = reference_temperature_min[iday]
-        times = fill(0.0, nhours)
-        temperatures = fill(0.0u"°C", nhours)
 
         hour_angle = solar_radiation_out.hour_angle_sunrise[iday]
         hour_solar_noon = solar_radiation_out.hour_solar_noon[iday]
 
         (; time_sunset, half_day_length) = _calculate_solar_times(hour_angle, hour_solar_noon)
-        
+
         sunrise_offset = minima_times[1]
         time_sunrise = _hour_to_hhmm(half_day_length + sunrise_offset)
-        
+
         solar_noon_offset = maxima_times[1]
         time_max_temperature = _hour_to_hhmm(hour_solar_noon + solar_noon_offset)
-        
+
         min_temperature = reference_temperature_min[iday]
         max_temperature = reference_temperature_max[iday]
-        
+
         next_min_temperature = (iday < ndays) ? reference_temperature_min[iday+1] : min_temperature
         next_max_temperature = (iday < ndays) ? reference_temperature_max[iday+1] : max_temperature
 
         daily_cycle_sine_exponential(
-            initial_temperature, times, temperatures, min_temperature, max_temperature, 
-            next_min_temperature, next_max_temperature, time_sunrise, time_sunset, 
+            initial_temperature, times, temperatures, min_temperature, max_temperature,
+            next_min_temperature, next_max_temperature, time_sunrise, time_sunset,
             time_max_temperature, daily, iday
         )
-        
-        dayrange = (iday*nhours-nhours+1):(iday*nhours)
-        air_temperatures[dayrange] .= temperatures
+
+        offset = (iday - 1) * nhours
+        @inbounds for i in 1:nhours
+            air_temperatures[offset + i] = temperatures[i]
+        end
     end
-    
+
     return air_temperatures
 end
 
-function interpolate_hourly_variable(var_min, var_max, minima_times, maxima_times, solar_radiation_out, daily, swap_times)
+# Writes the hourly variable trace into the caller's `result` buffer
+# (length = 24 * ndays). `time_vector`, `times`, `day_result` are 24-element
+# scratch buffers.
+function interpolate_hourly_variable!(result, time_vector, times, day_result,
+    var_min, var_max, minima_times, maxima_times, solar_radiation_out, daily, swap_times,
+)
     ndays = length(var_min)
     nhours = 24
-    all_hours = nhours * ndays
-    result = fill(var_min[1], all_hours)
 
     for iday in 1:ndays
         initial_value = var_min[iday]
-        
+
         hour_angle = solar_radiation_out.hour_angle_sunrise[iday]
         hour_solar_noon = solar_radiation_out.hour_solar_noon[iday]
 
         (; time_sunset, half_day_length) = _calculate_solar_times(hour_angle, hour_solar_noon)
-        
+
         time_params = (; half_day_length, hour_solar_noon, time_sunset, daily, iday)
-        
-        interpolated_values = _interpolate_variable(var_min[iday], var_max[iday], initial_value, minima_times, maxima_times, time_params, swap_times)
-        
-        dayrange = (iday*nhours-nhours+1):(iday*nhours)
-        result[dayrange] .= interpolated_values
+
+        _interpolate_variable!(day_result, time_vector, times,
+            var_min[iday], var_max[iday], initial_value, minima_times, maxima_times,
+            time_params, swap_times)
+
+        offset = (iday - 1) * nhours
+        @inbounds for i in 1:nhours
+            result[offset + i] = day_result[i]
+        end
     end
-    
+
     return result
 end
 
-function hourly_from_min_max(minmax, solar_radiation_out, daily::Bool=false)
-    (; reference_temperature_min, reference_temperature_max, reference_wind_min, reference_wind_max, reference_humidity_min, 
-        reference_humidity_max, cloud_min, cloud_max, minima_times, maxima_times) = minmax
+# Fills `air_temperatures`, `wind_speeds`, `humidities`, `cloud_covers` in place
+# (each length = 24 * ndays). `buffers` is a NamedTuple of 24-element scratch
+# vectors that get reused across all four calls.
+function hourly_from_min_max!(air_temperatures, wind_speeds, humidities, cloud_covers,
+    buffers, minmax, solar_radiation_out, daily::Bool=false,
+)
+    (; reference_temperature_min, reference_temperature_max, reference_wind_min, reference_wind_max,
+       reference_humidity_min, reference_humidity_max, cloud_min, cloud_max, minima_times, maxima_times) = minmax
+    (; times, temperatures, time_vector, day_result_wind, day_result_humidity, day_result_cloud) = buffers
 
-    air_temperatures = interpolate_hourly_temperature(reference_temperature_min, reference_temperature_max, minima_times, maxima_times, solar_radiation_out, daily)
-    
-    wind_speeds = interpolate_hourly_variable(reference_wind_min, reference_wind_max, minima_times[2], maxima_times[2], solar_radiation_out, daily, false)
-    
-    humidities = interpolate_hourly_variable(reference_humidity_min, reference_humidity_max, minima_times[3], maxima_times[3], solar_radiation_out, daily, true)
-    
-    cloud_covers = interpolate_hourly_variable(cloud_min, cloud_max, minima_times[4], maxima_times[4], solar_radiation_out, daily, false)
+    interpolate_hourly_temperature!(air_temperatures, times, temperatures,
+        reference_temperature_min, reference_temperature_max, minima_times, maxima_times,
+        solar_radiation_out, daily)
 
-    return (; reference_temperature=air_temperatures,
-            reference_wind_speed=wind_speeds,
-            reference_humidity=humidities,
-            cloud_cover=cloud_covers)
+    interpolate_hourly_variable!(wind_speeds, time_vector, times, day_result_wind,
+        reference_wind_min, reference_wind_max, minima_times[2], maxima_times[2],
+        solar_radiation_out, daily, false)
+
+    interpolate_hourly_variable!(humidities, time_vector, times, day_result_humidity,
+        reference_humidity_min, reference_humidity_max, minima_times[3], maxima_times[3],
+        solar_radiation_out, daily, true)
+
+    interpolate_hourly_variable!(cloud_covers, time_vector, times, day_result_cloud,
+        cloud_min, cloud_max, minima_times[4], maxima_times[4],
+        solar_radiation_out, daily, false)
+
+    return nothing
 end
