@@ -106,7 +106,6 @@ function cloud_adjust_radiation(output, cloud::AbstractArray, diffuse_clear_sky,
     diffuse_fraction = output.diffuse_fraction
     solar_constant = 1367.0u"W/m^2"
     ϵ = 1e-9u"W/m^2"
-    a, b = cloud_adjust_model.a, cloud_adjust_model.b
     @inbounds for i in eachindex(global_radiation)
         # 1) Extraterrestrial horizontal irradiance for this hour's day
         d = doy[i]
@@ -115,11 +114,10 @@ function cloud_adjust_radiation(output, cloud::AbstractArray, diffuse_clear_sky,
         ec = 1.00011 + 0.034221*cosd(θ1) + 0.00128*sind(θ1) +
                        0.000719*cosd(θ2) + 0.000077*sind(θ2)
         eth = solar_constant * ec
-        # 2) Ångström–Prescott scaling
+        # 2) adjust for cloud cover (default is Ångström–Prescott scaling)
         sf = sunshine_fraction(cloud_adjust_model, cloud[i])
-        t  = a + b * sf
         gcs = diffuse_clear_sky[i] + direct_clear_sky[i]
-        gr = max(t * gcs, 0.0u"W/m^2")
+        gr = max(sf * gcs, 0.0u"W/m^2")
         global_radiation[i] = gr
         # 3) Split global into diffuse/direct via clearness index
         ci = clamp(gr / max(eth, ϵ), 0.0, 1.2)
