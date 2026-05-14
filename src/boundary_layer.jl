@@ -130,16 +130,16 @@ function atmospheric_surface_profile!(buffers;
     ρ_cp = calc_ρ_cp(mean_temp)#, elevation, reference_humidity)
 
 
-    # TODO name and explain this check, why `|| zenith_angle`
-    if reference_temp ≥ surface_temp || zenith_angle ≥ 90°
+    # stability check (assuming stable conditions at night)
+    if reference_temp ≥ surface_temp || zenith_angle ≥ 90° # temperature inversion or night-time conditions
         friction_velocity = calc_friction_velocity(; reference_wind_speed, log_z_ratio, κ)
         convective_heat_flux = calc_convection(; friction_velocity, log_z_ratio, ΔT, ρ_cp, z0)
+        roughness_height_temp = (reference_temp * bulk_stanton(log_z_ratio) + surface_temp * sublayer_stanton(z0, friction_velocity)) / (bulk_stanton(log_z_ratio) + sublayer_stanton(z0, friction_velocity))
         for i in 2:N_heights
             wind_speed[i] = calc_wind(height_array[i], z0, κ, friction_velocity, 1.0)
-            roughness_height_temp = (reference_temp * bulk_stanton(log_z_ratio) + surface_temp * sublayer_stanton(z0, friction_velocity)) / (bulk_stanton(log_z_ratio) + sublayer_stanton(z0, friction_velocity))
             air_temperature[i] = roughness_height_temp + (reference_temp - roughness_height_temp) * log(height_array[i] / z0 + 1.0) / log_z_ratio
         end
-    else
+    else # unstable conditions during daytime, need to solve iteratively for Obukhov length
         Obukhov_out = calc_Obukhov_length(reference_temp, surface_temp, v_ref_height, z0, z, ρcpTκg, κ, log_z_ratio, ΔT, ρ_cp; max_iter=30, tol=1e-2, initial_obukhov_length=obukhov_length_prev[])
         obukhov_length = Obukhov_out.obukhov_length
         obukhov_length_prev[] = obukhov_length

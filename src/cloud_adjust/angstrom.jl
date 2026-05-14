@@ -11,4 +11,4 @@ and Resources" (1992, eq. 5.33).
     gamma::G = 1.0
 end
 
-sunshine_fraction(m::Angstrom, cloud_cover) = (1.0 - cloud_cover)^m.gamma
+sunshine_fraction(m::Angstrom, cloud_cover) = m.a + m.b * (1.0 - cloud_cover)^m.gamma
