@@ -24,7 +24,14 @@ testdir = @__DIR__
 datadir = joinpath(testdir, "data", "scan329")
 
 # ── Load NicheMapR comparison data ────────────────────────────────────────────
-nmr = DataFrame(CSV.File(joinpath(datadir, "nmr_hourly.csv")))
+# Source files are the raw NicheMapR outputs (one per quantity); merge into the
+# unified `nmr` DataFrame the rest of this script expects.
+_nmr_met   = DataFrame(CSV.File(joinpath(datadir, "metout.csv")))     # SNOWDEP, SNOWDENS, SNOWMELT, ...
+_nmr_soil  = DataFrame(CSV.File(joinpath(datadir, "soil.csv")))       # D0cm..D200cm
+_nmr_moist = DataFrame(CSV.File(joinpath(datadir, "soilmoist.csv")))  # WC0cm..WC200cm
+nmr = hcat(_nmr_met,
+           select(_nmr_soil,  Not([:DOY, :TIME])),
+           select(_nmr_moist, Not([:DOY, :TIME])))
 
 # ── Hard-wired site constants (SNOTEL 329, Utah) ─────────────────────────────
 # Derived from micro csv input/microinput.csv
@@ -65,9 +72,11 @@ const CAMPBELL_B            = 4.5                            # BB.csv
 const ROOT_DENSITY = [0.0, 0.0, 82000.0, 80000.0, 78000.0, 74000.0, 71000.0, 64000.0, 58000.0, 48000.0,
                       40000.0, 18000.0, 9000.0, 6000.0, 8000.0, 4000.0, 4000.0, 0.0, 0.0]u"m/m^3"
 
-# Initial soil moisture (m³/m³) from micro csv input/moists.csv column 2 — 10 coarse nodes.
+# Initial soil moisture (m³/m³) — 10 coarse nodes from nmr_initial.csv (SM1..SM10).
 # Expand to 19 fine nodes by inserting midpoints (average of neighbours), same as micro_testrun_daily.jl.
-const _INITIAL_SM_COARSE = DataFrame(CSV.File(joinpath(datadir, "initial_sm.csv"))).moisture
+const _INITIAL_SM_COARSE = let nmr_init = DataFrame(CSV.File(joinpath(datadir, "nmr_initial.csv")))
+    [nmr_init[1, Symbol("SM$i")] for i in 1:10]
+end
 const INITIAL_SM = let coarse = _INITIAL_SM_COARSE, n = length(coarse)
     result = Vector{Float64}(undef, 2n - 1)
     for i in 1:n;     result[2i-1] = coarse[i]; end
@@ -83,7 +92,24 @@ INITIAL_ST[15] = (273.15 + 3)u"K"
 
 
 # ── Load daily forcing ────────────────────────────────────────────────────────
-forcing = DataFrame(CSV.File(joinpath(datadir, "forcing.csv")))
+# nmr_forcing.csv columns: doy, Tmin_C, Tmax_C, RHmin_pct, RHmax_pct, Wind_ms, Rain_mm,
+# CCmax_pct, CCmin_pct, tannul_C. Rename to the column names downstream code expects.
+forcing = let f = DataFrame(CSV.File(joinpath(datadir, "nmr_forcing.csv")))
+    DataFrame(
+        DOY     = f.doy,
+        TMINN   = f.Tmin_C,
+        TMAXX   = f.Tmax_C,
+        RHMINN  = f.RHmin_pct,
+        RHMAXX  = f.RHmax_pct,
+        # nmr_forcing has a single wind value (Wind_ms); use it for both min and max.
+        WNMINN  = f.Wind_ms,
+        WNMAXX  = f.Wind_ms,
+        CCMAXX  = f.CCmax_pct,
+        CCMINN  = f.CCmin_pct,
+        RAINFALL = f.Rain_mm,
+        TANNUL  = f.tannul_C,
+    )
+end
 days2do = 1:NDAYS
 
 # ── Site ──────────────────────────────────────────────────────────────────────
@@ -201,14 +227,23 @@ println("Running Julia microclimate model for $NDAYS days (2013)...")
 @time micro_out = Microclimate.solve(problem)
 println("Simulation complete.")
 
-# ── Load SNOTEL 329 observations ──────────────────────────────────────────────
-obs = DataFrame(CSV.File(joinpath(datadir, "obs.csv"),
-    missingstring = ["NA", ""],
-    types = Dict(:SNWD_mm => Float64, :WTEQ_in => Float64)
-))
-# DateTime column is auto-parsed by CSV
-# Unit notes: SNWD_mm = snow depth in inches (×2.54 → cm), WTEQ_in = SWE in inches (×2.54 → cm)
-#   Soil temps STO_*cm in °C, soil moisture SMS_*cm in %
+# ── Load SNOTEL 329 observations (optional) ───────────────────────────────────
+# obs.csv contains field measurements from SNOTEL site 329 — the *ground-truth*
+# benchmark that lets us decide whether Julia or NicheMapR is more accurate
+# (rather than just comparing the two models to each other). If missing, we
+# still run the Julia-vs-NMR comparison but skip obs panels in the plots.
+const OBS_PATH = joinpath(datadir, "obs.csv")
+obs = if isfile(OBS_PATH)
+    DataFrame(CSV.File(OBS_PATH; missingstring = ["NA", ""],
+                       types = Dict(:SNWD_mm => Float64, :WTEQ_in => Float64)))
+else
+    @info "obs.csv not present — skipping observation comparison" OBS_PATH
+    nothing
+end
+const HAVE_OBS = !isnothing(obs)
+# DateTime column is auto-parsed by CSV.
+# Unit notes: SNWD_mm in inches (×2.54 → cm), WTEQ_in in inches (×2.54 → cm),
+# soil temps STO_*cm in °C, soil moisture SMS_*cm in %.
 
 # ── Comparisons ───────────────────────────────────────────────────────────────
 # Extract Julia soil temperatures at key depths
@@ -343,8 +378,15 @@ end
 plot_year  = nothing   # e.g. 2014
 plot_month = nothing   # e.g. 3 (March)
 
-using Plots, Dates
-let
+const PLOTS_AVAILABLE = try
+    @eval using Plots
+    true
+catch
+    @info "Plots not available — skipping visualisations"
+    false
+end
+
+PLOTS_AVAILABLE && let
     t_full = collect(range(DateTime(2013, 1, 1), step=Hour(1), length=365 * 24))
 
     # Build hourly index mask
@@ -363,12 +405,16 @@ let
     t = t_full[hmask]
 
     # Obs mask (obs is at its own irregular timestamps)
-    if !isnothing(plot_year) && !isnothing(plot_month)
-        omask = year.(obs.DateTime) .== plot_year .&& month.(obs.DateTime) .== plot_month
-    elseif !isnothing(plot_month)
-        omask = month.(obs.DateTime) .== plot_month
+    omask = if HAVE_OBS
+        if !isnothing(plot_year) && !isnothing(plot_month)
+            year.(obs.DateTime) .== plot_year .&& month.(obs.DateTime) .== plot_month
+        elseif !isnothing(plot_month)
+            month.(obs.DateTime) .== plot_month
+        else
+            trues(nrow(obs))
+        end
     else
-        omask = trues(nrow(obs))
+        Int[]  # empty selector; plot!(obs.DateTime[omask], ...) is guarded below
     end
 
     # ── Extract model slices for this window ─────────────────────────────────
@@ -394,12 +440,14 @@ let
     # ── Panel a: Snow ─────────────────────────────────────────────────────────
     pa1 = plot(t, nmr.SNOWDEP[hmask], label="NicheMapR", title="Snow depth (cm)", ylabel="cm")
     plot!(pa1, t, snow_depth_w, label="Julia", color=:black)
-    plot!(pa1, obs.DateTime[omask], obs.SNWD_mm[omask] .* 2.54,
-        label="obs", color=:red, ms=1)
+    if HAVE_OBS
+        plot!(pa1, obs.DateTime[omask], obs.SNWD_mm[omask] .* 2.54,
+            label="obs", color=:red, ms=1)
+    end
 
     pa2 = plot(t, nmr_swe_w, label="NicheMapR", title="Snow water equiv. (cm w.e.)", ylabel="cm")
     plot!(pa2, t, julia_swe_w, label="Julia", color=:black)
-    if "WTEQ_in" in String.(propertynames(obs))
+    if HAVE_OBS && "WTEQ_in" in String.(propertynames(obs))
         # WTEQ_in values are in inches (column name is misleading); ×2.54 → cm
         plot!(pa2, obs.DateTime[omask], obs.WTEQ_in[omask] .* 2.54,
             label="obs", color=:red, ms=1)
@@ -487,30 +535,30 @@ let
 
     pb1 = plot(t, nmr.D5cm[hmask], label="NicheMapR", title="Soil temp 5 cm (°C)", ylabel="°C")
     plot!(pb1, t, julia_D5cm_w, label="Julia", color=:black)
-    plot!(pb1, obs.DateTime[omask], obs.STO_5cm[omask], label="obs", color=:red, ms=1)
+    HAVE_OBS && plot!(pb1, obs.DateTime[omask], obs.STO_5cm[omask], label="obs", color=:red, ms=1)
     push!(temp_panels, pb1)
 
     if have_10cm
         pb2 = plot(t, nmr.D10cm[hmask], label="NicheMapR", title="Soil temp 10 cm (°C)", ylabel="°C")
         plot!(pb2, t, julia_D10cm_w, label="Julia", color=:black)
-        "STO_10cm" in String.(propertynames(obs)) && plot!(pb2, obs.DateTime[omask], obs.STO_10cm[omask], label="obs", color=:red, ms=1)
+        HAVE_OBS && "STO_10cm" in String.(propertynames(obs)) && plot!(pb2, obs.DateTime[omask], obs.STO_10cm[omask], label="obs", color=:red, ms=1)
         push!(temp_panels, pb2)
     end
 
     pb3 = plot(t, nmr.D20cm[hmask], label="NicheMapR", title="Soil temp 20 cm (°C)", ylabel="°C")
     plot!(pb3, t, julia_D20cm_w, label="Julia", color=:black)
-    plot!(pb3, obs.DateTime[omask], obs.STO_20cm[omask], label="obs", color=:red, ms=1)
+    HAVE_OBS && plot!(pb3, obs.DateTime[omask], obs.STO_20cm[omask], label="obs", color=:red, ms=1)
     push!(temp_panels, pb3)
 
     pb4 = plot(t, nmr.D50cm[hmask], label="NicheMapR", title="Soil temp 50 cm (°C)", ylabel="°C")
     plot!(pb4, t, julia_D50cm_w, label="Julia", color=:black)
-    "STO_50cm" in String.(propertynames(obs)) && plot!(pb4, obs.DateTime[omask], obs.STO_50cm[omask], label="obs", color=:red, ms=1)
+    HAVE_OBS && "STO_50cm" in String.(propertynames(obs)) && plot!(pb4, obs.DateTime[omask], obs.STO_50cm[omask], label="obs", color=:red, ms=1)
     push!(temp_panels, pb4)
 
     if have_100cm
         pb5 = plot(t, nmr.D100cm[hmask], label="NicheMapR", title="Soil temp 100 cm (°C)", ylabel="°C")
         plot!(pb5, t, julia_D100cm_w, label="Julia", color=:black)
-        "STO_100cm" in String.(propertynames(obs)) && plot!(pb5, obs.DateTime[omask], obs.STO_100cm[omask], label="obs", color=:red, ms=1)
+        HAVE_OBS && "STO_100cm" in String.(propertynames(obs)) && plot!(pb5, obs.DateTime[omask], obs.STO_100cm[omask], label="obs", color=:red, ms=1)
         push!(temp_panels, pb5)
     end
 
@@ -524,30 +572,30 @@ let
 
     pc1 = plot(t, nmr.WC5cm[hmask], label="NicheMapR", title="Soil moisture 5 cm (m³/m³)", ylabel="m³/m³")
     plot!(pc1, t, julia_WC5cm_w, label="Julia", color=:black)
-    plot!(pc1, obs.DateTime[omask], obs.SMS_5cm[omask] ./ 100.0, label="obs", color=:red, ms=1)
+    HAVE_OBS && plot!(pc1, obs.DateTime[omask], obs.SMS_5cm[omask] ./ 100.0, label="obs", color=:red, ms=1)
     push!(moist_panels, pc1)
 
     if "WC10cm" in String.(propertynames(nmr))
         pc2 = plot(t, nmr.WC10cm[hmask], label="NicheMapR", title="Soil moisture 10 cm (m³/m³)", ylabel="m³/m³")
         plot!(pc2, t, julia_WC10cm_w, label="Julia", color=:black)
-        "SMS_10cm" in String.(propertynames(obs)) && plot!(pc2, obs.DateTime[omask], obs.SMS_10cm[omask] ./ 100.0, label="obs", color=:red, ms=1)
+        HAVE_OBS && "SMS_10cm" in String.(propertynames(obs)) && plot!(pc2, obs.DateTime[omask], obs.SMS_10cm[omask] ./ 100.0, label="obs", color=:red, ms=1)
         push!(moist_panels, pc2)
     end
 
     pc3 = plot(t, nmr.WC20cm[hmask], label="NicheMapR", title="Soil moisture 20 cm (m³/m³)", ylabel="m³/m³")
     plot!(pc3, t, julia_WC20cm_w, label="Julia", color=:black)
-    "SMS_20cm" in String.(propertynames(obs)) && plot!(pc3, obs.DateTime[omask], obs.SMS_20cm[omask] ./ 100.0, label="obs", color=:red, ms=1)
+    HAVE_OBS && "SMS_20cm" in String.(propertynames(obs)) && plot!(pc3, obs.DateTime[omask], obs.SMS_20cm[omask] ./ 100.0, label="obs", color=:red, ms=1)
     push!(moist_panels, pc3)
 
     pc4 = plot(t, nmr.WC50cm[hmask], label="NicheMapR", title="Soil moisture 50 cm (m³/m³)", ylabel="m³/m³")
     plot!(pc4, t, julia_WC50cm_w, label="Julia", color=:black)
-    "SMS_50cm" in String.(propertynames(obs)) && plot!(pc4, obs.DateTime[omask], obs.SMS_50cm[omask] ./ 100.0, label="obs", color=:red, ms=1)
+    HAVE_OBS && "SMS_50cm" in String.(propertynames(obs)) && plot!(pc4, obs.DateTime[omask], obs.SMS_50cm[omask] ./ 100.0, label="obs", color=:red, ms=1)
     push!(moist_panels, pc4)
 
     if "WC100cm" in String.(propertynames(nmr))
         pc5 = plot(t, nmr.WC100cm[hmask], label="NicheMapR", title="Soil moisture 100 cm (m³/m³)", ylabel="m³/m³")
         plot!(pc5, t, julia_WC100cm_w, label="Julia", color=:black)
-        "SMS_100cm" in String.(propertynames(obs)) && plot!(pc5, obs.DateTime[omask], obs.SMS_100cm[omask] ./ 100.0, label="obs", color=:red, ms=1)
+        HAVE_OBS && "SMS_100cm" in String.(propertynames(obs)) && plot!(pc5, obs.DateTime[omask], obs.SMS_100cm[omask] ./ 100.0, label="obs", color=:red, ms=1)
         push!(moist_panels, pc5)
     end
 

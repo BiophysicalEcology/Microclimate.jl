@@ -4,7 +4,7 @@ abstract type AbstractSnowModel end
 
 struct NoSnow <: AbstractSnowModel end
 
-struct SnowModel{N} <: AbstractSnowModel
+struct SnowModel{N,AHC<:AbstractApparentHeatCapacity} <: AbstractSnowModel
     snow_temperature_threshold::typeof(1.0u"°C")
     snow_density::typeof(1.0u"g/cm^3")
     snow_melt_factor::Float64
@@ -17,6 +17,7 @@ struct SnowModel{N} <: AbstractSnowModel
     min_snow_depth::typeof(1.0u"cm")
     snow_node_thresholds::NTuple{N,typeof(1.0u"cm")}
     melt_threshold::typeof(1.0u"°C")
+    apparent_heat_capacity::AHC
 end
 
 function SnowModel(;
@@ -32,13 +33,15 @@ function SnowModel(;
     min_snow_depth=2.0u"cm",
     snow_node_thresholds=DEFAULT_SNOW_NODE_THRESHOLDS .* u"cm",
     melt_threshold=0.4u"°C",
+    apparent_heat_capacity=BonacinaStep(),
 )
     N = length(snow_node_thresholds)
-    SnowModel{N}(
+    SnowModel{N,typeof(apparent_heat_capacity)}(
         snow_temperature_threshold, snow_density, snow_melt_factor,
         undercatch, rain_multiplier, rain_melt_factor, density_function,
         snow_conductivity, canopy_interception, min_snow_depth,
         NTuple{N,typeof(1.0u"cm")}(snow_node_thresholds), melt_threshold,
+        apparent_heat_capacity,
     )
 end
 
@@ -205,12 +208,9 @@ function write_snow_properties!(snow_model::SnowModel{N}, state::SnowState, scra
 
         for i in 1:N
             property_buffers.bulk_thermal_conductivity[i] = uconvert(unit(property_buffers.bulk_thermal_conductivity[N+1]), conductivity)
-            temp = u"°C"(snow_temperature[i])
-            if temp > -0.45u"°C" && temp <= 0.4u"°C"
-                property_buffers.bulk_heat_capacity[i] = uconvert(unit(property_buffers.bulk_heat_capacity[N+1]), specific_heat + uconvert(u"J/kg/K", LATENT_HEAT_FUSION / 1.0u"K"))
-            else
-                property_buffers.bulk_heat_capacity[i] = uconvert(unit(property_buffers.bulk_heat_capacity[N+1]), specific_heat)
-            end
+            cp_eff = apparent_heat_capacity(snow_model.apparent_heat_capacity,
+                                            snow_temperature[i], specific_heat, LATENT_HEAT_FUSION)
+            property_buffers.bulk_heat_capacity[i] = uconvert(unit(property_buffers.bulk_heat_capacity[N+1]), cp_eff)
             is_active = node_depths[i] > 0.0u"cm" || (i < N && node_depths[min(N, i + 1)] > 0.0u"cm")
             property_buffers.bulk_density[i] = uconvert(unit(property_buffers.bulk_density[N+1]), is_active ? snowdens : 0.0u"g/cm^3")
         end

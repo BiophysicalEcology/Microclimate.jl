@@ -28,6 +28,9 @@ export AB3, AB4, AB5, ABM32, ABM43, ABM54
 # Snow model
 export AbstractSnowModel, NoSnow, SnowModel, SnowState
 
+# Apparent heat capacity (latent-heat-of-fusion treatment in snow)
+export AbstractApparentHeatCapacity, BonacinaStep, TanhSmoothed, Gaussian, WestermannSigmoid, apparent_heat_capacity
+
 # Soil thermal model
 export CampbelldeVriesSoilThermal
 
@@ -146,6 +149,14 @@ include("soil_properties.jl")
 include("radiation.jl")
 include("boundary_layer.jl")
 include("soil_balance.jl")
+
+# Apparent heat capacity (latent-heat treatment near phase change; used by snow)
+include("apparent_heat_capacity/abstract.jl")
+include("apparent_heat_capacity/bonacina.jl")
+include("apparent_heat_capacity/tanh.jl")
+include("apparent_heat_capacity/gaussian.jl")
+include("apparent_heat_capacity/westermann.jl")
+
 include("snow.jl")
 
 # Top-level config, parameters, and problem
