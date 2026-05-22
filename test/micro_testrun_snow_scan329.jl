@@ -128,7 +128,7 @@ site = Site(;
 boundary_layer_model = MoninObukhov(; karman_constant=0.4, dyer_constant=16.0)
 
 # ── Soil models ───────────────────────────────────────────────────────────────
-soil_thermal = CampbelldeVriesSoilThermal(;
+soil_thermal = CampbelldeVriesSoilProperties(;
     de_vries_shape_factor = DE_VRIES_SHAPE_FACTOR,
     mineral_conductivity  = MINERAL_CONDUCTIVITY,
     mineral_heat_capacity = MINERAL_HEAT_CAPACITY,

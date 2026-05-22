@@ -2,9 +2,7 @@
     Site(; latitude, longitude, elevation, slope, aspect, horizon_angles,
           sky_view_fraction, albedo, roughness_height, atmospheric_pressure)
 
-Properties of the place being simulated. Combines what was previously split
-between `MicroTerrain` (roughness, sky view) and `SolarTerrain` (geometry,
-albedo, baseline pressure).
+Properties of the place being simulated.
 
 `atmospheric_pressure` here is the *baseline* pressure used by the solar
 radiation model. Time-varying hourly pressure lives on the hourly forcing

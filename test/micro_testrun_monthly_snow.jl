@@ -53,7 +53,7 @@ boundary_layer_model = MoninObukhov(; karman_constant=0.4, dyer_constant=16.0)
 mineral_density = (CSV.File("$testdir/data/init_monthly_snow/soilprop.csv")[1, 1][6]) * 1.0u"Mg/m^3" # soil minerals density (Mg/m3)
 bulk_density = (CSV.File("$testdir/data/init_monthly_snow/soilprop.csv")[1, 1][2]) * 1.0u"Mg/m^3" # dry soil bulk density (Mg/m3)
 
-soil_thermal = CampbelldeVriesSoilThermal(;
+soil_thermal = CampbelldeVriesSoilProperties(;
     de_vries_shape_factor = 0.1, # de Vries shape factor, 0.33 for organic soils, 0.1 for mineral
     mineral_conductivity = (CSV.File("$testdir/data/init_monthly_snow/soilprop.csv")[1, 1][4]) * 1.0u"W/m/K", # soil minerals thermal conductivity (W/mC)
     mineral_heat_capacity = (CSV.File("$testdir/data/init_monthly_snow/soilprop.csv")[1, 1][5]) * 1.0u"J/kg/K", # soil minerals specific heat (J/kg-K)
