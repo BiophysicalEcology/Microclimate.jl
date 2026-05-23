@@ -125,34 +125,39 @@ _daily = Bool(Int(microinput[:microdaily]))
 _spinup = Bool(Int(microinput[:spinup]))
 time_mode = _daily ? ConsecutiveDayMode(; spinup_first_day=_spinup) : NonConsecutiveDayMode()
 
+soil_moisture_strategy = _runmoist ?
+    DynamicSoilMoisture(;
+        moisture_tolerance = microinput[:IM]u"kg/m^2/s",
+        moisture_max_iterations = Int(microinput[:MAXCOUNT]),
+        moisture_timestep = microinput[:moiststep]u"s",
+    ) :
+    PrescribedSoilMoisture()
+
 config = MicroConfig(;
-    boundary_layer_model,
     time_mode,
     convergence = FixedSoilTemperatureIterations(Int(microinput[:ndmax])),
     rainfall_schedule = Bool(Int(microinput[:rainhourly])) ? HourlyRainfall() : DailyRainfall(),
-    soil_moisture_strategy = _runmoist ? DynamicSoilMoisture() : PrescribedSoilMoisture(),
-    moisture_tolerance = microinput[:IM]u"kg/m^2/s",
-    moisture_max_iterations = Int(microinput[:MAXCOUNT]),
-    moisture_timestep = microinput[:moiststep]u"s",
+    soil_moisture_strategy,
     max_surface_pool = microinput[:maxpool] * 1000.0u"kg/m^2",
 )
 
 # now try the simulation function
-problem = MicroProblem(;
-    # locations, times, depths and heights
+model = MicroModel(;
     days = days[1:days2do], # days of year to simulate - TODO leap years
     hours = 0:1:23, # hour of day for solar_radiation
     depths, # soil nodes - keep spacing close near the surface
     heights, # air nodes for temperature, wind speed and humidity profile
-    # Objects defined above
     solar_model,
+    soil_properties_model = soil_thermal,
+    soil_hydraulic_model = soil_hydraulics,
+    boundary_layer_model,
+    config,
+)
+inputs = MicroInputs(;
     site,
-    parameters = MicroParameters(; soil_thermal, soil_hydraulics),
     environment_minmax,
     environment_daily,
     environment_hourly,
-    config,
-    # initial conditions
     initial_soil_temperature = let coarse = u"K".((DataFrame(CSV.File("$testdir/data/init_daily/soilinit.csv"))[:, 2] * 1.0)u"°C"), n = length(coarse)
         result = Vector{eltype(coarse)}(undef, 2n - 1)
         for i in 1:n; result[2i-1] = coarse[i]; end
@@ -166,6 +171,7 @@ problem = MicroProblem(;
         result
     end,
 )
+problem = MicroProblem(model, inputs)
 
 # now try the simulation function
 @time micro_out = Microclimate.solve(problem);

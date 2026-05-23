@@ -1,20 +1,25 @@
 """
-    AngstromMaxwellShortwave()
+    AngstromMaxwellShortwave(; diffuse_fraction_model=ErbsDiffuseFraction(),
+                               sunshine_fraction_model=Angstrom())
 
 A clearness index-based shortwave budget at the surface (as in NicheMapR):
-- Ångström scaling: global = sunshine_fraction(sunshine_fraction_model, cloud) × (diffuse_clear_sky + direct_clear_sky)
-- Diffuse/direct split via a Maxwell (1987) clearness index passed to the diffuse-fraction model.
+- Ångström scaling: global = `sunshine_fraction_model`(cloud) × (diffuse_clear_sky + direct_clear_sky)
+- Diffuse/direct split via a Maxwell (1987) clearness index passed to `diffuse_fraction_model`.
+
+The two sub-models live on the scheme rather than on `MicroConfig` because they
+are pieces of the shortwave dispatch — no other scheme consumes them.
 
 References
 - Maxwell, E. L. (1987). A Quasi-Physical Model for Converting Hourly Global
   Horizontal to Direct Normal Insolation. SERI/TR-215-3087. Golden, CO.
 """
-struct AngstromMaxwellShortwave <: AbstractShortwaveScheme end
+@kwdef struct AngstromMaxwellShortwave{DFM<:AbstractDiffuseFractionModel,SFM<:AbstractSunshineFractionModel} <: AbstractShortwaveScheme
+    diffuse_fraction_model::DFM = ErbsDiffuseFraction()
+    sunshine_fraction_model::SFM = Angstrom()
+end
 
-function shortwave_radiation!(::AngstromMaxwellShortwave, output, cloud::AbstractArray, diffuse_clear_sky, direct_clear_sky, zenith::AbstractArray, doy;
-    diffuse_fraction_model::AbstractDiffuseFractionModel=ErbsDiffuseFraction(),
-    sunshine_fraction_model::AbstractSunshineFractionModel=Angstrom(),
-)
+function shortwave_radiation!(scheme::AngstromMaxwellShortwave, output, cloud::AbstractArray, diffuse_clear_sky, direct_clear_sky, zenith::AbstractArray, doy)
+    (; diffuse_fraction_model, sunshine_fraction_model) = scheme
     (; global_horizontal) = output.solar_radiation
     global_radiation = global_horizontal
     diffuse_fraction = output.diffuse_fraction

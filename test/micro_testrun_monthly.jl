@@ -116,7 +116,6 @@ time_mode = _daily ? ConsecutiveDayMode(; spinup_first_day=_spinup) :
     NonConsecutiveDayMode(; iterations_per_day=Int(microinput[:ndmax]))
 
 config = MicroConfig(;
-    boundary_layer_model,
     time_mode,
     convergence = FixedSoilTemperatureIterations(10),
     rainfall_schedule = Bool(Int(microinput[:rainhourly])) ? HourlyRainfall() : DailyRainfall(),
@@ -125,24 +124,26 @@ config = MicroConfig(;
 )
 
 # now try the simulation function
-problem = MicroProblem(;
-    # locations, times, depths and heights
+model = MicroModel(;
     days = days[days2do], # days of year for solar_radiation
     hours = collect(0.0:1:23.0), # hour of day for solar_radiation
     depths,
     heights, # air nodes for temperature, wind speed and humidity profile
-    # Objects defined above
     solar_model,
+    soil_properties_model = soil_thermal,
+    soil_hydraulic_model = soil_hydraulics,
+    boundary_layer_model,
+    config,
+)
+inputs = MicroInputs(;
     site,
-    parameters = MicroParameters(; soil_thermal, soil_hydraulics),
     environment_minmax,
     environment_daily,
     environment_hourly,
-    config,
-    # intial conditions
     initial_soil_temperature = nothing, # initial soil temperature
     initial_soil_moisture = precomputed_soil_moisture[1:10, 1], # initial soil moisture
 )
+problem = MicroProblem(model, inputs)
 
 # now try the simulation function
 @time micro_out = Microclimate.solve(problem);

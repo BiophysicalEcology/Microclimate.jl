@@ -125,7 +125,6 @@ snow_model = SnowModel(;
 )
 
 config = MicroConfig(;
-    boundary_layer_model,
     time_mode,
     convergence = FixedSoilTemperatureIterations(Int(microinput[:ndmax])),
     rainfall_schedule = Bool(Int(microinput[:rainhourly])) ? HourlyRainfall() : DailyRainfall(),
@@ -133,21 +132,27 @@ config = MicroConfig(;
         PrescribedSoilMoisture(; precomputed_soil_moisture),
 )
 
-problem = MicroProblem(;
+model = MicroModel(;
     days = days[days2do],
     hours = collect(0.0:1:23.0),
     depths,
     heights,
     solar_model,
+    soil_properties_model = soil_thermal,
+    soil_hydraulic_model = soil_hydraulics,
+    snow_model,
+    boundary_layer_model,
+    config,
+)
+inputs = MicroInputs(;
     site,
-    parameters = MicroParameters(; soil_thermal, soil_hydraulics, snow=snow_model),
     environment_minmax,
     environment_daily,
     environment_hourly,
-    config,
     initial_soil_temperature = nothing,
     initial_soil_moisture = precomputed_soil_moisture[1:10, 1],
 )
+problem = MicroProblem(model, inputs)
 
 @time micro_out = Microclimate.solve(problem);
 

@@ -2,10 +2,11 @@
     CampbellSoilHydraulics(; ...)
 
 Soil hydraulic parameters for Campbell's (1985) soil water balance model.
-Holds parameters only — the moisture-solver strategy (`PrescribedSoilMoisture` /
-`DynamicSoilMoisture`) and tuning (`moisture_tolerance`, `moisture_max_iterations`,
-`moisture_timestep`, `max_surface_pool`) live on `MicroConfig`, since they are
-solver/strategy choices, not Campbell-specific.
+Holds parameters only — the moisture-solver strategy lives on
+`MicroConfig.soil_moisture_strategy` (`PrescribedSoilMoisture` /
+`DynamicSoilMoisture`), with solver tuning (`moisture_tolerance`,
+`moisture_max_iterations`, `moisture_timestep`) carried on
+`DynamicSoilMoisture` itself.
 
 # References
 Campbell, G. S. (1985). Soil Physics with BASIC. Elsevier.
@@ -22,6 +23,32 @@ Campbell, G. S. (1985). Soil Physics with BASIC. Elsevier.
     leaf_resistance::LRes
     stomatal_stability_parameter::SSP
     root_radius::RRad
+end
+
+# TODO move real defaults to the struct keywords
+function example_soil_hydraulics(depths=DEFAULT_DEPTHS;
+    # Scalars get broadcast to a per-depth vector; an AbstractVector is taken as-is.
+    bulk_density = 2.56u"Mg/m^3",
+    mineral_density = 2.560u"Mg/m^3",
+    # soil hydraulic parameters
+    air_entry_water_potential = fill(0.7, length(depths))u"J/kg", #air entry potential
+    saturated_hydraulic_conductivity = fill(0.0058, length(depths))u"kg*s/m^3", #saturated conductivity
+    campbell_b_parameter = fill(1.7, length(depths)), #soil 'b' parameter
+    # plant parameters
+    root_density = [0, 0, 8.2, 8.0, 7.8, 7.4, 7.1, 6.4, 5.8, 4.8, 4.0, 1.8, 0.9, 0.6, 0.8, 0.4, 0.4, 0, 0] * 1e4u"m/m^3", # root density at each node (from Campell 1985 Soil Physics with Basic, p. 131)
+    root_resistance = 2.5e+10u"m^3/kg/s", # resistance per unit length of root
+    stomatal_closure_potential = -1500.0u"J/kg", # critical leaf water potential for stomatal closure
+    leaf_resistance = 2.0e6u"m^4/kg/s", # resistance per unit length of leaf
+    stomatal_stability_parameter = 10.0, # stability parameter, -
+    root_radius = 0.001u"m", # root radius, m
+)
+    CampbellSoilHydraulics(;
+        air_entry_water_potential, saturated_hydraulic_conductivity, campbell_b_parameter,
+        bulk_density = bulk_density isa AbstractVector ? bulk_density : fill(bulk_density, length(depths)),
+        mineral_density = mineral_density isa AbstractVector ? mineral_density : fill(mineral_density, length(depths)),
+        root_density, root_resistance, stomatal_closure_potential, leaf_resistance, stomatal_stability_parameter,
+        root_radius,
+    )
 end
 
 function allocate_soil_water_balance(::CampbellSoilHydraulics, num_layers)

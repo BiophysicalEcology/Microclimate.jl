@@ -9,6 +9,19 @@
     return_flow_threshold::RFT
 end
 
+function example_soil_thermal_parameters(;
+    de_vries_shape_factor = 0.1, # de Vries shape factor, 0.33 for organic soils, 0.1 for mineral
+    mineral_conductivity = 1.25u"W/m/K", # soil minerals thermal conductivity
+    mineral_heat_capacity = 870.0u"J/kg/K", # soil minerals specific heat
+    recirculation_power = 4.0, # power for recirculation function
+    return_flow_threshold = 0.162, # return-flow cutoff soil moisture, m^3/m^3
+)
+    CampbelldeVriesSoilProperties(;
+        de_vries_shape_factor, mineral_conductivity, mineral_heat_capacity,
+        recirculation_power, return_flow_threshold,
+    )
+end
+
 """
     soil_properties(soil_thermal; atmospheric_pressure, soil_temperature, soil_moisture, bulk_density, mineral_density)
 

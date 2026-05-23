@@ -1,5 +1,7 @@
 """
-    SoilHeatTransport1D()
+    SoilHeatTransport1D(; ode_solver=Tsit5(),
+                          ode_kwargs=(; reltol=1e-6u"K", abstol=1e-3u"K"),
+                          maximum_surface_temperature=85.0u"°C")
 
 One dimension soil column energy balance (as in NicheMapR). The ODE right hand side
 computes per-node dT/dt from heat conduction between layers plus a surface
@@ -7,8 +9,20 @@ boundary condition combining net radiation (clear-sky + cloud + view
 factor), convection (Monin–Obukhov), evaporation latent flux, and a snow
 melt freeze correction. The deepest node is pinned at the user-supplied
 deep soil temperature (Dirichlet BC).
+
+Solver tuning lives here, not on `MicroConfig`, because each
+`SoilHeatTransportScheme` chooses its own integration strategy:
+
+- `ode_solver` — any SciML algorithm (`Tsit5()`, `RK4()`, …)
+- `ode_kwargs` — NamedTuple of kwargs forwarded to the integrator
+- `maximum_surface_temperature` — surface-temperature safety clamp
+  (Fortran microinput[74])
 """
-struct SoilHeatTransport1D <: SoilHeatTransportScheme end
+@kwdef struct SoilHeatTransport1D{SOS,SOK,MSF} <: SoilHeatTransportScheme
+    ode_solver::SOS = Tsit5()
+    ode_kwargs::SOK = (; reltol=1e-6u"K", abstol=1e-3u"K")
+    maximum_surface_temperature::MSF = 85.0u"°C"
+end
 
 """
     SoilEnergyInputs
@@ -20,13 +34,13 @@ instead of allocating a fresh struct each hour. All fields are concretely
 typed via the parametric `{F,B,…}` slots; the underlying heap object is the
 same across hours.
 """
-mutable struct SoilEnergyInputs{SCH<:SoilHeatTransportScheme,EVM<:AbstractEvaporationModel,ARM<:AbstractAtmosphericRadiationModel,F,B,SP,D<:Vector{<:Number},H<:Vector{<:Number},S,BLM,EI,SW,VP,LW,QF,SNM,SNS,SNSC,SM,BD,MD,MSF}
+mutable struct SoilEnergyInputs{SCH<:SoilHeatTransportScheme,EVM<:AbstractEvaporationModel,ARM<:AbstractAtmosphericRadiationModel,F,B,SP,D<:Vector{<:Number},H<:Vector{<:Number},S,BLM,EI,SW,VP,LW,QF,SNM,SNS,SNSC,SM,BD,MD}
     scheme::SCH
     evaporation_model::EVM
     atmospheric_radiation_model::ARM
     forcing::F
     buffers::B
-    soil_thermal_model::SP
+    soil_properties_model::SP
     depths::D
     heights::H
     site::S
@@ -44,25 +58,23 @@ mutable struct SoilEnergyInputs{SCH<:SoilHeatTransportScheme,EVM<:AbstractEvapor
     soil_moisture::SM
     bulk_density::BD       # per-depth profile from soil hydraulics
     mineral_density::MD    # per-depth profile from soil hydraulics
-    maximum_surface_temperature::MSF  # Fortran microinput(74) surface-temperature safety clamp
 end
 
 function SoilEnergyInputs(; scheme=SoilHeatTransport1D(), evaporation_model=BulkTransferEvaporation(),
     atmospheric_radiation_model=CampbellNormanAtmosphericRadiation(),
-    forcing, buffers, soil_thermal_model, depths, heights, site,
+    forcing, buffers, soil_properties_model, depths, heights, site,
     boundary_layer_model, environment_instant, soil_wetness,
     vapour_pressure_equation=GoffGratch(),
     longwave_sky, albedo, Q_freeze=0.0u"W/m^2",
     snow_model=nothing, snow_state=nothing, snow_scratch=nothing,
     soil_moisture=nothing, bulk_density, mineral_density,
-    maximum_surface_temperature=85.0u"°C",
 )
     SoilEnergyInputs(scheme, evaporation_model, atmospheric_radiation_model,
-        forcing, buffers, soil_thermal_model,
+        forcing, buffers, soil_properties_model,
         depths, heights, site, boundary_layer_model, environment_instant,
         soil_wetness, vapour_pressure_equation, longwave_sky, albedo, Q_freeze,
         snow_model, snow_state, snow_scratch, soil_moisture, bulk_density,
-        mineral_density, maximum_surface_temperature)
+        mineral_density)
 end
 
 # In-place per-hour update — no allocation. Only the fields that change per
@@ -95,7 +107,7 @@ end
 # uses Val(N) so SVector sizes are compile-time.
 @inline function _recompute_soil_snow_properties_no_snow!(p, soil_temperature,
     atmospheric_pressure, vapour_pressure_equation)
-    soil_properties!(p.buffers.soil_properties, p.soil_thermal_model;
+    soil_properties!(p.buffers.soil_properties, p.soil_properties_model;
         soil_temperature, soil_moisture=p.soil_moisture,
         bulk_density=p.bulk_density, mineral_density=p.mineral_density,
         atmospheric_pressure, vapour_pressure_equation,
@@ -120,13 +132,14 @@ end
 # SciML ODE rhs. Dispatches the actual physics on `p.scheme`.
 soil_energy_balance(u, p::SoilEnergyInputs, t) = soil_energy_balance(p.scheme, u, p, t)
 
-function soil_energy_balance(::SoilHeatTransport1D,
+function soil_energy_balance(scheme::SoilHeatTransport1D,
     temperature_state::U,  # state
     p::SoilEnergyInputs,   # "parameters"
     t::Quantity,           # timestep
 ) where U <: SVector{N} where N
     # extract parameters
-    (; forcing, buffers, heights, depths, environment_instant, site, boundary_layer_model, soil_wetness, vapour_pressure_equation, longwave_sky, Q_freeze, maximum_surface_temperature, evaporation_model) = p
+    (; forcing, buffers, heights, depths, environment_instant, site, boundary_layer_model, soil_wetness, vapour_pressure_equation, longwave_sky, Q_freeze, evaporation_model) = p
+    maximum_surface_temperature = scheme.maximum_surface_temperature
     (; layer_depths, heat_capacity, thermal_conductance) = buffers.soil_energy_balance
     (; shade) = environment_instant
     # Get environmental data at time t
