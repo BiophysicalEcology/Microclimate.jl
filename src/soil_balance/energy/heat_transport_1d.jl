@@ -1,7 +1,8 @@
 """
     SoilHeatTransport1D(; ode_solver=Tsit5(),
                           ode_kwargs=(; reltol=1e-6u"K", abstol=1e-3u"K"),
-                          maximum_surface_temperature=85.0u"°C")
+                          maximum_surface_temperature=85.0u"°C",
+                          freezing_model=PhaseTransitionLatentHeat())
 
 One dimension soil column energy balance (as in NicheMapR). The ODE right hand side
 computes per-node dT/dt from heat conduction between layers plus a surface
@@ -11,17 +12,20 @@ melt freeze correction. The deepest node is pinned at the user-supplied
 deep soil temperature (Dirichlet BC).
 
 Solver tuning lives here, not on `MicroConfig`, because each
-`SoilHeatTransportScheme` chooses its own integration strategy:
+`SoilHeatTransportModel` chooses its own integration strategy:
 
 - `ode_solver` — any SciML algorithm (`Tsit5()`, `RK4()`, …)
 - `ode_kwargs` — NamedTuple of kwargs forwarded to the integrator
 - `maximum_surface_temperature` — surface-temperature safety clamp
   (Fortran microinput[74])
+- `freezing_model` — soil ice/water phase-transition correction applied to
+  the ODE result each hour
 """
-@kwdef struct SoilHeatTransport1D{SOS,SOK,MSF} <: SoilHeatTransportScheme
+@kwdef struct SoilHeatTransport1D{SOS,SOK,MSF,FM} <: SoilHeatTransportModel
     ode_solver::SOS = Tsit5()
     ode_kwargs::SOK = (; reltol=1e-6u"K", abstol=1e-3u"K")
     maximum_surface_temperature::MSF = 85.0u"°C"
+    freezing_model::FM = PhaseTransitionLatentHeat()
 end
 
 """
@@ -34,8 +38,8 @@ instead of allocating a fresh struct each hour. All fields are concretely
 typed via the parametric `{F,B,…}` slots; the underlying heap object is the
 same across hours.
 """
-mutable struct SoilEnergyInputs{SCH<:SoilHeatTransportScheme,EVM<:AbstractEvaporationModel,ARM<:AbstractAtmosphericRadiationModel,F,B,SP,D<:Vector{<:Number},H<:Vector{<:Number},S,BLM,EI,SW,VP,LW,QF,SNM,SNS,SNSC,SM,BD,MD}
-    scheme::SCH
+mutable struct SoilEnergyInputs{M<:SoilHeatTransportModel,EVM<:AbstractEvaporationModel,ARM<:AbstractAtmosphericRadiationModel,F,B,SP,D<:Vector{<:Number},H<:Vector{<:Number},S,BLM,EI,SW,VP,LW,QF,SNM,SNS,SNSC,SM,BD,MD}
+    model::M
     evaporation_model::EVM
     atmospheric_radiation_model::ARM
     forcing::F
@@ -60,7 +64,7 @@ mutable struct SoilEnergyInputs{SCH<:SoilHeatTransportScheme,EVM<:AbstractEvapor
     mineral_density::MD    # per-depth profile from soil hydraulics
 end
 
-function SoilEnergyInputs(; scheme=SoilHeatTransport1D(), evaporation_model=BulkTransferEvaporation(),
+function SoilEnergyInputs(; model=SoilHeatTransport1D(), evaporation_model=BulkTransferEvaporation(),
     atmospheric_radiation_model=CampbellNormanAtmosphericRadiation(),
     forcing, buffers, soil_properties_model, depths, heights, site,
     boundary_layer_model, environment_instant, soil_wetness,
@@ -69,7 +73,7 @@ function SoilEnergyInputs(; scheme=SoilHeatTransport1D(), evaporation_model=Bulk
     snow_model=nothing, snow_state=nothing, snow_scratch=nothing,
     soil_moisture=nothing, bulk_density, mineral_density,
 )
-    SoilEnergyInputs(scheme, evaporation_model, atmospheric_radiation_model,
+    SoilEnergyInputs(model, evaporation_model, atmospheric_radiation_model,
         forcing, buffers, soil_properties_model,
         depths, heights, site, boundary_layer_model, environment_instant,
         soil_wetness, vapour_pressure_equation, longwave_sky, albedo, Q_freeze,
@@ -129,17 +133,17 @@ function allocate_soil_energy_balance(::SoilHeatTransport1D, num_nodes::Int)
     return (; layer_depths, heat_capacity, thermal_conductance, obukhov_length_prev)
 end
 
-# SciML ODE rhs. Dispatches the actual physics on `p.scheme`.
-soil_energy_balance(u, p::SoilEnergyInputs, t) = soil_energy_balance(p.scheme, u, p, t)
+# SciML ODE rhs. Dispatches the actual physics on `p.model`.
+soil_energy_balance(u, p::SoilEnergyInputs, t) = soil_energy_balance(p.model, u, p, t)
 
-function soil_energy_balance(scheme::SoilHeatTransport1D,
+function soil_energy_balance(model::SoilHeatTransport1D,
     temperature_state::U,  # state
     p::SoilEnergyInputs,   # "parameters"
     t::Quantity,           # timestep
 ) where U <: SVector{N} where N
     # extract parameters
     (; forcing, buffers, heights, depths, environment_instant, site, boundary_layer_model, soil_wetness, vapour_pressure_equation, longwave_sky, Q_freeze, evaporation_model) = p
-    maximum_surface_temperature = scheme.maximum_surface_temperature
+    maximum_surface_temperature = model.maximum_surface_temperature
     (; layer_depths, heat_capacity, thermal_conductance) = buffers.soil_energy_balance
     (; shade) = environment_instant
     # Get environmental data at time t

@@ -1,4 +1,48 @@
 """
+    SoilProfile(; bulk_density, mineral_density)
+
+Per-depth soil column profile read by both the soil properties model
+(thermal) and the soil hydraulic model. Sized to match `MicroModel.depths`.
+
+- `bulk_density` — dry soil bulk density (kg/m³) at each depth node
+- `mineral_density` — soil mineral density (kg/m³) at each depth node
+"""
+@kwdef struct SoilProfile{BD,MD}
+    bulk_density::BD
+    mineral_density::MD
+end
+
+function example_soil_profile(depths=DEFAULT_DEPTHS;
+    bulk_density = 2.56u"Mg/m^3",
+    mineral_density = 2.560u"Mg/m^3",
+)
+    SoilProfile(;
+        bulk_density = bulk_density isa AbstractVector ? bulk_density : fill(bulk_density, length(depths)),
+        mineral_density = mineral_density isa AbstractVector ? mineral_density : fill(mineral_density, length(depths)),
+    )
+end
+
+"""
+    RadiationModel(; solar_radiation_model=SolarProblem(),
+                     longwave_model=ViewFactorLongwave(),
+                     shortwave_model=AngstromMaxwellShortwave())
+
+Bundle of radiation models used by the simulation:
+
+- `solar_radiation_model::SolarProblem` — clear-sky direct/diffuse/global
+  irradiance and solar geometry, computed once up front for every (day, hour)
+- `shortwave_model::AbstractShortwaveModel` — cloud-adjusted shortwave
+  budget that consumes the clear-sky output
+- `longwave_model::AbstractLongwaveModel` — surface longwave budget
+  evaluated inside the soil energy ODE
+"""
+@kwdef struct RadiationModel{SRM,LWM,SWM}
+    solar_radiation_model::SRM = SolarProblem()
+    longwave_model::LWM = ViewFactorLongwave()
+    shortwave_model::SWM = AngstromMaxwellShortwave()
+end
+
+"""
     MicroConfig(; ...)
 
 Solver/iteration/data-delivery strategy. Lives on `MicroModel.config`.
@@ -21,52 +65,50 @@ strictly the "how we iterate and how data is delivered" side of the model.
 end
 
 """
-    MicroModel(; days, hours, depths, heights, solar_model,
-                 soil_properties_model, soil_hydraulic_model, snow_model=NoSnow(),
+    MicroModel(; days, hours, depths, heights,
+                 soil_profile, soil_properties_model, soil_hydraulic_model,
+                 radiation=RadiationModel(),
+                 snow_model=NoSnow(),
                  vapour_pressure_equation=GoffGratch(),
                  boundary_layer_model=MoninObukhov(),
-                 longwave_scheme=ViewFactorLongwave(),
-                 shortwave_scheme=AngstromMaxwellShortwave(),
                  evaporation_model=BulkTransferEvaporation(),
-                 soil_energy_scheme=SoilHeatTransport1D(),
-                 soil_freezing_scheme=PhaseTransitionLatentHeat(),
+                 soil_energy_model=SoilHeatTransport1D(),
                  config=MicroConfig())
 
 Constant-across-runs scientific description of the simulation:
 
 - solver geometry (`days`, `hours`, `depths`, `heights`)
-- the solar model
 - physical-process models:
+    - `soil_profile::SoilProfile` — per-depth `bulk_density` and `mineral_density`
+      profiles read by both the soil properties and soil hydraulic models
     - `soil_properties_model::AbstractSoilProperties` (e.g. `CampbelldeVriesSoilProperties(...)`)
     - `soil_hydraulic_model::AbstractSoilHydraulicsModel` (e.g. `CampbellSoilHydraulics(...)`)
-      — owns per-depth `bulk_density` and `mineral_density` profiles, which the soil
-      properties model reads via the energy-balance plumbing
+    - `radiation::RadiationModel` — bundle of `solar_radiation_model`,
+      `longwave_model`, and `shortwave_model`
     - `snow_model::AbstractSnowModel` — `NoSnow()` (default) or `SnowModel(...)`
     - `vapour_pressure_equation` — cross-cutting (`GoffGratch()` / `Teten()` / `Huang()`)
     - `boundary_layer_model` — cross-cutting (`MoninObukhov()`)
-    - `longwave_scheme`, `shortwave_scheme` — surface radiation budgets
     - `evaporation_model` — surface latent flux
-    - `soil_energy_scheme`, `soil_freezing_scheme` — soil column physics
+    - `soil_energy_model::SoilHeatTransportModel` — soil column energy ODE
+      (carries the phase-transition `freezing_model` and ODE solver settings)
 - iteration/data-delivery strategy in `config::MicroConfig`
 
 Combine with a `MicroInputs` via `MicroProblem(model, inputs)` to run.
 """
-@kwdef struct MicroModel{D,H,Dep,Ht,SM,SPM,SHM,SNM,VPE,BLM,LW,SW,EVM,SES,SFS,C}
+@kwdef struct MicroModel{D,H,Dep,Ht,SPR,SPM,SHM,RAD,SNM,VPE,BLM,EVM,SEM,C}
     days::D = DEFAULT_DAYS # days of year to simulate - TODO leap years - why not use real dates?
     hours::H = DEFAULT_HOURS # hour of day for solar_radiation
     depths::Dep = DEFAULT_DEPTHS # soil nodes - keep spacing close near the surface
     heights::Ht = [0.01, 2]u"m" # air nodes for temperature, wind speed and humidity profile, last height is reference height for weather data
-    solar_model::SM = SolarProblem()
+    soil_profile::SPR
     soil_properties_model::SPM
     soil_hydraulic_model::SHM
+    radiation::RAD = RadiationModel()
     snow_model::SNM = NoSnow()
     vapour_pressure_equation::VPE = GoffGratch()
     boundary_layer_model::BLM = MoninObukhov()
-    longwave_scheme::LW = ViewFactorLongwave()
-    shortwave_scheme::SW = AngstromMaxwellShortwave()
     evaporation_model::EVM = BulkTransferEvaporation()
-    soil_energy_scheme::SES = SoilHeatTransport1D()
-    soil_freezing_scheme::SFS = PhaseTransitionLatentHeat()
+    soil_energy_model::SEM = SoilHeatTransport1D()
     config::C = MicroConfig()
 end
 
@@ -116,8 +158,9 @@ function example_microclimate_problem(;
     depths = DEFAULT_DEPTHS,
     heights = [0.01, 2]u"m",
     site = example_site(),
-    soil_properties_model = example_soil_thermal_parameters(),
-    soil_hydraulic_model = example_soil_hydraulics(),
+    soil_profile = example_soil_profile(depths),
+    soil_properties_model = example_soil_properties_model(),
+    soil_hydraulic_model = example_soil_hydraulic_model(depths),
     snow_model = NoSnow(),
     environment_minmax = example_monthly_weather(),
     environment_daily = example_daily_environment(days),
@@ -127,7 +170,7 @@ function example_microclimate_problem(;
     initial_soil_moisture = fill(0.42 * 0.25, length(depths)),
 )
     model = MicroModel(; days, hours, depths, heights,
-        soil_properties_model, soil_hydraulic_model, snow_model, config)
+        soil_profile, soil_properties_model, soil_hydraulic_model, snow_model, config)
     inputs = MicroInputs(;
         site, environment_minmax, environment_daily, environment_hourly,
         initial_soil_temperature, initial_soil_moisture,

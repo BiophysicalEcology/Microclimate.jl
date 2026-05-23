@@ -1,7 +1,7 @@
 abstract type AbstractSoilProperties end
 
 """
-    soil_properties(soil_thermal; atmospheric_pressure, soil_temperature, soil_moisture, bulk_density, mineral_density, vapour_pressure_equation)
+    soil_properties(soil_properties_model; atmospheric_pressure, soil_temperature, soil_moisture, bulk_density, mineral_density, vapour_pressure_equation)
 
 Scalar bulk-property computation for one soil layer. Every variant must
 accept the listed kwargs and return
@@ -14,7 +14,7 @@ function soil_properties end
 
 # Generic vectorized loop over layers — calls the variant's scalar
 # `soil_properties` method and the variant's `maybegetindex` accessor.
-function soil_properties!(buffers::NamedTuple, soil_thermal::AbstractSoilProperties;
+function soil_properties!(buffers::NamedTuple, soil_properties_model::AbstractSoilProperties;
     atmospheric_pressure::Quantity, soil_temperature::AbstractVector, soil_moisture::AbstractVector,
     bulk_density::AbstractVector,
     mineral_density::AbstractVector,
@@ -26,7 +26,7 @@ function soil_properties!(buffers::NamedTuple, soil_thermal::AbstractSoilPropert
     out_bulk_density = buffers.bulk_density
     bd_unit = unit(eltype(out_bulk_density))
     @inbounds for i in 1:num_layers
-        result = soil_properties(maybegetindex(soil_thermal, i);
+        result = soil_properties(maybegetindex(soil_properties_model, i);
             atmospheric_pressure,
             soil_temperature = soil_temperature[i],
             soil_moisture = soil_moisture[i],
@@ -43,17 +43,17 @@ function soil_properties!(buffers::NamedTuple, soil_thermal::AbstractSoilPropert
 end
 
 """
-    allocate_soil_properties(nodes, soil_thermal, soil_hydraulics)
+    allocate_soil_properties(nodes, soil_properties_model, soil_profile)
 
 Allocate the per-layer output buffers for `soil_properties!`. Default
 implementation produces the three buffers required by the interface
 contract; variants that need additional per-layer storage can override.
 """
-function allocate_soil_properties(nodes, ::AbstractSoilProperties, soil_hydraulics)
+function allocate_soil_properties(nodes, ::AbstractSoilProperties, soil_profile)
     num_nodes = length(nodes)
     return (;
         bulk_thermal_conductivity = zeros(typeof(0.0u"W/m/K"), num_nodes),
         bulk_heat_capacity = zeros(typeof(0.0u"J/kg/K"), num_nodes),
-        bulk_density = zeros(eltype(soil_hydraulics.mineral_density), num_nodes),
+        bulk_density = zeros(eltype(soil_profile.mineral_density), num_nodes),
     )
 end

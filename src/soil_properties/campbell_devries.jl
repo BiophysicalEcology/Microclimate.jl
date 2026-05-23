@@ -9,7 +9,7 @@
     return_flow_threshold::RFT
 end
 
-function example_soil_thermal_parameters(;
+function example_soil_properties_model(;
     de_vries_shape_factor = 0.1, # de Vries shape factor, 0.33 for organic soils, 0.1 for mineral
     mineral_conductivity = 1.25u"W/m/K", # soil minerals thermal conductivity
     mineral_heat_capacity = 870.0u"J/kg/K", # soil minerals specific heat
@@ -23,14 +23,14 @@ function example_soil_thermal_parameters(;
 end
 
 """
-    soil_properties(soil_thermal; atmospheric_pressure, soil_temperature, soil_moisture, bulk_density, mineral_density)
+    soil_properties(soil_properties_model; atmospheric_pressure, soil_temperature, soil_moisture, bulk_density, mineral_density)
 
 Compute bulk soil properties — thermal conductivity, volumetric heat capacity,
 and bulk density — for a given soil layer.
 
 # Arguments
 
-- `soil_thermal::AbstractSoilProperties`
+- `soil_properties_model::AbstractSoilProperties`
 
 # Keywords
 
@@ -78,7 +78,7 @@ Campbell, G. S., Jungbauer, J. D. Jr., Bidlake, W. R., & Hungerford, R. D. (1994
 Campbell, G. S., & Norman, J. M. (1998). Environmental Biophysics. Springer.
 
 """
-function soil_properties(soil_thermal::CampbelldeVriesSoilProperties;
+function soil_properties(soil_properties_model::CampbelldeVriesSoilProperties;
     atmospheric_pressure::Quantity,
     soil_temperature::Quantity,
     soil_moisture::Number,
@@ -87,7 +87,7 @@ function soil_properties(soil_thermal::CampbelldeVriesSoilProperties;
     vapour_pressure_equation=GoffGratch(),
 )
     (; mineral_conductivity, mineral_heat_capacity,
-       recirculation_power, return_flow_threshold, de_vries_shape_factor) = soil_thermal
+       recirculation_power, return_flow_threshold, de_vries_shape_factor) = soil_properties_model
 
     standard_pressure = Unitful.atm
     shape_factor_c = 1.0 - 2.0 * de_vries_shape_factor
