@@ -32,12 +32,12 @@ export AbstractSnowModel, NoSnow, SnowModel, SnowState
 export AbstractApparentHeatCapacity, BonacinaStep, TanhSmoothed, Gaussian, WestermannSigmoid, apparent_heat_capacity
 
 # Soil thermal model
-export CampbelldeVriesSoilThermal
+export AbstractSoilProperties, CampbelldeVriesSoilProperties
 
 # Soil hydraulics
 export AbstractSoilHydraulicsModel, CampbellSoilHydraulics
 
-# Soil moisture strategy (lives on MicroConfig.soil_moisture_strategy)
+# Soil moisture strategy
 export AbstractSoilMoistureStrategy, PrescribedSoilMoisture, DynamicSoilMoisture
 
 # Convergence strategies
@@ -49,11 +49,26 @@ export AbstractTimeMode, NonConsecutiveDayMode, ConsecutiveDayMode
 # Diffuse fraction models
 export AbstractDiffuseFractionModel, ErbsDiffuseFraction
 
-# Atmospheric radiation models
+# Atmospheric radiation models (clear-sky longwave building block)
 export AbstractAtmosphericRadiationModel, SwinbankAtmosphericRadiation, CampbellNormanAtmosphericRadiation, atmospheric_radiation
 
-# Cloud adjustment models
-export AbstractCloudAdjustModel, Angstrom, sunshine_fraction
+# Sunshine fraction models (Ångström building block)
+export AbstractSunshineFractionModel, Angstrom, sunshine_fraction
+
+# Longwave budget algorithms
+export AbstractLongwaveScheme, ViewFactorLongwave
+
+# Shortwave budget algorithms
+export AbstractShortwaveScheme, AngstromMaxwellShortwave
+
+# Surface evaporation models
+export AbstractEvaporationModel, BulkTransferEvaporation, surface_convection_evaporation
+
+# Soil energy balance schemes
+export SoilHeatTransportScheme, SoilHeatTransport1D
+
+# Soil freezing schemes
+export SoilPhaseTransitionScheme, PhaseTransitionLatentHeat, allocate_phase_transition
 
 # Rainfall schedule
 export AbstractRainfallSchedule, DailyRainfall, HourlyRainfall, is_hourly
@@ -64,9 +79,9 @@ export AbstractBoundaryLayerModel, MoninObukhov
 export Forcing, AtmosphericProfile
 
 
-export cloud_adjust_radiation, longwave_radiation, precompute_longwave_sky
+export shortwave_radiation!, longwave_radiation, precompute_longwave_sky
 
-export atmospheric_surface_profile, calc_convection
+export calc_convection
 
 export soil_properties, soil_properties!, allocate_soil_properties
 
@@ -82,27 +97,30 @@ export solve, solve!, init, reinit!
 
 include("constants.jl")
 
-# Soil thermal parameters
-include("soil_thermal/abstract.jl")
-include("soil_thermal/campbell_devries.jl")
+# Soil properties
+include("soil_properties/abstract.jl")
+include("soil_properties/campbell_devries.jl")
 
-# Soil moisture strategy (PrescribedSoilMoisture is the default for CampbellSoilHydraulics.mode,
-# so it must be loaded before soil_hydraulics).
+# Soil moisture strategy
 include("soil_moisture/abstract.jl")
 include("soil_moisture/prescribed.jl")
 include("soil_moisture/dynamic.jl")
 
-# Soil hydraulics parameters (Mode field defaults to PrescribedSoilMoisture)
+# Surface evaporation
+include("evaporation/abstract.jl")
+include("evaporation/bulk_transfer.jl")
+
+# Soil hydraulics
 include("soil_hydraulics/abstract.jl")
 include("soil_hydraulics/campbell.jl")
 
-# Site (place properties)
+# Site
 include("site/abstract.jl")
 include("site/site.jl")
 
-# Boundary-layer model
-include("boundary_layer_model/abstract.jl")
-include("boundary_layer_model/monin_obukhov.jl")
+# Boundary layer
+include("boundary_layer/abstract.jl")
+include("boundary_layer/monin_obukhov.jl")
 
 # Environment inputs
 include("inputs/abstract_environment.jl")
@@ -111,28 +129,32 @@ include("inputs/daily_minmax.jl")
 include("inputs/daily_timeseries.jl")
 include("inputs/hourly_timeseries.jl")
 
-# Convergence (loaded before time_mode — iterations_for_day calls max_iterations)
-include("convergence/abstract.jl")
-include("convergence/fixed.jl")
-include("convergence/tolerance.jl")
+# Soil temperature convergence
+include("soil_temperature_convergence/abstract.jl")
+include("soil_temperature_convergence/fixed.jl")
+include("soil_temperature_convergence/tolerance.jl")
 
 # Time mode
 include("time_mode/abstract.jl")
 include("time_mode/non_consecutive.jl")
 include("time_mode/consecutive.jl")
 
-# Diffuse fraction
-include("diffuse/abstract.jl")
-include("diffuse/erbs.jl")
+# Radiation building blocks and surface budgets
+include("radiation/diffuse/abstract.jl")
+include("radiation/diffuse/erbs.jl")
 
-# Atmospheric radiation
-include("atmospheric_radiation/abstract.jl")
-include("atmospheric_radiation/swinbank.jl")
-include("atmospheric_radiation/campbell_norman.jl")
+include("radiation/atmospheric/abstract.jl")
+include("radiation/atmospheric/swinbank.jl")
+include("radiation/atmospheric/campbell_norman.jl")
 
-# Cloud-cover adjustment of clear-sky radiation
-include("cloud_adjust/abstract.jl")
-include("cloud_adjust/angstrom.jl")
+include("radiation/sunshine_fraction/abstract.jl")
+include("radiation/sunshine_fraction/angstrom.jl")
+
+include("radiation/longwave/abstract.jl")
+include("radiation/longwave/view_factor.jl")
+
+include("radiation/shortwave/abstract.jl")
+include("radiation/shortwave/angstrom_maxwell.jl")
 
 # Rainfall schedule
 include("rainfall/abstract.jl")
@@ -145,10 +167,12 @@ include("forcing.jl")
 
 # Algorithms
 include("interpolation.jl")
-include("soil_properties.jl")
-include("radiation.jl")
-include("boundary_layer.jl")
-include("soil_balance.jl")
+
+# Soil balance: energy ODE + freezing correction
+include("soil_balance/energy/abstract.jl")
+include("soil_balance/energy/heat_transport_1d.jl")
+include("soil_balance/freezing/abstract.jl")
+include("soil_balance/freezing/latent_heat.jl")
 
 # Apparent heat capacity (latent-heat treatment near phase change; used by snow)
 include("apparent_heat_capacity/abstract.jl")
@@ -157,7 +181,10 @@ include("apparent_heat_capacity/tanh.jl")
 include("apparent_heat_capacity/gaussian.jl")
 include("apparent_heat_capacity/westermann.jl")
 
-include("snow.jl")
+# Snow models (one file per variant)
+include("snow/abstract.jl")
+include("snow/no_snow.jl")
+include("snow/snow_model.jl")
 
 # Top-level config, parameters, and problem
 include("config.jl")

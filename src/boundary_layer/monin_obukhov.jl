@@ -1,4 +1,25 @@
-function allocate_profile(heights)
+"""
+    MoninObukhov(; karman_constant=0.4, dyer_constant=16.0)
+
+Monin–Obukhov similarity theory boundary-layer formulation. Holds the
+empirical constants of the Φ_m relation. Previously these constants were
+buried as fields on `MicroTerrain`, where they masqueraded as terrain
+properties.
+
+# References
+Businger, J. A., Wyngaard, J. C., Izumi, Y., & Bradley, E. F. (1971).
+Flux–profile relationships in the atmospheric surface layer.
+*Journal of the Atmospheric Sciences*, 28(2), 181–189.
+
+Dyer, A. J. (1974). A review of flux–profile relationships.
+*Boundary-Layer Meteorology*, 7(3), 363–372.
+"""
+@kwdef struct MoninObukhov{KC,DC} <: AbstractBoundaryLayerModel
+    karman_constant::KC = 0.4
+    dyer_constant::DC = 16.0
+end
+
+function allocate_profile(::MoninObukhov, heights)
     wind_speed = similar(heights, typeof(0.0u"m/s")) # output wind speeds
     height_array = similar(heights, typeof(0.0u"m"))
     height_array[end:-1:begin] .= heights
@@ -11,10 +32,10 @@ end
 """
     atmospheric_surface_profile(; kwargs...)
 
-Compute vertical profiles of wind speed, air temperature, and relative humidity 
+Compute vertical profiles of wind speed, air temperature, and relative humidity
 in the atmospheric surface layer, using Monin–Obukhov similarity theory (MOST).
 
-This function reproduces the subroutine in `MICRO.f/get_profile.R` from **NicheMapR**, ported to Julia.  
+This function reproduces the subroutine in `MICRO.f/get_profile.R` from **NicheMapR**, ported to Julia.
 It calculates the microclimate profiles above the ground (or canopy) at specified heights,
 based on measured values at a reference height and computed or measured soil surface temperature, together
 with surface roughness parameters. Zenith angle and a maximum allowed surface temperature are used
@@ -45,7 +66,7 @@ Named tuple with fields:
 - Stability corrections use the **Businger–Dyer** formulations for unstable conditions.
 - The Monin–Obukhov length is estimated iteratively through `calc_Obukhov_length`.
 - Two broad options for aerodynamic roughness calculations are available: Campbell & Norman's (1998) approach
-that handles canopy displacement, invoked if `zh > 0` and otherwise  
+that handles canopy displacement, invoked if `zh > 0` and otherwise
 - When `zh > 0`, canopy displacement is considered in the profile calculation.
 - zh and d0 for Campbell and Norman air temperature/wind speed profile (0.6 * canopy height in m if unknown
 | Condition                   | Wind profile                   | Temperature profile                          |
@@ -63,7 +84,7 @@ that handles canopy displacement, invoked if `zh > 0` and otherwise
   *Journal of the Atmospheric Sciences*, 28(2), 181–189.
 - Dyer, A. J. (1974). A review of flux–profile relationships.
   *Boundary-Layer Meteorology*, 7(3), 363–372.
-- Kearney, M. R., et al. (2020). NicheMapR: an R package for microclimate and 
+- Kearney, M. R., et al. (2020). NicheMapR: an R package for microclimate and
   biophysical modeling. *Ecography*, 43, 1–14.
 
 # Example
@@ -81,17 +102,16 @@ profile.air_temperature  # vertical profile of air temperatures
 profile.wind_speed       # vertical profile of wind speeds
 ```
 """
-atmospheric_surface_profile(; heights=DEFAULT_HEIGHTS, kw...) =
-    atmospheric_surface_profile!(allocate_profile(heights); kw...)
-function atmospheric_surface_profile!(buffers;
+atmospheric_surface_profile(bl::MoninObukhov; heights=DEFAULT_HEIGHTS, kw...) =
+    atmospheric_surface_profile!(bl, allocate_profile(bl, heights); kw...)
+function atmospheric_surface_profile!(bl::MoninObukhov, buffers;
     site,
-    boundary_layer_model,
     environment_instant,
     surface_temperature,
     vapour_pressure_equation=GoffGratch(),
 )
     (; roughness_height, elevation) = site
-    (; karman_constant, dyer_constant) = boundary_layer_model
+    (; karman_constant, dyer_constant) = bl
     (; atmospheric_pressure, reference_temperature, reference_wind_speed, reference_humidity, zenith_angle) = environment_instant
 
     (; heights, height_array, air_temperature, wind_speed, relative_humidity, obukhov_length_prev) = buffers
@@ -122,7 +142,7 @@ function atmospheric_surface_profile!(buffers;
     # TODO make this work with SI units
     #ρcpTκg = u"cal*minute^2/cm^4"(ρ * c_p * T_ref_height / (κ * g_n))
     ρcpTκg = u"J*s^2/m^4"(6.003e-8u"cal*minute^2/cm^4")
-    
+
     log_z_ratio = log(z / z0 + 1)
     ΔT = reference_temp - surface_temp
     mean_temp = (surface_temp + reference_temp) / 2
@@ -172,6 +192,58 @@ function atmospheric_surface_profile!(buffers;
         convective_heat_flux=u"W/m^2"(convective_heat_flux),
         friction_velocity,
     )
+end
+
+function surface_fluxes(bl::MoninObukhov;
+    surface_temperature, air_temperature, wind_speed, zenith_angle,
+    roughness_height, reference_height, obukhov_length_prev=nothing,
+)
+    κ = bl.karman_constant
+    log_z_ratio = log(reference_height / roughness_height + 1)
+    ΔT = air_temperature - surface_temperature
+    ρ_cp = calc_ρ_cp((surface_temperature + air_temperature) / 2)
+
+    if air_temperature ≥ surface_temperature || zenith_angle ≥ 90°
+        # Stable / nocturnal: neutral log-law
+        friction_velocity = calc_friction_velocity(; reference_wind_speed=wind_speed, log_z_ratio, κ)
+        convective_heat_flux = uconvert(u"W/m^2",
+            calc_convection(; friction_velocity, log_z_ratio, ΔT, ρ_cp, z0=roughness_height))
+    else
+        # Unstable: iterate Obukhov length. A warm-started value from a
+        # previous hour may have converged to positive or near-zero, which
+        # would cause NaN in calc_φ_m via sqrt of a negative number — guard
+        # against that by resetting to the default unstable guess.
+        ρcpTκg = 6.003e-8u"cal*minute^2/cm^4"
+        L0_raw = isnothing(obukhov_length_prev) ? -0.3u"m" : obukhov_length_prev[]
+        L0 = L0_raw >= 0.0u"m" ? -0.3u"m" : L0_raw
+        out = calc_Obukhov_length(air_temperature, surface_temperature, wind_speed,
+            roughness_height, reference_height, ρcpTκg, κ, log_z_ratio, ΔT, ρ_cp;
+            initial_obukhov_length=L0)
+        friction_velocity = out.friction_velocity
+        convective_heat_flux = out.convective_heat_flux
+    end
+
+    return (; convective_heat_flux, friction_velocity, ΔT, ρ_cp)
+end
+
+function init_surface_fluxes!(bl::MoninObukhov, buffers, forcing, site, heights, T0, i)
+    t_next = ((i - 1) * 60)u"minute"
+    (; air_temperature, wind_speed, zenith_angle) = interpolate_forcings(forcing, t_next)
+    surface_temperature = T0[1]
+    if air_temperature < surface_temperature && zenith_angle < 90u"°"
+        κ = bl.karman_constant
+        roughness_height = site.roughness_height
+        reference_height = last(heights)
+        log_z_ratio = log(reference_height / roughness_height + 1)
+        ΔT = air_temperature - surface_temperature
+        ρ_cp = calc_ρ_cp((surface_temperature + air_temperature) / 2)
+        ρcpTκg = 6.003e-8u"cal*minute^2/cm^4"
+        L0_raw = buffers.soil_energy_balance.obukhov_length_prev[]
+        L0 = L0_raw >= 0.0u"m" ? -0.3u"m" : L0_raw
+        out = calc_Obukhov_length(air_temperature, surface_temperature, wind_speed,
+            roughness_height, reference_height, ρcpTκg, κ, log_z_ratio, ΔT, ρ_cp;
+            initial_obukhov_length=L0)
+        buffers.soil_energy_balance.obukhov_length_prev[] = out.obukhov_length end
 end
 
 """
@@ -483,4 +555,3 @@ Iteratively solve for Monin-Obukhov length and convective heat flux.
         roughness_height_temperature,
     )
 end
-

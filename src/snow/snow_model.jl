@@ -1,8 +1,4 @@
-# ── Snow model types ──────────────────────────────────────────────────────
-
-abstract type AbstractSnowModel end
-
-struct NoSnow <: AbstractSnowModel end
+# ── Types ───────────────────────────────────────────────────────────────
 
 struct SnowModel{N,AHC<:AbstractApparentHeatCapacity} <: AbstractSnowModel
     snow_temperature_threshold::typeof(1.0u"°C")
@@ -45,18 +41,6 @@ function SnowModel(;
     )
 end
 
-n_snow_nodes(::NoSnow) = 0
-n_snow_nodes(::SnowModel{N}) where N = N
-
-# Dispatching constructor for the per-node snow-temperature SVector. Callers
-# must use this so `T_snow`'s type is `Nothing` for NoSnow and
-# `SVector{N, T_init}` for SnowModel{N} — never a runtime Union.
-init_snow_temperatures(::NoSnow, _) = nothing
-init_snow_temperatures(::SnowModel{N}, T_init) where N =
-    SVector(ntuple(_ -> T_init, Val(N)))
-
-# ── Immutable snow state ─────────────────────────────────────────────────
-
 struct SnowState
     current_depth::typeof(1.0u"cm")
     snow_age::Float64
@@ -69,8 +53,14 @@ struct SnowState
     sum_phase::typeof(1.0u"J/m^2")
 end
 
-initial_snow_state(::NoSnow) = nothing
-initial_snow_state(::NoSnow, ::Any, ::Any) = nothing
+n_snow_nodes(::SnowModel{N}) where N = N
+
+# Dispatching constructor for the per-node snow-temperature SVector. Callers
+# must use this so `T_snow`'s type is `Nothing` for NoSnow and
+# `SVector{N, T_init}` for SnowModel{N} — never a runtime Union.
+init_snow_temperatures(::SnowModel{N}, T_init) where N =
+    SVector(ntuple(_ -> T_init, Val(N)))
+
 # Fortran MICROCLIMATE.f initialises `prevden = densfun(2)` (the second
 # coefficient of the density evolution function) so that on the first hour the
 # density ratio (snowdens/prevden) is 1. We mirror that here when a density
@@ -89,8 +79,6 @@ end
 
 # ── Pre-allocated scratch arrays ─────────────────────────────────────────
 
-allocate_snow_scratch(::NoSnow, args...) = nothing
-
 function allocate_snow_scratch(::SnowModel{N}, nsteps, num_ode_nodes, depths) where N
     return (;
         node_depths           = fill(0.0u"cm", N),
@@ -107,9 +95,6 @@ function allocate_snow_scratch(::SnowModel{N}, nsteps, num_ode_nodes, depths) wh
     )
 end
 
-# ── Scratch reset (for independent days) ─────────────────────────────────
-
-reset_snow_scratch!(::NoSnow, _) = nothing
 function reset_snow_scratch!(::SnowModel, scratch)
     scratch.node_depths .= 0.0u"cm"
     scratch.snow_depth_hourly .= 0.0u"cm"
@@ -120,8 +105,7 @@ end
 
 # ── Snow node activation ─────────────────────────────────────────────────
 
-activate_snow_nodes(::NoSnow, args...) = nothing
-function activate_snow_nodes(snow_model::SnowModel{N}, state::SnowState, scratch, snow_temperature, step) where N
+function activate_snow_nodes!(snow_model::SnowModel{N}, state::SnowState, scratch, snow_temperature, step) where N
     (; node_depths, snow_depth_hourly) = scratch
     cursnow = snow_depth_hourly[step]
     active_nodes = state.active_nodes
@@ -168,7 +152,6 @@ function combined_depths(snow_model::SnowModel{N}, state::SnowState, scratch, so
     )
 end
 
-compute_effective_depths!(::NoSnow, _, _, _) = nothing
 function compute_effective_depths!(snow_model::SnowModel{N}, state::SnowState, scratch, soil_depths) where N
     (; effective_depths, node_depths) = scratch
     cursnow = state.current_depth
@@ -189,7 +172,7 @@ function write_snow_properties!(snow_model::SnowModel{N}, state::SnowState, scra
     property_buffers, atmospheric_pressure, vapour_pressure_equation=GoffGratch(),
 ) where N
     # Evolve density for property calculations only — do NOT update state.density here.
-    # The density update belongs in update_snow, which needs the old density for the
+    # The density update belongs in update_snow!, which needs the old density for the
     # compaction ratio (densrat = snowdens/prevden, Fortran OSUB.f line 754).
     snowdens = evolve_snow_density(snow_model, state)
 
@@ -306,9 +289,6 @@ end
 
 # ── Snow surface overrides ───────────────────────────────────────────────
 
-snow_surface_overrides(::NoSnow, _, _, _) = (;
-    albedo=nothing, emissivity=nothing, soil_wetness=nothing, shade=nothing
-)
 function snow_surface_overrides(::SnowModel, state::SnowState, scratch, step)
     prev_depth = step > 1 ? scratch.snow_depth_hourly[step - 1] : state.current_depth
     if prev_depth > 0.0u"cm"
@@ -350,7 +330,7 @@ end
 
 # ── Thermal melt ─────────────────────────────────────────────────────────
 
-function snow_thermal_melt(snow_model::SnowModel{N}, state::SnowState, scratch,
+function snow_thermal_melt!(snow_model::SnowModel{N}, state::SnowState, scratch,
     snow_temperature, snow_temperature_before, atmospheric_pressure,
     soil_surface_temperature, soil_surface_temperature_before,
 ) where N
@@ -386,7 +366,6 @@ end
 
 # ── Snow phase transition (freezing within snowpack) ─────────────────────
 
-snow_phase_transition(::NoSnow, args...) = (nothing, nothing, nothing)
 function snow_phase_transition(snow_model::SnowModel{N}, state::SnowState, scratch,
     snow_temperature::SVector{N}, snow_temperature_before, atmospheric_pressure,
     soil_surface_temperature,
@@ -398,7 +377,7 @@ function snow_phase_transition(snow_model::SnowModel{N}, state::SnowState, scrat
         return (state, snow_temperature, soil_surface_temperature)
     end
     # No snow: skip phase transition entirely. mean_temperature/mean_temperature_past in
-    # scratch are only updated inside snow_thermal_melt, which is skipped when depth <
+    # scratch are only updated inside snow_thermal_melt!, which is skipped when depth <
     # min_snow_depth. They stay at their initialized 0°C, making the freeze condition
     # (mean_temp_past >= 0 AND mean_temp <= 0) always true, which would spuriously set
     # clamp_soil_surface and force T0[1] = 0°C every step.
@@ -489,9 +468,7 @@ end
 
 # ── Snow mass balance ────────────────────────────────────────────────────
 
-update_snow(::NoSnow, args...; kw...) = (nothing, 0.0u"cm", 0.0u"cm")
-
-function update_snow(snow_model::SnowModel{N}, state::SnowState, scratch,
+function update_snow!(snow_model::SnowModel{N}, state::SnowState, scratch,
     snow_temperature, snow_temperature_before, environment_instant, step,
     soil_surface_temperature, soil_surface_temperature_before,
     Q_evaporation;
@@ -566,12 +543,12 @@ function update_snow(snow_model::SnowModel{N}, state::SnowState, scratch,
         # temps rather than the 0°C initialisation (which would spuriously clamp
         # all nodes to 0°C). The returned melt value is discarded — only the
         # mean_temperature side-effect matters here.
-        snow_thermal_melt(snow_model, state_for_melt, scratch, snow_temperature, snow_temperature_before,
+        snow_thermal_melt!(snow_model, state_for_melt, scratch, snow_temperature, snow_temperature_before,
             environment_instant.atmospheric_pressure,
             soil_surface_temperature, soil_surface_temperature_before)
         0.0u"cm"
     else
-        raw_melt = snow_thermal_melt(snow_model, state_for_melt, scratch, snow_temperature, snow_temperature_before,
+        raw_melt = snow_thermal_melt!(snow_model, state_for_melt, scratch, snow_temperature, snow_temperature_before,
             environment_instant.atmospheric_pressure,
             soil_surface_temperature, soil_surface_temperature_before)
         # Fortran OSUB.f lines 938-940: melt factor only applied when DOY > 1
@@ -618,8 +595,7 @@ end
 
 # ── Adjust snow depth near node boundaries ────────────────────────────────
 
-adjust_snow_near_nodes(::NoSnow, args...) = nothing
-function adjust_snow_near_nodes(snow_model::SnowModel, state::SnowState, scratch, snow_temperature, step)
+function adjust_snow_near_nodes!(snow_model::SnowModel, state::SnowState, scratch, snow_temperature, step)
     (; snow_depth_hourly) = scratch
 
     snowout = snow_depth_hourly[step]
@@ -637,7 +613,7 @@ function adjust_snow_near_nodes(snow_model::SnowModel, state::SnowState, scratch
 
     # Fortran OSUB.f: call snowlayer between adjustments to recompute node thresholds
     state = setproperties(state, (; extra_snow))
-    state = activate_snow_nodes(snow_model, state, scratch, snow_temperature, step)
+    state = activate_snow_nodes!(snow_model, state, scratch, snow_temperature, step)
 
     # Second adjustment — use recomputed threshold
     snowout = snow_depth_hourly[step]
@@ -652,25 +628,13 @@ function adjust_snow_near_nodes(snow_model::SnowModel, state::SnowState, scratch
     return setproperties(state, (; extra_snow, current_depth))
 end
 
-# ── Phase transition dispatch ────────────────────────────────────────────
-
-function apply_phase_transition(::AbstractSnowModel, soil_temperature, soil_temperature_past, buffers, accumulated_latent_heat, soil_moisture, depths)
-    phase_transition!(buffers;
-        temperatures=soil_temperature, temperatures_past=soil_temperature_past,
-        accumulated_latent_heat, soil_moisture, depths,
-    )
-end
+# ── ODE coupling ─────────────────────────────────────────────────────────
 
 @inline _n_snow(::SnowModel{N}) where N = N
-@inline _n_snow(::NoSnow) = 0
 
-@inline _recompute_soil_snow_properties!(::NoSnow, p, st, ap, vpe) =
-    _recompute_soil_snow_properties_no_snow!(p, st, ap, vpe)
-
-# ── ODE-rhs soil-properties recompute (SnowModel branch) ─────────────────
-# Lives here because it dispatches on SnowModel{N}. The ::Nothing branch is
-# in soil_balance.jl. Using Val(N_snow) keeps the ntuple SVector sizes
-# compile-time so no boxing occurs inside the ODE rhs.
+# ODE-rhs soil-properties recompute. Uses Val(N_snow) to keep ntuple SVector
+# sizes compile-time so no boxing occurs inside the ODE rhs. The ::Nothing
+# branch (no snow_model at all) is in soil_balance.jl.
 @inline function _recompute_soil_snow_properties!(snow_model::SnowModel{N_snow}, p,
     soil_temperature::SVector{N_total}, atmospheric_pressure, vapour_pressure_equation,
 ) where {N_snow, N_total}

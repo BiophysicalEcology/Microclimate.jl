@@ -1,4 +1,4 @@
-abstract type AbstractCloudAdjustModel end
+abstract type AbstractSunshineFractionModel end
 
 """
     sunshine_fraction(model, cloud_cover)

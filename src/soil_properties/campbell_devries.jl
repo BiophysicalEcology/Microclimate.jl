@@ -1,3 +1,14 @@
+# Bulk density, mineral density, and saturation moisture for the soil are
+# properties of the soil profile, not of the thermal formulation — they live on
+# the hydraulics model and are passed into `soil_properties` as kwargs.
+@kwdef struct CampbelldeVriesSoilProperties{SF,MC,MHC,RP,RFT} <: AbstractSoilProperties
+    de_vries_shape_factor::SF
+    mineral_conductivity::MC
+    mineral_heat_capacity::MHC
+    recirculation_power::RP
+    return_flow_threshold::RFT
+end
+
 """
     soil_properties(soil_thermal; atmospheric_pressure, soil_temperature, soil_moisture, bulk_density, mineral_density)
 
@@ -6,7 +17,7 @@ and bulk density — for a given soil layer.
 
 # Arguments
 
-- `soil_thermal::AbstractSoilThermalModel`
+- `soil_thermal::AbstractSoilProperties`
 
 # Keywords
 
@@ -54,7 +65,7 @@ Campbell, G. S., Jungbauer, J. D. Jr., Bidlake, W. R., & Hungerford, R. D. (1994
 Campbell, G. S., & Norman, J. M. (1998). Environmental Biophysics. Springer.
 
 """
-function soil_properties(soil_thermal::CampbelldeVriesSoilThermal;
+function soil_properties(soil_thermal::CampbelldeVriesSoilProperties;
     atmospheric_pressure::Quantity,
     soil_temperature::Quantity,
     soil_moisture::Number,
@@ -118,49 +129,10 @@ function soil_properties(soil_thermal::CampbelldeVriesSoilThermal;
     return (; bulk_thermal_conductivity, bulk_heat_capacity, bulk_density=bulk_density_total)
 end
 
-function allocate_soil_properties(nodes, soil_thermal, soil_hydraulics)
-    (; mineral_conductivity, mineral_heat_capacity) = soil_thermal
-    mineral_density = soil_hydraulics.mineral_density
-    num_nodes = length(nodes)
-
-    bulk_thermal_conductivity = fill(mineral_conductivity[1], num_nodes)
-    bulk_heat_capacity = fill(mineral_heat_capacity[1], num_nodes)
-    bulk_density = fill(mineral_density[1], num_nodes)
-
-    return (; bulk_thermal_conductivity, bulk_heat_capacity, bulk_density)
-end
-
-"""
-    soil_properties!(buffers, soil_thermal; atmospheric_pressure, soil_temperature, soil_moisture)
-
-Compute soil properties for vectors of soil temperature and moisture using broadcasting.
-
-Returns three arrays: `bulk_thermal_conductivity`, `bulk_heat_capacity`, `bulk_density`.
-"""
-function soil_properties!(buffers::NamedTuple, soil_thermal;
-    atmospheric_pressure::Quantity, soil_temperature::AbstractVector, soil_moisture::AbstractVector,
-    bulk_density::AbstractVector,
-    mineral_density::AbstractVector,
-    vapour_pressure_equation=GoffGratch(),
-)
-    num_layers = length(soil_temperature)
-    @assert length(soil_moisture) == num_layers
-    (; bulk_thermal_conductivity, bulk_heat_capacity) = buffers
-    out_bulk_density = buffers.bulk_density
-    bd_unit = unit(eltype(out_bulk_density))
-    @inbounds for i in 1:num_layers
-        result = soil_properties(maybegetindex(soil_thermal, i);
-            atmospheric_pressure,
-            soil_temperature = soil_temperature[i],
-            soil_moisture = soil_moisture[i],
-            bulk_density = bulk_density[i],
-            mineral_density = mineral_density[i],
-            vapour_pressure_equation,
-        )
-        bulk_thermal_conductivity[i] = result.bulk_thermal_conductivity
-        bulk_heat_capacity[i]        = result.bulk_heat_capacity
-        out_bulk_density[i]          = uconvert(bd_unit, result.bulk_density)
-    end
-
-    return (; bulk_thermal_conductivity, bulk_heat_capacity, bulk_density=out_bulk_density)
-end
+# FIXME: this seems like a hack
+# Per-layer field selection used by the generic `soil_properties!` loop. Each
+# CampbelldeVriesSoilProperties field may be a scalar (shared) or a per-layer
+# vector — `maybegetindex` rebuilds a layer-local model for the scalar
+# `soil_properties` call.
+maybegetindex(obj::CampbelldeVriesSoilProperties, i::Int) =
+    CampbelldeVriesSoilProperties(; maybegetindex(ConstructionBase.getproperties(obj), i)...)

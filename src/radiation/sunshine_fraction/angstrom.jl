@@ -5,7 +5,7 @@
 `a + b * (1 - cloud_cover)^gamma`. The defaults match Linacre's "Climate Data
 and Resources" (1992, eq. 5.33).
 """
-@kwdef struct Angstrom{A,B,G} <: AbstractCloudAdjustModel
+@kwdef struct Angstrom{A,B,G} <: AbstractSunshineFractionModel
     a::A = 0.36
     b::B = 0.64
     gamma::G = 1.0

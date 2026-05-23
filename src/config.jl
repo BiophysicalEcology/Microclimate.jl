@@ -13,7 +13,12 @@ independently.
 - `convergence`: `FixedSoilTemperatureIterations(3)` or `SoilTemperatureConvergenceTolerance(; tolerance, max_iterations_per_day)`
 - `diffuse_fraction_model`: `ErbsDiffuseFraction()`
 - `atmospheric_radiation_model`: `CampbellNormanAtmosphericRadiation()` or `SwinbankAtmosphericRadiation()`
-- `cloud_adjust_model`: `Angstrom(; a, b, gamma)` — Ångström–Prescott scaling
+- `sunshine_fraction_model`: `Angstrom(; a, b, gamma)` — Ångström–Prescott scaling
+- `longwave_scheme`: `ViewFactorLongwave()` — longwave budget algorithm
+- `shortwave_scheme`: `AngstromMaxwellShortwave()` — shortwave budget algorithm
+- `evaporation_model`: `BulkTransferEvaporation()` — surface latent flux model
+- `soil_energy_scheme`: `SoilHeatTransport1D()` — soil column energy balance ODE
+- `soil_freezing_scheme`: `PhaseTransitionLatentHeat()` — soil ice/water phase change
 - `rainfall_schedule`: `DailyRainfall()` (default) or `HourlyRainfall()`
 - `soil_moisture_strategy`: `PrescribedSoilMoisture()` or `DynamicSoilMoisture()`
 
@@ -30,14 +35,19 @@ independently.
 # Other
 - `maximum_surface_temperature`: surface-temperature safety clamp (Fortran microinput[74])
 """
-@kwdef struct MicroConfig{VPE,BLM,TM,CV,DFM,ARM,CAM,RFS,SMM,SOS,SOK,MSF,MT,MTS,MSP}
+@kwdef struct MicroConfig{VPE,BLM,TM,CV,DFM,ARM,SFM,LW,SW,EVM,SES,SFS,RFS,SMM,SOS,SOK,MSF,MT,MTS,MSP}
     vapour_pressure_equation::VPE = GoffGratch()
     boundary_layer_model::BLM = MoninObukhov()
     time_mode::TM = NonConsecutiveDayMode()
     convergence::CV = FixedSoilTemperatureIterations(3)
     diffuse_fraction_model::DFM = ErbsDiffuseFraction()
     atmospheric_radiation_model::ARM = CampbellNormanAtmosphericRadiation()
-    cloud_adjust_model::CAM = Angstrom()
+    sunshine_fraction_model::SFM = Angstrom()
+    longwave_scheme::LW = ViewFactorLongwave()
+    shortwave_scheme::SW = AngstromMaxwellShortwave()
+    evaporation_model::EVM = BulkTransferEvaporation()
+    soil_energy_scheme::SES = SoilHeatTransport1D()
+    soil_freezing_scheme::SFS = PhaseTransitionLatentHeat()
     rainfall_schedule::RFS = DailyRainfall()
     soil_moisture_strategy::SMM = PrescribedSoilMoisture()
     soil_ode_solver::SOS = Tsit5()
