@@ -14,11 +14,11 @@ independently.
 - `diffuse_fraction_model`: `ErbsDiffuseFraction()`
 - `atmospheric_radiation_model`: `CampbellNormanAtmosphericRadiation()` or `SwinbankAtmosphericRadiation()`
 - `sunshine_fraction_model`: `Angstrom(; a, b, gamma)` — Ångström–Prescott scaling
-- `longwave_scheme`: `KearneyLongwave()` — longwave budget algorithm
-- `shortwave_scheme`: `KearneyShortwave()` — shortwave budget algorithm
-- `evaporation_model`: `KearneyEvaporation()` — surface latent flux model
-- `soil_energy_scheme`: `KearneyEnergy()` — soil column energy balance ODE
-- `soil_freezing_scheme`: `KearneyFreezing()` — soil ice/water phase change
+- `longwave_scheme`: `ViewFactorLongwave()` — longwave budget algorithm
+- `shortwave_scheme`: `AngstromMaxwellShortwave()` — shortwave budget algorithm
+- `evaporation_model`: `BulkTransferEvaporation()` — surface latent flux model
+- `soil_energy_scheme`: `SoilHeatTransport1D()` — soil column energy balance ODE
+- `soil_freezing_scheme`: `PhaseTransitionLatentHeat()` — soil ice/water phase change
 - `rainfall_schedule`: `DailyRainfall()` (default) or `HourlyRainfall()`
 - `soil_moisture_strategy`: `PrescribedSoilMoisture()` or `DynamicSoilMoisture()`
 
@@ -43,11 +43,11 @@ independently.
     diffuse_fraction_model::DFM = ErbsDiffuseFraction()
     atmospheric_radiation_model::ARM = CampbellNormanAtmosphericRadiation()
     sunshine_fraction_model::SFM = Angstrom()
-    longwave_scheme::LW = KearneyLongwave()
-    shortwave_scheme::SW = KearneyShortwave()
-    evaporation_model::EVM = KearneyEvaporation()
-    soil_energy_scheme::SES = KearneyEnergy()
-    soil_freezing_scheme::SFS = KearneyFreezing()
+    longwave_scheme::LW = ViewFactorLongwave()
+    shortwave_scheme::SW = AngstromMaxwellShortwave()
+    evaporation_model::EVM = BulkTransferEvaporation()
+    soil_energy_scheme::SES = SoilHeatTransport1D()
+    soil_freezing_scheme::SFS = PhaseTransitionLatentHeat()
     rainfall_schedule::RFS = DailyRainfall()
     soil_moisture_strategy::SMM = PrescribedSoilMoisture()
     soil_ode_solver::SOS = Tsit5()

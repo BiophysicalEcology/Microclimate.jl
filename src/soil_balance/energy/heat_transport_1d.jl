@@ -1,14 +1,14 @@
 """
-    KearneyEnergy()
+    SoilHeatTransport1D()
 
-NicheMapR's (Kearney et al.) soil column energy balance. The ODE rhs
+One dimension soil column energy balance (as in NicheMapR). The ODE right hand side
 computes per-node dT/dt from heat conduction between layers plus a surface
 boundary condition combining net radiation (clear-sky + cloud + view
 factor), convection (Monin–Obukhov), evaporation latent flux, and a snow
 melt freeze correction. The deepest node is pinned at the user-supplied
 deep soil temperature (Dirichlet BC).
 """
-struct KearneyEnergy <: AbstractSoilEnergyScheme end
+struct SoilHeatTransport1D <: SoilHeatTransportScheme end
 
 """
     SoilEnergyInputs
@@ -20,7 +20,7 @@ instead of allocating a fresh struct each hour. All fields are concretely
 typed via the parametric `{F,B,…}` slots; the underlying heap object is the
 same across hours.
 """
-mutable struct SoilEnergyInputs{SCH<:AbstractSoilEnergyScheme,EVM<:AbstractEvaporationModel,ARM<:AbstractAtmosphericRadiationModel,F,B,SP,D<:Vector{<:Number},H<:Vector{<:Number},S,BLM,EI,SW,VP,LW,QF,SNM,SNS,SNSC,SM,BD,MD,MSF}
+mutable struct SoilEnergyInputs{SCH<:SoilHeatTransportScheme,EVM<:AbstractEvaporationModel,ARM<:AbstractAtmosphericRadiationModel,F,B,SP,D<:Vector{<:Number},H<:Vector{<:Number},S,BLM,EI,SW,VP,LW,QF,SNM,SNS,SNSC,SM,BD,MD,MSF}
     scheme::SCH
     evaporation_model::EVM
     atmospheric_radiation_model::ARM
@@ -47,7 +47,7 @@ mutable struct SoilEnergyInputs{SCH<:AbstractSoilEnergyScheme,EVM<:AbstractEvapo
     maximum_surface_temperature::MSF  # Fortran microinput(74) surface-temperature safety clamp
 end
 
-function SoilEnergyInputs(; scheme=KearneyEnergy(), evaporation_model=KearneyEvaporation(),
+function SoilEnergyInputs(; scheme=SoilHeatTransport1D(), evaporation_model=BulkTransferEvaporation(),
     atmospheric_radiation_model=CampbellNormanAtmosphericRadiation(),
     forcing, buffers, soil_thermal_model, depths, heights, site,
     boundary_layer_model, environment_instant, soil_wetness,
@@ -109,7 +109,7 @@ end
 # method is in snow/snow_model.jl; both ::Nothing and ::NoSnow return 0.
 @inline _n_snow(::Nothing) = 0
 
-function allocate_soil_energy_balance(::KearneyEnergy, num_nodes::Int)
+function allocate_soil_energy_balance(::SoilHeatTransport1D, num_nodes::Int)
     layer_depths = fill(0.0u"cm", num_nodes + 1)
     heat_capacity = fill(1.0u"J/K/m^2", num_nodes)
     thermal_conductance = fill(1.0u"W/K/m^2", num_nodes)
@@ -120,7 +120,7 @@ end
 # SciML ODE rhs. Dispatches the actual physics on `p.scheme`.
 soil_energy_balance(u, p::SoilEnergyInputs, t) = soil_energy_balance(p.scheme, u, p, t)
 
-function soil_energy_balance(::KearneyEnergy,
+function soil_energy_balance(::SoilHeatTransport1D,
     temperature_state::U,  # state
     p::SoilEnergyInputs,   # "parameters"
     t::Quantity,           # timestep

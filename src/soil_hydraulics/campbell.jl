@@ -319,7 +319,7 @@ function soil_water_balance!(buffers, soil_hydraulics::CampbellSoilHydraulics;
     moisture_tolerance,
     moisture_max_iterations,
     max_surface_pool,
-    evaporation_model::AbstractEvaporationModel=KearneyEvaporation(),
+    evaporation_model::AbstractEvaporationModel=BulkTransferEvaporation(),
     vapour_pressure_equation=GoffGratch(),
     snow_present=false,
 )

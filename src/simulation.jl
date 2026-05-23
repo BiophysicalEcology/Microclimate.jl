@@ -580,7 +580,7 @@ function interpolate_minmax!(output, environment_minmax::Nothing, environment_da
 end
 
 function adjust_for_cloud_cover!(output, solar_radiation_out, days, hours;
-    shortwave_scheme=KearneyShortwave(),
+    shortwave_scheme=AngstromMaxwellShortwave(),
     diffuse_fraction_model=ErbsDiffuseFraction(),
     sunshine_fraction_model=Angstrom(),
 )

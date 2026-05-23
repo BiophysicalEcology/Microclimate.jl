@@ -1,14 +1,14 @@
 """
-    KearneyEvaporation()
+    BulkTransferEvaporation()
 
-NicheMapR's (Kearney et al.) surface evaporation: Penman-style mass-transfer
+Bulk transfer evaporation surface evaporation (as implemented in NicheMapR): Penman-style mass-transfer
 flux from surface and air vapour densities times wetness, with a cold-surface
 mass-loss clamp. The combined `surface_convection_evaporation` picks the
 stable / unstable atmospheric branch via Monin–Obukhov.
 """
-struct KearneyEvaporation <: AbstractEvaporationModel end
+struct BulkTransferEvaporation <: AbstractEvaporationModel end
 
-function evaporation(::KearneyEvaporation;
+function evaporation(::BulkTransferEvaporation;
     surface_temperature,
     air_temperature,
     relative_humidity,
@@ -52,7 +52,7 @@ function evaporation(::KearneyEvaporation;
     return Q_evaporation, evaporation_mass_flux
 end
 
-function surface_convection_evaporation(model::KearneyEvaporation;
+function surface_convection_evaporation(model::BulkTransferEvaporation;
     boundary_layer_model,
     surface_temperature, air_temperature, wind_speed, relative_humidity,
     atmospheric_pressure, roughness_height, reference_height,

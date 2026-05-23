@@ -1,4 +1,4 @@
-abstract type AbstractSoilFreezingScheme end
+abstract type SoilPhaseTransitionScheme end
 
 """
     phase_transition!(scheme, buffers; temperatures, temperatures_past, accumulated_latent_heat, soil_moisture, depths)

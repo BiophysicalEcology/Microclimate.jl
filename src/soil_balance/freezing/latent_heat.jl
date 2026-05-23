@@ -1,14 +1,14 @@
 """
-    KearneyFreezing()
+    PhaseTransitionLatentHeat()
 
-NicheMapR's (Kearney et al.) soil ice/water phase-change accounting. Each
+Soil ice/water phase-change accounting (as in NicheMapR). Each
 layer tracks accumulated latent heat against `mass × L_fusion`. While the
 budget is non-empty, layer temperatures are clamped to 0°C; once exhausted,
 the clamp is released and the layer cools/warms freely.
 """
-struct KearneyFreezing <: AbstractSoilFreezingScheme end
+struct PhaseTransitionLatentHeat <: SoilPhaseTransitionScheme end
 
-function allocate_phase_transition(::KearneyFreezing, num_nodes::Int)
+function allocate_phase_transition(::PhaseTransitionLatentHeat, num_nodes::Int)
     layer_mass = zeros(Float64, num_nodes)u"kg"
     phase_change_heat = zeros(Float64, num_nodes)u"J"
     mean_temperature = zeros(typeof(0.0u"K"), num_nodes)
@@ -18,7 +18,7 @@ function allocate_phase_transition(::KearneyFreezing, num_nodes::Int)
     return (; layer_mass, phase_change_heat, mean_temperature, mean_temperature_past, temperature_scratch)
 end
 
-function phase_transition!(::KearneyFreezing,
+function phase_transition!(::PhaseTransitionLatentHeat,
     buffers::NamedTuple;
     temperatures::AbstractVector,
     temperatures_past::AbstractVector,

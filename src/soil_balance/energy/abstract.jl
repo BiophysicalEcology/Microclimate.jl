@@ -1,11 +1,11 @@
-abstract type AbstractSoilEnergyScheme end
+abstract type SoilHeatTransportScheme end
 
 """
     soil_energy_balance(scheme, temperature_state, p, t)
 
-ODE rhs for the soil temperature column: returns the per-node `dT/dt`
+ODE right hand side for the soil temperature column: returns the per-node `dT/dt`
 SVector. Variants supply the energy budget formulation (conduction +
-surface BC: net radiation + convection + evaporation + phase corrections).
+surface boundary condition: net radiation + convection + evaporation + phase corrections).
 """
 function soil_energy_balance end
 

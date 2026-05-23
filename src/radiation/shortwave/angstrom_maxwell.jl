@@ -1,7 +1,7 @@
 """
-    KearneyShortwave()
+    AngstromMaxwellShortwave()
 
-NicheMapR's (Kearney et al.) shortwave budget at the surface:
+A clearness index-based shortwave budget at the surface (as in NicheMapR):
 - Ångström scaling: global = sunshine_fraction(sunshine_fraction_model, cloud) × (diffuse_clear_sky + direct_clear_sky)
 - Diffuse/direct split via a Maxwell (1987) clearness index passed to the diffuse-fraction model.
 
@@ -9,9 +9,9 @@ References
 - Maxwell, E. L. (1987). A Quasi-Physical Model for Converting Hourly Global
   Horizontal to Direct Normal Insolation. SERI/TR-215-3087. Golden, CO.
 """
-struct KearneyShortwave <: AbstractShortwaveScheme end
+struct AngstromMaxwellShortwave <: AbstractShortwaveScheme end
 
-function shortwave_radiation!(::KearneyShortwave, output, cloud::AbstractArray, diffuse_clear_sky, direct_clear_sky, zenith::AbstractArray, doy;
+function shortwave_radiation!(::AngstromMaxwellShortwave, output, cloud::AbstractArray, diffuse_clear_sky, direct_clear_sky, zenith::AbstractArray, doy;
     diffuse_fraction_model::AbstractDiffuseFractionModel=ErbsDiffuseFraction(),
     sunshine_fraction_model::AbstractSunshineFractionModel=Angstrom(),
 )

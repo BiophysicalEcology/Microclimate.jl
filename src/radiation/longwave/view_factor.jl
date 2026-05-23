@@ -1,14 +1,14 @@
 """
-    KearneyLongwave()
+    ViewFactorLongwave()
 
-NicheMapR's (Kearney et al.) surface-longwave budget. Combines the clear-sky
+View factor-based surface-longwave budget (as in NicheMapR). Combines the clear-sky
 downwelling longwave from an `AbstractAtmosphericRadiationModel` with cloud
 emissivity, sky view fraction, vegetation shade, and hillshade contributions
 to give the net longwave at the surface.
 """
-struct KearneyLongwave <: AbstractLongwaveScheme end
+struct ViewFactorLongwave <: AbstractLongwaveScheme end
 
-function precompute_longwave_sky(::KearneyLongwave, atmospheric_radiation_model;
+function precompute_longwave_sky(::ViewFactorLongwave, atmospheric_radiation_model;
     site,
     environment_instant,
     vapour_pressure_equation=GoffGratch(),
@@ -50,7 +50,7 @@ function precompute_longwave_sky(::KearneyLongwave, atmospheric_radiation_model;
     )
 end
 
-function longwave_radiation(scheme::KearneyLongwave, atmospheric_radiation_model;
+function longwave_radiation(scheme::ViewFactorLongwave, atmospheric_radiation_model;
     site,
     environment_instant,
     surface_temperature,

@@ -56,19 +56,19 @@ export AbstractAtmosphericRadiationModel, SwinbankAtmosphericRadiation, Campbell
 export AbstractSunshineFractionModel, Angstrom, sunshine_fraction
 
 # Longwave budget algorithms
-export AbstractLongwaveScheme, KearneyLongwave
+export AbstractLongwaveScheme, ViewFactorLongwave
 
 # Shortwave budget algorithms
-export AbstractShortwaveScheme, KearneyShortwave
+export AbstractShortwaveScheme, AngstromMaxwellShortwave
 
 # Surface evaporation models
-export AbstractEvaporationModel, KearneyEvaporation, surface_convection_evaporation
+export AbstractEvaporationModel, BulkTransferEvaporation, surface_convection_evaporation
 
 # Soil energy balance schemes
-export AbstractSoilEnergyScheme, KearneyEnergy
+export SoilHeatTransportScheme, SoilHeatTransport1D
 
 # Soil freezing schemes
-export AbstractSoilFreezingScheme, KearneyFreezing, allocate_phase_transition
+export SoilPhaseTransitionScheme, PhaseTransitionLatentHeat, allocate_phase_transition
 
 # Rainfall schedule
 export AbstractRainfallSchedule, DailyRainfall, HourlyRainfall, is_hourly
@@ -108,7 +108,7 @@ include("soil_moisture/dynamic.jl")
 
 # Surface evaporation
 include("evaporation/abstract.jl")
-include("evaporation/kearney.jl")
+include("evaporation/bulk_transfer.jl")
 
 # Soil hydraulics
 include("soil_hydraulics/abstract.jl")
@@ -151,10 +151,10 @@ include("radiation/sunshine_fraction/abstract.jl")
 include("radiation/sunshine_fraction/angstrom.jl")
 
 include("radiation/longwave/abstract.jl")
-include("radiation/longwave/kearney.jl")
+include("radiation/longwave/view_factor.jl")
 
 include("radiation/shortwave/abstract.jl")
-include("radiation/shortwave/kearney.jl")
+include("radiation/shortwave/angstrom_maxwell.jl")
 
 # Rainfall schedule
 include("rainfall/abstract.jl")
@@ -170,9 +170,9 @@ include("interpolation.jl")
 
 # Soil balance: energy ODE + freezing correction
 include("soil_balance/energy/abstract.jl")
-include("soil_balance/energy/kearney.jl")
+include("soil_balance/energy/heat_transport_1d.jl")
 include("soil_balance/freezing/abstract.jl")
-include("soil_balance/freezing/kearney.jl")
+include("soil_balance/freezing/latent_heat.jl")
 
 # Apparent heat capacity (latent-heat treatment near phase change; used by snow)
 include("apparent_heat_capacity/abstract.jl")
