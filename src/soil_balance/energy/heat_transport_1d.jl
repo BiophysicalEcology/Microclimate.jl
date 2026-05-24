@@ -38,13 +38,14 @@ instead of allocating a fresh struct each hour. All fields are concretely
 typed via the parametric `{F,B,…}` slots; the underlying heap object is the
 same across hours.
 """
-mutable struct SoilEnergyInputs{M<:SoilHeatTransportModel,EVM<:AbstractEvaporationModel,ARM<:AbstractAtmosphericRadiationModel,F,B,SP,D<:Vector{<:Number},H<:Vector{<:Number},S,BLM,EI,SW,VP,LW,QF,SNM,SNS,SNSC,SM,BD,MD}
+mutable struct SoilEnergyInputs{M<:SoilHeatTransportModel,EVM<:AbstractEvaporationModel,ARM<:AbstractAtmosphericRadiationModel,F,B,SP,SPR,D<:Vector{<:Number},H<:Vector{<:Number},S,BLM,EI,SW,VP,LW,QF,SNM,SNS,SM}
     model::M
     evaporation_model::EVM
     atmospheric_radiation_model::ARM
     forcing::F
     buffers::B
     soil_properties_model::SP
+    soil_profile::SPR
     depths::D
     heights::H
     site::S
@@ -58,27 +59,23 @@ mutable struct SoilEnergyInputs{M<:SoilHeatTransportModel,EVM<:AbstractEvaporati
     # Snow/soil property recomputation inside ODE (matching Fortran DSUB calling SOILPROPS)
     snow_model::SNM
     snow_state::SNS
-    snow_scratch::SNSC
     soil_moisture::SM
-    bulk_density::BD       # per-depth profile from soil hydraulics
-    mineral_density::MD    # per-depth profile from soil hydraulics
 end
 
 function SoilEnergyInputs(; model=SoilHeatTransport1D(), evaporation_model=BulkTransferEvaporation(),
     atmospheric_radiation_model=CampbellNormanAtmosphericRadiation(),
-    forcing, buffers, soil_properties_model, depths, heights, site,
+    forcing, buffers, soil_properties_model, soil_profile, depths, heights, site,
     boundary_layer_model, environment_instant, soil_wetness,
     vapour_pressure_equation=GoffGratch(),
     longwave_sky, albedo, Q_freeze=0.0u"W/m^2",
-    snow_model=nothing, snow_state=nothing, snow_scratch=nothing,
-    soil_moisture=nothing, bulk_density, mineral_density,
+    snow_model=nothing, snow_state=nothing,
+    soil_moisture=nothing,
 )
     SoilEnergyInputs(model, evaporation_model, atmospheric_radiation_model,
-        forcing, buffers, soil_properties_model,
+        forcing, buffers, soil_properties_model, soil_profile,
         depths, heights, site, boundary_layer_model, environment_instant,
         soil_wetness, vapour_pressure_equation, longwave_sky, albedo, Q_freeze,
-        snow_model, snow_state, snow_scratch, soil_moisture, bulk_density,
-        mineral_density)
+        snow_model, snow_state, soil_moisture)
 end
 
 # In-place per-hour update — no allocation. Only the fields that change per
@@ -113,7 +110,7 @@ end
     atmospheric_pressure, vapour_pressure_equation)
     soil_properties!(p.buffers.soil_properties, p.soil_properties_model;
         soil_temperature, soil_moisture=p.soil_moisture,
-        bulk_density=p.bulk_density, mineral_density=p.mineral_density,
+        bulk_density=p.soil_profile.bulk_density, mineral_density=p.soil_profile.mineral_density,
         atmospheric_pressure, vapour_pressure_equation,
     )
     return nothing

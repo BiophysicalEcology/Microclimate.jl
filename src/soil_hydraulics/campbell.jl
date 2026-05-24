@@ -360,7 +360,7 @@ function soil_water_balance!(buffers, soil_hydraulic_model::CampbellSoilHydrauli
     surface_temperature = T0[1]
 
     # compute scalar profiles
-    profile_out = atmospheric_surface_profile!(boundary_layer_model, buffers.profile;
+    profile_out = atmospheric_surface_profile!(boundary_layer_model, buffers.soil_water_profile;
         site, environment_instant, surface_temperature, vapour_pressure_equation,
     )
 

@@ -96,7 +96,7 @@ site = Site(;
 boundary_layer_model = MoninObukhov(; karman_constant=0.4, dyer_constant=16.0)
 
 # ── Soil models ──────────────────────────────────────────────────────────────
-soil_thermal = CampbelldeVriesSoilProperties(;
+soil_properties_model = CampbelldeVriesSoilProperties(;
     de_vries_shape_factor = DE_VRIES_SHAPE_FACTOR,
     mineral_conductivity  = MINERAL_CONDUCTIVITY,
     mineral_heat_capacity = MINERAL_HEAT_CAPACITY,
@@ -104,9 +104,12 @@ soil_thermal = CampbelldeVriesSoilProperties(;
     return_flow_threshold = 0.162,
 )
 
-soil_hydraulics = example_soil_hydraulics(DEPTHS;
-    bulk_density                     = BULK_DENSITY,
-    mineral_density                  = MINERAL_DENSITY,
+soil_profile = SoilProfile(;
+    bulk_density    = fill(BULK_DENSITY, length(DEPTHS)),
+    mineral_density = fill(MINERAL_DENSITY, length(DEPTHS)),
+)
+
+soil_hydraulic_model = example_soil_hydraulic_model(DEPTHS;
     air_entry_water_potential        = fill(AIR_ENTRY_POTENTIAL, length(DEPTHS)),
     saturated_hydraulic_conductivity = fill(SAT_HYDRAULIC_COND, length(DEPTHS)),
     campbell_b_parameter             = fill(CAMPBELL_B, length(DEPTHS)),
@@ -151,7 +154,9 @@ environment_hourly = HourlyTimeseries(;
     longwave_radiation    = nothing,
 )
 
-solar_model = SolarProblem(; diffuse_model = SolarRadiation.NoScattering())
+radiation = RadiationModel(;
+    solar_radiation_model = SolarProblem(; diffuse_model = SolarRadiation.NoScattering()),
+)
 
 snow_model = SnowModel(;
     snow_temperature_threshold = 1.5u"°C",
@@ -178,9 +183,10 @@ model = MicroModel(;
     hours   = collect(0.0:1:23.0),
     depths  = DEPTHS,
     heights = [USRHYT, REFHYT],
-    solar_model,
-    soil_properties_model = soil_thermal,
-    soil_hydraulic_model = soil_hydraulics,
+    radiation,
+    soil_profile,
+    soil_properties_model,
+    soil_hydraulic_model,
     snow_model,
     boundary_layer_model,
     config,

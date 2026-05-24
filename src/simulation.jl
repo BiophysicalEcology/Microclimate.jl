@@ -163,9 +163,6 @@ function CommonSolve.init(mp::MicroProblem)
     fill!(output.global_radiation, 300.0u"W/m^2")
 
     # All up-front allocation lands in one MicroBuffers struct.
-    nodes_day = zeros(num_soil_nodes, ndays)
-    nodes_day[1, 1:ndays] .= num_soil_nodes
-    nodes = nodes_day[:, 1]
     buffers = MicroBuffers(
         solar_radiation_out,
         solar_buffers,
@@ -214,19 +211,18 @@ function CommonSolve.init(mp::MicroProblem)
         evaporation_model,
         atmospheric_radiation_model=longwave_model.atmospheric_radiation_model,
         forcing,
-        buffers, soil_properties_model, depths=depths_proto, heights,
+        buffers, soil_properties_model, soil_profile,
+        depths=depths_proto, heights,
         site, boundary_layer_model,
         environment_instant,
         soil_wetness=0.0, vapour_pressure_equation,
         longwave_sky, albedo=site.albedo,
         soil_moisture,
-        bulk_density=soil_profile.bulk_density,
-        mineral_density=soil_profile.mineral_density,
-        snow_model, snow_state=initial_snow_state(snow_model), snow_scratch,
+        snow_model, snow_state=initial_snow_state(snow_model),
     )
     ode_integrator = allocate_ode_integrator(soil_energy_model, T0_ode, inputs_proto)
 
-    state = MicroState(snow_state, soil_moisture, nodes, nodes_day, ∑phase, similar(∑phase))
+    state = MicroState(soil_moisture, ∑phase, similar(∑phase))
 
     return MicroCache(mp, output, state, buffers, forcing, ode_integrator, Val(num_soil_nodes))
 end
@@ -349,16 +345,12 @@ function solve_soil!(cache::MicroCache)
        initial_soil_temperature, initial_soil_moisture,
        initial_snow_depth, initial_snow_temperature, initial_snow_density) = mp.inputs
     n_snow = n_snow_nodes(snow_model)
-    snow_state = cache.state.snow_state
     soil_moisture = cache.state.soil_moisture
-    nodes = cache.state.nodes
-    nodes_day = cache.state.nodes_day
     ∑phase = cache.state.∑phase
     ∑phase_day_start = cache.state.∑phase_day_start
     output = cache.output
-    solar_radiation_out = cache.buffers.solar_out
-    snow_scratch = cache.buffers.snow_scratch
     buffers = cache.buffers
+    solar_radiation_out = buffers.solar_out
     ode_integrator = cache.ode_integrator
     forcing = cache.forcing
 
@@ -394,13 +386,11 @@ function solve_soil!(cache::MicroCache)
     T_snow = init_snow_temperatures(snow_model, initial_snow_temperature)
 
     # Reset pre-allocated scratch arrays
-    nodes_day[1, 1:ndays] .= num_soil_nodes
     ∑phase .= 0.0u"J" # TODO decide whether this should happen and fix in Fortran
     soil_moisture .= initial_soil_moisture
     snow_state = initial_snow_state(snow_model, initial_snow_depth, initial_snow_density)
-    reset_snow_scratch!(snow_model, snow_scratch)
+    reset_snow_scratch!(snow_model, buffers.snow)
 
-    _read_col!(nodes, nodes_day, 1)
     soil_prop_view = if n_snow > 0
         (; bulk_thermal_conductivity = view(buffers.soil_properties.bulk_thermal_conductivity, n_snow+1:n_snow+num_soil_nodes),
            bulk_heat_capacity = view(buffers.soil_properties.bulk_heat_capacity, n_snow+1:n_snow+num_soil_nodes),
@@ -440,7 +430,6 @@ function solve_soil!(cache::MicroCache)
     infil_out = nothing
     for j in 1:ndays
         iday = j
-        _read_col!(nodes, nodes_day, iday)
         environment_day = get_day(environment_daily, iday)
         update_forcing_day!(forcing, solar_radiation_out, output, iday)
         niter = iterations_for_day(time_mode, convergence, j)
@@ -479,7 +468,7 @@ function solve_soil!(cache::MicroCache)
         end
         if reset_snow_per_day(time_mode)
             snow_state = initial_snow_state(snow_model)
-            reset_snow_scratch!(snow_model, snow_scratch)
+            reset_snow_scratch!(snow_model, buffers.snow)
         end
         # Soil-temperature reset (TINS-style uniform fill from this day's mean reference
         # air temperature). Matches Fortran MICROCLIMATE.f:909-916: `T(1:ii) = TINS(1:ii, doy)`
@@ -563,7 +552,7 @@ function solve_soil!(cache::MicroCache)
                 # Same Fortran-aligned snow override (snow → emissivity 0.98) but
                 # without the type-unstable conditional `merge` — use the
                 # apply_snow_overrides helper from above.
-                (; longwave_sky) = apply_snow_overrides(snow_model, snow_state, snow_scratch,
+                (; longwave_sky) = apply_snow_overrides(snow_model, snow_state, buffers.snow,
                     day_init_step, site, moisture_mode, env_init,
                     longwave_model, vapour_pressure_equation)
                 output.sky_temperature[day_init_step] = longwave_sky.sky_temperature
@@ -583,7 +572,7 @@ function solve_soil!(cache::MicroCache)
             environment_instant = get_instant(environment_day, environment_hourly, output, soil_moisture, step)
             T0 = setindex(T0, environment_instant.deep_soil_temperature, num_soil_nodes)
             (; albedo, effective_wetness, longwave_sky) = apply_snow_overrides(
-                snow_model, snow_state, snow_scratch, step, site, moisture_mode, environment_instant,
+                snow_model, snow_state, buffers.snow, step, site, moisture_mode, environment_instant,
                 longwave_model, vapour_pressure_equation;
                 is_last_iter)
             if n_snow > 0
@@ -592,12 +581,12 @@ function solve_soil!(cache::MicroCache)
                 # OSUB before the `IFINAL < ND` return — keep the depth array
                 # populated so the ODE sees the same node geometry every iter.
                 if !is_last_iter
-                    snow_scratch.snow_depth_hourly[step] = snow_state.current_depth
-                    snow_state = activate_snow_nodes!(snow_model, snow_state, snow_scratch, T_snow, step)
+                    buffers.snow.snow_depth_hourly[step] = snow_state.current_depth
+                    snow_state = activate_snow_nodes!(snow_model, snow_state, buffers.snow, T_snow, step)
                 end
-                compute_effective_depths!(snow_model, snow_state, snow_scratch, depths)
-                ode_depths = snow_scratch.effective_depths
-                first_active = findfirst(d -> d > 0u"cm", snow_scratch.node_depths)
+                compute_effective_depths!(snow_model, snow_state, buffers.snow, depths)
+                ode_depths = buffers.snow.effective_depths
+                first_active = findfirst(d -> d > 0u"cm", buffers.snow.node_depths)
                 sync_temp = isnothing(first_active) ? T0[1] : T_snow[first_active]
                 T_snow = _sync_snow_to_active(T_snow, first_active, sync_temp)
             else
@@ -654,7 +643,7 @@ function solve_soil!(cache::MicroCache)
                         soil_wetness=effective_wetness,
                         vapour_pressure_equation,
                     )
-                    snow_state, snowfall_hour, thermal_melt, rain_melt_snow = update_snow!(snow_model, snow_state, snow_scratch, T_snow, T_snow_before, environment_instant, step,
+                    snow_state, snowfall_hour, thermal_melt, rain_melt_snow = update_snow!(snow_model, snow_state, buffers.snow, T_snow, T_snow_before, environment_instant, step,
                         T0[1], T0_before[1], Q_evap;
                         rainfall_schedule, shade=environment_instant.shade, day_of_year=days[j])
                     # Fortran OSUB.f lines 938-943: QFREZE = melted*(1-snowmelt)*79.7/60/10000
@@ -668,29 +657,29 @@ function solve_soil!(cache::MicroCache)
                     end
                     # Fortran SNOWLAYER.f lines 67-71, 93-97: reset deactivated node temps to T(1)
                     prev_active = snow_state.active_nodes
-                    snow_state = activate_snow_nodes!(snow_model, snow_state, snow_scratch, T_snow, step)
+                    snow_state = activate_snow_nodes!(snow_model, snow_state, buffers.snow, T_snow, step)
                     if snow_state.active_nodes < prev_active
-                        T_snow = sync_inactive_snow_temps(T_snow, snow_scratch)
-                    end                    
-                    snow_state, T_snow, soil_surf_temp = snow_phase_transition(snow_model, snow_state, snow_scratch, T_snow, T_snow_before, environment_instant.atmospheric_pressure, T0[1])
+                        T_snow = sync_inactive_snow_temps(T_snow, buffers.snow)
+                    end
+                    snow_state, T_snow, soil_surf_temp = snow_phase_transition(snow_model, snow_state, buffers.snow, T_snow, T_snow_before, environment_instant.atmospheric_pressure, T0[1])
                     # NicheMapR-parity: skip the soil-surface clamp cascade
                     # from snow_phase_transition / clamp_snow_temperatures /
                     # freeze_new_snow. Keeping T0[1] at its post-ODE value lets
                     # the next-hour snow_thermal_melt fire at the right hours
                     # and matches NicheMapR's monthly-snow output (mean depth
                     # diff 0.48 cm over 12 days vs 2.15 cm with cascade on).
-                    T_snow, _ = clamp_snow_temperatures(T_snow, snow_scratch)
+                    T_snow, _ = clamp_snow_temperatures(T_snow, buffers.snow)
                     # NicheMapR-parity: see comment above on the soil-surface
                     # clamp cascade.
-                    T_snow, _ = freeze_new_snow(snow_model, T_snow, snow_scratch, step)
+                    T_snow, _ = freeze_new_snow(snow_model, T_snow, buffers.snow, step)
                     # NicheMapR-parity: see comment above on the soil-surface
                     # clamp cascade.
-                    snow_state = adjust_snow_near_nodes!(snow_model, snow_state, snow_scratch, T_snow, step)
+                    snow_state = adjust_snow_near_nodes!(snow_model, snow_state, buffers.snow, T_snow, step)
                     prev_active2 = snow_state.active_nodes
-                    snow_state = activate_snow_nodes!(snow_model, snow_state, snow_scratch, T_snow, step)
+                    snow_state = activate_snow_nodes!(snow_model, snow_state, buffers.snow, T_snow, step)
                     # Fortran SNOWLAYER.f: also reset temps after the second activation
                     if snow_state.active_nodes < prev_active2
-                        T_snow = sync_inactive_snow_temps(T_snow, snow_scratch)
+                        T_snow = sync_inactive_snow_temps(T_snow, buffers.snow)
                     end
                 end
 
@@ -701,16 +690,16 @@ function solve_soil!(cache::MicroCache)
                     environment_instant = get_instant(environment_day, environment_hourly, output, soil_moisture, next_step)
                     T0 = setindex(T0, environment_instant.deep_soil_temperature, num_soil_nodes)
                     (; albedo, effective_wetness, longwave_sky) = apply_snow_overrides(
-                        snow_model, snow_state, snow_scratch, next_step, site, moisture_mode, environment_instant,
+                        snow_model, snow_state, buffers.snow, next_step, site, moisture_mode, environment_instant,
                         longwave_model, vapour_pressure_equation;
                         is_last_iter)
                     if n_snow > 0
                         if !is_last_iter
-                            snow_scratch.snow_depth_hourly[next_step] = snow_state.current_depth
-                            snow_state = activate_snow_nodes!(snow_model, snow_state, snow_scratch, T_snow, next_step)
+                            buffers.snow.snow_depth_hourly[next_step] = snow_state.current_depth
+                            snow_state = activate_snow_nodes!(snow_model, snow_state, buffers.snow, T_snow, next_step)
                         end
-                        compute_effective_depths!(snow_model, snow_state, snow_scratch, depths)
-                        ode_depths = snow_scratch.effective_depths
+                        compute_effective_depths!(snow_model, snow_state, buffers.snow, depths)
+                        ode_depths = buffers.snow.effective_depths
                     else
                         ode_depths = depths
                     end
@@ -745,7 +734,7 @@ function solve_soil!(cache::MicroCache)
                     #   violation — rain water discarded). Julia instead routes rain to pool, and also tracks rain_melt water
                     #   (snow melted by rain energy; OSUB.f line 950 subtracts rainmelt from cursnow but never adds it to condep
                     #   — another mass loss). Both rain and rain_melt water physically reach the soil surface.
-                    snow_present = n_snow > 0 && snow_scratch.snow_depth_hourly[step] > 0.0u"cm"
+                    snow_present = n_snow > 0 && buffers.snow.snow_depth_hourly[step] > 0.0u"cm"
                     snow_temp_threshold = n_snow > 0 ? snow_model.snow_temperature_threshold : 0.0u"°C"
                     melted_water = n_snow > 0 ? uconvert(u"kg/m^2", thermal_melt * 1.0u"g/cm^3") : 0.0u"kg/m^2"
                     rain_melt_water = n_snow > 0 ? uconvert(u"kg/m^2", rain_melt_snow * snow_state.density) : 0.0u"kg/m^2"
@@ -790,7 +779,7 @@ function solve_soil!(cache::MicroCache)
                 # post-midnight-snowfall state.
                 if is_last_iter && n_snow > 0 && step <= ndays * length(hours)
                     output.snow_fall[step]    = uconvert(u"cm/hr", snowfall_hour / 1.0u"hr")
-                    output.snow_depth[step]   = uconvert(u"cm", snow_scratch.snow_depth_hourly[step])
+                    output.snow_depth[step]   = uconvert(u"cm", buffers.snow.snow_depth_hourly[step])
                     # Corrected NicheMapR convention: stored density at row N uses
                     # the post-update depth and snow_age at hour N. Internally
                     # `snow_state.density` is the pre-update density (used for

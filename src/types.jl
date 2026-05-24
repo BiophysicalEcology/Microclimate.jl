@@ -182,12 +182,11 @@ end
     MicroState
 
 Mutable simulation state that evolves during `solve!`. Lives on `MicroCache.state`.
+Holds only the fields that need persistent storage across hour/day iterations
+(arrays mutated in place). Immutable snow state lives as a local in `solve_soil!`.
 """
-mutable struct MicroState{NS,SM,N,ND,SP}
-    snow_state::NS
+mutable struct MicroState{SM,SP}
     soil_moisture::SM
-    nodes::N
-    nodes_day::ND
     ∑phase::SP
     # Snapshot of ∑phase at the start of each day, restored before every spinup
     # iteration of that day. Pre-allocated so the day-loop never calls `copy(∑phase)`.
@@ -203,13 +202,13 @@ in `init`. Lives on `MicroCache.buffers`.
 struct MicroBuffers{SO,SOB,P,PB,SEB,SP,PT,SWB,SS,IB}
     solar_out::SO                  # SolarRadiation output (NamedTuple of arrays)
     solar::SOB                     # SolarRadiation internal buffers (NamedTuple)
-    profile::P                     # atmospheric profile scratch used by the moisture solver
+    soil_water_profile::P          # atmospheric profile scratch used by the moisture solver
     air_profile::PB                # atmospheric profile scratch used by solve_air!
     soil_energy_balance::SEB
     soil_properties::SP
     phase_transition::PT
     soil_water_balance::SWB
-    snow_scratch::SS               # NamedTuple for SnowModel; nothing for NoSnow
+    snow::SS                       # snow buffers (NamedTuple for SnowModel; nothing for NoSnow)
     interpolation::IB              # 24-element scratch buffers for hourly_from_min_max!
 end
 

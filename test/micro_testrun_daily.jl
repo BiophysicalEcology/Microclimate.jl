@@ -56,7 +56,7 @@ site = Site(;
 )
 boundary_layer_model = MoninObukhov(; karman_constant=0.4, dyer_constant=16.0)
 
-soil_thermal = CampbelldeVriesSoilProperties(;
+soil_properties_model = CampbelldeVriesSoilProperties(;
     de_vries_shape_factor = 0.1, # de Vries shape factor, 0.33 for organic soils, 0.1 for mineral
     mineral_conductivity = (CSV.File("$testdir/data/init_daily/soilprop.csv")[1, 1][4]) * 1.0u"W/m/K", # soil minerals thermal conductivity (W/mC)
     mineral_heat_capacity = (CSV.File("$testdir/data/init_daily/soilprop.csv")[1, 1][5]) * 1.0u"J/kg/K", # soil minerals specific heat (J/kg-K)
@@ -79,13 +79,15 @@ environment_minmax = nothing
 # )
 
 _runmoist = Bool(Int(microinput[:runmoist]))
-soil_hydraulics = CampbellSoilHydraulics(;
+soil_profile = SoilProfile(;
+    bulk_density = (DataFrame(CSV.File("$testdir/data/init_daily/BD.csv"))[:, 2] * 1.0u"Mg/m^3"),
+    mineral_density = (DataFrame(CSV.File("$testdir/data/init_daily/DD.csv"))[:, 2] * 1.0u"Mg/m^3"),
+)
+soil_hydraulic_model = CampbellSoilHydraulics(;
     # soil hydraulic parameters
     air_entry_water_potential = (DataFrame(CSV.File("$testdir/data/init_daily/PE.csv"))[:, 2] * 1.0u"J/kg"),
     saturated_hydraulic_conductivity = (DataFrame(CSV.File("$testdir/data/init_daily/KS.csv"))[:, 2] * 1.0u"kg*s/m^3"),
     campbell_b_parameter = (DataFrame(CSV.File("$testdir/data/init_daily/BB.csv"))[:, 2] * 1.0),
-    bulk_density = (DataFrame(CSV.File("$testdir/data/init_daily/BD.csv"))[:, 2] * 1.0u"Mg/m^3"),
-    mineral_density = (DataFrame(CSV.File("$testdir/data/init_daily/DD.csv"))[:, 2] * 1.0u"Mg/m^3"),
     # plant parameters
     root_density = DataFrame(CSV.File("$testdir/data/init_daily/L.csv"))[:, 2] * u"m/m^3",
     root_resistance = microinput[:RW] * u"m^3/kg/s",
@@ -118,7 +120,9 @@ environment_hourly = HourlyTimeseries(;
     longwave_radiation=nothing,
 )
 
-solar_model = SolarProblem(; scattered_uv = Bool(Int(microinput[:IUV])))
+radiation = RadiationModel(;
+    solar_radiation_model = SolarProblem(; scattered_uv = Bool(Int(microinput[:IUV]))),
+)
 
 # Set up time mode from the daily/spinup flags
 _daily = Bool(Int(microinput[:microdaily]))
@@ -147,9 +151,10 @@ model = MicroModel(;
     hours = 0:1:23, # hour of day for solar_radiation
     depths, # soil nodes - keep spacing close near the surface
     heights, # air nodes for temperature, wind speed and humidity profile
-    solar_model,
-    soil_properties_model = soil_thermal,
-    soil_hydraulic_model = soil_hydraulics,
+    radiation,
+    soil_profile,
+    soil_properties_model,
+    soil_hydraulic_model,
     boundary_layer_model,
     config,
 )

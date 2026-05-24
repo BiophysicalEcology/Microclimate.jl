@@ -7,8 +7,9 @@ using Test
     @test example_monthly_weather() isa MonthlyMinMaxEnvironment
     @test example_daily_environment() isa DailyTimeseries
     @test example_hourly_environment() isa HourlyTimeseries
-    @test example_soil_thermal_parameters() isa CampbelldeVriesSoilProperties
-    @test example_soil_hydraulics() isa CampbellSoilHydraulics
+    @test example_soil_properties_model() isa CampbelldeVriesSoilProperties
+    @test example_soil_hydraulic_model() isa CampbellSoilHydraulics
+    @test example_soil_profile() isa SoilProfile
     @test example_microclimate_problem() isa MicroProblem
 end
 
