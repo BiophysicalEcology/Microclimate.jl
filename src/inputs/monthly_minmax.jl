@@ -14,6 +14,11 @@
     maxima_times::M
 end
 
+"""
+    example_monthly_weather
+
+Example monthly weather input for the middle day of each month for Madison Wisconsin, USA, originally extracted from the CRU CL v. 2.0 dataset.
+"""
 function example_monthly_weather(;
     reference_temperature_min = [-14.3, -12.1, -5.1, 1.2, 6.9, 12.3, 15.2, 13.6, 8.9, 3, -3.2, -10.6]u"°C",
     reference_temperature_max = [-3.2, 0.1, 6.8, 14.6, 21.3, 26.4, 29, 27.7, 23.3, 16.6, 7.8, -0.4]u"°C",
