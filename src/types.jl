@@ -77,7 +77,7 @@ end
 
 Constant-across-runs scientific description of the simulation:
 
-- solver geometry (`days`, `hours`, `depths`, `heights`)
+- solver geometry (`days`, `hours`, `depths`, `heights`) # TODO generalise to sub-hourly
 - physical-process models:
     - `soil_profile::SoilProfile` — per-depth `bulk_density` and `mineral_density`
       profiles read by both the soil properties and soil hydraulic models
