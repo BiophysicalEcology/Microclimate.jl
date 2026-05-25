@@ -1,14 +1,19 @@
 """
-    ViewFactorLongwave()
+    ViewFactorLongwave(; atmospheric_radiation_model=CampbellNormanAtmosphericRadiation())
 
 View factor-based surface-longwave budget (as in NicheMapR). Combines the clear-sky
-downwelling longwave from an `AbstractAtmosphericRadiationModel` with cloud
+downwelling longwave from `atmospheric_radiation_model` with cloud
 emissivity, sky view fraction, vegetation shade, and hillshade contributions
 to give the net longwave at the surface.
-"""
-struct ViewFactorLongwave <: AbstractLongwaveScheme end
 
-function precompute_longwave_sky(::ViewFactorLongwave, atmospheric_radiation_model;
+The `atmospheric_radiation_model` lives on the longwave model rather than on
+`MicroConfig` because no other longwave model consumes it.
+"""
+@kwdef struct ViewFactorLongwave{ARM<:AbstractAtmosphericRadiationModel} <: AbstractLongwaveModel
+    atmospheric_radiation_model::ARM = CampbellNormanAtmosphericRadiation()
+end
+
+function precompute_longwave_sky(model::ViewFactorLongwave;
     site,
     environment_instant,
     vapour_pressure_equation=GoffGratch(),
@@ -21,7 +26,7 @@ function precompute_longwave_sky(::ViewFactorLongwave, atmospheric_radiation_mod
     (; atmospheric_pressure, reference_humidity, reference_temperature, cloud_emissivity, cloud_cover) = environment_instant
 
     wet_air_out = wet_air_properties(u"K"(reference_temperature), reference_humidity, atmospheric_pressure; vapour_pressure_equation)
-    atmospheric_longwave = atmospheric_radiation(atmospheric_radiation_model, wet_air_out.vapour_pressure, reference_temperature)
+    atmospheric_longwave = atmospheric_radiation(model.atmospheric_radiation_model, wet_air_out.vapour_pressure, reference_temperature)
 
     cloud_radiation = σ * cloud_emissivity * (u"K"(reference_temperature) - 2.0u"K")^4
     hillshade_radiation = σ * cloud_emissivity * (u"K"(reference_temperature))^4
@@ -50,13 +55,13 @@ function precompute_longwave_sky(::ViewFactorLongwave, atmospheric_radiation_mod
     )
 end
 
-function longwave_radiation(scheme::ViewFactorLongwave, atmospheric_radiation_model;
+function longwave_radiation(model::ViewFactorLongwave;
     site,
     environment_instant,
     surface_temperature,
     vapour_pressure_equation=GoffGratch(),
 )
-    sky = precompute_longwave_sky(scheme, atmospheric_radiation_model; site, environment_instant, vapour_pressure_equation)
+    sky = precompute_longwave_sky(model; site, environment_instant, vapour_pressure_equation)
     (; incoming_longwave, ground_shade_term) = sky
 
     surface_radiation = σ * environment_instant.surface_emissivity * (u"K"(surface_temperature))^4

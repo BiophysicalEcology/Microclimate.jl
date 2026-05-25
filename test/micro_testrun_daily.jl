@@ -56,7 +56,7 @@ site = Site(;
 )
 boundary_layer_model = MoninObukhov(; karman_constant=0.4, dyer_constant=16.0)
 
-soil_thermal = CampbelldeVriesSoilProperties(;
+soil_properties_model = CampbelldeVriesSoilProperties(;
     de_vries_shape_factor = 0.1, # de Vries shape factor, 0.33 for organic soils, 0.1 for mineral
     mineral_conductivity = (CSV.File("$testdir/data/init_daily/soilprop.csv")[1, 1][4]) * 1.0u"W/m/K", # soil minerals thermal conductivity (W/mC)
     mineral_heat_capacity = (CSV.File("$testdir/data/init_daily/soilprop.csv")[1, 1][5]) * 1.0u"J/kg/K", # soil minerals specific heat (J/kg-K)
@@ -79,13 +79,15 @@ environment_minmax = nothing
 # )
 
 _runmoist = Bool(Int(microinput[:runmoist]))
-soil_hydraulics = CampbellSoilHydraulics(;
+soil_profile = SoilProfile(;
+    bulk_density = (DataFrame(CSV.File("$testdir/data/init_daily/BD.csv"))[:, 2] * 1.0u"Mg/m^3"),
+    mineral_density = (DataFrame(CSV.File("$testdir/data/init_daily/DD.csv"))[:, 2] * 1.0u"Mg/m^3"),
+)
+soil_hydraulic_model = CampbellSoilHydraulics(;
     # soil hydraulic parameters
     air_entry_water_potential = (DataFrame(CSV.File("$testdir/data/init_daily/PE.csv"))[:, 2] * 1.0u"J/kg"),
     saturated_hydraulic_conductivity = (DataFrame(CSV.File("$testdir/data/init_daily/KS.csv"))[:, 2] * 1.0u"kg*s/m^3"),
     campbell_b_parameter = (DataFrame(CSV.File("$testdir/data/init_daily/BB.csv"))[:, 2] * 1.0),
-    bulk_density = (DataFrame(CSV.File("$testdir/data/init_daily/BD.csv"))[:, 2] * 1.0u"Mg/m^3"),
-    mineral_density = (DataFrame(CSV.File("$testdir/data/init_daily/DD.csv"))[:, 2] * 1.0u"Mg/m^3"),
     # plant parameters
     root_density = DataFrame(CSV.File("$testdir/data/init_daily/L.csv"))[:, 2] * u"m/m^3",
     root_resistance = microinput[:RW] * u"m^3/kg/s",
@@ -118,41 +120,49 @@ environment_hourly = HourlyTimeseries(;
     longwave_radiation=nothing,
 )
 
-solar_model = SolarProblem(; scattered_uv = Bool(Int(microinput[:IUV])))
+radiation = RadiationModel(;
+    solar_radiation_model = SolarProblem(; scattered_uv = Bool(Int(microinput[:IUV]))),
+)
 
 # Set up time mode from the daily/spinup flags
 _daily = Bool(Int(microinput[:microdaily]))
 _spinup = Bool(Int(microinput[:spinup]))
 time_mode = _daily ? ConsecutiveDayMode(; spinup_first_day=_spinup) : NonConsecutiveDayMode()
 
+soil_moisture_strategy = _runmoist ?
+    DynamicSoilMoisture(;
+        moisture_tolerance = microinput[:IM]u"kg/m^2/s",
+        moisture_max_iterations = Int(microinput[:MAXCOUNT]),
+        moisture_timestep = microinput[:moiststep]u"s",
+    ) :
+    PrescribedSoilMoisture()
+
 config = MicroConfig(;
-    boundary_layer_model,
     time_mode,
     convergence = FixedSoilTemperatureIterations(Int(microinput[:ndmax])),
     rainfall_schedule = Bool(Int(microinput[:rainhourly])) ? HourlyRainfall() : DailyRainfall(),
-    soil_moisture_strategy = _runmoist ? DynamicSoilMoisture() : PrescribedSoilMoisture(),
-    moisture_tolerance = microinput[:IM]u"kg/m^2/s",
-    moisture_max_iterations = Int(microinput[:MAXCOUNT]),
-    moisture_timestep = microinput[:moiststep]u"s",
+    soil_moisture_strategy,
     max_surface_pool = microinput[:maxpool] * 1000.0u"kg/m^2",
 )
 
 # now try the simulation function
-problem = MicroProblem(;
-    # locations, times, depths and heights
+model = MicroModel(;
     days = days[1:days2do], # days of year to simulate - TODO leap years
     hours = 0:1:23, # hour of day for solar_radiation
     depths, # soil nodes - keep spacing close near the surface
     heights, # air nodes for temperature, wind speed and humidity profile
-    # Objects defined above
-    solar_model,
+    radiation,
+    soil_profile,
+    soil_properties_model,
+    soil_hydraulic_model,
+    boundary_layer_model,
+    config,
+)
+inputs = MicroInputs(;
     site,
-    parameters = MicroParameters(; soil_thermal, soil_hydraulics),
     environment_minmax,
     environment_daily,
     environment_hourly,
-    config,
-    # initial conditions
     initial_soil_temperature = let coarse = u"K".((DataFrame(CSV.File("$testdir/data/init_daily/soilinit.csv"))[:, 2] * 1.0)u"°C"), n = length(coarse)
         result = Vector{eltype(coarse)}(undef, 2n - 1)
         for i in 1:n; result[2i-1] = coarse[i]; end
@@ -166,6 +176,7 @@ problem = MicroProblem(;
         result
     end,
 )
+problem = MicroProblem(model, inputs)
 
 # now try the simulation function
 @time micro_out = Microclimate.solve(problem);

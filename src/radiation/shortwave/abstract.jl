@@ -1,7 +1,7 @@
-abstract type AbstractShortwaveScheme end
+abstract type AbstractShortwaveModel end
 
 """
-    shortwave_radiation!(scheme, output, cloud, diffuse_clear_sky, direct_clear_sky, zenith, doy; sunshine_fraction_model, diffuse_fraction_model)
+    shortwave_radiation!(model, output, cloud, diffuse_clear_sky, direct_clear_sky, zenith, doy; sunshine_fraction_model, diffuse_fraction_model)
 
 Full shortwave budget: starting from clear-sky diffuse and direct components,
 apply cloud-cover scaling and split the resulting global radiation into a

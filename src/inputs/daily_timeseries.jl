@@ -7,3 +7,18 @@
     deep_soil_temperature::DST
     leaf_area_index::LAI
 end
+
+function example_daily_environment(days=DEFAULT_DAYS;
+    shade = fill(0.0, length(days)), # fractional shade cast by vegetation
+    soil_wetness = fill(0.0, length(days)), # fractional surface wetness
+    surface_emissivity = fill(0.96, length(days)), # - surface emissivity
+    cloud_emissivity = fill(0.96, length(days)), # - cloud emissivity
+    rainfall = ([28, 28.2, 54.6, 79.7, 81.3, 100.1, 101.3, 102.5, 89.7, 62.4, 54.9, 41.2])u"kg/m^2",
+    deep_soil_temperature = fill(7.741666u"°C", length(days)),
+    leaf_area_index = fill(0.1, length(days)),
+)
+    DailyTimeseries(;
+        shade, soil_wetness, surface_emissivity, cloud_emissivity,
+        rainfall, deep_soil_temperature, leaf_area_index,
+    )
+end

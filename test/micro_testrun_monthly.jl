@@ -54,7 +54,7 @@ boundary_layer_model = MoninObukhov(; karman_constant=0.4, dyer_constant=16.0)
 mineral_density = (CSV.File("$testdir/data/init_monthly/soilprop.csv")[1, 1][6]) * 1.0u"Mg/m^3" # soil minerals density (Mg/m3)
 bulk_density = (CSV.File("$testdir/data/init_monthly/soilprop.csv")[1, 1][2]) * 1.0u"Mg/m^3" # dry soil bulk density (Mg/m3)
 
-soil_thermal = CampbelldeVriesSoilProperties(;
+soil_properties_model = CampbelldeVriesSoilProperties(;
     de_vries_shape_factor = 0.1, # de Vries shape factor, 0.33 for organic soils, 0.1 for mineral
     mineral_conductivity = (CSV.File("$testdir/data/init_monthly/soilprop.csv")[1, 1][4]) * 1.0u"W/m/K", # soil minerals thermal conductivity (W/mC)
     mineral_heat_capacity = (CSV.File("$testdir/data/init_monthly/soilprop.csv")[1, 1][5]) * 1.0u"J/kg/K", # soil minerals specific heat (J/kg-K)
@@ -99,10 +99,16 @@ environment_minmax = MonthlyMinMaxEnvironment(;
 )
 
 _runmoist = Bool(Int(microinput[:runmoist]))
-soil_hydraulics = example_soil_hydraulics(depths; bulk_density, mineral_density,
+soil_profile = SoilProfile(;
+    bulk_density = fill(bulk_density, length(depths)),
+    mineral_density = fill(mineral_density, length(depths)),
+)
+soil_hydraulic_model = example_soil_hydraulic_model(depths;
     root_density = fill(0.0, length(depths))u"m/m^3")
-solar_model = SolarProblem(;
-    diffuse_model = Bool(Int(microinput[:IUV])) ? SolarRadiation.ChandrasekharScattering() : SolarRadiation.NoScattering(),
+radiation = RadiationModel(;
+    solar_radiation_model = SolarProblem(;
+        diffuse_model = Bool(Int(microinput[:IUV])) ? SolarRadiation.ChandrasekharScattering() : SolarRadiation.NoScattering(),
+    ),
 )
 
 # Set up time mode from the daily/spinup flags.
@@ -116,7 +122,6 @@ time_mode = _daily ? ConsecutiveDayMode(; spinup_first_day=_spinup) :
     NonConsecutiveDayMode(; iterations_per_day=Int(microinput[:ndmax]))
 
 config = MicroConfig(;
-    boundary_layer_model,
     time_mode,
     convergence = FixedSoilTemperatureIterations(10),
     rainfall_schedule = Bool(Int(microinput[:rainhourly])) ? HourlyRainfall() : DailyRainfall(),
@@ -125,24 +130,27 @@ config = MicroConfig(;
 )
 
 # now try the simulation function
-problem = MicroProblem(;
-    # locations, times, depths and heights
+model = MicroModel(;
     days = days[days2do], # days of year for solar_radiation
     hours = collect(0.0:1:23.0), # hour of day for solar_radiation
     depths,
     heights, # air nodes for temperature, wind speed and humidity profile
-    # Objects defined above
-    solar_model,
+    radiation,
+    soil_profile,
+    soil_properties_model,
+    soil_hydraulic_model,
+    boundary_layer_model,
+    config,
+)
+inputs = MicroInputs(;
     site,
-    parameters = MicroParameters(; soil_thermal, soil_hydraulics),
     environment_minmax,
     environment_daily,
     environment_hourly,
-    config,
-    # intial conditions
     initial_soil_temperature = nothing, # initial soil temperature
     initial_soil_moisture = precomputed_soil_moisture[1:10, 1], # initial soil moisture
 )
+problem = MicroProblem(model, inputs)
 
 # now try the simulation function
 @time micro_out = Microclimate.solve(problem);
@@ -191,7 +199,7 @@ end
 @testset "reinit! and re-solve!" begin
     cache = init(problem)
     solve!(cache)
-    reinit!(cache, problem)
+    reinit!(cache, inputs)
     out3 = solve!(cache)
     @test out3.soil_temperature ≈ micro_out.soil_temperature rtol=1e-4
     @test out3.profile.air_temperature ≈ micro_out.profile.air_temperature rtol=1e-4

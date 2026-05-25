@@ -4,6 +4,7 @@ using CommonSolve: CommonSolve
 using ConstructionBase
 using Interpolations, Statistics, Dates
 using SciMLBase, OrdinaryDiffEqTsit5, OrdinaryDiffEqAdamsBashforthMoulton
+using OrdinaryDiffEqCore: ismultistep
 using OrdinaryDiffEqTsit5: Tsit5
 using OrdinaryDiffEqAdamsBashforthMoulton: AB3, AB4, AB5, ABM32, ABM43, ABM54
 using Unitful, UnitfulMoles
@@ -19,7 +20,9 @@ using Interpolations: AbstractInterpolation
 using SolarRadiation
 
 
-export MicroProblem, MicroCache, MicroConfig, MicroParameters
+export MicroProblem, MicroModel, MicroInputs, MicroCache, MicroConfig
+export SoilProfile, RadiationModel
+export example_soil_profile
 
 export GoffGratch, Teten, Huang
 export Tsit5
@@ -56,19 +59,19 @@ export AbstractAtmosphericRadiationModel, SwinbankAtmosphericRadiation, Campbell
 export AbstractSunshineFractionModel, Angstrom, sunshine_fraction
 
 # Longwave budget algorithms
-export AbstractLongwaveScheme, ViewFactorLongwave
+export AbstractLongwaveModel, ViewFactorLongwave
 
 # Shortwave budget algorithms
-export AbstractShortwaveScheme, AngstromMaxwellShortwave
+export AbstractShortwaveModel, AngstromMaxwellShortwave
 
 # Surface evaporation models
 export AbstractEvaporationModel, BulkTransferEvaporation, surface_convection_evaporation
 
-# Soil energy balance schemes
-export SoilHeatTransportScheme, SoilHeatTransport1D
+# Soil energy balance models
+export SoilHeatTransportModel, SoilHeatTransport1D
 
-# Soil freezing schemes
-export SoilPhaseTransitionScheme, PhaseTransitionLatentHeat, allocate_phase_transition
+# Soil freezing models
+export SoilPhaseTransitionModel, PhaseTransitionLatentHeat, allocate_phase_transition
 
 # Rainfall schedule
 export AbstractRainfallSchedule, DailyRainfall, HourlyRainfall, is_hourly
@@ -89,7 +92,7 @@ export soil_energy_balance, evaporation, soil_water_balance!, phase_transition
 
 export example_site, example_monthly_weather,
     example_daily_environment, example_hourly_environment,
-    example_soil_hydraulics, example_soil_thermal_parameters, example_microclimate_problem
+    example_soil_hydraulic_model, example_soil_properties_model, example_microclimate_problem
 
 import CommonSolve: solve, solve!, init
 export solve, solve!, init, reinit!
@@ -168,11 +171,12 @@ include("forcing.jl")
 # Algorithms
 include("interpolation.jl")
 
-# Soil balance: energy ODE + freezing correction
-include("soil_balance/energy/abstract.jl")
-include("soil_balance/energy/heat_transport_1d.jl")
+# Soil balance: freezing correction is referenced as a default by the energy
+# ODE, so freezing/ must come before energy/.
 include("soil_balance/freezing/abstract.jl")
 include("soil_balance/freezing/latent_heat.jl")
+include("soil_balance/energy/abstract.jl")
+include("soil_balance/energy/heat_transport_1d.jl")
 
 # Apparent heat capacity (latent-heat treatment near phase change; used by snow)
 include("apparent_heat_capacity/abstract.jl")
@@ -186,9 +190,8 @@ include("snow/abstract.jl")
 include("snow/no_snow.jl")
 include("snow/snow_model.jl")
 
-# Top-level config, parameters, and problem
-include("config.jl")
-include("parameters.jl")
+# Top-level config, parameters, problem, state, buffers, and cache types
+include("types.jl")
 include("simulation.jl")
 
 end

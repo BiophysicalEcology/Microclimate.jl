@@ -82,9 +82,9 @@ function adjust_snow_near_nodes! end
 
 # Generic fallback applicable to every snow model variant: phase-change
 # accounting in the soil column itself (not the snowpack), delegating to the
-# configured freezing scheme. Variants that need bespoke behaviour can override.
-function apply_phase_transition(::AbstractSnowModel, freezing_scheme::SoilPhaseTransitionScheme, soil_temperature, soil_temperature_past, buffers, accumulated_latent_heat, soil_moisture, depths)
-    phase_transition!(freezing_scheme, buffers;
+# configured freezing model. Variants that need bespoke behaviour can override.
+function apply_phase_transition(::AbstractSnowModel, freezing_model::SoilPhaseTransitionModel, soil_temperature, soil_temperature_past, buffers, accumulated_latent_heat, soil_moisture, depths)
+    phase_transition!(freezing_model, buffers;
         temperatures=soil_temperature, temperatures_past=soil_temperature_past,
         accumulated_latent_heat, soil_moisture, depths,
     )

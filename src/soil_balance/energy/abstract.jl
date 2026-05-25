@@ -1,7 +1,7 @@
-abstract type SoilHeatTransportScheme end
+abstract type SoilHeatTransportModel end
 
 """
-    soil_energy_balance(scheme, temperature_state, p, t)
+    soil_energy_balance(model, temperature_state, p, t)
 
 ODE right hand side for the soil temperature column: returns the per-node `dT/dt`
 SVector. Variants supply the energy budget formulation (conduction +
@@ -10,7 +10,7 @@ surface boundary condition: net radiation + convection + evaporation + phase cor
 function soil_energy_balance end
 
 """
-    allocate_soil_energy_balance(scheme, num_nodes)
+    allocate_soil_energy_balance(model, num_nodes)
 
 Allocate per-layer scratch buffers (`layer_depths`, `heat_capacity`,
 `thermal_conductance`, warm-started Obukhov length) for the energy ODE.

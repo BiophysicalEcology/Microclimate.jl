@@ -6,7 +6,7 @@ layer tracks accumulated latent heat against `mass × L_fusion`. While the
 budget is non-empty, layer temperatures are clamped to 0°C; once exhausted,
 the clamp is released and the layer cools/warms freely.
 """
-struct PhaseTransitionLatentHeat <: SoilPhaseTransitionScheme end
+struct PhaseTransitionLatentHeat <: SoilPhaseTransitionModel end
 
 function allocate_phase_transition(::PhaseTransitionLatentHeat, num_nodes::Int)
     layer_mass = zeros(Float64, num_nodes)u"kg"

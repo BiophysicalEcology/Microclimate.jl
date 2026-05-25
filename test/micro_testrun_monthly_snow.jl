@@ -53,7 +53,7 @@ boundary_layer_model = MoninObukhov(; karman_constant=0.4, dyer_constant=16.0)
 mineral_density = (CSV.File("$testdir/data/init_monthly_snow/soilprop.csv")[1, 1][6]) * 1.0u"Mg/m^3" # soil minerals density (Mg/m3)
 bulk_density = (CSV.File("$testdir/data/init_monthly_snow/soilprop.csv")[1, 1][2]) * 1.0u"Mg/m^3" # dry soil bulk density (Mg/m3)
 
-soil_thermal = CampbelldeVriesSoilProperties(;
+soil_properties_model = CampbelldeVriesSoilProperties(;
     de_vries_shape_factor = 0.1, # de Vries shape factor, 0.33 for organic soils, 0.1 for mineral
     mineral_conductivity = (CSV.File("$testdir/data/init_monthly_snow/soilprop.csv")[1, 1][4]) * 1.0u"W/m/K", # soil minerals thermal conductivity (W/mC)
     mineral_heat_capacity = (CSV.File("$testdir/data/init_monthly_snow/soilprop.csv")[1, 1][5]) * 1.0u"J/kg/K", # soil minerals specific heat (J/kg-K)
@@ -100,10 +100,16 @@ environment_minmax = MonthlyMinMaxEnvironment(;
 )
 
 _runmoist = Bool(Int(microinput[:runmoist]))
-soil_hydraulics = example_soil_hydraulics(depths; bulk_density, mineral_density,
+soil_profile = SoilProfile(;
+    bulk_density = fill(bulk_density, length(depths)),
+    mineral_density = fill(mineral_density, length(depths)),
+)
+soil_hydraulic_model = example_soil_hydraulic_model(depths;
     root_density = fill(0.0, length(depths))u"m/m^3")
-solar_model = SolarProblem(;
-    diffuse_model = Bool(Int(microinput[:IUV])) ? SolarRadiation.ChandrasekharScattering() : SolarRadiation.NoScattering(),
+radiation = RadiationModel(;
+    solar_radiation_model = SolarProblem(;
+        diffuse_model = Bool(Int(microinput[:IUV])) ? SolarRadiation.ChandrasekharScattering() : SolarRadiation.NoScattering(),
+    ),
 )
 
 # Set up time mode from the daily/spinup flags
@@ -125,7 +131,6 @@ snow_model = SnowModel(;
 )
 
 config = MicroConfig(;
-    boundary_layer_model,
     time_mode,
     convergence = FixedSoilTemperatureIterations(Int(microinput[:ndmax])),
     rainfall_schedule = Bool(Int(microinput[:rainhourly])) ? HourlyRainfall() : DailyRainfall(),
@@ -133,21 +138,28 @@ config = MicroConfig(;
         PrescribedSoilMoisture(; precomputed_soil_moisture),
 )
 
-problem = MicroProblem(;
+model = MicroModel(;
     days = days[days2do],
     hours = collect(0.0:1:23.0),
     depths,
     heights,
-    solar_model,
+    radiation,
+    soil_profile,
+    soil_properties_model,
+    soil_hydraulic_model,
+    snow_model,
+    boundary_layer_model,
+    config,
+)
+inputs = MicroInputs(;
     site,
-    parameters = MicroParameters(; soil_thermal, soil_hydraulics, snow=snow_model),
     environment_minmax,
     environment_daily,
     environment_hourly,
-    config,
     initial_soil_temperature = nothing,
     initial_soil_moisture = precomputed_soil_moisture[1:10, 1],
 )
+problem = MicroProblem(model, inputs)
 
 @time micro_out = Microclimate.solve(problem);
 

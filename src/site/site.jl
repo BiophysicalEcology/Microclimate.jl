@@ -22,6 +22,30 @@ radiation model. Time-varying hourly pressure lives on the hourly forcing
 end
 
 """
+    example_site
+    
+Example site, Madison Wisconsin, USA.
+"""
+function example_site(;
+    latitude = 43.07305u"°",
+    longitude = -89.40123u"°",
+    elevation = 226.0u"m",
+    slope = 0.0u"°",
+    aspect = 0.0u"°",
+    horizon_angles = fill(0.0u"°", 24),
+    sky_view_fraction = 1.0,
+    albedo = 0.15,
+    roughness_height = 0.004u"m",
+    atmos_pressure = atmospheric_pressure(elevation),
+)
+    Site(;
+        latitude, longitude, elevation, slope, aspect, horizon_angles,
+        sky_view_fraction, albedo, roughness_height,
+        atmospheric_pressure=atmos_pressure,
+    )
+end
+
+"""
     SolarTerrain(site::Site)
 
 Build a `SolarRadiation.SolarTerrain` from a `Site`. Used internally when

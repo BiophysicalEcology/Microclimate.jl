@@ -1,7 +1,7 @@
-abstract type SoilPhaseTransitionScheme end
+abstract type SoilPhaseTransitionModel end
 
 """
-    phase_transition!(scheme, buffers; temperatures, temperatures_past, accumulated_latent_heat, soil_moisture, depths)
+    phase_transition!(model, buffers; temperatures, temperatures_past, accumulated_latent_heat, soil_moisture, depths)
 
 Soil ice/water phase-change correction: detects 0°C crossings per layer,
 accumulates latent heat against the layer's freezing budget, clamps the
@@ -12,8 +12,8 @@ SVector.
 function phase_transition! end
 
 """
-    allocate_phase_transition(scheme, num_nodes)
+    allocate_phase_transition(model, num_nodes)
 
-Allocate per-layer scratch buffers for the freezing scheme.
+Allocate per-layer scratch buffers for the freezing model.
 """
 function allocate_phase_transition end

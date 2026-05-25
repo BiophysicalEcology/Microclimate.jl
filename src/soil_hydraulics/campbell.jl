@@ -2,26 +2,50 @@
     CampbellSoilHydraulics(; ...)
 
 Soil hydraulic parameters for Campbell's (1985) soil water balance model.
-Holds parameters only — the moisture-solver strategy (`PrescribedSoilMoisture` /
-`DynamicSoilMoisture`) and tuning (`moisture_tolerance`, `moisture_max_iterations`,
-`moisture_timestep`, `max_surface_pool`) live on `MicroConfig`, since they are
-solver/strategy choices, not Campbell-specific.
+Holds parameters only — the moisture-solver strategy lives on
+`MicroConfig.soil_moisture_strategy` (`PrescribedSoilMoisture` /
+`DynamicSoilMoisture`), with solver tuning (`moisture_tolerance`,
+`moisture_max_iterations`, `moisture_timestep`) carried on
+`DynamicSoilMoisture` itself.
+
+`bulk_density` and `mineral_density` are not stored here — they live on
+`MicroModel.soil_profile::SoilProfile` and are passed in alongside this
+model wherever they're needed.
 
 # References
 Campbell, G. S. (1985). Soil Physics with BASIC. Elsevier.
 """
-@kwdef struct CampbellSoilHydraulics{AEWP,SHC,CBP,BD,MD,RDen,RRes,SCP,LRes,SSP,RRad} <: AbstractSoilHydraulicsModel
+@kwdef struct CampbellSoilHydraulics{AEWP,SHC,CBP,RDen,RRes,SCP,LRes,SSP,RRad} <: AbstractSoilHydraulicsModel
     air_entry_water_potential::AEWP
     saturated_hydraulic_conductivity::SHC
     campbell_b_parameter::CBP
-    bulk_density::BD       # per-depth profile (Vector); also consumed by the soil thermal model
-    mineral_density::MD    # per-depth profile (Vector); also consumed by the soil thermal model
     root_density::RDen
     root_resistance::RRes
     stomatal_closure_potential::SCP
     leaf_resistance::LRes
     stomatal_stability_parameter::SSP
     root_radius::RRad
+end
+
+# TODO move real defaults to the struct keywords
+function example_soil_hydraulic_model(depths=DEFAULT_DEPTHS;
+    # soil hydraulic parameters
+    air_entry_water_potential = fill(0.7, length(depths))u"J/kg", #air entry potential
+    saturated_hydraulic_conductivity = fill(0.0058, length(depths))u"kg*s/m^3", #saturated conductivity
+    campbell_b_parameter = fill(1.7, length(depths)), #soil 'b' parameter
+    # plant parameters
+    root_density = [0, 0, 8.2, 8.0, 7.8, 7.4, 7.1, 6.4, 5.8, 4.8, 4.0, 1.8, 0.9, 0.6, 0.8, 0.4, 0.4, 0, 0] * 1e4u"m/m^3", # root density at each node (from Campell 1985 Soil Physics with Basic, p. 131)
+    root_resistance = 2.5e+10u"m^3/kg/s", # resistance per unit length of root
+    stomatal_closure_potential = -1500.0u"J/kg", # critical leaf water potential for stomatal closure
+    leaf_resistance = 2.0e6u"m^4/kg/s", # resistance per unit length of leaf
+    stomatal_stability_parameter = 10.0, # stability parameter, -
+    root_radius = 0.001u"m", # root radius, m
+)
+    CampbellSoilHydraulics(;
+        air_entry_water_potential, saturated_hydraulic_conductivity, campbell_b_parameter,
+        root_density, root_resistance, stomatal_closure_potential, leaf_resistance, stomatal_stability_parameter,
+        root_radius,
+    )
 end
 
 function allocate_soil_water_balance(::CampbellSoilHydraulics, num_layers)
@@ -61,7 +85,8 @@ function allocate_soil_water_balance(::CampbellSoilHydraulics, num_layers)
     )
 end
 
-function infiltration_step!(buffers, smm::CampbellSoilHydraulics;
+function infiltration_step!(buffers, soil_hydraulic_model::CampbellSoilHydraulics;
+    soil_profile,
     depths,
     atmospheric_pressure,
     soil_moisture,
@@ -80,16 +105,16 @@ function infiltration_step!(buffers, smm::CampbellSoilHydraulics;
     relative_humidity_local = local_relative_humidity
 
     dt = moisture_timestep
-    saturated_conductivity = smm.saturated_hydraulic_conductivity
-    campbell_b = smm.campbell_b_parameter
-    bulk_density = smm.bulk_density
-    mineral_density = smm.mineral_density
-    root_density = smm.root_density
-    root_resistance_param = smm.root_resistance
-    stomatal_closure_potential = smm.stomatal_closure_potential
-    leaf_resistance = smm.leaf_resistance
-    stomatal_stability = smm.stomatal_stability_parameter
-    root_radius = smm.root_radius
+    saturated_conductivity = soil_hydraulic_model.saturated_hydraulic_conductivity
+    campbell_b = soil_hydraulic_model.campbell_b_parameter
+    bulk_density = soil_profile.bulk_density
+    mineral_density = soil_profile.mineral_density
+    root_density = soil_hydraulic_model.root_density
+    root_resistance_param = soil_hydraulic_model.root_resistance
+    stomatal_closure_potential = soil_hydraulic_model.stomatal_closure_potential
+    leaf_resistance = soil_hydraulic_model.leaf_resistance
+    stomatal_stability = soil_hydraulic_model.stomatal_stability_parameter
+    root_radius = soil_hydraulic_model.root_radius
 
     (; water_potential, depth, layer_water_mass, water_content, water_content_new,
        hydraulic_conductivity, soil_humidity, soil_temperature,
@@ -108,7 +133,7 @@ function infiltration_step!(buffers, smm::CampbellSoilHydraulics;
     vapor_diffusivity = 2.4e-5u"m^2/s"
 
     # Convert to negative absolute value; fill positions 1..num_layers, extend boundary
-    air_entry_potential[1:num_layers] .= -abs.(smm.air_entry_water_potential)
+    air_entry_potential[1:num_layers] .= -abs.(soil_hydraulic_model.air_entry_water_potential)
     air_entry_potential[num_layers+1] = air_entry_potential[num_layers]
 
     # Saturation water content, m3/m3; extend boundary
@@ -302,10 +327,11 @@ function infiltration_step!(buffers, smm::CampbellSoilHydraulics;
 end
 
 
-soil_water_balance(soil_hydraulics::CampbellSoilHydraulics; num_layers=18, kw...) =
-    soil_water_balance!(allocate_soil_water_balance(soil_hydraulics, num_layers), soil_hydraulics; kw...)
+soil_water_balance(soil_hydraulic_model::CampbellSoilHydraulics; num_layers=18, kw...) =
+    soil_water_balance!(allocate_soil_water_balance(soil_hydraulic_model, num_layers), soil_hydraulic_model; kw...)
 
-function soil_water_balance!(buffers, soil_hydraulics::CampbellSoilHydraulics;
+function soil_water_balance!(buffers, soil_hydraulic_model::CampbellSoilHydraulics;
+    soil_profile,
     depths,
     site,
     boundary_layer_model,
@@ -328,13 +354,13 @@ function soil_water_balance!(buffers, soil_hydraulics::CampbellSoilHydraulics;
     relative_humidity = environment_instant.reference_humidity
     leaf_area_index = environment_instant.leaf_area_index
 
-    (; bulk_density, mineral_density) = soil_hydraulics
+    (; bulk_density, mineral_density) = soil_profile
 
     θ_soil = soil_moisture
     surface_temperature = T0[1]
 
     # compute scalar profiles
-    profile_out = atmospheric_surface_profile!(boundary_layer_model, buffers.profile;
+    profile_out = atmospheric_surface_profile!(boundary_layer_model, buffers.soil_water_profile;
         site, environment_instant, surface_temperature, vapour_pressure_equation,
     )
 
@@ -384,7 +410,8 @@ function soil_water_balance!(buffers, soil_hydraulics::CampbellSoilHydraulics;
     end
 
     # run infiltration algorithm
-    infil_out = infiltration_step!(buffers.soil_water_balance, soil_hydraulics;
+    infil_out = infiltration_step!(buffers.soil_water_balance, soil_hydraulic_model;
+        soil_profile,
         depths,
         atmospheric_pressure,
         local_relative_humidity,
@@ -405,7 +432,8 @@ function soil_water_balance!(buffers, soil_hydraulics::CampbellSoilHydraulics;
         soil_moisture[1] = sat
     end
     for _ in 1:(niter_moist-1)
-        infil_out = infiltration_step!(buffers.soil_water_balance, soil_hydraulics;
+        infil_out = infiltration_step!(buffers.soil_water_balance, soil_hydraulic_model;
+            soil_profile,
             depths,
             atmospheric_pressure,
             local_relative_humidity,
