@@ -606,7 +606,7 @@ function solve_soil!(cache::MicroCache)
             # We do the minimal subset of `reinit!`'s work in place — the Tsit5
             # `ConstantCache` stage values are recomputed every step anyway, so
             # skipping the cache reinit is safe.
-            _reinit_integrator!(ode_integrator, T0_ode)
+            _maybe_reinit_integrator!(ode_integrator, T0_ode)
 
             for i in 1:length(hours)
                 step = (j - 1) * length(hours) + i
@@ -837,14 +837,22 @@ function allocate_ode_integrator(model::SoilHeatTransport1D, T0, inputs_proto)
 end
 
 # Reset integrator state for a fresh pass through the (0..1440 min) day.
-# Uses `SciMLBase.reinit!` so the algorithm cache (e.g. Adams f-history for
-# multi-step methods like ABM43) is rebuilt correctly. Earlier versions
-# bypassed reinit! to save ~528 B/call on Tsit5, but that path is unsafe for
-# multi-step solvers, so we now pay the allocation cost and accept any solver.
-@inline function _reinit_integrator!(integrator, u_new)
-    SciMLBase.reinit!(integrator, u_new;
-        t0=zero(integrator.t), erase_sol=false, reset_dt=true,
-    )
+# Multi-step solvers (Adams family) need their f-history rebuilt via
+# `reinit!`'s cache pass; single-step Runge–Kutta solvers (Tsit5, RK4, …)
+# recompute their stage cache every step anyway, so we skip `reinit_cache`
+# and avoid the ~440 B/call allocation. `integrator.alg` has a concrete
+# type at the call site, so the compiler constant-folds the branch.
+@inline function _maybe_reinit_integrator!(integrator, u_new)
+    if ismultistep(integrator.alg)
+        SciMLBase.reinit!(integrator, u_new;
+            t0=zero(integrator.t), erase_sol=false, reset_dt=true,
+        )
+    else
+        SciMLBase.reinit!(integrator, u_new;
+            t0=zero(integrator.t), erase_sol=false, reset_dt=true,
+            reinit_cache=false,
+        )
+    end
     return integrator
 end
 

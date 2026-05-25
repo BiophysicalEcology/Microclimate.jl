@@ -4,6 +4,7 @@ using CommonSolve: CommonSolve
 using ConstructionBase
 using Interpolations, Statistics, Dates
 using SciMLBase, OrdinaryDiffEqTsit5, OrdinaryDiffEqAdamsBashforthMoulton
+using OrdinaryDiffEqCore: ismultistep
 using OrdinaryDiffEqTsit5: Tsit5
 using OrdinaryDiffEqAdamsBashforthMoulton: AB3, AB4, AB5, ABM32, ABM43, ABM54
 using Unitful, UnitfulMoles
