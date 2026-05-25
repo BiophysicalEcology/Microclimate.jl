@@ -78,12 +78,13 @@ end
 
 # Resolve the non-snow baseline albedo: a populated `environment_daily.albedo`
 # (surfaced here as `environment_instant.albedo`) wins; otherwise fall back
-# to the `Site.albedo` scalar. Two-method dispatch keeps the return type
-# concrete per call site (no `Union{Float64, Nothing}` leakage).
+# to the `Site.albedo` scalar. The inner `_select_albedo` has separate
+# methods for `::Nothing` vs populated so the return type stays concrete
+# per call site (no `Union{Float64, Nothing}` leakage).
 @inline _baseline_albedo(site, environment_instant) =
-    _baseline_albedo(site.albedo, environment_instant.albedo)
-@inline _baseline_albedo(site_albedo, ::Nothing)    = site_albedo
-@inline _baseline_albedo(_site_albedo, env_albedo)  = env_albedo
+    _select_albedo(site.albedo, environment_instant.albedo)
+@inline _select_albedo(site_albedo, ::Nothing)   = site_albedo
+@inline _select_albedo(_site_albedo, env_albedo) = env_albedo
 
 function sync_inactive_snow_temps(T_snow::SVector{N}, snow_scratch) where N
     sync = T_snow[1]
