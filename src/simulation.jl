@@ -43,7 +43,7 @@ end
     longwave_sky = precompute_longwave_sky(longwave_model;
         site, environment_instant, vapour_pressure_equation)
     return (;
-        albedo = site.albedo,
+        albedo = _baseline_albedo(site, environment_instant),
         effective_wetness = get_soil_wetness(moisture_mode, environment_instant),
         longwave_sky,
     )
@@ -67,7 +67,7 @@ end
             surface_emissivity = 0.98,
         )
     else
-        albedo = site.albedo
+        albedo = _baseline_albedo(site, environment_instant)
         effective_wetness = get_soil_wetness(moisture_mode, environment_instant)
         longwave_sky = precompute_longwave_sky(longwave_model;
             site, environment_instant, vapour_pressure_equation,
@@ -75,6 +75,16 @@ end
     end
     return (; albedo, effective_wetness, longwave_sky)
 end
+
+# Resolve the non-snow baseline albedo: a populated `environment_daily.albedo`
+# (surfaced here as `environment_instant.albedo`) wins; otherwise fall back
+# to the `Site.albedo` scalar. The inner `_select_albedo` has separate
+# methods for `::Nothing` vs populated so the return type stays concrete
+# per call site (no `Union{Float64, Nothing}` leakage).
+@inline _baseline_albedo(site, environment_instant) =
+    _select_albedo(site.albedo, environment_instant.albedo)
+@inline _select_albedo(site_albedo, ::Nothing)   = site_albedo
+@inline _select_albedo(_site_albedo, env_albedo) = env_albedo
 
 function sync_inactive_snow_temps(T_snow::SVector{N}, snow_scratch) where N
     sync = T_snow[1]
@@ -1005,8 +1015,16 @@ function get_day(environment_daily, iday)
         soil_wetness = environment_daily.soil_wetness[iday], # set up vector of soil wetness for each day
         deep_soil_temperature = u"K"(environment_daily.deep_soil_temperature[iday]), # daily deep soil temperature (°C)
         rainfall = environment_daily.rainfall[iday],
+        # `nothing` here → `apply_snow_overrides` falls back to `site.albedo`.
+        # A populated `environment_daily.albedo` overrides per-day.
+        albedo = _maybe_indexed(environment_daily.albedo, iday),
     )
 end
+
+# Type-stable accessor for optional daily fields. Branches on whether the
+# field is `nothing` so the inferred return type is concrete per call site.
+@inline _maybe_indexed(::Nothing, _) = nothing
+@inline _maybe_indexed(v, iday) = v[iday]
 function get_instant(environment_day, environment_hourly, output, soil_moisture, i)
     return (;
         environment_day...,
