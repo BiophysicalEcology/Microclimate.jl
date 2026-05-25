@@ -21,6 +21,11 @@ radiation model. Time-varying hourly pressure lives on the hourly forcing
     atmospheric_pressure::AP
 end
 
+"""
+    example_site
+    
+Example site, Madison Wisconsin, USA.
+"""
 function example_site(;
     latitude = 43.07305u"°",
     longitude = -89.40123u"°",
