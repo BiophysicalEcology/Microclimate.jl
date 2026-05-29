@@ -269,7 +269,7 @@ guaranteed to match — invalid input sizes will surface as a `BoundsError`
 or unit-mismatch on first access during `solve!`.
 """
 function reinit!(cache::MicroCache, inputs::MicroInputs)
-    cache.problem = MicroProblem(cache.problem.days, cache.problem.model, inputs)
+    cache.problem = MicroProblem(cache.problem.days, cache.problem.time_mode, cache.problem.model, inputs)
     return cache
 end
 
@@ -369,7 +369,8 @@ function solve_soil!(cache::MicroCache)
     ode_integrator = cache.ode_integrator
     forcing = cache.forcing
 
-    (; time_mode, convergence, rainfall_schedule, max_surface_pool) = config
+    (; convergence, rainfall_schedule, max_surface_pool) = config
+    time_mode = mp.time_mode
     moisture_mode = config.soil_moisture_strategy
     (; campbell_b_parameter, air_entry_water_potential) = soil_hydraulic_model
     (; bulk_density, mineral_density) = soil_profile

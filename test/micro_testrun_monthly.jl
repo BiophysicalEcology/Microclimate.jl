@@ -122,7 +122,6 @@ time_mode = _daily ? ConsecutiveDayMode(; spinup_first_day=_spinup) :
     NonConsecutiveDayMode(; iterations_per_day=Int(microinput[:ndmax]))
 
 config = MicroConfig(;
-    time_mode,
     convergence = FixedSoilTemperatureIterations(10),
     rainfall_schedule = Bool(Int(microinput[:rainhourly])) ? HourlyRainfall() : DailyRainfall(),
     soil_moisture_strategy = _runmoist ? DynamicSoilMoisture() :
@@ -149,7 +148,7 @@ inputs = MicroInputs(;
     initial_soil_temperature = nothing, # initial soil temperature
     initial_soil_moisture = precomputed_soil_moisture[1:10, 1], # initial soil moisture
 )
-problem = MicroProblem(model, inputs; days = days[days2do])
+problem = MicroProblem(model, inputs; days = days[days2do], time_mode)
 
 # now try the simulation function
 @time micro_out = Microclimate.solve(problem);

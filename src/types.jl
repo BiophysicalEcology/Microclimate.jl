@@ -49,15 +49,17 @@ Solver/iteration/data-delivery strategy. Lives on `MicroModel.config`.
 Physical-process models live directly on `MicroModel`; this struct is
 strictly the "how we iterate and how data is delivered" side of the model.
 
-- `time_mode`: `NonConsecutiveDayMode()` or `ConsecutiveDayMode(; spinup_first_day=false)`
 - `convergence`: `FixedSoilTemperatureIterations(3)` or `SoilTemperatureConvergenceTolerance(; tolerance, max_iterations_per_day)`
 - `rainfall_schedule`: `DailyRainfall()` (default) or `HourlyRainfall()`
 - `soil_moisture_strategy`: `PrescribedSoilMoisture()` or `DynamicSoilMoisture(; ...)`
 - `max_surface_pool`: numerical clamp on the surface-pool state variable
   (not a physical limit — keeps the pool integration from running away)
+
+`time_mode` (`NonConsecutiveDayMode` vs `ConsecutiveDayMode`) lives on
+`MicroProblem`, not here — it describes how a particular run iterates
+across its `days`, not the model itself.
 """
-@kwdef struct MicroConfig{TM,CV,RFS,SMM,MSP}
-    time_mode::TM = NonConsecutiveDayMode()
+@kwdef struct MicroConfig{CV,RFS,SMM,MSP}
     convergence::CV = FixedSoilTemperatureIterations(3)
     rainfall_schedule::RFS = DailyRainfall()
     soil_moisture_strategy::SMM = PrescribedSoilMoisture()
@@ -145,24 +147,30 @@ model on different data without rebuilding the cache.
 end
 
 """
-    MicroProblem(model::MicroModel, inputs::MicroInputs; days=DEFAULT_DAYS)
+    MicroProblem(model::MicroModel, inputs::MicroInputs;
+                 days=DEFAULT_DAYS, time_mode=NonConsecutiveDayMode())
 
-Pairing of a model description with a set of input data and the days of
-year to simulate. Pass to `init(problem)` to allocate a `MicroCache` or
-`solve(problem)` to run.
+Pairing of a model description with a set of input data, the days of
+year to simulate, and how to iterate through them. Pass to
+`init(problem)` to allocate a `MicroCache` or `solve(problem)` to run.
 
 - `days` — day-of-year integers to simulate (e.g. `DEFAULT_DAYS` for monthly
   mid-month days, or `1:365` for a full year of daily forcing). Length must
   match the per-day rows of the supplied `environment_daily`.
+- `time_mode` — `NonConsecutiveDayMode()` (independent representative days,
+  Fortran monthly behaviour) or `ConsecutiveDayMode(; spinup_first_day=false)`
+  (continuous run where state carries day-to-day).
 """
-struct MicroProblem{D,M<:MicroModel,I<:MicroInputs}
+struct MicroProblem{D,TM,M<:MicroModel,I<:MicroInputs}
     days::D
+    time_mode::TM
     model::M
     inputs::I
 end
 
-MicroProblem(model::MicroModel, inputs::MicroInputs; days=DEFAULT_DAYS) =
-    MicroProblem(days, model, inputs)
+MicroProblem(model::MicroModel, inputs::MicroInputs;
+    days=DEFAULT_DAYS, time_mode=NonConsecutiveDayMode(),
+) = MicroProblem(days, time_mode, model, inputs)
 
 function example_microclimate_problem(;
     days = DEFAULT_DAYS,

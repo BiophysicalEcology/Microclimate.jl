@@ -172,7 +172,6 @@ snow_model = SnowModel(;
 
 # ── Build and solve ──────────────────────────────────────────────────────────
 config = MicroConfig(;
-    time_mode = ConsecutiveDayMode(; spinup_first_day=false),
     convergence = FixedSoilTemperatureIterations(3),
     rainfall_schedule = DailyRainfall(),
     soil_moisture_strategy = DynamicSoilMoisture(),
@@ -198,7 +197,10 @@ inputs = MicroInputs(;
     initial_soil_temperature = INITIAL_ST,
     initial_soil_moisture = Vector{Float64}(INITIAL_SM),
 )
-problem = MicroProblem(model, inputs; days = forcing.DOY[days2do])
+problem = MicroProblem(model, inputs;
+    days = forcing.DOY[days2do],
+    time_mode = ConsecutiveDayMode(; spinup_first_day=false),
+)
 
 println("Running Julia microclimate model for $NDAYS days (2010–2013)...")
 @time micro_out = Microclimate.solve(problem)

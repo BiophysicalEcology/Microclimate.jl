@@ -138,7 +138,6 @@ soil_moisture_strategy = _runmoist ?
     PrescribedSoilMoisture()
 
 config = MicroConfig(;
-    time_mode,
     convergence = FixedSoilTemperatureIterations(Int(microinput[:ndmax])),
     rainfall_schedule = Bool(Int(microinput[:rainhourly])) ? HourlyRainfall() : DailyRainfall(),
     soil_moisture_strategy,
@@ -175,7 +174,7 @@ inputs = MicroInputs(;
         result
     end,
 )
-problem = MicroProblem(model, inputs; days = days[1:days2do])
+problem = MicroProblem(model, inputs; days = days[1:days2do], time_mode)
 
 # now try the simulation function
 @time micro_out = Microclimate.solve(problem);
