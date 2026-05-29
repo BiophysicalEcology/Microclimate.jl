@@ -65,7 +65,7 @@ strictly the "how we iterate and how data is delivered" side of the model.
 end
 
 """
-    MicroModel(; days, hours, depths, heights,
+    MicroModel(; hours, depths, heights,
                  soil_profile, soil_properties_model, soil_hydraulic_model,
                  radiation=RadiationModel(),
                  snow_model=NoSnow(),
@@ -77,7 +77,7 @@ end
 
 Constant-across-runs scientific description of the simulation:
 
-- solver geometry (`days`, `hours`, `depths`, `heights`) # TODO generalise to sub-hourly
+- solver geometry (`hours`, `depths`, `heights`) # TODO generalise to sub-hourly
 - physical-process models:
     - `soil_profile::SoilProfile` — per-depth `bulk_density` and `mineral_density`
       profiles read by both the soil properties and soil hydraulic models
@@ -93,10 +93,13 @@ Constant-across-runs scientific description of the simulation:
       (carries the phase-transition `freezing_model` and ODE solver settings)
 - iteration/data-delivery strategy in `config::MicroConfig`
 
-Combine with a `MicroInputs` via `MicroProblem(model, inputs)` to run.
+The days of year to simulate live on `MicroProblem`, not here — they're a
+per-run choice (e.g. monthly mid-month days vs daily 1:365) that can vary
+without changing the model.
+
+Combine with a `MicroInputs` via `MicroProblem(model, inputs; days)` to run.
 """
-@kwdef struct MicroModel{D,H,Dep,Ht,SPR,SPM,SHM,RAD,SNM,VPE,BLM,EVM,SEM,C}
-    days::D = DEFAULT_DAYS # days of year to simulate - TODO leap years - why not use real dates?
+@kwdef struct MicroModel{H,Dep,Ht,SPR,SPM,SHM,RAD,SNM,VPE,BLM,EVM,SEM,C}
     hours::H = DEFAULT_HOURS # hour of day for solar_radiation
     depths::Dep = DEFAULT_DEPTHS # soil nodes - keep spacing close near the surface
     heights::Ht = [0.01, 2]u"m" # air nodes for temperature, wind speed and humidity profile, last height is reference height for weather data
@@ -142,15 +145,24 @@ model on different data without rebuilding the cache.
 end
 
 """
-    MicroProblem(model::MicroModel, inputs::MicroInputs)
+    MicroProblem(model::MicroModel, inputs::MicroInputs; days=DEFAULT_DAYS)
 
-Pairing of a model description with a set of input data. Pass to
-`init(problem)` to allocate a `MicroCache` or `solve(problem)` to run.
+Pairing of a model description with a set of input data and the days of
+year to simulate. Pass to `init(problem)` to allocate a `MicroCache` or
+`solve(problem)` to run.
+
+- `days` — day-of-year integers to simulate (e.g. `DEFAULT_DAYS` for monthly
+  mid-month days, or `1:365` for a full year of daily forcing). Length must
+  match the per-day rows of the supplied `environment_daily`.
 """
-struct MicroProblem{M<:MicroModel,I<:MicroInputs}
+struct MicroProblem{D,M<:MicroModel,I<:MicroInputs}
+    days::D
     model::M
     inputs::I
 end
+
+MicroProblem(model::MicroModel, inputs::MicroInputs; days=DEFAULT_DAYS) =
+    MicroProblem(days, model, inputs)
 
 function example_microclimate_problem(;
     days = DEFAULT_DAYS,
@@ -169,13 +181,13 @@ function example_microclimate_problem(;
     initial_soil_temperature = fill(u"K"(7.741667u"°C"), length(depths)),
     initial_soil_moisture = fill(0.42 * 0.25, length(depths)),
 )
-    model = MicroModel(; days, hours, depths, heights,
+    model = MicroModel(; hours, depths, heights,
         soil_profile, soil_properties_model, soil_hydraulic_model, snow_model, config)
     inputs = MicroInputs(;
         site, environment_minmax, environment_daily, environment_hourly,
         initial_soil_temperature, initial_soil_moisture,
     )
-    MicroProblem(model, inputs)
+    MicroProblem(model, inputs; days)
 end
 
 """

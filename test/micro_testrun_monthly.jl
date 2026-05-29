@@ -131,7 +131,6 @@ config = MicroConfig(;
 
 # now try the simulation function
 model = MicroModel(;
-    days = days[days2do], # days of year for solar_radiation
     hours = collect(0.0:1:23.0), # hour of day for solar_radiation
     depths,
     heights, # air nodes for temperature, wind speed and humidity profile
@@ -150,7 +149,7 @@ inputs = MicroInputs(;
     initial_soil_temperature = nothing, # initial soil temperature
     initial_soil_moisture = precomputed_soil_moisture[1:10, 1], # initial soil moisture
 )
-problem = MicroProblem(model, inputs)
+problem = MicroProblem(model, inputs; days = days[days2do])
 
 # now try the simulation function
 @time micro_out = Microclimate.solve(problem);

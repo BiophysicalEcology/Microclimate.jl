@@ -15,7 +15,8 @@ end
 allocate_interpolation_scratch(::Nothing) = nothing
 
 function populate_weather!(output, mp, solar_radiation_out, interpolation_scratch)
-    (; days, hours) = mp.model
+    (; hours) = mp.model
+    days = mp.days
     shortwave_model = mp.model.radiation.shortwave_model
     (; environment_minmax, environment_daily, environment_hourly) = mp.inputs
     interpolate_minmax!(output, environment_minmax, environment_daily, environment_hourly, solar_radiation_out, interpolation_scratch)
@@ -78,13 +79,13 @@ end
 
 # Resolve the non-snow baseline albedo: a populated `environment_daily.albedo`
 # (surfaced here as `environment_instant.albedo`) wins; otherwise fall back
-# to the `Site.albedo` scalar. The inner `_select_albedo` has separate
-# methods for `::Nothing` vs populated so the return type stays concrete
+# to the `Site.albedo` scalar. The inner helper has two methods dispatched
+# on whether the env value is `Nothing`, so the return type stays concrete
 # per call site (no `Union{Float64, Nothing}` leakage).
 @inline _baseline_albedo(site, environment_instant) =
-    _select_albedo(site.albedo, environment_instant.albedo)
-@inline _select_albedo(site_albedo, ::Nothing)   = site_albedo
-@inline _select_albedo(_site_albedo, env_albedo) = env_albedo
+    _pick_albedo(site.albedo, environment_instant.albedo)
+@inline _pick_albedo(site_albedo, ::Nothing)   = site_albedo
+@inline _pick_albedo(_site_albedo, env_albedo) = env_albedo
 
 function sync_inactive_snow_temps(T_snow::SVector{N}, snow_scratch) where N
     sync = T_snow[1]
@@ -135,11 +136,12 @@ end
 end
 
 function CommonSolve.init(mp::MicroProblem)
-    (; days, hours, depths, heights,
+    (; hours, depths, heights,
        soil_profile, soil_properties_model, soil_hydraulic_model, snow_model,
        vapour_pressure_equation, boundary_layer_model,
        radiation, evaporation_model, soil_energy_model,
        config) = mp.model
+    days = mp.days
     longwave_model = radiation.longwave_model
     (; site, environment_minmax, environment_daily, environment_hourly,
        initial_soil_temperature, initial_soil_moisture,
@@ -267,12 +269,13 @@ guaranteed to match — invalid input sizes will surface as a `BoundsError`
 or unit-mismatch on first access during `solve!`.
 """
 function reinit!(cache::MicroCache, inputs::MicroInputs)
-    cache.problem = MicroProblem(cache.problem.model, inputs)
+    cache.problem = MicroProblem(cache.problem.days, cache.problem.model, inputs)
     return cache
 end
 
 function allocate_solar(mp::MicroProblem)
-    (; days, hours) = mp.model
+    (; hours) = mp.model
+    days = mp.days
     solar_radiation_model = mp.model.radiation.solar_radiation_model
     nmax = solar_radiation_model.wavelength_count
     nsteps = length(days) * length(hours)
@@ -283,7 +286,8 @@ end
 
 # In-place recompute: writes solar values directly into pre-allocated arrays
 function solve_solar!(out::NamedTuple, buffers::NamedTuple, mp::MicroProblem)
-    (; days, hours) = mp.model
+    (; hours) = mp.model
+    days = mp.days
     solar_radiation_model = mp.model.radiation.solar_radiation_model
     site = mp.inputs.site
     SolarRadiation.solar_radiation!(out, buffers, solar_radiation_model;
@@ -344,11 +348,12 @@ end
 # Solves soil temperature and moisture using pre-allocated cache buffers
 function solve_soil!(cache::MicroCache)
     mp = cache.problem
-    (; days, hours, depths, heights,
+    (; hours, depths, heights,
        soil_profile, soil_properties_model, soil_hydraulic_model, snow_model,
        vapour_pressure_equation, boundary_layer_model,
        radiation, evaporation_model, soil_energy_model,
        config) = mp.model
+    days = mp.days
     longwave_model = radiation.longwave_model
     soil_freezing_model = soil_energy_model.freezing_model
     (; site, environment_daily, environment_hourly,
@@ -774,9 +779,7 @@ function solve_soil!(cache::MicroCache)
                     output.surface_water[output_step] = pool
                     _write_row!(output.soil_temperature, output_step, T0_output)
                     output.sky_temperature[output_step] = longwave_sky.sky_temperature
-                    if !isnothing(infil_out)
-                        update_soil_water!(output, infil_out, output_step)
-                    end
+                    update_soil_water!(output, soil_moisture, infil_out, output_step)
                     environment_instant = get_instant(environment_day, environment_hourly, output, soil_moisture, output_step)
                     update_soil_properties!(output, soil_prop_view, soil_properties_model;
                         soil_temperature=T0, soil_moisture, bulk_density, mineral_density,
@@ -917,10 +920,12 @@ end
     return dst
 end
 
-function update_soil_water!(output, infil_out, step)
-    _write_row!(output.soil_moisture, step, infil_out.soil_moisture)
-    _write_row!(output.soil_water_potential, step, infil_out.soil_water_potential)
-    _write_row!(output.soil_humidity, step, infil_out.soil_humidity)
+function update_soil_water!(output, soil_moisture, infil_out, step)
+    _write_row!(output.soil_moisture, step, soil_moisture)
+    if !isnothing(infil_out)
+        _write_row!(output.soil_water_potential, step, infil_out.soil_water_potential)
+        _write_row!(output.soil_humidity, step, infil_out.soil_humidity)
+    end
     return output
 end
 
@@ -964,6 +969,7 @@ function allocate_forcing(output, solar_radiation_out)
         _scaled(zeros(eltype(output.reference_humidity), 25)),                # humidity
         _scaled(zeros(eltype(output.cloud_cover), 25)),                       # cloud
         _scaled(zeros(eltype(output.pressure), 25)),                          # pressure
+        _scaled(zeros(eltype(output.diffuse_fraction), 25)),                  # diffuse_fraction
     )
 end
 
@@ -992,14 +998,15 @@ function update_forcing_day!(forcing::Forcing, solar_radiation_out, output, iday
     sub1 = (iday*nhours - nhours + 1):(iday*nhours)
     # `forcing.<field>.itp.coefs` is the 25-element buffer underneath the
     # ScaledInterpolation, mutated in place.
-    _copy_day_into!(forcing.solar.itp.coefs,        output.global_radiation,                sub1)
-    _copy_day_into!(forcing.zenith.itp.coefs,       solar_radiation_out.zenith_angle,       sub1)
-    _copy_day_into!(forcing.slope_zenith.itp.coefs, solar_radiation_out.zenith_slope_angle, sub1)
-    _copy_day_into!(forcing.temperature.itp.coefs,  output.reference_temperature,           sub1, uconvert, u"K")
-    _copy_day_into!(forcing.wind.itp.coefs,         output.reference_wind_speed,            sub1)
-    _copy_day_into!(forcing.humidity.itp.coefs,     output.reference_humidity,              sub1)
-    _copy_day_into!(forcing.cloud.itp.coefs,        output.cloud_cover,                     sub1)
-    _copy_day_into!(forcing.pressure.itp.coefs,     output.pressure,                        sub1)
+    _copy_day_into!(forcing.solar.itp.coefs,            output.global_radiation,                sub1)
+    _copy_day_into!(forcing.zenith.itp.coefs,           solar_radiation_out.zenith_angle,       sub1)
+    _copy_day_into!(forcing.slope_zenith.itp.coefs,     solar_radiation_out.zenith_slope_angle, sub1)
+    _copy_day_into!(forcing.temperature.itp.coefs,      output.reference_temperature,           sub1, uconvert, u"K")
+    _copy_day_into!(forcing.wind.itp.coefs,             output.reference_wind_speed,            sub1)
+    _copy_day_into!(forcing.humidity.itp.coefs,         output.reference_humidity,              sub1)
+    _copy_day_into!(forcing.cloud.itp.coefs,            output.cloud_cover,                     sub1)
+    _copy_day_into!(forcing.pressure.itp.coefs,         output.pressure,                        sub1)
+    _copy_day_into!(forcing.diffuse_fraction.itp.coefs, output.diffuse_fraction,                sub1)
     return forcing
 end
 

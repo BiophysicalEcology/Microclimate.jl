@@ -147,7 +147,6 @@ config = MicroConfig(;
 
 # now try the simulation function
 model = MicroModel(;
-    days = days[1:days2do], # days of year to simulate - TODO leap years
     hours = 0:1:23, # hour of day for solar_radiation
     depths, # soil nodes - keep spacing close near the surface
     heights, # air nodes for temperature, wind speed and humidity profile
@@ -176,7 +175,7 @@ inputs = MicroInputs(;
         result
     end,
 )
-problem = MicroProblem(model, inputs)
+problem = MicroProblem(model, inputs; days = days[1:days2do])
 
 # now try the simulation function
 @time micro_out = Microclimate.solve(problem);

@@ -144,7 +144,7 @@ function soil_energy_balance(model::SoilHeatTransport1D,
     (; layer_depths, heat_capacity, thermal_conductance) = buffers.soil_energy_balance
     (; shade) = environment_instant
     # Get environmental data at time t
-    (; atmospheric_pressure, air_temperature, wind_speed, zenith_angle, solar_radiation, cloud_cover, relative_humidity, slope_zenith_angle) = interpolate_forcings(forcing, t)
+    (; atmospheric_pressure, air_temperature, wind_speed, zenith_angle, solar_radiation, cloud_cover, relative_humidity, slope_zenith_angle, diffuse_fraction) = interpolate_forcings(forcing, t)
     (; roughness_height, slope) = site
     (; karman_constant, dyer_constant) = boundary_layer_model
     albedo = p.albedo
@@ -214,12 +214,20 @@ function soil_energy_balance(model::SoilHeatTransport1D,
     # ::Any through every downstream computation.
     j = _first_active_node(heat_capacity, N)
 
-    # Solar radiation
+    # Solar radiation. Split into direct + diffuse so that self-shadowed
+    # slopes still receive the diffuse sky component. Scaling the entire
+    # global flux by `cos_slope_zenith / cos_zenith` (the old behaviour)
+    # zeroes both components when the sun is behind the slope, which
+    # produced sharp per-pixel sun/shadow streaks at fine DEM resolution.
     Q_solar = absorptivity * solar_radiation * (1.0 - shade)
     if slope > 0 && zenith_angle < 90u"°"
         cos_zenith = cosd(zenith_angle)
         cos_slope_zenith = cosd(slope_zenith_angle)
-        Q_solar = (Q_solar / cos_zenith) * cos_slope_zenith
+        direct_share  = (1.0 - diffuse_fraction) * Q_solar
+        diffuse_share = diffuse_fraction * Q_solar
+        Q_direct  = max(0.0u"W/m^2", (direct_share / cos_zenith) * cos_slope_zenith)
+        Q_diffuse = diffuse_share * site.sky_view_fraction
+        Q_solar = Q_direct + Q_diffuse
     end
 
     # Longwave radiation — recompute from interpolated forcings at each ODE sub-step,

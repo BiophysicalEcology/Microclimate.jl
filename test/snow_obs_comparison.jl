@@ -179,7 +179,6 @@ config = MicroConfig(;
 )
 
 model = MicroModel(;
-    days    = forcing.DOY[days2do],
     hours   = collect(0.0:1:23.0),
     depths  = DEPTHS,
     heights = [USRHYT, REFHYT],
@@ -199,7 +198,7 @@ inputs = MicroInputs(;
     initial_soil_temperature = INITIAL_ST,
     initial_soil_moisture = Vector{Float64}(INITIAL_SM),
 )
-problem = MicroProblem(model, inputs)
+problem = MicroProblem(model, inputs; days = forcing.DOY[days2do])
 
 println("Running Julia microclimate model for $NDAYS days (2010–2013)...")
 @time micro_out = Microclimate.solve(problem)

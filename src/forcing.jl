@@ -8,6 +8,7 @@ gets refilled per day-iter via `update_forcing_day!`.
 @kwdef struct Forcing{
     S<:AbstractInterpolation,ZE<:AbstractInterpolation,ZS<:AbstractInterpolation,T<:AbstractInterpolation,
     V<:AbstractInterpolation,RH<:AbstractInterpolation,CL<:AbstractInterpolation,P<:AbstractInterpolation,
+    DF<:AbstractInterpolation,
 }
     solar::S
     zenith::ZE
@@ -17,6 +18,7 @@ gets refilled per day-iter via `update_forcing_day!`.
     humidity::RH
     cloud::CL
     pressure::P
+    diffuse_fraction::DF
 end
 
 function interpolate_forcings(f::Forcing, t)
@@ -30,5 +32,6 @@ function interpolate_forcings(f::Forcing, t)
         cloud_cover = clamp(f.cloud(t_m), 0.0, 1.0),
         relative_humidity = clamp(f.humidity(t_m), 0.0, 1.0),
         slope_zenith_angle = min(90.0u"°", f.slope_zenith(t_m)),
+        diffuse_fraction = clamp(f.diffuse_fraction(t_m), 0.0, 1.0),
     )
 end
