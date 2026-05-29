@@ -54,10 +54,6 @@ strictly the "how we iterate and how data is delivered" side of the model.
 - `soil_moisture_strategy`: `PrescribedSoilMoisture()` or `DynamicSoilMoisture(; ...)`
 - `max_surface_pool`: numerical clamp on the surface-pool state variable
   (not a physical limit — keeps the pool integration from running away)
-
-`time_mode` (`NonConsecutiveDayMode` vs `ConsecutiveDayMode`) lives on
-`MicroProblem`, not here — it describes how a particular run iterates
-across its `days`, not the model itself.
 """
 @kwdef struct MicroConfig{CV,RFS,SMM,MSP}
     convergence::CV = FixedSoilTemperatureIterations(3)
@@ -86,7 +82,7 @@ Constant-across-runs scientific description of the simulation:
     - `soil_properties_model::AbstractSoilProperties` (e.g. `CampbelldeVriesSoilProperties(...)`)
     - `soil_hydraulic_model::AbstractSoilHydraulicsModel` (e.g. `CampbellSoilHydraulics(...)`)
     - `radiation::RadiationModel` — bundle of `solar_radiation_model`,
-      `longwave_model`, and `shortwave_model`
+      `longwave_model`, and `shortwave_model`Anchored 
     - `snow_model::AbstractSnowModel` — `NoSnow()` (default) or `SnowModel(...)`
     - `vapour_pressure_equation` — cross-cutting (`GoffGratch()` / `Teten()` / `Huang()`)
     - `boundary_layer_model` — cross-cutting (`MoninObukhov()`)
