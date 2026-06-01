@@ -97,7 +97,6 @@ Constant-across-runs scientific description of the simulation:
 Combine with a `MicroInputs` via `MicroProblem(model, inputs; days)` to run.
 """
 @kwdef struct MicroModel{H,Dep,Ht,SPM,SHM,RAD,SNM,VPE,BLM,EVM,SEM,C}
-    days::D = DEFAULT_DAYS # days of year to simulate - TODO leap years - why not use real dates?
     hours::H = DEFAULT_HOURS # hour of day for solar_radiation
     depths::Dep = DEFAULT_DEPTHS # soil nodes - keep spacing close near the surface
     heights::Ht = [0.01, 2]u"m" # air nodes for temperature, wind speed and humidity profile, last height is reference height for weather data
