@@ -38,7 +38,8 @@ export AbstractApparentHeatCapacity, BonacinaStep, TanhSmoothed, Gaussian, Weste
 export AbstractSoilProperties, CampbelldeVriesSoilProperties
 
 # Soil hydraulics
-export AbstractSoilHydraulicsModel, CampbellSoilHydraulics
+export AbstractSoilHydraulicsModel, CampbellSoilHydraulics, CampbellHydraulicProfile
+export example_campbell_hydraulic_profile
 
 # Soil moisture strategy
 export AbstractSoilMoistureStrategy, PrescribedSoilMoisture, DynamicSoilMoisture

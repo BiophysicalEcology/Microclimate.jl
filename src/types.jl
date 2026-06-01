@@ -1,24 +1,29 @@
 """
-    SoilProfile(; bulk_density, mineral_density)
+    SoilProfile(; bulk_density, mineral_density, hydraulics)
 
-Per-depth soil column profile read by both the soil properties model
-(thermal) and the soil hydraulic model. Sized to match `MicroModel.depths`.
+Per-depth soil column profile read by the soil properties model (thermal)
+and the soil hydraulic model. Sized to match `MicroModel.depths`.
 
 - `bulk_density` — dry soil bulk density (kg/m³) at each depth node
 - `mineral_density` — soil mineral density (kg/m³) at each depth node
+- `hydraulics` — per-depth hydraulic parameters (e.g. `CampbellHydraulicProfile`)
+  matched to the chosen `soil_hydraulic_model`
 """
-@kwdef struct SoilProfile{BD,MD}
+@kwdef struct SoilProfile{BD,MD,H}
     bulk_density::BD
     mineral_density::MD
+    hydraulics::H
 end
 
 function example_soil_profile(depths=DEFAULT_DEPTHS;
     bulk_density = 2.56u"Mg/m^3",
     mineral_density = 2.560u"Mg/m^3",
+    hydraulics = example_campbell_hydraulic_profile(depths),
 )
     SoilProfile(;
         bulk_density = bulk_density isa AbstractVector ? bulk_density : fill(bulk_density, length(depths)),
         mineral_density = mineral_density isa AbstractVector ? mineral_density : fill(mineral_density, length(depths)),
+        hydraulics,
     )
 end
 
@@ -64,7 +69,7 @@ end
 
 """
     MicroModel(; hours, depths, heights,
-                 soil_profile, soil_properties_model, soil_hydraulic_model,
+                 soil_properties_model, soil_hydraulic_model,
                  radiation=RadiationModel(),
                  snow_model=NoSnow(),
                  vapour_pressure_equation=GoffGratch(),
@@ -77,8 +82,6 @@ Constant-across-runs scientific description of the simulation:
 
 - solver geometry (`hours`, `depths`, `heights`) # TODO generalise to sub-hourly
 - physical-process models:
-    - `soil_profile::SoilProfile` — per-depth `bulk_density` and `mineral_density`
-      profiles read by both the soil properties and soil hydraulic models
     - `soil_properties_model::AbstractSoilProperties` (e.g. `CampbelldeVriesSoilProperties(...)`)
     - `soil_hydraulic_model::AbstractSoilHydraulicsModel` (e.g. `CampbellSoilHydraulics(...)`)
     - `radiation::RadiationModel` — bundle of `solar_radiation_model`,
@@ -91,17 +94,13 @@ Constant-across-runs scientific description of the simulation:
       (carries the phase-transition `freezing_model` and ODE solver settings)
 - iteration/data-delivery strategy in `config::MicroConfig`
 
-The days of year to simulate live on `MicroProblem`, not here — they're a
-per-run choice (e.g. monthly mid-month days vs daily 1:365) that can vary
-without changing the model.
-
 Combine with a `MicroInputs` via `MicroProblem(model, inputs; days)` to run.
 """
-@kwdef struct MicroModel{H,Dep,Ht,SPR,SPM,SHM,RAD,SNM,VPE,BLM,EVM,SEM,C}
+@kwdef struct MicroModel{H,Dep,Ht,SPM,SHM,RAD,SNM,VPE,BLM,EVM,SEM,C}
+    days::D = DEFAULT_DAYS # days of year to simulate - TODO leap years - why not use real dates?
     hours::H = DEFAULT_HOURS # hour of day for solar_radiation
     depths::Dep = DEFAULT_DEPTHS # soil nodes - keep spacing close near the surface
     heights::Ht = [0.01, 2]u"m" # air nodes for temperature, wind speed and humidity profile, last height is reference height for weather data
-    soil_profile::SPR
     soil_properties_model::SPM
     soil_hydraulic_model::SHM
     radiation::RAD = RadiationModel()
@@ -114,14 +113,20 @@ Combine with a `MicroInputs` via `MicroProblem(model, inputs; days)` to run.
 end
 
 """
-    MicroInputs(; site, environment_minmax, environment_daily, environment_hourly=nothing,
+    MicroInputs(; site, soil_profile, environment_minmax, environment_daily,
+                  environment_hourly=nothing,
                   initial_soil_temperature=nothing, initial_soil_moisture,
                   initial_snow_depth=0.0u"cm", initial_snow_temperature=u"K"(0.0u"°C"),
                   initial_snow_density=nothing)
 
-Per-run input data: site, environment forcings, and initial conditions.
+Per-run input data: site, soil column profile, environment forcings, and
+initial conditions.
 
 - `site::Site` — properties of the place
+- `soil_profile::SoilProfile` — per-depth `bulk_density` and `mineral_density`
+  read by both the soil properties and soil hydraulic models. Per-location
+  structural soil-column data; lives here (not on `MicroModel`) because it
+  varies between sites without changing the physics.
 - `environment_minmax`, `environment_daily`, `environment_hourly` — input forcings
 - `initial_*` — initial conditions (`initial_soil_temperature=nothing` falls back to
   the day-mean reference air temperature)
@@ -130,8 +135,9 @@ Per-run input data: site, environment forcings, and initial conditions.
 Pass a fresh `MicroInputs` to `reinit!(cache, inputs)` to re-solve the same
 model on different data without rebuilding the cache.
 """
-@kwdef struct MicroInputs{S,EMM,EH,ED,IST,ISM,ISD,ISNT,ISND}
+@kwdef struct MicroInputs{S,SP<:SoilProfile,EMM,EH,ED,IST,ISM,ISD,ISNT,ISND}
     site::S
+    soil_profile::SP
     environment_minmax::EMM
     environment_hourly::EH = nothing
     environment_daily::ED
@@ -176,7 +182,7 @@ function example_microclimate_problem(;
     site = example_site(),
     soil_profile = example_soil_profile(depths),
     soil_properties_model = example_soil_properties_model(),
-    soil_hydraulic_model = example_soil_hydraulic_model(depths),
+    soil_hydraulic_model = example_soil_hydraulic_model(),
     snow_model = NoSnow(),
     environment_minmax = example_monthly_weather(),
     environment_daily = example_daily_environment(days),
@@ -185,10 +191,11 @@ function example_microclimate_problem(;
     initial_soil_temperature = fill(u"K"(7.741667u"°C"), length(depths)),
     initial_soil_moisture = fill(0.42 * 0.25, length(depths)),
 )
-    model = MicroModel(; hours, depths, heights,
-        soil_profile, soil_properties_model, soil_hydraulic_model, snow_model, config)
+    model = MicroModel(; 
+        hours, depths, heights, soil_properties_model, soil_hydraulic_model, snow_model, config
+    )
     inputs = MicroInputs(;
-        site, environment_minmax, environment_daily, environment_hourly,
+        site, soil_profile, environment_minmax, environment_daily, environment_hourly,
         initial_soil_temperature, initial_soil_moisture,
     )
     MicroProblem(model, inputs; days)

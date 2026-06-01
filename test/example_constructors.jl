@@ -9,7 +9,9 @@ using Test
     @test example_hourly_environment() isa HourlyTimeseries
     @test example_soil_properties_model() isa CampbelldeVriesSoilProperties
     @test example_soil_hydraulic_model() isa CampbellSoilHydraulics
+    @test example_campbell_hydraulic_profile() isa CampbellHydraulicProfile
     @test example_soil_profile() isa SoilProfile
+    @test example_soil_profile().hydraulics isa CampbellHydraulicProfile
     @test example_microclimate_problem() isa MicroProblem
 end
 
