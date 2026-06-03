@@ -82,14 +82,14 @@ _runmoist = Bool(Int(microinput[:runmoist]))
 soil_profile = SoilProfile(;
     bulk_density = (DataFrame(CSV.File("$testdir/data/init_daily/BD.csv"))[:, 2] * 1.0u"Mg/m^3"),
     mineral_density = (DataFrame(CSV.File("$testdir/data/init_daily/DD.csv"))[:, 2] * 1.0u"Mg/m^3"),
+    hydraulics = CampbellHydraulicProfile(;
+        air_entry_water_potential = (DataFrame(CSV.File("$testdir/data/init_daily/PE.csv"))[:, 2] * 1.0u"J/kg"),
+        saturated_hydraulic_conductivity = (DataFrame(CSV.File("$testdir/data/init_daily/KS.csv"))[:, 2] * 1.0u"kg*s/m^3"),
+        campbell_b_parameter = (DataFrame(CSV.File("$testdir/data/init_daily/BB.csv"))[:, 2] * 1.0),
+        root_density = DataFrame(CSV.File("$testdir/data/init_daily/L.csv"))[:, 2] * u"m/m^3",
+    ),
 )
 soil_hydraulic_model = CampbellSoilHydraulics(;
-    # soil hydraulic parameters
-    air_entry_water_potential = (DataFrame(CSV.File("$testdir/data/init_daily/PE.csv"))[:, 2] * 1.0u"J/kg"),
-    saturated_hydraulic_conductivity = (DataFrame(CSV.File("$testdir/data/init_daily/KS.csv"))[:, 2] * 1.0u"kg*s/m^3"),
-    campbell_b_parameter = (DataFrame(CSV.File("$testdir/data/init_daily/BB.csv"))[:, 2] * 1.0),
-    # plant parameters
-    root_density = DataFrame(CSV.File("$testdir/data/init_daily/L.csv"))[:, 2] * u"m/m^3",
     root_resistance = microinput[:RW] * u"m^3/kg/s",
     stomatal_closure_potential = -microinput[:PC] * u"J/kg",
     leaf_resistance = microinput[:RL] * u"m^4/kg/s",
@@ -150,7 +150,6 @@ model = MicroModel(;
     depths, # soil nodes - keep spacing close near the surface
     heights, # air nodes for temperature, wind speed and humidity profile
     radiation,
-    soil_profile,
     soil_properties_model,
     soil_hydraulic_model,
     boundary_layer_model,
@@ -158,6 +157,7 @@ model = MicroModel(;
 )
 inputs = MicroInputs(;
     site,
+    soil_profile,
     environment_minmax,
     environment_daily,
     environment_hourly,

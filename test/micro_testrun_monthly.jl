@@ -102,9 +102,10 @@ _runmoist = Bool(Int(microinput[:runmoist]))
 soil_profile = SoilProfile(;
     bulk_density = fill(bulk_density, length(depths)),
     mineral_density = fill(mineral_density, length(depths)),
+    hydraulics = example_campbell_hydraulic_profile(depths;
+        root_density = fill(0.0, length(depths))u"m/m^3"),
 )
-soil_hydraulic_model = example_soil_hydraulic_model(depths;
-    root_density = fill(0.0, length(depths))u"m/m^3")
+soil_hydraulic_model = example_soil_hydraulic_model()
 radiation = RadiationModel(;
     solar_radiation_model = SolarProblem(;
         diffuse_model = Bool(Int(microinput[:IUV])) ? SolarRadiation.ChandrasekharScattering() : SolarRadiation.NoScattering(),
@@ -134,7 +135,6 @@ model = MicroModel(;
     depths,
     heights, # air nodes for temperature, wind speed and humidity profile
     radiation,
-    soil_profile,
     soil_properties_model,
     soil_hydraulic_model,
     boundary_layer_model,
@@ -142,6 +142,7 @@ model = MicroModel(;
 )
 inputs = MicroInputs(;
     site,
+    soil_profile,
     environment_minmax,
     environment_daily,
     environment_hourly,

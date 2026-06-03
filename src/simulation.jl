@@ -137,13 +137,13 @@ end
 
 function CommonSolve.init(mp::MicroProblem)
     (; hours, depths, heights,
-       soil_profile, soil_properties_model, soil_hydraulic_model, snow_model,
+       soil_properties_model, soil_hydraulic_model, snow_model,
        vapour_pressure_equation, boundary_layer_model,
        radiation, evaporation_model, soil_energy_model,
        config) = mp.model
     days = mp.days
     longwave_model = radiation.longwave_model
-    (; site, environment_minmax, environment_daily, environment_hourly,
+    (; site, soil_profile, environment_minmax, environment_daily, environment_hourly,
        initial_soil_temperature, initial_soil_moisture,
        initial_snow_depth, initial_snow_temperature, initial_snow_density) = mp.inputs
     n_snow = n_snow_nodes(snow_model)
@@ -349,14 +349,14 @@ end
 function solve_soil!(cache::MicroCache)
     mp = cache.problem
     (; hours, depths, heights,
-       soil_profile, soil_properties_model, soil_hydraulic_model, snow_model,
+       soil_properties_model, soil_hydraulic_model, snow_model,
        vapour_pressure_equation, boundary_layer_model,
        radiation, evaporation_model, soil_energy_model,
        config) = mp.model
     days = mp.days
     longwave_model = radiation.longwave_model
     soil_freezing_model = soil_energy_model.freezing_model
-    (; site, environment_daily, environment_hourly,
+    (; site, soil_profile, environment_daily, environment_hourly,
        initial_soil_temperature, initial_soil_moisture,
        initial_snow_depth, initial_snow_temperature, initial_snow_density) = mp.inputs
     n_snow = n_snow_nodes(snow_model)
@@ -372,7 +372,7 @@ function solve_soil!(cache::MicroCache)
     (; convergence, rainfall_schedule, max_surface_pool) = config
     time_mode = mp.time_mode
     moisture_mode = config.soil_moisture_strategy
-    (; campbell_b_parameter, air_entry_water_potential) = soil_hydraulic_model
+    (; campbell_b_parameter, air_entry_water_potential) = soil_profile.hydraulics
     (; bulk_density, mineral_density) = soil_profile
     init_soil_wetness!(moisture_mode)
 

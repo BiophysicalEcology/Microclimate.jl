@@ -107,14 +107,15 @@ soil_properties_model = CampbelldeVriesSoilProperties(;
 soil_profile = SoilProfile(;
     bulk_density    = fill(BULK_DENSITY, length(DEPTHS)),
     mineral_density = fill(MINERAL_DENSITY, length(DEPTHS)),
+    hydraulics      = CampbellHydraulicProfile(;
+        air_entry_water_potential        = fill(AIR_ENTRY_POTENTIAL, length(DEPTHS)),
+        saturated_hydraulic_conductivity = fill(SAT_HYDRAULIC_COND, length(DEPTHS)),
+        campbell_b_parameter             = fill(CAMPBELL_B, length(DEPTHS)),
+        root_density                     = ROOT_DENSITY,
+    ),
 )
 
-soil_hydraulic_model = example_soil_hydraulic_model(DEPTHS;
-    air_entry_water_potential        = fill(AIR_ENTRY_POTENTIAL, length(DEPTHS)),
-    saturated_hydraulic_conductivity = fill(SAT_HYDRAULIC_COND, length(DEPTHS)),
-    campbell_b_parameter             = fill(CAMPBELL_B, length(DEPTHS)),
-    root_density                     = ROOT_DENSITY,
-)
+soil_hydraulic_model = example_soil_hydraulic_model()
 
 # ── Daily min/max environment ────────────────────────────────────────────────
 environment_minmax = DailyMinMaxEnvironment(;
@@ -182,7 +183,6 @@ model = MicroModel(;
     depths  = DEPTHS,
     heights = [USRHYT, REFHYT],
     radiation,
-    soil_profile,
     soil_properties_model,
     soil_hydraulic_model,
     snow_model,
@@ -191,6 +191,7 @@ model = MicroModel(;
 )
 inputs = MicroInputs(;
     site,
+    soil_profile,
     environment_minmax,
     environment_daily,
     environment_hourly,

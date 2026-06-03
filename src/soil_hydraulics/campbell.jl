@@ -1,25 +1,45 @@
 """
-    CampbellSoilHydraulics(; ...)
+    CampbellHydraulicProfile(; air_entry_water_potential,
+                              saturated_hydraulic_conductivity,
+                              campbell_b_parameter,
+                              root_density)
 
-Soil hydraulic parameters for Campbell's (1985) soil water balance model.
-Holds parameters only — the moisture-solver strategy lives on
+Per-depth hydraulic parameters for Campbell's (1985) soil water balance
+model. Lives on `SoilProfile.hydraulics` (per-location structural data),
+not on `CampbellSoilHydraulics` (which now carries only the plant-side
+scalars).
+
+Each field is a vector sized to match `MicroModel.depths`.
+"""
+@kwdef struct CampbellHydraulicProfile{AEWP,SHC,CBP,RDen}
+    air_entry_water_potential::AEWP
+    saturated_hydraulic_conductivity::SHC
+    campbell_b_parameter::CBP
+    root_density::RDen
+end
+
+"""
+    CampbellSoilHydraulics(; root_resistance, stomatal_closure_potential,
+                              leaf_resistance, stomatal_stability_parameter,
+                              root_radius)
+
+Plant-side scalar parameters for Campbell's (1985) soil water balance
+model. Holds parameters only — the moisture-solver strategy lives on
 `MicroConfig.soil_moisture_strategy` (`PrescribedSoilMoisture` /
 `DynamicSoilMoisture`), with solver tuning (`moisture_tolerance`,
 `moisture_max_iterations`, `moisture_timestep`) carried on
 `DynamicSoilMoisture` itself.
 
-`bulk_density` and `mineral_density` are not stored here — they live on
-`MicroModel.soil_profile::SoilProfile` and are passed in alongside this
-model wherever they're needed.
+Per-depth soil hydraulic parameters (`air_entry_water_potential`,
+`saturated_hydraulic_conductivity`, `campbell_b_parameter`, `root_density`)
+live on `SoilProfile.hydraulics::CampbellHydraulicProfile`, alongside
+`bulk_density` and `mineral_density` — all per-location data on one
+struct, all passed in alongside this model wherever needed.
 
 # References
 Campbell, G. S. (1985). Soil Physics with BASIC. Elsevier.
 """
-@kwdef struct CampbellSoilHydraulics{AEWP,SHC,CBP,RDen,RRes,SCP,LRes,SSP,RRad} <: AbstractSoilHydraulicsModel
-    air_entry_water_potential::AEWP
-    saturated_hydraulic_conductivity::SHC
-    campbell_b_parameter::CBP
-    root_density::RDen
+@kwdef struct CampbellSoilHydraulics{RRes,SCP,LRes,SSP,RRad} <: AbstractSoilHydraulicsModel
     root_resistance::RRes
     stomatal_closure_potential::SCP
     leaf_resistance::LRes
@@ -28,23 +48,28 @@ Campbell, G. S. (1985). Soil Physics with BASIC. Elsevier.
 end
 
 # TODO move real defaults to the struct keywords
-function example_soil_hydraulic_model(depths=DEFAULT_DEPTHS;
-    # soil hydraulic parameters
-    air_entry_water_potential = fill(0.7, length(depths))u"J/kg", #air entry potential
-    saturated_hydraulic_conductivity = fill(0.0058, length(depths))u"kg*s/m^3", #saturated conductivity
-    campbell_b_parameter = fill(1.7, length(depths)), #soil 'b' parameter
-    # plant parameters
-    root_density = [0, 0, 8.2, 8.0, 7.8, 7.4, 7.1, 6.4, 5.8, 4.8, 4.0, 1.8, 0.9, 0.6, 0.8, 0.4, 0.4, 0, 0] * 1e4u"m/m^3", # root density at each node (from Campell 1985 Soil Physics with Basic, p. 131)
-    root_resistance = 2.5e+10u"m^3/kg/s", # resistance per unit length of root
+function example_campbell_hydraulic_profile(depths=DEFAULT_DEPTHS;
+    air_entry_water_potential = fill(0.7, length(depths))u"J/kg", # air entry potential
+    saturated_hydraulic_conductivity = fill(0.0058, length(depths))u"kg*s/m^3", # saturated conductivity
+    campbell_b_parameter = fill(1.7, length(depths)), # soil 'b' parameter
+    root_density = [0, 0, 8.2, 8.0, 7.8, 7.4, 7.1, 6.4, 5.8, 4.8, 4.0, 1.8, 0.9, 0.6, 0.8, 0.4, 0.4, 0, 0] * 1e4u"m/m^3", # root density at each node (Campbell 1985, p. 131)
+)
+    CampbellHydraulicProfile(;
+        air_entry_water_potential, saturated_hydraulic_conductivity,
+        campbell_b_parameter, root_density,
+    )
+end
+
+function example_soil_hydraulic_model(;
+    root_resistance = 2.5e+10u"m^3/kg/s",     # resistance per unit length of root
     stomatal_closure_potential = -1500.0u"J/kg", # critical leaf water potential for stomatal closure
-    leaf_resistance = 2.0e6u"m^4/kg/s", # resistance per unit length of leaf
-    stomatal_stability_parameter = 10.0, # stability parameter, -
-    root_radius = 0.001u"m", # root radius, m
+    leaf_resistance = 2.0e6u"m^4/kg/s",       # resistance per unit length of leaf
+    stomatal_stability_parameter = 10.0,      # stability parameter, -
+    root_radius = 0.001u"m",                  # root radius, m
 )
     CampbellSoilHydraulics(;
-        air_entry_water_potential, saturated_hydraulic_conductivity, campbell_b_parameter,
-        root_density, root_resistance, stomatal_closure_potential, leaf_resistance, stomatal_stability_parameter,
-        root_radius,
+        root_resistance, stomatal_closure_potential, leaf_resistance,
+        stomatal_stability_parameter, root_radius,
     )
 end
 
@@ -105,11 +130,12 @@ function infiltration_step!(buffers, soil_hydraulic_model::CampbellSoilHydraulic
     relative_humidity_local = local_relative_humidity
 
     dt = moisture_timestep
-    saturated_conductivity = soil_hydraulic_model.saturated_hydraulic_conductivity
-    campbell_b = soil_hydraulic_model.campbell_b_parameter
+    hydraulic_profile = soil_profile.hydraulics
+    saturated_conductivity = hydraulic_profile.saturated_hydraulic_conductivity
+    campbell_b = hydraulic_profile.campbell_b_parameter
     bulk_density = soil_profile.bulk_density
     mineral_density = soil_profile.mineral_density
-    root_density = soil_hydraulic_model.root_density
+    root_density = hydraulic_profile.root_density
     root_resistance_param = soil_hydraulic_model.root_resistance
     stomatal_closure_potential = soil_hydraulic_model.stomatal_closure_potential
     leaf_resistance = soil_hydraulic_model.leaf_resistance
@@ -133,7 +159,7 @@ function infiltration_step!(buffers, soil_hydraulic_model::CampbellSoilHydraulic
     vapor_diffusivity = 2.4e-5u"m^2/s"
 
     # Convert to negative absolute value; fill positions 1..num_layers, extend boundary
-    air_entry_potential[1:num_layers] .= -abs.(soil_hydraulic_model.air_entry_water_potential)
+    air_entry_potential[1:num_layers] .= -abs.(hydraulic_profile.air_entry_water_potential)
     air_entry_potential[num_layers+1] = air_entry_potential[num_layers]
 
     # Saturation water content, m3/m3; extend boundary
