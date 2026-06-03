@@ -218,7 +218,7 @@ in `init`. Lives on `MicroCache.buffers`.
 struct MicroBuffers{SO,SOB,P,PB,SEB,SP,PT,SWB,SS,IB}
     solar_out::SO                  # SolarRadiation output (NamedTuple of arrays)
     solar::SOB                     # SolarRadiation internal buffers (NamedTuple)
-    soil_water_profile::P          # atmospheric profile scratch used by the moisture solver
+    soil_water_profile::P          # soil moisture profile scratch used by the moisture solver
     air_profile::PB                # atmospheric profile scratch used by solve_air!
     soil_energy_balance::SEB
     soil_properties::SP
