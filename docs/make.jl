@@ -13,6 +13,10 @@ makedocs(;
         devbranch = "main",
         devurl = "dev";
     ),
+    pages=[
+        "Home" => "index.md",
+        "API" => "api.md",
+    ],
 )
 
 DocumenterVitepress.deploydocs(;
