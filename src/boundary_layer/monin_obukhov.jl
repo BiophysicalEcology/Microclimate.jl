@@ -21,12 +21,10 @@ end
 
 function allocate_profile(::MoninObukhov, heights)
     wind_speed = similar(heights, typeof(0.0u"m/s")) # output wind speeds
-    height_array = similar(heights, typeof(0.0u"m"))
-    height_array[end:-1:begin] .= heights
     air_temperature = similar(heights, typeof(0.0u"K")) # output temperatures, need to do this otherwise get InexactError
     relative_humidity = similar(heights, Float64) # output relative humidities
     obukhov_length_prev = Ref(-0.3u"m")  # warm-start across timesteps
-    return (; heights, height_array, air_temperature, wind_speed, relative_humidity, obukhov_length_prev)
+    return (; heights, air_temperature, wind_speed, relative_humidity, obukhov_length_prev)
 end
 
 """
@@ -46,7 +44,8 @@ to assess whether conditions are stable or unstable.
 - `z0::Quantity=0.004u"m"`: roughness length (surface aerodynamic roughness).
 - `karman_constant::Float64=0.4`: von Kármán constant.
 - `dyer_constant::Float=16, coefficient from Dyer and Hicks for Φ_m (momentum), γ
-- `heights::Vector{Quantity}`: Requested heights above the surface, the last being the reference height.
+- `heights::Vector{Quantity}`: Requested heights above the surface at which profiles are returned.
+- `reference_height::Quantity`: Height at which meteorological measurements are taken (default: `last(heights)`).
 - `reference_temperature::Quantity=27.78u"°C"`: Air temperature at the reference height.
 - `reference_wind_speed::Quantity=2.75u"m/s"`: Wind speed at the reference height.
 - `relative_humidity::Float64=49.0`: Relative humidity at the reference height (fractional).
@@ -102,37 +101,45 @@ profile.air_temperature  # vertical profile of air temperatures
 profile.wind_speed       # vertical profile of wind speeds
 ```
 """
-atmospheric_surface_profile(bl::MoninObukhov; heights=DEFAULT_HEIGHTS, kw...) =
-    atmospheric_surface_profile!(bl, allocate_profile(bl, heights); kw...)
+atmospheric_surface_profile(bl::MoninObukhov; heights=DEFAULT_HEIGHTS, reference_height=last(heights), kw...) =
+    atmospheric_surface_profile!(bl, allocate_profile(bl, heights); reference_height, kw...)
 function atmospheric_surface_profile!(bl::MoninObukhov, buffers;
     site,
     environment_instant,
     surface_temperature,
     vapour_pressure_equation=GoffGratch(),
+    reference_height=last(buffers.heights),
 )
     (; roughness_height, elevation) = site
     (; karman_constant, dyer_constant) = bl
     (; atmospheric_pressure, reference_temperature, reference_wind_speed, reference_humidity, zenith_angle) = environment_instant
 
-    (; heights, height_array, air_temperature, wind_speed, relative_humidity, obukhov_length_prev) = buffers
+    (; heights, air_temperature, wind_speed, relative_humidity, obukhov_length_prev) = buffers
     N_heights = length(heights)
-    if minimum(heights) < roughness_height
-        throw(ArgumentError("The minimum height is not greater than the roughness height."))
-    end
-    reference_height = last(heights)
+    z = u"m"(reference_height)
+    z0 = roughness_height
+    # If the reference height appears in the heights array, pin its slot to measured values
+    # to avoid the small inconsistency in ψ_h between the penultimate and final Obukhov iterations.
+    ref_idx = findfirst(==(z), heights)
+
+    minimum(heights) < z0 &&
+        @warn """Some requested heights are below the roughness height ($z0).
+    Monin-Obukhov similarity theory is not valid in this sublayer region.
+    Assumptions applied:
+      • wind speed → 0 (log-law gives u = 0 at z = z0 by definition)
+      • air temperature linearly interpolated between T_surface (z = 0) and T_z0 (z = z0)
+    For a non-zero wind floor (e.g. for convection terms), clamp the result downstream.""" maxlog=1
+    maximum(heights) > z &&
+        @warn """Some requested heights exceed the reference measurement height ($z).
+    Profiles will be extrapolated above the measurement level using MOST.
+    This is physically reasonable within the surface layer but note that
+    the log-law becomes less accurate as height approaches the boundary-layer depth.""" maxlog=1
 
     reference_temp = u"K"(reference_temperature)
     surface_temp = u"K"(surface_temperature)
     κ = karman_constant
     γ = dyer_constant
-    z = reference_height
-    z0 = roughness_height
     v_ref_height = reference_wind_speed
-
-    # define air heights
-    N_heights = length(heights)
-    wind_speed[1] = v_ref_height
-    air_temperature[1] = reference_temp
 
     # compute rcptkg (was a constant in original Fortran version)
     # dry_air_out = dry_air_properties(u"K"(reference_temperature), P_atmos)
@@ -155,9 +162,19 @@ function atmospheric_surface_profile!(bl::MoninObukhov, buffers;
         friction_velocity = calc_friction_velocity(; reference_wind_speed, log_z_ratio, κ)
         convective_heat_flux = calc_convection(; friction_velocity, log_z_ratio, ΔT, ρ_cp, z0)
         roughness_height_temp = (reference_temp * bulk_stanton(log_z_ratio) + surface_temp * sublayer_stanton(z0, friction_velocity)) / (bulk_stanton(log_z_ratio) + sublayer_stanton(z0, friction_velocity))
-        for i in 2:N_heights
-            wind_speed[i] = calc_wind(height_array[i], z0, κ, friction_velocity, 0.0)
-            air_temperature[i] = roughness_height_temp + (reference_temp - roughness_height_temp) * log(height_array[i] / z0) / log_z_ratio
+        for i in 1:N_heights
+            h = heights[i]
+            if h < z0
+                frac = ustrip(h / z0)
+                wind_speed[i] = zero(friction_velocity)
+                air_temperature[i] = surface_temp + (roughness_height_temp - surface_temp) * frac
+            elseif i == ref_idx
+                wind_speed[i] = v_ref_height
+                air_temperature[i] = reference_temp
+            else
+                wind_speed[i] = calc_wind(h, z0, κ, friction_velocity, 0.0)
+                air_temperature[i] = roughness_height_temp + (reference_temp - roughness_height_temp) * log(h / z0) / log_z_ratio
+            end
         end
     else # unstable conditions during daytime, need to solve iteratively for Obukhov length
         Obukhov_out = calc_Obukhov_length(reference_temp, surface_temp, v_ref_height, z0, z, ρcpTκg, κ, ΔT, ρ_cp; max_iter=30, tol=1e-2, initial_obukhov_length=obukhov_length_prev[])
@@ -167,21 +184,29 @@ function atmospheric_surface_profile!(bl::MoninObukhov, buffers;
         convective_heat_flux = Obukhov_out.convective_heat_flux
         friction_velocity = Obukhov_out.friction_velocity
         ψ_h = Obukhov_out.ψ_h
-        for i in 2:N_heights
-            φ_m1 = calc_φ_m(height_array[i], γ, obukhov_length)
-            ψ_m1 = calc_ψ_m(φ_m1)
-            ψ_h2 = calc_ψ_h(φ_m1)
-            h_ratio = height_array[i] / z0  # dimensionless h/z0
-            # Clamp to a small positive value to prevent non-physical results when
-            # stability corrections are large near the surface.
-            wind_log_arg = max(log(h_ratio) - ψ_m1, 1e-6)
-            wind_speed[i] = (friction_velocity / κ) * wind_log_arg
-            temp_log_arg = max(log(h_ratio) - ψ_h2, 1e-6)
-            air_temperature[i] = roughness_height_temp + (reference_temp - roughness_height_temp) * temp_log_arg / (log(z / z0) - ψ_h)
+        for i in 1:N_heights
+            h = heights[i]
+            if h < z0
+                frac = ustrip(h / z0)
+                wind_speed[i] = zero(friction_velocity)
+                air_temperature[i] = surface_temp + (roughness_height_temp - surface_temp) * frac
+            elseif i == ref_idx
+                wind_speed[i] = v_ref_height
+                air_temperature[i] = reference_temp
+            else
+                φ_m1 = calc_φ_m(h, γ, obukhov_length)
+                ψ_m1 = calc_ψ_m(φ_m1)
+                ψ_h2 = calc_ψ_h(φ_m1)
+                h_ratio = h / z0  # dimensionless h/z0
+                # Clamp to a small positive value to prevent non-physical results when
+                # stability corrections are large near the surface.
+                wind_log_arg = max(log(h_ratio) - ψ_m1, 1e-6)
+                wind_speed[i] = (friction_velocity / κ) * wind_log_arg
+                temp_log_arg = max(log(h_ratio) - ψ_h2, 1e-6)
+                air_temperature[i] = roughness_height_temp + (reference_temp - roughness_height_temp) * temp_log_arg / (log(z / z0) - ψ_h)
+            end
         end
     end
-    reverse!(wind_speed)
-    reverse!(air_temperature)
     reference_vapor_pressure = wet_air_properties(reference_temp, reference_humidity, atmospheric_pressure; vapour_pressure_equation).vapour_pressure
     relative_humidity .= clamp.(reference_vapor_pressure ./ vapour_pressure.(Ref(vapour_pressure_equation), air_temperature) .* 1.0, 0.0, 1.0)
 
