@@ -24,81 +24,60 @@ function allocate_profile(::MoninObukhov, heights)
     air_temperature = similar(heights, typeof(0.0u"K")) # output temperatures, need to do this otherwise get InexactError
     relative_humidity = similar(heights, Float64) # output relative humidities
     obukhov_length_prev = Ref(-0.3u"m")  # warm-start across timesteps
-    return (; heights, air_temperature, wind_speed, relative_humidity, obukhov_length_prev)
+    warned_below_roughness = Ref(false)  # emit warning at most once per buffer
+    warned_above_reference = Ref(false)
+    return (; heights, air_temperature, wind_speed, relative_humidity,
+              obukhov_length_prev, warned_below_roughness, warned_above_reference)
 end
 
 """
     atmospheric_surface_profile(; kwargs...)
 
 Compute vertical profiles of wind speed, air temperature, and relative humidity
-in the atmospheric surface layer, using Monin–Obukhov similarity theory (MOST).
-
-This function reproduces the subroutine in `MICRO.f/get_profile.R` from **NicheMapR**, ported to Julia.
-It calculates the microclimate profiles above the ground (or canopy) at specified heights,
-based on measured values at a reference height and computed or measured soil surface temperature, together
-with surface roughness parameters. Zenith angle and a maximum allowed surface temperature are used
-to assess whether conditions are stable or unstable.
+using Monin–Obukhov similarity theory (MOST). Profiles are returned at all requested
+`heights`; heights below the roughness length return zero wind and linearly interpolated
+temperature; heights above `reference_height` are extrapolated via the log-law.
 
 # Keyword Arguments
 
-- `z0::Quantity=0.004u"m"`: roughness length (surface aerodynamic roughness).
-- `karman_constant::Float64=0.4`: von Kármán constant.
-- `dyer_constant::Float=16, coefficient from Dyer and Hicks for Φ_m (momentum), γ
-- `heights::Vector{Quantity}`: Requested heights above the surface at which profiles are returned.
-- `reference_height::Quantity`: Height at which meteorological measurements are taken (default: `last(heights)`).
-- `reference_temperature::Quantity=27.78u"°C"`: Air temperature at the reference height.
-- `reference_wind_speed::Quantity=2.75u"m/s"`: Wind speed at the reference height.
-- `relative_humidity::Float64=49.0`: Relative humidity at the reference height (fractional).
-- `surface_temperature::Quantity=48.59u"°C"`: Soil or surface temperature.
-- `zenith_angle::Quantity=21.5u"°"`: Solar zenith angle.
-- `elevation::Quantity=0.0u"m"`: Elevation above sea level.
+- `heights`: Heights at which profiles are returned (default: `DEFAULT_HEIGHTS`).
+- `reference_height`: Measurement height for met inputs (default: `last(heights)`).
+- `surface_temperature`: Soil/surface temperature.
+- `site`: `Site` holding `roughness_height` and `elevation`.
+- `environment_instant`: Named tuple with `reference_temperature`, `reference_wind_speed`,
+  `reference_humidity`, `atmospheric_pressure`, and `zenith_angle`.
 
 # Returns
-Named tuple with fields:
-- `wind_speed`: Wind speed profile at each height (`m/s`).
-- `air_temperature`: Air temperature profile at each height (`K`).
-- `relative_humidity`: Relative humidity (fractional) at each height.
-- `convective_heat_flux`: Convective heat flux (`W/m²`).
-- `friction_velocity`: Friction velocity (`m/s`).
-
-# Notes
-- Stability corrections use the **Businger–Dyer** formulations for unstable conditions.
-- The Monin–Obukhov length is estimated iteratively through `calc_Obukhov_length`.
-- Two broad options for aerodynamic roughness calculations are available: Campbell & Norman's (1998) approach
-that handles canopy displacement, invoked if `zh > 0` and otherwise
-- When `zh > 0`, canopy displacement is considered in the profile calculation.
-- zh and d0 for Campbell and Norman air temperature/wind speed profile (0.6 * canopy height in m if unknown
-| Condition                   | Wind profile                   | Temperature profile                          |
-| --------------------------- | ------------------------------ | -------------------------------------------- |
-| `zh > 0` + neutral/hot      | log-law                        | log between `z` and `zh`                     |
-| `zh > 0` + unstable/stable  | log-law with `calc_ψ_m` correction | log with displacement/`zh`                   |
-| `zh == 0` + neutral/hot     | log-law                        | weighted by bulk/sublayer Stanton numbers    |
-| `zh == 0` + unstable/stable | log-law with `calc_ψ_m` correction | full Monin–Obukhov profile via `calc_Obukhov_length` |
-
-- Relative humidity profiles are estimated from vapor pressure at each height.
+Named tuple: `wind_speed`, `air_temperature`, `relative_humidity` (profiles at each height),
+`convective_heat_flux` (`W/m²`), `friction_velocity` (`m/s`).
 
 # References
-- Businger, J. A., Wyngaard, J. C., Izumi, Y., & Bradley, E. F. (1971).
-  Flux–profile relationships in the atmospheric surface layer.
-  *Journal of the Atmospheric Sciences*, 28(2), 181–189.
-- Dyer, A. J. (1974). A review of flux–profile relationships.
-  *Boundary-Layer Meteorology*, 7(3), 363–372.
-- Kearney, M. R., et al. (2020). NicheMapR: an R package for microclimate and
-  biophysical modeling. *Ecography*, 43, 1–14.
+- Businger et al. (1971). *J. Atmos. Sci.* 28, 181–189.
+- Dyer (1974). *Bound.-Layer Meteor.* 7, 363–372.
 
 # Example
 
 ```julia
-profile = atmospheric_surface_profile(
-    reference_temperature = 25u"°C",
-    reference_wind_speed = 2.0u"m/s",
-    relative_humidity = 0.6,
-    surface_temperature = 35u"°C",
-    zenith_angle = 45u"°"
-)
+using Microclimate, Unitful
 
-profile.air_temperature  # vertical profile of air temperatures
-profile.wind_speed       # vertical profile of wind speeds
+boundary_layer_model = MoninObukhov()
+site = example_site()
+environment_instant = (;
+    reference_temperature = 25u"°C",
+    reference_wind_speed  = 2.0u"m/s",
+    reference_humidity    = 0.6,
+    atmospheric_pressure  = 101.325u"kPa",
+    zenith_angle          = 45u"°",
+)
+profile = atmospheric_surface_profile(boundary_layer_model;
+    heights          = [0.01, 0.5, 2.0, 5.0]u"m",  # 5 m is above the reference height
+    reference_height = 2.0u"m",
+    site,
+    environment_instant,
+    surface_temperature = 35u"°C",
+)
+profile.wind_speed
+profile.air_temperature
 ```
 """
 atmospheric_surface_profile(bl::MoninObukhov; heights=DEFAULT_HEIGHTS, reference_height=last(heights), kw...) =
@@ -110,11 +89,12 @@ function atmospheric_surface_profile!(bl::MoninObukhov, buffers;
     vapour_pressure_equation=GoffGratch(),
     reference_height=last(buffers.heights),
 )
-    (; roughness_height, elevation) = site
+    (; roughness_height) = site
     (; karman_constant, dyer_constant) = bl
     (; atmospheric_pressure, reference_temperature, reference_wind_speed, reference_humidity, zenith_angle) = environment_instant
 
-    (; heights, air_temperature, wind_speed, relative_humidity, obukhov_length_prev) = buffers
+    (; heights, air_temperature, wind_speed, relative_humidity,
+       obukhov_length_prev, warned_below_roughness, warned_above_reference) = buffers
     N_heights = length(heights)
     z = u"m"(reference_height)
     z0 = roughness_height
@@ -122,18 +102,22 @@ function atmospheric_surface_profile!(bl::MoninObukhov, buffers;
     # to avoid the small inconsistency in ψ_h between the penultimate and final Obukhov iterations.
     ref_idx = findfirst(==(z), heights)
 
-    minimum(heights) < z0 &&
+    if !warned_below_roughness[] && minimum(heights) < z0
         @warn """Some requested heights are below the roughness height ($z0).
     Monin-Obukhov similarity theory is not valid in this sublayer region.
     Assumptions applied:
       • wind speed → 0 (log-law gives u = 0 at z = z0 by definition)
       • air temperature linearly interpolated between T_surface (z = 0) and T_z0 (z = z0)
-    For a non-zero wind floor (e.g. for convection terms), clamp the result downstream.""" maxlog=1
-    maximum(heights) > z &&
+    For a non-zero wind floor (e.g. for convection terms), clamp the result downstream."""
+        warned_below_roughness[] = true
+    end
+    if !warned_above_reference[] && maximum(heights) > z
         @warn """Some requested heights exceed the reference measurement height ($z).
     Profiles will be extrapolated above the measurement level using MOST.
     This is physically reasonable within the surface layer but note that
-    the log-law becomes less accurate as height approaches the boundary-layer depth.""" maxlog=1
+    the log-law becomes less accurate as height approaches the boundary-layer depth."""
+        warned_above_reference[] = true
+    end
 
     reference_temp = u"K"(reference_temperature)
     surface_temp = u"K"(surface_temperature)

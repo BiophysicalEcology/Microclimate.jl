@@ -79,7 +79,7 @@ export AbstractRainfallSchedule, DailyRainfall, HourlyRainfall, is_hourly
 
 export AbstractEnvironment, MonthlyMinMaxEnvironment, DailyMinMaxEnvironment, DailyTimeseries, HourlyTimeseries
 export Site, AbstractSite
-export AbstractBoundaryLayerModel, MoninObukhov
+export AbstractBoundaryLayerModel, MoninObukhov, atmospheric_surface_profile, atmospheric_surface_profile!
 export Forcing, AtmosphericProfile
 
 
