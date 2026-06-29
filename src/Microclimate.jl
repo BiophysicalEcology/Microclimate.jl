@@ -78,6 +78,9 @@ export SoilPhaseTransitionModel, PhaseTransitionLatentHeat, allocate_phase_trans
 export AbstractRainfallSchedule, DailyRainfall, HourlyRainfall, is_hourly
 
 export AbstractEnvironment, MonthlyMinMaxEnvironment, DailyMinMaxEnvironment, DailyTimeseries, HourlyTimeseries
+export TimeOfDay, Sunrise, Sunset, Midday, Midnight, ClockTime
+export Shape, Sine, Decay, Linear, DielCurve, DielForcing, ForcingSpec, Derived, RelativeHumidityFromVapourPressureAndTemperature, VapourPressureFromRelativeHumidityAndTemperature
+export MINMAX_FORCING_MODEL, bind_forcings, minmax_forcings
 export Site, AbstractSite
 export AbstractBoundaryLayerModel, MoninObukhov
 export Forcing, AtmosphericProfile
@@ -128,6 +131,7 @@ include("boundary_layer/monin_obukhov.jl")
 
 # Environment inputs
 include("inputs/abstract_environment.jl")
+include("inputs/diel.jl")
 include("inputs/monthly_minmax.jl")
 include("inputs/daily_minmax.jl")
 include("inputs/daily_timeseries.jl")
@@ -168,9 +172,6 @@ include("rainfall/hourly_rainfall.jl")
 # Outputs and forcing (depend on AbstractEnvironment / AbstractInterpolation)
 include("outputs.jl")
 include("forcing.jl")
-
-# Algorithms
-include("interpolation.jl")
 
 # Soil balance: freezing correction is referenced as a default by the energy
 # ODE, so freezing/ must come before energy/.

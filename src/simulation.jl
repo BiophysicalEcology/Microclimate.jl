@@ -1,18 +1,21 @@
-# Pre-allocate the 24-element scratch buffers used by `hourly_from_min_max!`.
-# Element types match the corresponding `environment_minmax` fields so no
-# unit-conversion or copy is needed in the hot path.
-function allocate_interpolation_scratch(minmax)
-    nhours = 24
-    return (;
-        times             = Vector{Float64}(undef, nhours),
-        temperatures      = Vector{eltype(minmax.reference_temperature_min)}(undef, nhours),
-        time_vector       = Vector{Float64}(undef, nhours),
-        day_result_wind   = Vector{eltype(minmax.reference_wind_min)}(undef, nhours),
-        day_result_humidity = Vector{eltype(minmax.reference_humidity_min)}(undef, nhours),
-        day_result_cloud  = Vector{eltype(minmax.cloud_min)}(undef, nhours),
-    )
-end
+# Output quantities are written straight into the result buffers; any other
+# quantity in `forcings` (e.g. vapour pressure feeding a derived humidity) is an
+# intermediate and needs a scratch buffer. Allocate one per intermediate.
 allocate_interpolation_scratch(::Nothing) = nothing
+function allocate_interpolation_scratch(env)
+    fs = env.forcings
+    names = filter(k -> !_is_output_quantity(Val(k)), keys(fs))
+    return NamedTuple{names}(map(k -> _quantity_buffer(getproperty(fs, k)), names))
+end
+
+# Quantity names the solver writes directly into its result buffers.
+@inline _is_output_quantity(::Val) = false
+@inline _is_output_quantity(::Val{:reference_temperature}) = true
+@inline _is_output_quantity(::Val{:reference_humidity}) = true
+@inline _is_output_quantity(::Val{:reference_wind_speed}) = true
+@inline _is_output_quantity(::Val{:cloud_cover}) = true
+
+_quantity_buffer(f::DielForcing) = zeros(eltype(first(f.values)), 24 * n_days(f))
 
 function populate_weather!(output, mp, solar_radiation_out, interpolation_scratch)
     (; hours) = mp.model
@@ -301,11 +304,14 @@ function solve_solar!(out::NamedTuple, buffers::NamedTuple, mp::MicroProblem)
 end
 
 function interpolate_minmax!(output, environment_minmax, environment_daily, environment_hourly, solar_radiation_out, interpolation_scratch)
-    # Interpolate daily min/max forcing variables to hourly, writing directly
-    # into the output buffers — no per-call Vector allocations.
-    hourly_from_min_max!(output.reference_temperature, output.reference_wind_speed,
-        output.reference_humidity, output.cloud_cover,
-        interpolation_scratch, environment_minmax, solar_radiation_out)
+    # Expand each forcing's diel curve to hourly, writing directly into the
+    # matching output buffer.
+    # Fill every quantity buffer: output quantities into the result, intermediates
+    # into scratch. Derived quantities (e.g. humidity from vapour pressure) read
+    # the forcings filled before them.
+    buffer_for(vk) = _is_output_quantity(vk) ? getproperty(output, _name(vk)) :
+                                               getproperty(interpolation_scratch, _name(vk))
+    populate_quantities!(buffer_for, environment_minmax.forcings, solar_radiation_out)
 
     # Clamp humidity and cloud cover to [_, 1.0] without allocating a mask Vector.
     @inbounds for i in eachindex(output.reference_humidity)
@@ -960,7 +966,7 @@ The 25th node repeats the 24th hour's value (TD(36)=TAIRhr1(DOYF)).
 """
 function allocate_forcing(output, solar_radiation_out)
     tspan = 0.0:60:(60*24)  # 0, 60, ..., 1440
-    _scaled(buf) = scale(interpolate(buf, BSpline(Linear())), tspan)
+    _scaled(buf) = scale(interpolate(buf, BSpline(Interpolations.Linear())), tspan)
     return Forcing(
         _scaled(zeros(eltype(output.global_radiation), 25)),                  # solar
         _scaled(zeros(eltype(solar_radiation_out.zenith_angle), 25)),         # zenith

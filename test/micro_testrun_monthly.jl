@@ -85,7 +85,7 @@ environment_daily = DailyTimeseries(;
     leaf_area_index = fill(0.1, length(days)),
 )
 
-environment_minmax = MonthlyMinMaxEnvironment(;
+environment_minmax = MonthlyMinMaxEnvironment(; forcings = minmax_forcings(;
     reference_temperature_min = (DataFrame(CSV.File("$testdir/data/init_monthly/TMINN.csv"))[days2do, 2] * 1.0)u"°C", # minimum air temperatures
     reference_temperature_max = (DataFrame(CSV.File("$testdir/data/init_monthly/TMAXX.csv"))[days2do, 2] * 1.0)u"°C", # maximum air temperatures
     reference_wind_min = (DataFrame(CSV.File("$testdir/data/init_monthly/WNMINN.csv"))[days2do, 2] * 1.0)u"m/s", # min wind speed (m/s)
@@ -94,9 +94,7 @@ environment_minmax = MonthlyMinMaxEnvironment(;
     reference_humidity_max = (DataFrame(CSV.File("$testdir/data/init_monthly/RHMAXX.csv"))[days2do, 2] * 1.0) ./ 100.0, # max relative humidity (fractional)
     cloud_min = (DataFrame(CSV.File("$testdir/data/init_monthly/CCMINN.csv"))[days2do, 2] * 1.0) ./ 100.0, # min cloud cover (fractional)
     cloud_max = (DataFrame(CSV.File("$testdir/data/init_monthly/CCMAXX.csv"))[days2do, 2] * 1.0) ./ 100.0, # max cloud cover (fractional)
-    minima_times = [microinput[:TIMINS1], microinput[:TIMINS2], microinput[:TIMINS3], microinput[:TIMINS4]], # time of minima for air temp, wind, humidity and cloud cover (h), air & wind mins relative to sunrise, humidity and cloud cover mins relative to solar noon
-    maxima_times = [microinput[:TIMAXS1], microinput[:TIMAXS2], microinput[:TIMAXS3], microinput[:TIMAXS4]], # time of maxima for air temp, wind, humidity and cloud cover (h), air temp & wind maxs relative to solar noon, humidity and cloud cover maxs relative to sunrise
-)
+))
 
 _runmoist = Bool(Int(microinput[:runmoist]))
 soil_profile = SoilProfile(;

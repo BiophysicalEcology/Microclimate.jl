@@ -1,23 +1,24 @@
-# TODO: this should be more generic.
-# We could possible make a field type that is either interpolated or indexed
-# so we just mix min-max fields with e.g. daily fields in a single environment object
-@kwdef struct MonthlyMinMaxEnvironment{AT,W,H,C,M} <: AbstractEnvironment
-    reference_temperature_min::AT
-    reference_temperature_max::AT
-    reference_wind_min::W
-    reference_wind_max::W
-    reference_humidity_min::H
-    reference_humidity_max::H
-    cloud_min::C
-    cloud_max::C
-    minima_times::M
-    maxima_times::M
+# A monthly min/max (or any timed-anchor) environment: one representative day
+# per month, each variable a `Forcing` (declarative `DielCurve` + per-day data).
+"""
+    MonthlyMinMaxEnvironment(; forcings)
+
+Forcing for non-consecutive representative days (Fortran "monthly mode").
+`forcings` is a `NamedTuple` keyed by output variable
+(`reference_temperature`, `reference_wind_speed`, `reference_humidity`,
+`cloud_cover`, …); each is a [`Forcing`](@ref). `minmax_forcings` builds the
+classic min/max case — see `example_monthly_weather`.
+"""
+struct MonthlyMinMaxEnvironment{NT<:NamedTuple} <: AbstractEnvironment
+    forcings::NT
 end
+MonthlyMinMaxEnvironment(; forcings) = MonthlyMinMaxEnvironment(forcings)
 
 """
     example_monthly_weather
 
-Example monthly weather input for the middle day of each month for Madison Wisconsin, USA, originally extracted from the CRU CL v. 2.0 dataset.
+Example monthly weather input for the middle day of each month for Madison
+Wisconsin, USA, originally extracted from the CRU CL v. 2.0 dataset.
 """
 function example_monthly_weather(;
     reference_temperature_min = [-14.3, -12.1, -5.1, 1.2, 6.9, 12.3, 15.2, 13.6, 8.9, 3, -3.2, -10.6]u"°C",
@@ -28,17 +29,11 @@ function example_monthly_weather(;
     reference_humidity_max = fill(1.0, 12),
     cloud_min = [50.3, 47, 48.2, 47.5, 40.9, 35.7, 34.1, 36.6, 42.6, 48.4, 61.1, 60.1] ./ 100.0,
     cloud_max = [50.3, 47, 48.2, 47.5, 40.9, 35.7, 34.1, 36.6, 42.6, 48.4, 61.1, 60.1] ./ 100.0,
-    # Per-variable hour offsets indexed [air_temp, wind, humidity, cloud].
-    # Air temp & wind: minima offset from sunrise, maxima offset from solar noon.
-    # Humidity & cloud: minima offset from solar noon, maxima offset from sunrise.
-    minima_times = [0, 0, 1, 1],
-    maxima_times = [1, 1, 0, 0],
 )
-    MonthlyMinMaxEnvironment(;
+    MonthlyMinMaxEnvironment(; forcings = minmax_forcings(;
         reference_temperature_min, reference_temperature_max,
         reference_wind_min, reference_wind_max,
         reference_humidity_min, reference_humidity_max,
         cloud_min, cloud_max,
-        minima_times, maxima_times,
-    )
+    ))
 end

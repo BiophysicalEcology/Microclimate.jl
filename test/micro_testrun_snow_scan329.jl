@@ -151,7 +151,7 @@ soil_hydraulic_model = example_soil_hydraulic_model()
 
 # ── Daily min/max environment (1461 days) ─────────────────────────────────────
 # RHMINN/RHMAXX and CCMAXX are in %; divide by 100 for fractional
-environment_minmax = DailyMinMaxEnvironment(;
+environment_minmax = DailyMinMaxEnvironment(; forcings = minmax_forcings(;
     reference_temperature_min = forcing.TMINN[days2do] .* u"°C",
     reference_temperature_max = forcing.TMAXX[days2do] .* u"°C",
     reference_wind_min        = forcing.WNMINN[days2do] .* u"m/s",
@@ -160,9 +160,7 @@ environment_minmax = DailyMinMaxEnvironment(;
     reference_humidity_max    = forcing.RHMAXX[days2do] ./ 100.0,
     cloud_min                 = zeros(NDAYS),
     cloud_max                 = forcing.CCMAXX[days2do] ./ 100.0,
-    minima_times              = [0.0, 0.0, 1.0, 1.0],  # TIMINS1-4
-    maxima_times              = [1.0, 1.0, 0.0, 0.0],  # TIMAXS1-4
-)
+))
 
 # ── Daily timeseries ──────────────────────────────────────────────────────────
 environment_daily = DailyTimeseries(;
