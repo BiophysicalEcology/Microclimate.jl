@@ -143,7 +143,7 @@ function atmospheric_surface_profile!(bl::MoninObukhov, buffers;
     #ρcpTκg = u"cal*minute^2/cm^4"(ρ * c_p * T_ref_height / (κ * g_n))
     ρcpTκg = u"J*s^2/m^4"(6.003e-8u"cal*minute^2/cm^4")
 
-    log_z_ratio = log(z / z0 + 1)
+    log_z_ratio = log(z / z0)
     ΔT = reference_temp - surface_temp
     mean_temp = (surface_temp + reference_temp) / 2
     # TODO call calc_ρ_cp method specific to elevation and RH in final version but do it this way for NicheMapR comparison
@@ -152,15 +152,17 @@ function atmospheric_surface_profile!(bl::MoninObukhov, buffers;
 
     # stability check (assuming stable conditions at night)
     if reference_temp ≥ surface_temp || zenith_angle ≥ 90° # temperature inversion or night-time conditions
-        friction_velocity = calc_friction_velocity(; reference_wind_speed, log_z_ratio, κ)
+        # Floor avoids sublayer_stanton (∝ u*^-9/20) hitting Inf at u*=0,
+        # e.g. from real dead-calm reanalysis wind. Mirrors calc_Obukhov_length's guard.
+        friction_velocity = max(calc_friction_velocity(; reference_wind_speed, log_z_ratio, κ), 1.0e-6u"m/s")
         convective_heat_flux = calc_convection(; friction_velocity, log_z_ratio, ΔT, ρ_cp, z0)
         roughness_height_temp = (reference_temp * bulk_stanton(log_z_ratio) + surface_temp * sublayer_stanton(z0, friction_velocity)) / (bulk_stanton(log_z_ratio) + sublayer_stanton(z0, friction_velocity))
         for i in 2:N_heights
-            wind_speed[i] = calc_wind(height_array[i], z0, κ, friction_velocity, 1.0)
-            air_temperature[i] = roughness_height_temp + (reference_temp - roughness_height_temp) * log(height_array[i] / z0 + 1.0) / log_z_ratio
+            wind_speed[i] = calc_wind(height_array[i], z0, κ, friction_velocity, 0.0)
+            air_temperature[i] = roughness_height_temp + (reference_temp - roughness_height_temp) * log(height_array[i] / z0) / log_z_ratio
         end
     else # unstable conditions during daytime, need to solve iteratively for Obukhov length
-        Obukhov_out = calc_Obukhov_length(reference_temp, surface_temp, v_ref_height, z0, z, ρcpTκg, κ, log_z_ratio, ΔT, ρ_cp; max_iter=30, tol=1e-2, initial_obukhov_length=obukhov_length_prev[])
+        Obukhov_out = calc_Obukhov_length(reference_temp, surface_temp, v_ref_height, z0, z, ρcpTκg, κ, ΔT, ρ_cp; max_iter=30, tol=1e-2, initial_obukhov_length=obukhov_length_prev[])
         obukhov_length = Obukhov_out.obukhov_length
         obukhov_length_prev[] = obukhov_length
         roughness_height_temp = Obukhov_out.roughness_height_temperature
@@ -172,12 +174,12 @@ function atmospheric_surface_profile!(bl::MoninObukhov, buffers;
             ψ_m1 = calc_ψ_m(φ_m1)
             ψ_h2 = calc_ψ_h(φ_m1)
             h_ratio = height_array[i] / z0  # dimensionless h/z0
-            # Clamp log arguments to a small positive value to prevent NaN when
-            # stability corrections exceed h/z0 at near-surface heights (e.g. 0.01 m).
-            wind_log_arg = max(h_ratio - ψ_m1, 1e-6)
-            wind_speed[i] = (friction_velocity / κ) * log(wind_log_arg)
-            temp_log_arg = max(h_ratio - ψ_h2, 1e-6)
-            air_temperature[i] = roughness_height_temp + (reference_temp - roughness_height_temp) * log(temp_log_arg) / log(z / z0 - ψ_h)
+            # Clamp to a small positive value to prevent non-physical results when
+            # stability corrections are large near the surface.
+            wind_log_arg = max(log(h_ratio) - ψ_m1, 1e-6)
+            wind_speed[i] = (friction_velocity / κ) * wind_log_arg
+            temp_log_arg = max(log(h_ratio) - ψ_h2, 1e-6)
+            air_temperature[i] = roughness_height_temp + (reference_temp - roughness_height_temp) * temp_log_arg / (log(z / z0) - ψ_h)
         end
     end
     reverse!(wind_speed)
@@ -199,13 +201,20 @@ function surface_fluxes(bl::MoninObukhov;
     roughness_height, reference_height, obukhov_length_prev=nothing,
 )
     κ = bl.karman_constant
-    log_z_ratio = log(reference_height / roughness_height + 1)
+    log_z_ratio = log(reference_height / roughness_height)
     ΔT = air_temperature - surface_temperature
     ρ_cp = calc_ρ_cp((surface_temperature + air_temperature) / 2)
 
     if air_temperature ≥ surface_temperature || zenith_angle ≥ 90°
-        # Stable / nocturnal: neutral log-law
-        friction_velocity = calc_friction_velocity(; reference_wind_speed=wind_speed, log_z_ratio, κ)
+        # Stable / nocturnal: neutral log-law. Real reanalysis wind speed
+        # occasionally rounds to exactly 0 (e.g. BARRA reports in 0.25 m/s
+        # steps and does report dead calm). Without a floor, friction_velocity=0
+        # sends sublayer_stanton (∝ u*^-9/20) to Inf, blowing up
+        # convective_heat_flux and destabilising the ODE. Mirrors the
+        # existing guard in calc_Obukhov_length's unstable branch below.
+        friction_velocity = max(
+            calc_friction_velocity(; reference_wind_speed=wind_speed, log_z_ratio, κ), 1.0e-6u"m/s"
+        )
         convective_heat_flux = uconvert(u"W/m^2",
             calc_convection(; friction_velocity, log_z_ratio, ΔT, ρ_cp, z0=roughness_height))
     else
@@ -217,7 +226,7 @@ function surface_fluxes(bl::MoninObukhov;
         L0_raw = isnothing(obukhov_length_prev) ? -0.3u"m" : obukhov_length_prev[]
         L0 = L0_raw >= 0.0u"m" ? -0.3u"m" : L0_raw
         out = calc_Obukhov_length(air_temperature, surface_temperature, wind_speed,
-            roughness_height, reference_height, ρcpTκg, κ, log_z_ratio, ΔT, ρ_cp;
+            roughness_height, reference_height, ρcpTκg, κ, ΔT, ρ_cp;
             initial_obukhov_length=L0)
         friction_velocity = out.friction_velocity
         convective_heat_flux = out.convective_heat_flux
@@ -234,14 +243,13 @@ function init_surface_fluxes!(bl::MoninObukhov, buffers, forcing, site, heights,
         κ = bl.karman_constant
         roughness_height = site.roughness_height
         reference_height = last(heights)
-        log_z_ratio = log(reference_height / roughness_height + 1)
         ΔT = air_temperature - surface_temperature
         ρ_cp = calc_ρ_cp((surface_temperature + air_temperature) / 2)
         ρcpTκg = 6.003e-8u"cal*minute^2/cm^4"
         L0_raw = buffers.soil_energy_balance.obukhov_length_prev[]
         L0 = L0_raw >= 0.0u"m" ? -0.3u"m" : L0_raw
         out = calc_Obukhov_length(air_temperature, surface_temperature, wind_speed,
-            roughness_height, reference_height, ρcpTκg, κ, log_z_ratio, ΔT, ρ_cp;
+            roughness_height, reference_height, ρcpTκg, κ, ΔT, ρ_cp;
             initial_obukhov_length=L0)
         buffers.soil_energy_balance.obukhov_length_prev[] = out.obukhov_length end
 end
@@ -430,11 +438,14 @@ Stability correction function φ for momentum in Monin–Obukhov similarity theo
 # Returns
 - Dimensionless stability correction factor φ.
 
-This corresponds to the Businger–Dyer formulation for unstable stratification:
-
-φₘ = (1 - γ z / L)^(1/4)
+Returns the Paulson (1970) x-substitution variable x = (1 - γ z / L)^(1/4),
+used as the argument to `calc_ψ_m` and `calc_ψ_h`. Note this is the reciprocal
+of the true Businger–Dyer φₘ stability function, φₘ = (1 - γ z / L)^(-1/4).
 
 # References
+- Paulson, C. A. (1970). The mathematical representation of wind speed and
+  temperature profiles in the unstable atmospheric surface layer.
+  *Journal of Applied Meteorology*, 9(6), 857–861.
 - Businger, J. A., Wyngaard, J. C., Izumi, Y., & Bradley, E. F. (1971).
   Flux–profile relationships in the atmospheric surface layer.
   *Journal of the Atmospheric Sciences*, 28(2), 181–189.
@@ -505,7 +516,7 @@ end
 Iteratively solve for Monin-Obukhov length and convective heat flux.
 """
 @inline function calc_Obukhov_length(
-    reference_temp, surface_temp, v_ref_height, z0, z, ρcpTκg, κ, log_z_ratio, ΔT, ρ_cp;
+    reference_temp, surface_temp, v_ref_height, z0, z, ρcpTκg, κ, ΔT, ρ_cp;
     γ=16.0, max_iter=30, tol=1e-2, initial_obukhov_length=-0.3u"m"
 )
     obukhov_length = initial_obukhov_length
