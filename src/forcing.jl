@@ -26,7 +26,7 @@ function interpolate_forcings(f::Forcing, t)
     return (;
         atmospheric_pressure = f.pressure(t_m),
         air_temperature = f.temperature(t_m),
-        wind_speed = f.wind(t_m),
+        wind_speed = max(f.wind(t_m), 0.1u"m/s"), # floor: real data (e.g. BARRA) can report exact 0
         zenith_angle = min(90.0u"°", u"°"(round(f.zenith(t_m), digits=3))),
         solar_radiation = max(0.0u"W/m^2", f.solar(t_m)),
         cloud_cover = clamp(f.cloud(t_m), 0.0, 1.0),

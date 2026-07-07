@@ -152,7 +152,9 @@ function atmospheric_surface_profile!(bl::MoninObukhov, buffers;
 
     # stability check (assuming stable conditions at night)
     if reference_temp ≥ surface_temp || zenith_angle ≥ 90° # temperature inversion or night-time conditions
-        friction_velocity = calc_friction_velocity(; reference_wind_speed, log_z_ratio, κ)
+        # Floor avoids sublayer_stanton (∝ u*^-9/20) hitting Inf at u*=0,
+        # e.g. from real dead-calm reanalysis wind. Mirrors calc_Obukhov_length's guard.
+        friction_velocity = max(calc_friction_velocity(; reference_wind_speed, log_z_ratio, κ), 1.0e-6u"m/s")
         convective_heat_flux = calc_convection(; friction_velocity, log_z_ratio, ΔT, ρ_cp, z0)
         roughness_height_temp = (reference_temp * bulk_stanton(log_z_ratio) + surface_temp * sublayer_stanton(z0, friction_velocity)) / (bulk_stanton(log_z_ratio) + sublayer_stanton(z0, friction_velocity))
         for i in 2:N_heights
@@ -204,8 +206,15 @@ function surface_fluxes(bl::MoninObukhov;
     ρ_cp = calc_ρ_cp((surface_temperature + air_temperature) / 2)
 
     if air_temperature ≥ surface_temperature || zenith_angle ≥ 90°
-        # Stable / nocturnal: neutral log-law
-        friction_velocity = calc_friction_velocity(; reference_wind_speed=wind_speed, log_z_ratio, κ)
+        # Stable / nocturnal: neutral log-law. Real reanalysis wind speed
+        # occasionally rounds to exactly 0 (e.g. BARRA reports in 0.25 m/s
+        # steps and does report dead calm). Without a floor, friction_velocity=0
+        # sends sublayer_stanton (∝ u*^-9/20) to Inf, blowing up
+        # convective_heat_flux and destabilising the ODE. Mirrors the
+        # existing guard in calc_Obukhov_length's unstable branch below.
+        friction_velocity = max(
+            calc_friction_velocity(; reference_wind_speed=wind_speed, log_z_ratio, κ), 1.0e-6u"m/s"
+        )
         convective_heat_flux = uconvert(u"W/m^2",
             calc_convection(; friction_velocity, log_z_ratio, ΔT, ρ_cp, z0=roughness_height))
     else
