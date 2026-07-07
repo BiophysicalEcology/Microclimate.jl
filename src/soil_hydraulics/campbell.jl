@@ -21,7 +21,7 @@ end
 """
     CampbellSoilHydraulics(; root_resistance, stomatal_closure_potential,
                               leaf_resistance, stomatal_stability_parameter,
-                              root_radius)
+                              root_radius, infiltration_algorithm)
 
 Plant-side scalar parameters for Campbell's (1985) soil water balance
 model. Holds parameters only — the moisture-solver strategy lives on
@@ -36,15 +36,21 @@ live on `SoilProfile.hydraulics::CampbellHydraulicProfile`, alongside
 `bulk_density` and `mineral_density` — all per-location data on one
 struct, all passed in alongside this model wherever needed.
 
+`infiltration_algorithm` selects the infiltration core used inside
+`infiltration_step!`: [`MatricPotentialAlgorithm`](@ref) (Program 8.1, the
+default — better for dry soil) or [`MatricFluxPotentialAlgorithm`](@ref)
+(Program 8.2 — fewer iterations, more stable for wet soil).
+
 # References
 Campbell, G. S. (1985). Soil Physics with BASIC. Elsevier.
 """
-@kwdef struct CampbellSoilHydraulics{RRes,SCP,LRes,SSP,RRad} <: AbstractSoilHydraulicsModel
+@kwdef struct CampbellSoilHydraulics{RRes,SCP,LRes,SSP,RRad,Alg} <: AbstractSoilHydraulicsModel
     root_resistance::RRes
     stomatal_closure_potential::SCP
     leaf_resistance::LRes
     stomatal_stability_parameter::SSP
     root_radius::RRad
+    infiltration_algorithm::Alg = MatricPotentialAlgorithm()
 end
 
 # TODO move real defaults to the struct keywords
@@ -66,10 +72,11 @@ function example_soil_hydraulic_model(;
     leaf_resistance = 2.0e6u"m^4/kg/s",       # resistance per unit length of leaf
     stomatal_stability_parameter = 10.0,      # stability parameter, -
     root_radius = 0.001u"m",                  # root radius, m
+    infiltration_algorithm = MatricPotentialAlgorithm(),
 )
     CampbellSoilHydraulics(;
         root_resistance, stomatal_closure_potential, leaf_resistance,
-        stomatal_stability_parameter, root_radius,
+        stomatal_stability_parameter, root_radius, infiltration_algorithm,
     )
 end
 
@@ -93,7 +100,6 @@ function allocate_soil_water_balance(::CampbellSoilHydraulics, num_layers)
         root_zone_parameter = zeros(typeof(0.0u"m"), num_layers+1),
         vapor_flux = zeros(typeof(0.0u"kg/m^2/s"), num_layers+1),
         vapor_flux_derivative = zeros(typeof(0.0u"kg*s/m^4"), num_layers+1),
-        hydraulic_capacitance = zeros(typeof(0.0u"kg*s/m^4"), num_layers+1),
         sub_diagonal = zeros(typeof(0.0u"kg*s/m^4"), num_layers+1),
         diagonal = zeros(typeof(0.0u"kg*s/m^4"), num_layers+1),
         super_diagonal = zeros(typeof(0.0u"kg*s/m^4"), num_layers+1),
@@ -103,6 +109,16 @@ function allocate_soil_water_balance(::CampbellSoilHydraulics, num_layers)
         potential_change = zeros(typeof(0.0u"J/kg"), num_layers+1),
         soil_resistance = zeros(typeof(0.0u"m^4/kg/s"), num_layers+1),
         root_water_uptake = zeros(typeof(0.0u"kg/m^2/s"), num_layers+1),
+        # Program 8.2 state + scratch — Φ's units (kg/(m*s)) differ from ψ's (J/kg), so its
+        # tridiagonal system needs its own unit-typed arrays.
+        matric_flux_potential = zeros(typeof(0.0u"kg/m/s"), num_layers+1),
+        campbell_flux_exponent = zeros(typeof(0.0), num_layers+1),
+        air_entry_flux_potential = zeros(typeof(0.0u"kg/m/s"), num_layers+1),
+        flux_sub_diagonal = zeros(typeof(0.0u"1/m"), num_layers+1),
+        flux_diagonal = zeros(typeof(0.0u"1/m"), num_layers+1),
+        flux_super_diagonal = zeros(typeof(0.0u"1/m"), num_layers+1),
+        flux_normalized_residual = zeros(typeof(0.0u"kg/m/s"), num_layers+1),
+        flux_potential_change = zeros(typeof(0.0u"kg/m/s"), num_layers+1),
         # Output buffers
         water_potential_out = Vector{typeof(1.0u"J/kg")}(undef, num_layers),
         soil_humidity_out = Vector{Float64}(undef, num_layers),
@@ -147,11 +163,13 @@ function infiltration_step!(buffers, soil_hydraulic_model::CampbellSoilHydraulic
        root_water_potential, air_entry_potential,
        campbell_b_inverse, campbell_exponent, campbell_exponent_complement,
        saturation_water_content, root_resistance, root_zone_parameter,
-       vapor_flux, vapor_flux_derivative, hydraulic_capacitance,
-       sub_diagonal, diagonal, super_diagonal, normalized_super_diagonal,
-       mass_balance_residual, normalized_residual, potential_change,
-       soil_resistance, root_water_uptake) = buffers
+       vapor_flux, vapor_flux_derivative,
+       mass_balance_residual,
+       soil_resistance, root_water_uptake,
+       campbell_flux_exponent, air_entry_flux_potential) = buffers
     num_layers = length(water_potential) - 1
+
+    algorithm = soil_hydraulic_model.infiltration_algorithm
 
     # Constants
     water_molar_mass = 0.01801528u"kg/mol"
@@ -174,6 +192,12 @@ function infiltration_step!(buffers, soil_hydraulic_model::CampbellSoilHydraulic
     campbell_exponent_complement[1:num_layers] .= 1.0 .- campbell_exponent[1:num_layers]
     campbell_exponent_complement[num_layers+1] = campbell_exponent_complement[num_layers]
 
+    # Program 8.2 per-layer constants; extend boundary. Φ_e = KS*AE/(1-n), n=2+3/b (eq 8.46).
+    campbell_flux_exponent[1:num_layers] .= (2.0 .* campbell_b .+ 3.0) ./ (campbell_b .+ 3.0)
+    campbell_flux_exponent[num_layers+1] = campbell_flux_exponent[num_layers]
+    air_entry_flux_potential[1:num_layers] .= -saturated_conductivity .* air_entry_potential[1:num_layers] .* campbell_b ./ (campbell_b .+ 3.0)
+    air_entry_flux_potential[num_layers+1] = air_entry_flux_potential[num_layers]
+
     # Fill depth directly from user-provided fine-resolution depths vector
     for i in 1:num_layers
         depth[i+1] = uconvert(u"m", depths[i])
@@ -187,13 +211,17 @@ function infiltration_step!(buffers, soil_hydraulic_model::CampbellSoilHydraulic
     end
     soil_temperature[num_layers+1] = input_soil_temperature[num_layers]
 
-    # Set initial water content and related variables
+    # Copy input water content into buffers (shared between algorithms)
     for i in 2:num_layers
         water_content_new[i] = θ_soil[i-1]
-        water_potential[i] = air_entry_potential[i] * (saturation_water_content[i] / water_content_new[i])^campbell_b[i] # matric water potential, EQ5.9 (note thetas=water_content are inverted so not raised to -campbell_b)
+        water_content[i] = θ_soil[i-1]
+    end
+
+    initial_state_from_water_content!(algorithm, buffers, campbell_b, saturated_conductivity, num_layers)
+    state_to_water_potential!(algorithm, buffers, campbell_b, num_layers)
+
+    for i in 2:num_layers
         soil_humidity[i] = exp(water_molar_mass * water_potential[i] / (R * soil_temperature[i-1])) # soil humidity, EQ5.14
-        hydraulic_conductivity[i] = saturated_conductivity[i] * (air_entry_potential[i] / water_potential[i])^campbell_exponent[i] # hydraulic conductivity, EQ6.14
-        water_content[i] = θ_soil[i-1] # water content
     end
 
     # Bulk water mass per soil layer
@@ -201,13 +229,12 @@ function infiltration_step!(buffers, soil_hydraulic_model::CampbellSoilHydraulic
         layer_water_mass[i] = water_density * (depth[i+1] - depth[i-1]) / 2 # bulk density x volume per unit area, kg/m²
     end
     # Lower boundary condition set to saturated (stays constant)
-    water_potential[num_layers+1] = air_entry_potential[num_layers] * (saturation_water_content[num_layers+1] / saturation_water_content[num_layers+1])^campbell_b[num_layers] # water potential
     soil_humidity[num_layers+1] = 1.0 # soil humidity
     water_content[num_layers+1] = saturation_water_content[num_layers+1] # water content
     water_content_new[num_layers+1] = saturation_water_content[num_layers+1] # water content
     depth[1] = -1e10u"m" # depth at node 1, m
     depth[num_layers+1] = 1e20u"m" # depth at deepest node, m
-    hydraulic_conductivity[num_layers+1] = saturated_conductivity[num_layers] * (air_entry_potential[num_layers] / water_potential[num_layers+1])^campbell_exponent[num_layers+1] # lower boundary conductivity
+    hydraulic_conductivity[num_layers+1] = saturated_conductivity[num_layers] # lower boundary conductivity
 
     # Initialize root water uptake variables
     for i in 2:num_layers
@@ -267,8 +294,9 @@ function infiltration_step!(buffers, soil_hydraulic_model::CampbellSoilHydraulic
         mass_balance_error = 0.0u"kg/m^2/s"
         counter += 1
         for i in 2:num_layers
-            hydraulic_conductivity[i] = saturated_conductivity[i] * (air_entry_potential[i] / water_potential[i])^campbell_exponent[i]
+            algorithm_hydraulic_conductivity!(algorithm, buffers, i, saturated_conductivity)
         end
+        state_to_water_potential!(algorithm, buffers, campbell_b, num_layers)
 
         vapor_flux[1] = evaporation_potential * (soil_humidity[2] - relative_humidity_local) / (1.0 - relative_humidity_local) # vapour flux at soil surface, EQ9.14
         vapor_flux_derivative[1] = evaporation_potential * water_molar_mass * soil_humidity[2] / (R * soil_temperature[1] * (1.0 - relative_humidity_local)) # derivative of vapour flux at soil surface, combination of EQ9.14 and EQ5.14
@@ -281,44 +309,24 @@ function infiltration_step!(buffers, soil_hydraulic_model::CampbellSoilHydraulic
             vapor_conductivity = tortuosity_b * vapor_diffusivity * vapor_density * (saturation_water_content[i] - (water_content_new[i] + water_content_new[i+1]) / 2.0) / (depth[i+1] - depth[i]) # vapour conductivity, EQ9.7
             vapor_flux[i] = vapor_conductivity * (soil_humidity[i+1] - soil_humidity[i]) # fluxes of vapour within soil, EQ9.14
             vapor_flux_derivative[i] = water_molar_mass * soil_humidity[i] * vapor_conductivity / (R * soil_temperature[i-1]) # derivatives of vapour fluxes within soil, combination of EQ9.14 and EQ5.14
-            hydraulic_capacitance[i] = -1.0 * layer_water_mass[i] * water_content_new[i] / (campbell_b[i] * water_potential[i] * dt) # hydraulic capacity = capacitance, d_theta/d_psi
-            # Tridiagonal matrix components
-            sub_diagonal[i] = -1.0 * hydraulic_conductivity[i-1] / (depth[i] - depth[i-1]) + Unitful.gn * campbell_exponent[i] * hydraulic_conductivity[i-1] / water_potential[i-1]
-            super_diagonal[i] = -1.0 * hydraulic_conductivity[i+1] / (depth[i+1] - depth[i])
-            diagonal[i] = hydraulic_conductivity[i] / (depth[i] - depth[i-1]) + hydraulic_conductivity[i] / (depth[i+1] - depth[i]) + hydraulic_capacitance[i] - Unitful.gn * campbell_exponent[i] * hydraulic_conductivity[i] / water_potential[i] + vapor_flux_derivative[i-1] + vapor_flux_derivative[i]
-            # mass balance including vapour fluxes and root water uptake
-            # version of equation 8.28 that additionally contains vapour fluxes and root water uptake
-            mass_balance_residual[i] = ((water_potential[i] * hydraulic_conductivity[i] - water_potential[i-1] * hydraulic_conductivity[i-1]) / (depth[i] - depth[i-1]) - (water_potential[i+1] * hydraulic_conductivity[i+1] - water_potential[i] * hydraulic_conductivity[i]) / (depth[i+1] - depth[i])) / campbell_exponent_complement[i] + layer_water_mass[i] * (water_content_new[i] - water_content[i]) / dt - Unitful.gn * (hydraulic_conductivity[i-1] - hydraulic_conductivity[i]) + vapor_flux[i-1] - vapor_flux[i] + root_water_uptake[i]
-            mass_balance_error += abs(mass_balance_residual[i]) # total mass balance error
-        end
-
-        # Thomas algorithm (Gauss elimination)
-        # Fortran INFIL.f lines 255-256: clamp tiny normalized super-diagonal values to zero
-        for i in 2:num_layers-1
-            normalized_super_diagonal[i] = super_diagonal[i] / diagonal[i]
-            if abs(normalized_super_diagonal[i]) < 1e-8
-                normalized_super_diagonal[i] = zero(normalized_super_diagonal[i])
-            end
-            normalized_residual[i] = mass_balance_residual[i] / diagonal[i]
-            diagonal[i+1] -= sub_diagonal[i+1] * normalized_super_diagonal[i]
-            mass_balance_residual[i+1] -= sub_diagonal[i+1] * normalized_residual[i]
-        end
-
-        potential_change[num_layers] = mass_balance_residual[num_layers] / diagonal[num_layers]
-        water_potential[num_layers] -= potential_change[num_layers]
-        water_potential[num_layers] = min(water_potential[num_layers], air_entry_potential[num_layers])
-
-        for i in (num_layers-1):-1:2
-            potential_change[i] = normalized_residual[i] - normalized_super_diagonal[i] * potential_change[i+1] # change in matric potential in an iteration step, J/kg
-            water_potential[i] -= potential_change[i] # matric potential, J/kg
-            if water_potential[i] > air_entry_potential[i]
-                water_potential[i] = (water_potential[i] + potential_change[i] + air_entry_potential[i]) / 2.0
-            end
         end
 
         for i in 2:num_layers
-            water_content_new[i] = max(saturation_water_content[i] * (air_entry_potential[i] / water_potential[i])^campbell_b_inverse[i], 1e-7)
-            water_potential[i] = air_entry_potential[i] * (saturation_water_content[i] / water_content_new[i])^campbell_b[i]
+            assemble_tridiagonal_system!(algorithm, buffers, i, dt, campbell_b)
+            mass_balance_error += abs(mass_balance_residual[i]) # total mass balance error
+        end
+
+        # Fortran INFIL.f lines 255-256: clamp tiny normalized super-diagonal values to zero
+        apply_thomas_elimination!(algorithm, buffers, num_layers)
+
+        apply_lower_boundary_clamp!(algorithm, buffers, num_layers)
+        for i in (num_layers-1):-1:2
+            apply_interior_clamp!(algorithm, buffers, i)
+        end
+
+        recover_water_content!(algorithm, buffers, campbell_b, num_layers)
+        state_to_water_potential!(algorithm, buffers, campbell_b, num_layers)
+        for i in 2:num_layers
             soil_humidity[i] = exp(water_molar_mass * water_potential[i] / (R * soil_temperature[i-1]))
         end
         soil_humidity[num_layers+1] = soil_humidity[num_layers]
