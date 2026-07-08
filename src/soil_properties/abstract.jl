@@ -1,7 +1,7 @@
 abstract type AbstractSoilProperties end
 
 """
-    soil_properties(soil_properties_model; atmospheric_pressure, soil_temperature, soil_moisture, bulk_density, mineral_density, vapour_pressure_equation)
+    soil_properties(soil_properties_model; atmospheric_pressure, soil_temperature, soil_moisture, bulk_density, mineral_density, mineral_conductivity, mineral_heat_capacity, vapour_pressure_equation)
 
 Scalar bulk-property computation for one soil layer. Every variant must
 accept the listed kwargs and return
@@ -18,6 +18,8 @@ function soil_properties!(buffers::NamedTuple, soil_properties_model::AbstractSo
     atmospheric_pressure::Quantity, soil_temperature::AbstractVector, soil_moisture::AbstractVector,
     bulk_density::AbstractVector,
     mineral_density::AbstractVector,
+    mineral_conductivity::AbstractVector,
+    mineral_heat_capacity::AbstractVector,
     vapour_pressure_equation=GoffGratch(),
 )
     num_layers = length(soil_temperature)
@@ -32,6 +34,8 @@ function soil_properties!(buffers::NamedTuple, soil_properties_model::AbstractSo
             soil_moisture = soil_moisture[i],
             bulk_density = bulk_density[i],
             mineral_density = mineral_density[i],
+            mineral_conductivity = mineral_conductivity[i],
+            mineral_heat_capacity = mineral_heat_capacity[i],
             vapour_pressure_equation,
         )
         bulk_thermal_conductivity[i] = result.bulk_thermal_conductivity

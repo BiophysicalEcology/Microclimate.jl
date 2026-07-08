@@ -1,29 +1,25 @@
-# Bulk density, mineral density, and saturation moisture for the soil are
-# properties of the soil profile, not of the thermal formulation — they live on
-# the hydraulics model and are passed into `soil_properties` as kwargs.
-@kwdef struct CampbelldeVriesSoilProperties{SF,MC,MHC,RP,RFT} <: AbstractSoilProperties
+# Bulk density, mineral density, mineral conductivity, mineral heat capacity,
+# and saturation moisture for the soil are properties of the soil profile, not
+# of the thermal formulation — they live on the hydraulics model / soil
+# profile and are passed into `soil_properties` as kwargs.
+@kwdef struct CampbelldeVriesSoilProperties{SF,RP,RFT} <: AbstractSoilProperties
     de_vries_shape_factor::SF
-    mineral_conductivity::MC
-    mineral_heat_capacity::MHC
     recirculation_power::RP
     return_flow_threshold::RFT
 end
 
 function example_soil_properties_model(;
     de_vries_shape_factor = 0.1, # de Vries shape factor, 0.33 for organic soils, 0.1 for mineral
-    mineral_conductivity = 1.25u"W/m/K", # soil minerals thermal conductivity
-    mineral_heat_capacity = 870.0u"J/kg/K", # soil minerals specific heat
     recirculation_power = 4.0, # power for recirculation function
     return_flow_threshold = 0.162, # return-flow cutoff soil moisture, m^3/m^3
 )
     CampbelldeVriesSoilProperties(;
-        de_vries_shape_factor, mineral_conductivity, mineral_heat_capacity,
-        recirculation_power, return_flow_threshold,
+        de_vries_shape_factor, recirculation_power, return_flow_threshold,
     )
 end
 
 """
-    soil_properties(soil_properties_model; atmospheric_pressure, soil_temperature, soil_moisture, bulk_density, mineral_density)
+    soil_properties(soil_properties_model; atmospheric_pressure, soil_temperature, soil_moisture, bulk_density, mineral_density, mineral_conductivity, mineral_heat_capacity)
 
 Compute bulk soil properties — thermal conductivity, volumetric heat capacity,
 and bulk density — for a given soil layer.
@@ -37,8 +33,10 @@ and bulk density — for a given soil layer.
 - `atmospheric_pressure::Quantity`: Atmospheric pressure.
 - `soil_temperature::Quantity`: Soil temperature in Kelvin.
 - `soil_moisture::Real`: Volumetric soil moisture (m³/m³).
-- `bulk_density::Quantity`: Dry soil bulk density (kg/m³). Owned by the soil hydraulics model.
-- `mineral_density::Quantity`: Soil mineral density (kg/m³). Owned by the soil hydraulics model.
+- `bulk_density::Quantity`: Dry soil bulk density (kg/m³). Owned by `SoilProfile`.
+- `mineral_density::Quantity`: Soil mineral density (kg/m³). Owned by `SoilProfile`.
+- `mineral_conductivity::Quantity`: Soil mineral thermal conductivity (W/m/K). Owned by `SoilProfile`.
+- `mineral_heat_capacity::Quantity`: Soil mineral specific heat (J/kg/K). Owned by `SoilProfile`.
 
 # Returns
 
@@ -84,10 +82,11 @@ function soil_properties(soil_properties_model::CampbelldeVriesSoilProperties;
     soil_moisture::Number,
     bulk_density::Quantity,
     mineral_density::Quantity,
+    mineral_conductivity::Quantity,
+    mineral_heat_capacity::Quantity,
     vapour_pressure_equation=GoffGratch(),
 )
-    (; mineral_conductivity, mineral_heat_capacity,
-       recirculation_power, return_flow_threshold, de_vries_shape_factor) = soil_properties_model
+    (; recirculation_power, return_flow_threshold, de_vries_shape_factor) = soil_properties_model
 
     standard_pressure = Unitful.atm
     shape_factor_c = 1.0 - 2.0 * de_vries_shape_factor

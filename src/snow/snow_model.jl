@@ -649,6 +649,7 @@ end
         soil_temperature=soil_temp_soil,
         soil_moisture=p.soil_moisture,
         bulk_density=p.soil_profile.bulk_density, mineral_density=p.soil_profile.mineral_density,
+        mineral_conductivity=p.soil_profile.mineral_conductivity, mineral_heat_capacity=p.soil_profile.mineral_heat_capacity,
         atmospheric_pressure, vapour_pressure_equation,
     )
     soil_temp_snow = SVector(ntuple(k -> soil_temperature[k], Val(N_snow)))

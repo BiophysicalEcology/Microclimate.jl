@@ -111,6 +111,7 @@ end
     soil_properties!(p.buffers.soil_properties, p.soil_properties_model;
         soil_temperature, soil_moisture=p.soil_moisture,
         bulk_density=p.soil_profile.bulk_density, mineral_density=p.soil_profile.mineral_density,
+        mineral_conductivity=p.soil_profile.mineral_conductivity, mineral_heat_capacity=p.soil_profile.mineral_heat_capacity,
         atmospheric_pressure, vapour_pressure_equation,
     )
     return nothing

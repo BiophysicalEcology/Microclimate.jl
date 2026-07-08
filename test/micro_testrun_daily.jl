@@ -56,10 +56,11 @@ site = Site(;
 )
 boundary_layer_model = MoninObukhov(; karman_constant=0.4, dyer_constant=16.0)
 
+mineral_conductivity = (CSV.File("$testdir/data/init_daily/soilprop.csv")[1, 1][4]) * 1.0u"W/m/K" # soil minerals thermal conductivity (W/mC)
+mineral_heat_capacity = (CSV.File("$testdir/data/init_daily/soilprop.csv")[1, 1][5]) * 1.0u"J/kg/K" # soil minerals specific heat (J/kg-K)
+
 soil_properties_model = CampbelldeVriesSoilProperties(;
     de_vries_shape_factor = 0.1, # de Vries shape factor, 0.33 for organic soils, 0.1 for mineral
-    mineral_conductivity = (CSV.File("$testdir/data/init_daily/soilprop.csv")[1, 1][4]) * 1.0u"W/m/K", # soil minerals thermal conductivity (W/mC)
-    mineral_heat_capacity = (CSV.File("$testdir/data/init_daily/soilprop.csv")[1, 1][5]) * 1.0u"J/kg/K", # soil minerals specific heat (J/kg-K)
     recirculation_power = 4.0, # power for recirculation function
     return_flow_threshold = 0.162, # return-flow cutoff soil moisture, m^3/m^3
 )
@@ -82,6 +83,8 @@ _runmoist = Bool(Int(microinput[:runmoist]))
 soil_profile = SoilProfile(;
     bulk_density = (DataFrame(CSV.File("$testdir/data/init_daily/BD.csv"))[:, 2] * 1.0u"Mg/m^3"),
     mineral_density = (DataFrame(CSV.File("$testdir/data/init_daily/DD.csv"))[:, 2] * 1.0u"Mg/m^3"),
+    mineral_conductivity = fill(mineral_conductivity, length(depths)),
+    mineral_heat_capacity = fill(mineral_heat_capacity, length(depths)),
     hydraulics = CampbellHydraulicProfile(;
         air_entry_water_potential = (DataFrame(CSV.File("$testdir/data/init_daily/PE.csv"))[:, 2] * 1.0u"J/kg"),
         saturated_hydraulic_conductivity = (DataFrame(CSV.File("$testdir/data/init_daily/KS.csv"))[:, 2] * 1.0u"kg*s/m^3"),
