@@ -214,7 +214,7 @@ end
 
 # Visual comparisons — run manually (not in CI)
 
-using Plots
+#= using Plots
 let
     t = 1:hours2do
     depth_labels = ["$(round(ustrip(u"cm", coarse_depths[i]); digits=1)) cm" for i in 1:length(coarse_depths)]
@@ -258,5 +258,5 @@ let
     plot!(p_atm, t, ustrip.(u"°C", u"K".(air_temperature_matrix[t, 2])); sp=6, label="Julia", color=:red, title="Air temp 2m")
     plot!(p_atm, t, ustrip.(u"°C", ta2m_nmr[t]);                    sp=6, label="NicheMapR", color=:black)
     display(p_atm)
-end
+end =#
 
