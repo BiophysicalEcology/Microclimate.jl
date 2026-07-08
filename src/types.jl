@@ -16,7 +16,7 @@ and the soil hydraulic model. Sized to match `MicroModel.depths`.
 end
 
 function example_soil_profile(depths=DEFAULT_DEPTHS;
-    bulk_density = 2.56u"Mg/m^3",
+    bulk_density = 1.3u"Mg/m^3",
     mineral_density = 2.560u"Mg/m^3",
     hydraulics = example_campbell_hydraulic_profile(depths),
 )
