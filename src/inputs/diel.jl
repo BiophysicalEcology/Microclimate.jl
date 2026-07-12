@@ -313,9 +313,10 @@ end
 # ---------------------------------------------------------------------------
 
 # The day's solar geometry in decimal hours, from the solar-radiation output.
+# `hour_angle_sunrise` is an hour angle (hours from noon to sunrise), not a clock time.
 @inline function solar_day(solar, iday)
-    sunrise = solar.hour_angle_sunrise[iday]
     solar_noon = solar.hour_solar_noon[iday]
+    sunrise = solar_noon - solar.hour_angle_sunrise[iday]
     sunset = 2 * solar_noon - sunrise
     return (; sunrise, sunset, solar_noon)
 end
@@ -464,52 +465,89 @@ pass through (they resolve against the populated buffers at evaluation).
 # ---------------------------------------------------------------------------
 
 """
-    MINMAX_FORCING_MODEL
+    minmax_forcing_model(; temperature_sunrise_offset=0, temperature_midday_offset=1,
+                            wind_sunrise_offset=0, wind_midday_offset=1,
+                            humidity_sunrise_offset=1, humidity_midday_offset=0,
+                            cloud_sunrise_offset=1, cloud_midday_offset=0) -> NamedTuple
 
 The classic daily min/max within-day structure, as a data-free forcing model
 (`NamedTuple` of [`ForcingSpec`](@ref) keyed by output variable). Temperature is a
 sine to an afternoon peak with an overnight decay; wind, humidity and cloud are
-linear between their daily extremes (humidity high near sunrise, low at midday;
-wind and cloud the reverse). Bind value series to it with `bind_forcings`, or use
-the [`minmax_forcings`](@ref) convenience.
+piecewise-linear between their daily extremes and the daily mean at true midnight
+(humidity high near sunrise, low at midday; wind and cloud the reverse).
+
+The `_offset` arguments (hours) shift each variable's dawn-side and midday-side
+anchor away from `Sunrise()`/`Midday()`; the defaults match NicheMapR's standard
+`TIMINS`/`TIMAXS`. Types don't depend on the offset values, so passing non-default
+offsets carries no runtime cost or type instability — the curve is built once, here.
+
+Bind value series to it with `bind_forcings`, or use the [`minmax_forcings`](@ref)
+convenience, which accepts the same offset keywords.
 """
-const MINMAX_FORCING_MODEL = (;
-    reference_temperature = ForcingSpec(
-        DielCurve((Sine(Sunrise(), Midday(1)), Decay(Sunset(), Sunrise())),
-            inputs = (Sunrise(), Midday(1))),
-        (:reference_temperature_min, :reference_temperature_max)),
-    reference_wind_speed = ForcingSpec(
-        DielCurve((Linear(Sunrise(), Midday(1)), Linear(Midday(1), Sunrise())),
-            inputs = (Sunrise(), Midday(1))),
-        (:reference_wind_min, :reference_wind_max)),
-    reference_humidity = ForcingSpec(
-        DielCurve((Linear(Sunrise(), Midday()), Linear(Midday(), Sunrise())),
-            inputs = (Sunrise(), Midday())),
-        (:reference_humidity_max, :reference_humidity_min)),
-    cloud_cover = ForcingSpec(
-        DielCurve((Linear(Sunrise(), Midday()), Linear(Midday(), Sunrise())),
-            inputs = (Sunrise(), Midday())),
-        (:cloud_min, :cloud_max)),
+function minmax_forcing_model(;
+    temperature_sunrise_offset = 0, temperature_midday_offset = 1,
+    wind_sunrise_offset = 0, wind_midday_offset = 1,
+    humidity_sunrise_offset = 1, humidity_midday_offset = 0,
+    cloud_sunrise_offset = 1, cloud_midday_offset = 0,
 )
+    return (;
+        reference_temperature = ForcingSpec(
+            DielCurve((Sine(Sunrise(temperature_sunrise_offset), Midday(temperature_midday_offset)),
+                       Decay(Sunset(), Sunrise(temperature_sunrise_offset))),
+                inputs = (Sunrise(temperature_sunrise_offset), Midday(temperature_midday_offset))),
+            (:reference_temperature_min, :reference_temperature_max)),
+        reference_wind_speed = ForcingSpec(
+            DielCurve((Linear(Midnight(), Sunrise(wind_sunrise_offset)),
+                       Linear(Sunrise(wind_sunrise_offset), Midday(wind_midday_offset)),
+                       Linear(Midday(wind_midday_offset), Midnight())),
+                inputs = (Midnight(), Sunrise(wind_sunrise_offset), Midday(wind_midday_offset))),
+            (:reference_wind_mean, :reference_wind_min, :reference_wind_max)),
+        reference_humidity = ForcingSpec(
+            DielCurve((Linear(Midnight(), Sunrise(humidity_sunrise_offset)),
+                       Linear(Sunrise(humidity_sunrise_offset), Midday(humidity_midday_offset)),
+                       Linear(Midday(humidity_midday_offset), Midnight())),
+                inputs = (Midnight(), Sunrise(humidity_sunrise_offset), Midday(humidity_midday_offset))),
+            (:reference_humidity_mean, :reference_humidity_max, :reference_humidity_min)),
+        cloud_cover = ForcingSpec(
+            DielCurve((Linear(Midnight(), Sunrise(cloud_sunrise_offset)),
+                       Linear(Sunrise(cloud_sunrise_offset), Midday(cloud_midday_offset)),
+                       Linear(Midday(cloud_midday_offset), Midnight())),
+                inputs = (Midnight(), Sunrise(cloud_sunrise_offset), Midday(cloud_midday_offset))),
+            (:cloud_mean, :cloud_min, :cloud_max)),
+    )
+end
+
+"""
+    MINMAX_FORCING_MODEL
+
+[`minmax_forcing_model`](@ref) built with its default offsets.
+"""
+const MINMAX_FORCING_MODEL = minmax_forcing_model()
 
 """
     minmax_forcings(; reference_temperature_min, reference_temperature_max,
                       reference_wind_min, reference_wind_max,
                       reference_humidity_min, reference_humidity_max,
-                      cloud_min, cloud_max) -> NamedTuple
+                      cloud_min, cloud_max, kwargs...) -> NamedTuple
 
-Bind the standard [`MINMAX_FORCING_MODEL`](@ref) to per-day min/max value series,
+Bind the standard min/max forcing model to per-day min/max value series,
 returning a `NamedTuple` of [`DielForcing`](@ref) keyed by output variable.
+`kwargs...` are the anchor-offset keywords of [`minmax_forcing_model`](@ref).
 """
 function minmax_forcings(;
     reference_temperature_min, reference_temperature_max,
     reference_wind_min, reference_wind_max,
     reference_humidity_min, reference_humidity_max,
     cloud_min, cloud_max,
+    kwargs...,
 )
+    reference_wind_mean = (reference_wind_min .+ reference_wind_max) ./ 2
+    reference_humidity_mean = (reference_humidity_min .+ reference_humidity_max) ./ 2
+    cloud_mean = (cloud_min .+ cloud_max) ./ 2
     series = (; reference_temperature_min, reference_temperature_max,
-        reference_wind_min, reference_wind_max,
-        reference_humidity_min, reference_humidity_max,
-        cloud_min, cloud_max)
-    return bind_forcings(MINMAX_FORCING_MODEL, name -> getproperty(series, name))
+        reference_wind_min, reference_wind_max, reference_wind_mean,
+        reference_humidity_min, reference_humidity_max, reference_humidity_mean,
+        cloud_min, cloud_max, cloud_mean)
+    model = isempty(kwargs) ? MINMAX_FORCING_MODEL : minmax_forcing_model(; kwargs...)
+    return bind_forcings(model, name -> getproperty(series, name))
 end
