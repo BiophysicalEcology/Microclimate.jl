@@ -240,7 +240,7 @@ struct MicroBuffers{SO,SOB,P,PB,SEB,SP,PT,SWB,SS,IB}
     phase_transition::PT
     soil_water_balance::SWB
     snow::SS                       # snow buffers (NamedTuple for SnowModel; nothing for NoSnow)
-    interpolation::IB              # 24-element scratch buffers for hourly_from_min_max!
+    interpolation::IB              # unused; diel `evaluate!` needs no scratch
 end
 
 """
