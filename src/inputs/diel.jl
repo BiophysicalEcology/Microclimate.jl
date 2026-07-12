@@ -4,13 +4,14 @@
 # structural, no data. Per-slice values are supplied later, against this fixed
 # definition. Three axes, kept separate:
 #
-#   Time  — when in the day (resolves to a clock time from solar geometry).
+#   Time  — when in the day. Either movable, resolved from the day's solar
+#           geometry (Sunrise, Sunset, Midday), or fixed to a clock hour
+#           regardless of solar geometry (ClockTime, Midnight).
 #   Shape — how the curve travels; each shape's two Time args mean whatever
 #           defines that shape (Sine: trough/peak; Decay/Linear: from/to).
 #   Curve — a coverage-checked set of shapes plus the times fed from outside.
 #
-# Nothing reaches for solar geometry behind the curtain: the times *are* the
-# solar geometry.
+# Nothing reaches for solar geometry except through a Time's own `resolve_time`.
 
 # ---------------------------------------------------------------------------
 # Time
@@ -58,7 +59,8 @@ Midday() = Midday(0.0)
 """
     Midnight(offset = 0)
 
-Solar midnight (sun lowest), plus `offset` hours.
+Fixed clock midnight (00:00), plus `offset` hours — not tied to solar geometry
+(unlike [`Sunrise`](@ref)/[`Sunset`](@ref)/[`Midday`](@ref)).
 """
 struct Midnight <: TimeOfDay
     offset::Float64
