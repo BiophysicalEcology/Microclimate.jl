@@ -1,28 +1,36 @@
 """
-    SoilProfile(; bulk_density, mineral_density, hydraulics)
+    SoilProfile(; bulk_density, mineral_density, mineral_conductivity, mineral_heat_capacity, hydraulics)
 
 Per-depth soil column profile read by the soil properties model (thermal)
 and the soil hydraulic model. Sized to match `MicroModel.depths`.
 
 - `bulk_density` — dry soil bulk density (kg/m³) at each depth node
 - `mineral_density` — soil mineral density (kg/m³) at each depth node
+- `mineral_conductivity` — soil mineral thermal conductivity (W/m/K) at each depth node
+- `mineral_heat_capacity` — soil mineral specific heat (J/kg/K) at each depth node
 - `hydraulics` — per-depth hydraulic parameters (e.g. `CampbellHydraulicProfile`)
   matched to the chosen `soil_hydraulic_model`
 """
-@kwdef struct SoilProfile{BD,MD,H}
+@kwdef struct SoilProfile{BD,MD,MC,MHC,H}
     bulk_density::BD
     mineral_density::MD
+    mineral_conductivity::MC
+    mineral_heat_capacity::MHC
     hydraulics::H
 end
 
 function example_soil_profile(depths=DEFAULT_DEPTHS;
     bulk_density = 1.3u"Mg/m^3",
     mineral_density = 2.560u"Mg/m^3",
+    mineral_conductivity = 1.25u"W/m/K",
+    mineral_heat_capacity = 870.0u"J/kg/K",
     hydraulics = example_campbell_hydraulic_profile(depths),
 )
     SoilProfile(;
         bulk_density = bulk_density isa AbstractVector ? bulk_density : fill(bulk_density, length(depths)),
         mineral_density = mineral_density isa AbstractVector ? mineral_density : fill(mineral_density, length(depths)),
+        mineral_conductivity = mineral_conductivity isa AbstractVector ? mineral_conductivity : fill(mineral_conductivity, length(depths)),
+        mineral_heat_capacity = mineral_heat_capacity isa AbstractVector ? mineral_heat_capacity : fill(mineral_heat_capacity, length(depths)),
         hydraulics,
     )
 end
@@ -122,10 +130,11 @@ Per-run input data: site, soil column profile, environment forcings, and
 initial conditions.
 
 - `site::Site` — properties of the place
-- `soil_profile::SoilProfile` — per-depth `bulk_density` and `mineral_density`
-  read by both the soil properties and soil hydraulic models. Per-location
-  structural soil-column data; lives here (not on `MicroModel`) because it
-  varies between sites without changing the physics.
+- `soil_profile::SoilProfile` — per-depth `bulk_density`, `mineral_density`,
+  `mineral_conductivity`, and `mineral_heat_capacity` read by both the soil
+  properties and soil hydraulic models. Per-location structural soil-column
+  data; lives here (not on `MicroModel`) because it varies between sites
+  without changing the physics.
 - `environment_minmax`, `environment_daily`, `environment_hourly` — input forcings
 - `initial_*` — initial conditions (`initial_soil_temperature=nothing` falls back to
   the day-mean reference air temperature)

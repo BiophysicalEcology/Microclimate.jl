@@ -373,7 +373,7 @@ function solve_soil!(cache::MicroCache)
     time_mode = mp.time_mode
     moisture_mode = config.soil_moisture_strategy
     (; campbell_b_parameter, air_entry_water_potential) = soil_profile.hydraulics
-    (; bulk_density, mineral_density) = soil_profile
+    (; bulk_density, mineral_density, mineral_conductivity, mineral_heat_capacity) = soil_profile
     init_soil_wetness!(moisture_mode)
 
     ndays = length(days)
@@ -416,6 +416,7 @@ function solve_soil!(cache::MicroCache)
     end
     update_soil_properties!(output, soil_prop_view, soil_properties_model;
         soil_temperature=T0, soil_moisture, bulk_density, mineral_density,
+        mineral_conductivity, mineral_heat_capacity,
         atmospheric_pressure=101325.0u"Pa", step=1
     )
 
@@ -574,6 +575,7 @@ function solve_soil!(cache::MicroCache)
                 output.sky_temperature[day_init_step] = longwave_sky.sky_temperature
                 update_soil_properties!(output, soil_prop_view, soil_properties_model;
                     soil_temperature=T0, soil_moisture, bulk_density, mineral_density,
+                    mineral_conductivity, mineral_heat_capacity,
                     atmospheric_pressure=output.pressure[day_init_step],
                     step=day_init_step, vapour_pressure_equation,
                 )
@@ -784,6 +786,7 @@ function solve_soil!(cache::MicroCache)
                     environment_instant = get_instant(environment_day, environment_hourly, output, soil_moisture, output_step)
                     update_soil_properties!(output, soil_prop_view, soil_properties_model;
                         soil_temperature=T0, soil_moisture, bulk_density, mineral_density,
+                        mineral_conductivity, mineral_heat_capacity,
                         atmospheric_pressure=environment_instant.atmospheric_pressure, step=output_step, vapour_pressure_equation
                     )
                 end
