@@ -121,12 +121,12 @@ soil_hydraulic_model = example_soil_hydraulic_model()
 environment_minmax = DailyMinMaxEnvironment(; forcings = minmax_forcings(;
     reference_temperature_min = forcing.TMINN[days2do] .* u"°C",
     reference_temperature_max = forcing.TMAXX[days2do] .* u"°C",
-    reference_wind_min        = forcing.WNMINN[days2do] .* u"m/s",
-    reference_wind_max        = forcing.WNMAXX[days2do] .* u"m/s",
+    reference_wind_speed_min  = forcing.WNMINN[days2do] .* u"m/s",
+    reference_wind_speed_max  = forcing.WNMAXX[days2do] .* u"m/s",
     reference_humidity_min    = forcing.RHMINN[days2do] ./ 100.0,
     reference_humidity_max    = forcing.RHMAXX[days2do] ./ 100.0,
-    cloud_min                 = zeros(NDAYS),
-    cloud_max                 = forcing.CCMAXX[days2do] ./ 100.0,
+    cloud_cover_min           = zeros(NDAYS),
+    cloud_cover_max           = forcing.CCMAXX[days2do] ./ 100.0,
 ))
 
 # ── Daily timeseries — deep soil temp from NMR (D200cm at midnight each day) ─
