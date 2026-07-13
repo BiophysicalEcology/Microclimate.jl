@@ -544,8 +544,8 @@ function minmax_forcings(;
     kwargs...,
 )
     # Lazy: callers bind forcings before buffers are populated, then mutate
-    # min/max in place afterward. `.+`/`./` would freeze a mean of zeros now
-    # instead of tracking the later mutation.
+    # min/max in place afterward. `.+`/`./` would materialize (freeze) a
+    # mean of zeros right now instead of tracking the later mutation.
     _mean(a, b) = Base.Broadcast.broadcasted(/, Base.Broadcast.broadcasted(+, a, b), 2)
     reference_wind_speed_mean = _mean(reference_wind_speed_min, reference_wind_speed_max)
     reference_humidity_mean = _mean(reference_humidity_min, reference_humidity_max)
