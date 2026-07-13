@@ -503,7 +503,7 @@ function minmax_forcing_model(;
                        Linear(Sunrise(wind_sunrise_offset), Midday(wind_midday_offset)),
                        Linear(Midday(wind_midday_offset), Midnight())),
                 inputs = (Midnight(), Sunrise(wind_sunrise_offset), Midday(wind_midday_offset))),
-            (:reference_wind_mean, :reference_wind_min, :reference_wind_max)),
+            (:reference_wind_speed_mean, :reference_wind_speed_min, :reference_wind_speed_max)),
         reference_humidity = ForcingSpec(
             DielCurve((Linear(Midnight(), Sunrise(humidity_sunrise_offset)),
                        Linear(Sunrise(humidity_sunrise_offset), Midday(humidity_midday_offset)),
@@ -515,7 +515,7 @@ function minmax_forcing_model(;
                        Linear(Sunrise(cloud_sunrise_offset), Midday(cloud_midday_offset)),
                        Linear(Midday(cloud_midday_offset), Midnight())),
                 inputs = (Midnight(), Sunrise(cloud_sunrise_offset), Midday(cloud_midday_offset))),
-            (:cloud_mean, :cloud_min, :cloud_max)),
+            (:cloud_cover_mean, :cloud_cover_min, :cloud_cover_max)),
     )
 end
 
@@ -528,9 +528,9 @@ const MINMAX_FORCING_MODEL = minmax_forcing_model()
 
 """
     minmax_forcings(; reference_temperature_min, reference_temperature_max,
-                      reference_wind_min, reference_wind_max,
+                      reference_wind_speed_min, reference_wind_speed_max,
                       reference_humidity_min, reference_humidity_max,
-                      cloud_min, cloud_max, kwargs...) -> NamedTuple
+                      cloud_cover_min, cloud_cover_max, kwargs...) -> NamedTuple
 
 Bind the standard min/max forcing model to per-day min/max value series,
 returning a `NamedTuple` of [`DielForcing`](@ref) keyed by output variable.
@@ -538,18 +538,18 @@ returning a `NamedTuple` of [`DielForcing`](@ref) keyed by output variable.
 """
 function minmax_forcings(;
     reference_temperature_min, reference_temperature_max,
-    reference_wind_min, reference_wind_max,
+    reference_wind_speed_min, reference_wind_speed_max,
     reference_humidity_min, reference_humidity_max,
-    cloud_min, cloud_max,
+    cloud_cover_min, cloud_cover_max,
     kwargs...,
 )
-    reference_wind_mean = (reference_wind_min .+ reference_wind_max) ./ 2
+    reference_wind_speed_mean = (reference_wind_speed_min .+ reference_wind_speed_max) ./ 2
     reference_humidity_mean = (reference_humidity_min .+ reference_humidity_max) ./ 2
-    cloud_mean = (cloud_min .+ cloud_max) ./ 2
+    cloud_cover_mean = (cloud_cover_min .+ cloud_cover_max) ./ 2
     series = (; reference_temperature_min, reference_temperature_max,
-        reference_wind_min, reference_wind_max, reference_wind_mean,
+        reference_wind_speed_min, reference_wind_speed_max, reference_wind_speed_mean,
         reference_humidity_min, reference_humidity_max, reference_humidity_mean,
-        cloud_min, cloud_max, cloud_mean)
+        cloud_cover_min, cloud_cover_max, cloud_cover_mean)
     model = isempty(kwargs) ? MINMAX_FORCING_MODEL : minmax_forcing_model(; kwargs...)
     return bind_forcings(model, name -> getproperty(series, name))
 end

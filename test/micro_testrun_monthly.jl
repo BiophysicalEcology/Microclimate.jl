@@ -89,12 +89,12 @@ environment_daily = DailyTimeseries(;
 environment_minmax = MonthlyMinMaxEnvironment(; forcings = minmax_forcings(;
     reference_temperature_min = (DataFrame(CSV.File("$testdir/data/init_monthly/TMINN.csv"))[days2do, 2] * 1.0)u"°C", # minimum air temperatures
     reference_temperature_max = (DataFrame(CSV.File("$testdir/data/init_monthly/TMAXX.csv"))[days2do, 2] * 1.0)u"°C", # maximum air temperatures
-    reference_wind_min = (DataFrame(CSV.File("$testdir/data/init_monthly/WNMINN.csv"))[days2do, 2] * 1.0)u"m/s", # min wind speed (m/s)
-    reference_wind_max = (DataFrame(CSV.File("$testdir/data/init_monthly/WNMAXX.csv"))[days2do, 2] * 1.0)u"m/s", # max wind speed (m/s)
+    reference_wind_speed_min = (DataFrame(CSV.File("$testdir/data/init_monthly/WNMINN.csv"))[days2do, 2] * 1.0)u"m/s", # min wind speed (m/s)
+    reference_wind_speed_max = (DataFrame(CSV.File("$testdir/data/init_monthly/WNMAXX.csv"))[days2do, 2] * 1.0)u"m/s", # max wind speed (m/s)
     reference_humidity_min = (DataFrame(CSV.File("$testdir/data/init_monthly/RHMINN.csv"))[days2do, 2] * 1.0) ./ 100.0, # min relative humidity (fractional)
     reference_humidity_max = (DataFrame(CSV.File("$testdir/data/init_monthly/RHMAXX.csv"))[days2do, 2] * 1.0) ./ 100.0, # max relative humidity (fractional)
-    cloud_min = (DataFrame(CSV.File("$testdir/data/init_monthly/CCMINN.csv"))[days2do, 2] * 1.0) ./ 100.0, # min cloud cover (fractional)
-    cloud_max = (DataFrame(CSV.File("$testdir/data/init_monthly/CCMAXX.csv"))[days2do, 2] * 1.0) ./ 100.0, # max cloud cover (fractional)
+    cloud_cover_min = (DataFrame(CSV.File("$testdir/data/init_monthly/CCMINN.csv"))[days2do, 2] * 1.0) ./ 100.0, # min cloud cover (fractional)
+    cloud_cover_max = (DataFrame(CSV.File("$testdir/data/init_monthly/CCMAXX.csv"))[days2do, 2] * 1.0) ./ 100.0, # max cloud cover (fractional)
 ))
 
 _runmoist = Bool(Int(microinput[:runmoist]))
