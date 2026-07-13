@@ -476,7 +476,7 @@ The classic daily min/max within-day structure, as a data-free forcing model
 (`NamedTuple` of [`ForcingSpec`](@ref) keyed by output variable). Temperature is a
 sine to an afternoon peak with an overnight decay; wind, humidity and cloud are
 piecewise-linear between their daily extremes and the daily mean at true midnight
-(humidity high near sunrise, low at midday; wind and cloud the reverse).
+(humidity and cloud high near sunrise, low at midday; wind the reverse).
 
 The `_offset` arguments (hours) shift each variable's dawn-side and midday-side
 anchor away from `Sunrise()`/`Midday()`; the defaults match NicheMapR's standard
@@ -515,7 +515,7 @@ function minmax_forcing_model(;
                        Linear(Sunrise(cloud_sunrise_offset), Midday(cloud_midday_offset)),
                        Linear(Midday(cloud_midday_offset), Midnight())),
                 inputs = (Midnight(), Sunrise(cloud_sunrise_offset), Midday(cloud_midday_offset))),
-            (:cloud_cover_mean, :cloud_cover_min, :cloud_cover_max)),
+            (:cloud_cover_mean, :cloud_cover_max, :cloud_cover_min)),
     )
 end
 
@@ -543,9 +543,13 @@ function minmax_forcings(;
     cloud_cover_min, cloud_cover_max,
     kwargs...,
 )
-    reference_wind_speed_mean = (reference_wind_speed_min .+ reference_wind_speed_max) ./ 2
-    reference_humidity_mean = (reference_humidity_min .+ reference_humidity_max) ./ 2
-    cloud_cover_mean = (cloud_cover_min .+ cloud_cover_max) ./ 2
+    # Lazy: callers bind forcings before buffers are populated, then mutate
+    # min/max in place afterward. `.+`/`./` would freeze a mean of zeros now
+    # instead of tracking the later mutation.
+    _mean(a, b) = Base.Broadcast.broadcasted(/, Base.Broadcast.broadcasted(+, a, b), 2)
+    reference_wind_speed_mean = _mean(reference_wind_speed_min, reference_wind_speed_max)
+    reference_humidity_mean = _mean(reference_humidity_min, reference_humidity_max)
+    cloud_cover_mean = _mean(cloud_cover_min, cloud_cover_max)
     series = (; reference_temperature_min, reference_temperature_max,
         reference_wind_speed_min, reference_wind_speed_max, reference_wind_speed_mean,
         reference_humidity_min, reference_humidity_max, reference_humidity_mean,

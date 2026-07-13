@@ -364,6 +364,17 @@ end
 soil_water_balance(soil_hydraulic_model::CampbellSoilHydraulics; num_layers=18, kw...) =
     soil_water_balance!(allocate_soil_water_balance(soil_hydraulic_model, num_layers), soil_hydraulic_model; kw...)
 
+# Wets node 1 from the pool proportional to available water, capped at `sat`
+# -- avoids snapping to full saturation from a trace of ponding.
+@inline function _wet_surface_node!(soil_moisture, pool, sat, half_thickness)
+    pool <= 0.0u"kg/m^2" && return pool
+    node_capacity = uconvert(u"kg/m^2", half_thickness * 1000.0u"kg/m^3")
+    capacity = max(0.0u"kg/m^2", (sat - soil_moisture[1]) * node_capacity)
+    delivered = min(pool, capacity)
+    soil_moisture[1] = min(sat, soil_moisture[1] + delivered / node_capacity)
+    return pool - delivered
+end
+
 function soil_water_balance!(buffers, soil_hydraulic_model::CampbellSoilHydraulics;
     soil_profile,
     depths,
@@ -428,20 +439,11 @@ function soil_water_balance!(buffers, soil_hydraulic_model::CampbellSoilHydrauli
         evaporation_potential = 1e-7u"kg/m^2/s"
     end
 
-    # When pool > 0, top boundary is saturated. Establish that BC before the
-    # first infil call so iter 1 uses the same top BC as iters 2..N. Matches
-    # Fortran OSUB.f:1198-1206 (commit fbf9a91): refill mass is debited from
-    # pool, soil node 1 set to saturation. Half-thickness uses the coarse
-    # spacing (depths[3]-depths[1])/2 to match Fortran's (dep(2)-dep(1))/2,
-    # since `depths` here is the fine 19-node grid in which depths[3] is the
-    # first user-specified depth below the surface.
+    # half_thickness matches Fortran OSUB.f's (dep(2)-dep(1))/2; depths here
+    # is the fine 19-node grid, so depths[3] is the first real node below 0.
     sat = 1 - bulk_density[1] / mineral_density[1]
     half_thickness = (depths[3] - depths[1]) / 2
-    if pool > 0.0u"kg/m^2"
-        refill = max(0.0u"kg/m^2", uconvert(u"kg/m^2", (sat - soil_moisture[1]) * half_thickness * 1000.0u"kg/m^3"))
-        pool = max(0.0u"kg/m^2", pool - refill)
-        soil_moisture[1] = sat
-    end
+    pool = _wet_surface_node!(soil_moisture, pool, sat, half_thickness)
 
     # run infiltration algorithm
     infil_out = infiltration_step!(buffers.soil_water_balance, soil_hydraulic_model;
@@ -460,11 +462,7 @@ function soil_water_balance!(buffers, soil_hydraulic_model::CampbellSoilHydrauli
     surf_evap = max(0.0u"kg/m^2", infil_out.evaporation)
     water_flux = max(0.0u"kg/m^2", infil_out.surface_water_flux)
     pool = clamp(pool - water_flux - surf_evap, 0.0u"kg/m^2", max_surface_pool) # pooling surface water
-    if pool > 0.0u"kg/m^2"
-        refill = max(0.0u"kg/m^2", uconvert(u"kg/m^2", (sat - soil_moisture[1]) * half_thickness * 1000.0u"kg/m^3"))
-        pool = max(0.0u"kg/m^2", pool - refill)
-        soil_moisture[1] = sat
-    end
+    pool = _wet_surface_node!(soil_moisture, pool, sat, half_thickness)
     for _ in 1:(niter_moist-1)
         infil_out = infiltration_step!(buffers.soil_water_balance, soil_hydraulic_model;
             soil_profile,
@@ -482,11 +480,7 @@ function soil_water_balance!(buffers, soil_hydraulic_model::CampbellSoilHydrauli
         surf_evap = max(0.0u"kg/m^2", infil_out.evaporation)
         water_flux = max(0.0u"kg/m^2", infil_out.surface_water_flux)
         pool = clamp(pool - water_flux - surf_evap, 0.0u"kg/m^2", max_surface_pool)
-        if pool > 0.0u"kg/m^2"
-            refill = max(0.0u"kg/m^2", uconvert(u"kg/m^2", (sat - soil_moisture[1]) * half_thickness * 1000.0u"kg/m^3"))
-            pool = max(0.0u"kg/m^2", pool - refill)
-            soil_moisture[1] = sat
-        end
+        pool = _wet_surface_node!(soil_moisture, pool, sat, half_thickness)
     end
     # Fortran OSUB.f line 1239: ptwet = surflux / (ep * timestep) * 100
     # Note Fortran's `surflux` is INFIL's FL output (the humidity-gradient
