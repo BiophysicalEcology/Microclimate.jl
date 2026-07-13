@@ -543,9 +543,13 @@ function minmax_forcings(;
     cloud_cover_min, cloud_cover_max,
     kwargs...,
 )
-    reference_wind_speed_mean = (reference_wind_speed_min .+ reference_wind_speed_max) ./ 2
-    reference_humidity_mean = (reference_humidity_min .+ reference_humidity_max) ./ 2
-    cloud_cover_mean = (cloud_cover_min .+ cloud_cover_max) ./ 2
+    # Lazy: callers bind forcings before buffers are populated, then mutate
+    # min/max in place afterward. `.+`/`./` would materialize (freeze) a
+    # mean of zeros right now instead of tracking the later mutation.
+    _mean(a, b) = Base.Broadcast.broadcasted(/, Base.Broadcast.broadcasted(+, a, b), 2)
+    reference_wind_speed_mean = _mean(reference_wind_speed_min, reference_wind_speed_max)
+    reference_humidity_mean = _mean(reference_humidity_min, reference_humidity_max)
+    cloud_cover_mean = _mean(cloud_cover_min, cloud_cover_max)
     series = (; reference_temperature_min, reference_temperature_max,
         reference_wind_speed_min, reference_wind_speed_max, reference_wind_speed_mean,
         reference_humidity_min, reference_humidity_max, reference_humidity_mean,
