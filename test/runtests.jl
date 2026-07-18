@@ -10,6 +10,7 @@ using Microclimate, Test, SafeTestsets
 
 # Tests
 @safetestset "example constructors" begin include("example_constructors.jl") end
+@safetestset "canopy radiation" begin include("canopy_radiation_test.jl") end
 @safetestset "infiltration algorithm comparison" begin include("infiltration_algorithm_comparison.jl") end
 @safetestset "monthly simulation" begin include("micro_testrun_monthly.jl") end
 @safetestset "monthly simulation with snow" begin include("micro_testrun_monthly_snow.jl") end

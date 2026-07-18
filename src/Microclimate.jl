@@ -31,6 +31,11 @@ export AB3, AB4, AB5, ABM32, ABM43, ABM54
 # Snow model
 export AbstractSnowModel, NoSnow, SnowModel, SnowState
 
+# Canopy model
+export AbstractCanopyModel, NoCanopy, MultilayerCanopy
+export allocate_canopy, canopy_radiation!
+export example_multilayer_canopy
+
 # Apparent heat capacity (latent-heat-of-fusion treatment in snow)
 export AbstractApparentHeatCapacity, BonacinaStep, TanhSmoothed, Gaussian, WestermannSigmoid, apparent_heat_capacity
 
@@ -195,6 +200,11 @@ include("apparent_heat_capacity/westermann.jl")
 include("snow/abstract.jl")
 include("snow/no_snow.jl")
 include("snow/snow_model.jl")
+
+# Canopy models
+include("canopy/abstract.jl")
+include("canopy/no_canopy.jl")
+include("canopy/multilayer.jl")
 
 # Top-level config, parameters, problem, state, buffers, and cache types
 include("types.jl")

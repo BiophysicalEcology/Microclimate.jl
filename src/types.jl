@@ -100,11 +100,14 @@ Constant-across-runs scientific description of the simulation:
     - `evaporation_model` — surface latent flux
     - `soil_energy_model::SoilHeatTransportModel` — soil column energy ODE
       (carries the phase-transition `freezing_model` and ODE solver settings)
+    - `canopy_model::AbstractCanopyModel` — `NoCanopy()` (default, today's
+      scalar-`shade` vegetation handling, unchanged) or `MultilayerCanopy(...)`
+      (layer-resolved two-stream radiative transfer through the canopy)
 - iteration/data-delivery strategy in `config::MicroConfig`
 
 Combine with a `MicroInputs` via `MicroProblem(model, inputs; days)` to run.
 """
-@kwdef struct MicroModel{H,Dep,Ht,SPM,SHM,RAD,SNM,VPE,BLM,EVM,SEM,C}
+@kwdef struct MicroModel{H,Dep,Ht,SPM,SHM,RAD,SNM,VPE,BLM,EVM,SEM,CAN,C}
     hours::H = DEFAULT_HOURS # hour of day for solar_radiation
     depths::Dep = DEFAULT_DEPTHS # soil nodes - keep spacing close near the surface
     heights::Ht = [0.01, 2]u"m" # air nodes for temperature, wind speed and humidity profile, last height is reference height for weather data
@@ -116,6 +119,7 @@ Combine with a `MicroInputs` via `MicroProblem(model, inputs; days)` to run.
     boundary_layer_model::BLM = MoninObukhov()
     evaporation_model::EVM = BulkTransferEvaporation()
     soil_energy_model::SEM = SoilHeatTransport1D()
+    canopy_model::CAN = NoCanopy()
     config::C = MicroConfig()
 end
 
