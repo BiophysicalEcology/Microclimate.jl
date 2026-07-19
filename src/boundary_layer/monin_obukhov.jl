@@ -104,29 +104,43 @@ profile.wind_speed       # vertical profile of wind speeds
 """
 atmospheric_surface_profile(bl::MoninObukhov; heights=DEFAULT_HEIGHTS, kw...) =
     atmospheric_surface_profile!(bl, allocate_profile(bl, heights); kw...)
+"""
+    atmospheric_surface_profile!(bl::MoninObukhov, buffers; site, environment_instant,
+                                  surface_temperature, vapour_pressure_equation=GoffGratch(),
+                                  displacement_height=0.0u"m", roughness_length=site.roughness_height)
+
+`displacement_height`/`roughness_length` shift the effective log-profile
+origin to a canopy-displaced height with a canopy-derived roughness length,
+instead of bare ground. Defaults (`0.0u"m"` / `site.roughness_height`)
+give the bare-ground profile. Heights are measured from the true ground (as
+in `MicroModel.heights`); `displacement_height` is subtracted internally
+wherever the log-law needs height above the displaced origin.
+"""
 function atmospheric_surface_profile!(bl::MoninObukhov, buffers;
     site,
     environment_instant,
     surface_temperature,
     vapour_pressure_equation=GoffGratch(),
+    displacement_height=0.0u"m",
+    roughness_length=site.roughness_height,
 )
-    (; roughness_height, elevation) = site
+    (; elevation) = site
     (; karman_constant, dyer_constant) = bl
     (; atmospheric_pressure, reference_temperature, reference_wind_speed, reference_humidity, zenith_angle) = environment_instant
 
     (; heights, height_array, air_temperature, wind_speed, relative_humidity, obukhov_length_prev) = buffers
     N_heights = length(heights)
-    if minimum(heights) < roughness_height
-        throw(ArgumentError("The minimum height is not greater than the roughness height."))
+    if minimum(heights) < roughness_length + displacement_height
+        throw(ArgumentError("The minimum height is not greater than the roughness length plus displacement height."))
     end
-    reference_height = last(heights)
+    reference_height = last(heights) - displacement_height
 
     reference_temp = u"K"(reference_temperature)
     surface_temp = u"K"(surface_temperature)
     κ = karman_constant
     γ = dyer_constant
     z = reference_height
-    z0 = roughness_height
+    z0 = roughness_length
     v_ref_height = reference_wind_speed
 
     # define air heights
@@ -158,8 +172,9 @@ function atmospheric_surface_profile!(bl::MoninObukhov, buffers;
         convective_heat_flux = calc_convection(; friction_velocity, log_z_ratio, ΔT, ρ_cp, z0)
         roughness_height_temp = (reference_temp * bulk_stanton(log_z_ratio) + surface_temp * sublayer_stanton(z0, friction_velocity)) / (bulk_stanton(log_z_ratio) + sublayer_stanton(z0, friction_velocity))
         for i in 2:N_heights
-            wind_speed[i] = calc_wind(height_array[i], z0, κ, friction_velocity, 0.0)
-            air_temperature[i] = roughness_height_temp + (reference_temp - roughness_height_temp) * log(height_array[i] / z0) / log_z_ratio
+            h = height_array[i] - displacement_height
+            wind_speed[i] = calc_wind(h, z0, κ, friction_velocity, 0.0)
+            air_temperature[i] = roughness_height_temp + (reference_temp - roughness_height_temp) * log(h / z0) / log_z_ratio
         end
     else # unstable conditions during daytime, need to solve iteratively for Obukhov length
         Obukhov_out = calc_Obukhov_length(reference_temp, surface_temp, v_ref_height, z0, z, ρcpTκg, κ, ΔT, ρ_cp; max_iter=30, tol=1e-2, initial_obukhov_length=obukhov_length_prev[])
@@ -170,10 +185,11 @@ function atmospheric_surface_profile!(bl::MoninObukhov, buffers;
         friction_velocity = Obukhov_out.friction_velocity
         ψ_h = Obukhov_out.ψ_h
         for i in 2:N_heights
-            φ_m1 = calc_φ_m(height_array[i], γ, obukhov_length)
+            h = height_array[i] - displacement_height
+            φ_m1 = calc_φ_m(h, γ, obukhov_length)
             ψ_m1 = calc_ψ_m(φ_m1)
             ψ_h2 = calc_ψ_h(φ_m1)
-            h_ratio = height_array[i] / z0  # dimensionless h/z0
+            h_ratio = h / z0  # dimensionless h/z0
             # Clamp to a small positive value to prevent non-physical results when
             # stability corrections are large near the surface.
             wind_log_arg = max(log(h_ratio) - ψ_m1, 1e-6)

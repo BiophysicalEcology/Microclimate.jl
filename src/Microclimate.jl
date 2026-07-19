@@ -10,6 +10,7 @@ using OrdinaryDiffEqAdamsBashforthMoulton: AB3, AB4, AB5, ABM32, ABM43, ABM54
 using Unitful, UnitfulMoles
 using ModelParameters, DelimitedFiles
 using SpecialFunctions, StaticArrays
+using LinearAlgebra: Tridiagonal
 
 using FluidProperties: atmospheric_pressure, wet_air_properties, dry_air_properties, vapour_pressure
 using FluidProperties: enthalpy_of_vaporisation, molar_enthalpy_of_vaporisation, water_properties
@@ -18,6 +19,12 @@ using FluidProperties: GoffGratch, Teten, Huang
 using Unitful: °, rad, °C
 using Interpolations: AbstractInterpolation
 using SolarRadiation
+
+# leaf convection/evaporation physics (src/canopy/energy_balance.jl); convection/
+# evaporation called as HeatExchange.convection/.evaporation to avoid name clashes
+import HeatExchange
+using HeatExchange: LeafEvaporationParameters, AtmosphericConditions, ScaledDimension, zbrent, Air
+using BiophysicalGeometry: Plate, Body, Naked
 
 
 export MicroProblem, MicroModel, MicroInputs, MicroCache, MicroConfig
@@ -33,8 +40,20 @@ export AbstractSnowModel, NoSnow, SnowModel, SnowState
 
 # Canopy model
 export AbstractCanopyModel, NoCanopy, MultilayerCanopy
-export allocate_canopy, canopy_radiation!
+export allocate_canopy, canopy_shortwave!, canopy_longwave!, canopy_wind_profile!, canopy_energy_balance!
 export example_multilayer_canopy
+export AbstractCanopyShortwaveModel, TwoStreamRadiation, allocate_shortwave
+export AbstractCanopyLongwaveModel, LayeredLongwaveExchange, allocate_longwave
+export AbstractCanopyWindModel, CanopyWindAttenuation, allocate_wind
+export AbstractCanopyAirProfileModel, KTheoryAirProfile, allocate_air_profile, canopy_air_profile!
+export AbstractCanopyInterceptionModel, NoInterception, LayeredRainInterception
+export allocate_interception, canopy_interception!, wet_canopy_fraction, blend_stomatal_conductance
+export LeafParameters
+export AbstractStomatalConductanceModel, PrescribedStomatalConductance,
+    MoistureResponsiveStomatalConductance, stomatal_conductance
+export AbstractLeafTemperatureSolver, LinearizedLeafTemperature, RootFindLeafTemperature
+export leaf_temperature, leaf_heat_balance, leaf_body
+export LeafEvaporationParameters
 
 # Apparent heat capacity (latent-heat-of-fusion treatment in snow)
 export AbstractApparentHeatCapacity, BonacinaStep, TanhSmoothed, Gaussian, WestermannSigmoid, apparent_heat_capacity
@@ -201,10 +220,39 @@ include("snow/abstract.jl")
 include("snow/no_snow.jl")
 include("snow/snow_model.jl")
 
-# Canopy models
+# Canopy models — one subfolder per sub-model family (mirrors radiation/),
+# each with its own abstract.jl + one file per variant; multilayer.jl composes them.
 include("canopy/abstract.jl")
 include("canopy/no_canopy.jl")
+
+include("canopy/shortwave/abstract.jl")
+include("canopy/shortwave/two_stream.jl")
+
+include("canopy/longwave/abstract.jl")
+include("canopy/longwave/exchange.jl")
+
+include("canopy/wind/abstract.jl")
+include("canopy/wind/attenuation.jl")
+
+include("canopy/air_profile/abstract.jl")
+include("canopy/air_profile/k_theory.jl")
+
+include("canopy/interception/abstract.jl")
+include("canopy/interception/no_interception.jl")
+include("canopy/interception/layered.jl")
+
+include("canopy/stomatal_conductance/abstract.jl")
+include("canopy/stomatal_conductance/prescribed.jl")
+include("canopy/stomatal_conductance/moisture_responsive.jl")
+
+include("canopy/leaf_temperature/parameters.jl")
+include("canopy/leaf_temperature/heat_balance.jl")
+include("canopy/leaf_temperature/abstract.jl")
+include("canopy/leaf_temperature/linearized.jl")
+include("canopy/leaf_temperature/root_find.jl")
+
 include("canopy/multilayer.jl")
+include("canopy/energy_balance.jl")
 
 # Top-level config, parameters, problem, state, buffers, and cache types
 include("types.jl")

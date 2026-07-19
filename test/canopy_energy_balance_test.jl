@@ -1,0 +1,76 @@
+using Microclimate
+using Unitful
+using Test
+
+body = Microclimate.leaf_body(0.05u"m", 0.02u"m")
+stomatal_conductance = LeafEvaporationParameters(;
+    abaxial_vapour_conductance = 0.3u"mol/m^2/s", adaxial_vapour_conductance = 0.0u"mol/m^2/s",
+    cuticular_conductance = 0.01u"mol/m^2/s",
+)
+air_temperature = 293.0u"K"
+relative_humidity = 0.5
+wind_speed = 1.0u"m/s"
+atmospheric_pressure = 101325.0u"Pa"
+leaf_emissivity = 0.97
+leaf_water_potential = 0.0u"J/kg"
+
+@testset "leaf_body sizing" begin
+    b = Microclimate.leaf_body(0.05u"m", 0.02u"m")
+    @test ustrip(u"m", b.geometry.length.width_skin) ≈ sqrt(0.05 * 0.02) rtol=1e-10
+end
+
+@testset "leaf temperature increases monotonically with absorbed radiation" begin
+    for solver in (LinearizedLeafTemperature(), RootFindLeafTemperature())
+        temperatures = [
+            ustrip(u"K", Microclimate.leaf_temperature(solver, Rabs, air_temperature, relative_humidity,
+                wind_speed, atmospheric_pressure, leaf_emissivity, stomatal_conductance, leaf_water_potential, body))
+            for Rabs in (50.0, 200.0, 400.0, 700.0) .* u"W/m^2"
+        ]
+        @test issorted(temperatures)
+    end
+end
+
+@testset "iterated LinearizedLeafTemperature converges to RootFindLeafTemperature" begin
+    Rabs = 300.0u"W/m^2"
+    guess = air_temperature
+    for _ in 1:8
+        guess = Microclimate.leaf_temperature(LinearizedLeafTemperature(), Rabs, air_temperature, relative_humidity,
+            wind_speed, atmospheric_pressure, leaf_emissivity, stomatal_conductance, leaf_water_potential, body;
+            leaf_temperature_guess=guess)
+    end
+    exact = Microclimate.leaf_temperature(RootFindLeafTemperature(), Rabs, air_temperature, relative_humidity,
+        wind_speed, atmospheric_pressure, leaf_emissivity, stomatal_conductance, leaf_water_potential, body)
+    @test ustrip(u"K", guess) ≈ ustrip(u"K", exact) atol=1e-2
+end
+
+@testset "water stress warms the leaf (less evaporative cooling)" begin
+    Rabs = 300.0u"W/m^2"
+    wet = Microclimate.leaf_temperature(RootFindLeafTemperature(), Rabs, air_temperature, relative_humidity,
+        wind_speed, atmospheric_pressure, leaf_emissivity, stomatal_conductance, 0.0u"J/kg", body)
+    dry = Microclimate.leaf_temperature(RootFindLeafTemperature(), Rabs, air_temperature, relative_humidity,
+        wind_speed, atmospheric_pressure, leaf_emissivity, stomatal_conductance, -2.0e6u"J/kg", body)
+    @test dry > wet
+end
+
+@testset "leaf_temperature is allocation-light" begin
+    solver = LinearizedLeafTemperature()
+    f() = Microclimate.leaf_temperature(solver, 300.0u"W/m^2", air_temperature, relative_humidity,
+        wind_speed, atmospheric_pressure, leaf_emissivity, stomatal_conductance, leaf_water_potential, body)
+    f() # warm up
+    @test (@allocated f()) < 100
+end
+
+@testset "energy balance closes at the solved temperature" begin
+    for solver in (LinearizedLeafTemperature(), RootFindLeafTemperature())
+        Rabs = 300.0u"W/m^2"
+        Tleaf = Microclimate.leaf_temperature(solver, Rabs, air_temperature, relative_humidity,
+            wind_speed, atmospheric_pressure, leaf_emissivity, stomatal_conductance, leaf_water_potential, body)
+        out = Microclimate.leaf_heat_balance(Tleaf, Rabs, air_temperature, relative_humidity,
+            wind_speed, atmospheric_pressure, leaf_emissivity, stomatal_conductance, leaf_water_potential, body, 1.0u"m^2")
+        # LinearizedLeafTemperature is a single step from air_temperature, so its
+        # residual is only small when the true solution is close to air_temperature;
+        # allow a looser tolerance for it than for the exact root-find.
+        tol = solver isa RootFindLeafTemperature ? 1e-2u"W" : 10.0u"W"
+        @test abs(out.net) < tol
+    end
+end

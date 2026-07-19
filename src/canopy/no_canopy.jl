@@ -10,4 +10,4 @@ output for this model.
 """
 struct NoCanopy <: AbstractCanopyModel end
 
-allocate_canopy(::NoCanopy, heights) = nothing
+allocate_canopy(::NoCanopy, heights, boundary_layer_model) = nothing

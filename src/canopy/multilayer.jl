@@ -1,58 +1,83 @@
 """
     MultilayerCanopy(; canopy_height, plant_area_index,
-                       leaf_angle_distribution_parameter=1.0,
-                       leaf_reflectance=0.05, leaf_transmittance=0.05)
+                       shortwave_model=TwoStreamRadiation(),
+                       longwave_model=LayeredLongwaveExchange(),
+                       wind_model=CanopyWindAttenuation(),
+                       air_profile_model=KTheoryAirProfile(),
+                       interception_model=NoInterception(),
+                       leaf_parameters=LeafParameters(),
+                       stomatal_model=PrescribedStomatalConductance(),
+                       leaf_temperature_solver=LinearizedLeafTemperature(),
+                       convergence=FixedSoilTemperatureIterations(3))
 
 Multi-layer canopy structure resolved by height. Splits the canopy into as
 many layers as there are `MicroModel.heights` entries at or below
-`canopy_height`, and solves the Dickinson/Sellers two-stream radiative
-transfer equations per layer (the same closed-form solution used in
-Dickinson (1983), Sellers (1985), and — evaluated only for canopy-integrated
-totals rather than a per-layer profile — in ClimaLand's `TwoStreamModel`).
+`canopy_height`.
 
-Layers are evenly spaced in plant-area-index space: layer `i` (of `n`) spans
-plant area index `(i-1)/n * plant_area_index` to `i/n * plant_area_index`,
-evaluated at its midpoint.
+Composes swappable sub-models the same way `MicroModel` composes
+`RadiationModel`/`boundary_layer_model`/`soil_energy_model` — physics choices
+live on the sub-model, not as flat fields here:
 
-- `canopy_height` — height of the top of the canopy
-- `plant_area_index` — total plant area index (leaf + stem), m²/m²
-- `leaf_angle_distribution_parameter` — Campbell's ellipsoidal leaf-angle
-  distribution parameter `x` (1.0 = spherical, the default; 0.0 = horizontal
-  leaves; `Inf` = vertical leaves)
-- `leaf_reflectance`, `leaf_transmittance` — leaf shortwave optical properties
+- `canopy_height`, `plant_area_index` — solver geometry shared by every
+  sub-model (like `MicroModel.depths`/`heights`), not owned by any one of them
+- `shortwave_model::AbstractCanopyShortwaveModel` — layer-resolved shortwave
+  radiative transfer (default [`TwoStreamRadiation`](@ref), Dickinson/Sellers)
+- `longwave_model::AbstractCanopyLongwaveModel` — layer-resolved longwave
+  exchange (default [`LayeredLongwaveExchange`](@ref))
+- `wind_model::AbstractCanopyWindModel` — in-canopy wind attenuation (default
+  [`CanopyWindAttenuation`](@ref))
+- `air_profile_model::AbstractCanopyAirProfileModel` — in-canopy air-
+  temperature profile (default [`KTheoryAirProfile`](@ref))
+- `interception_model::AbstractCanopyInterceptionModel` — rain interception
+  (default [`NoInterception`](@ref): off, rain passes straight through)
+- `leaf_parameters::LeafParameters` — per-leaf structural/physiological data
+  (dimensions, emissivity, water-potential fallback, leaf angle distribution)
+- `stomatal_model::AbstractStomatalConductanceModel` — stomatal response
+  (default [`PrescribedStomatalConductance`](@ref): day/night gating only)
+- `leaf_temperature_solver::AbstractLeafTemperatureSolver` — how leaf
+  temperature is solved each call (default [`LinearizedLeafTemperature`](@ref))
+- `convergence::AbstractSoilTemperatureConvergence` — the hourly Picard-loop
+  convergence criterion (default `FixedSoilTemperatureIterations(3)`). Reuses
+  the same dispatch already used for the soil day-level spin-up loop
+  (`is_converged`/`may_iterate`/`max_iterations` are generic over any array
+  of temperatures and don't reference soil at all) rather than introducing a
+  parallel canopy-specific convergence type.
 
 Ground reflectance is *not* stored here — it is supplied to
-[`canopy_radiation!`](@ref) by the caller (from `Site.albedo` or the current
+[`canopy_shortwave!`](@ref) by the caller (from `Site.albedo` or the current
 `environment_instant`), matching how other radiation models in this package
 read albedo from their caller rather than duplicating it on the process model.
-
-# References
-- Dickinson, R. E. (1983). Land surface processes and climate—surface
-  albedos and energy balance. *Advances in Geophysics*, 25, 305–353.
-- Sellers, P. J. (1985). Canopy reflectance, photosynthesis and
-  transpiration. *International Journal of Remote Sensing*, 6(8), 1335–1372.
-- Campbell, G. S. (1990). Derivation of an angle density function for
-  canopies with ellipsoidal leaf angle distributions. *Agricultural and
-  Forest Meteorology*, 49(3), 173–176.
 """
-@kwdef struct MultilayerCanopy{H,PAI,X,LR,LT} <: AbstractCanopyModel
+@kwdef struct MultilayerCanopy{H,PAI,RM,LWM,WM,APM,IM,LP,SM,LTS,CV} <: AbstractCanopyModel
     canopy_height::H
     plant_area_index::PAI
-    leaf_angle_distribution_parameter::X = 1.0
-    leaf_reflectance::LR = 0.05
-    leaf_transmittance::LT = 0.05
+    shortwave_model::RM = TwoStreamRadiation()
+    longwave_model::LWM = LayeredLongwaveExchange()
+    wind_model::WM = CanopyWindAttenuation()
+    air_profile_model::APM = KTheoryAirProfile()
+    interception_model::IM = NoInterception()
+    leaf_parameters::LP = LeafParameters()
+    stomatal_model::SM = PrescribedStomatalConductance()
+    leaf_temperature_solver::LTS = LinearizedLeafTemperature()
+    convergence::CV = FixedSoilTemperatureIterations(3)
 end
 
 function example_multilayer_canopy(;
     canopy_height = 1.0u"m",
     plant_area_index = 3.0,
-    leaf_angle_distribution_parameter = 1.0,
-    leaf_reflectance = 0.1,
-    leaf_transmittance = 0.05,
+    shortwave_model = TwoStreamRadiation(; leaf_reflectance = 0.1),
+    longwave_model = LayeredLongwaveExchange(),
+    wind_model = CanopyWindAttenuation(),
+    air_profile_model = KTheoryAirProfile(),
+    interception_model = NoInterception(),
+    leaf_parameters = LeafParameters(),
+    stomatal_model = PrescribedStomatalConductance(),
+    leaf_temperature_solver = LinearizedLeafTemperature(),
+    convergence = FixedSoilTemperatureIterations(3),
 )
     MultilayerCanopy(;
-        canopy_height, plant_area_index, leaf_angle_distribution_parameter,
-        leaf_reflectance, leaf_transmittance,
+        canopy_height, plant_area_index, shortwave_model, longwave_model, wind_model, air_profile_model,
+        interception_model, leaf_parameters, stomatal_model, leaf_temperature_solver, convergence,
     )
 end
 
@@ -60,282 +85,55 @@ end
 n_canopy_layers(model::MultilayerCanopy, heights) = count(h -> h <= model.canopy_height, heights)
 
 """
-    ellipsoidal_extinction_coefficient(zenith_angle, leaf_angle_distribution_parameter)
+    allocate_canopy(model::MultilayerCanopy, heights, boundary_layer_model)
 
-Campbell's (1990) ellipsoidal-leaf-angle-distribution extinction coefficient
-for a direct beam at `zenith_angle`, for a canopy with leaf angle distribution
-parameter `x`. `x == 1` (spherical), `x == 0` (horizontal leaves), and
-`x == Inf` (vertical leaves) are closed-form special cases.
+Buffers nest one sub-struct per sub-model — `buffers.shortwave`,
+`buffers.longwave`, `buffers.wind`, `buffers.air_profile`,
+`buffers.interception`, `buffers.leaf` — mirroring `MicroBuffers`'s own
+composition (`buffers.soil_energy_balance`, `buffers.soil_properties`, ...)
+rather than flattening every sub-model's fields into one `NamedTuple`: a
+flat `merge` would let two sub-models' same-named fields silently
+overwrite each other with no warning. `buffers.leaf` bundles the
+orchestrator-owned (not any one sub-model's) per-layer state: leaf body,
+temperature, and the source terms the other sub-models read/write.
 """
-function ellipsoidal_extinction_coefficient(zenith_angle, leaf_angle_distribution_parameter)
-    x = leaf_angle_distribution_parameter
-    if isinf(x)
-        return 1.0
-    elseif x == 1.0
-        return 1.0 / (2.0 * cos(zenith_angle))
-    elseif x == 0.0
-        return tan(zenith_angle)
-    else
-        return sqrt(x^2 + tan(zenith_angle)^2) / (x + 1.774 * (x + 1.182)^(-0.733))
-    end
-end
-
-# Mean leaf-orientation factor J (Campbell 1990); x==1 is closed-form (J=1/3)
-function mean_leaf_orientation_factor(leaf_angle_distribution_parameter)
-    x = leaf_angle_distribution_parameter
-    if x == 1.0
-        return 1.0 / 3.0
-    else
-        mean_leaf_inclination_angle = min(9.65 * (3.0 + x)^(-1.65), π / 2)
-        return cos(mean_leaf_inclination_angle)^2
-    end
-end
-
-"""
-    leaf_optics(plant_area_index, leaf_angle_distribution_parameter,
-                leaf_reflectance, leaf_transmittance)
-
-Structural two-stream quantities that depend only on canopy leaf optical
-properties and total plant area index — not on solar position or ground
-reflectance (which can change hour to hour with soil wetness or snow) — so
-this is computed once (in `allocate_canopy`) and reused every hour.
-"""
-function leaf_optics(plant_area_index, leaf_angle_distribution_parameter, leaf_reflectance, leaf_transmittance)
-    leaf_scattering_coefficient = leaf_reflectance + leaf_transmittance
-    leaf_absorptance = 1.0 - leaf_scattering_coefficient
-    leaf_scattering_asymmetry = leaf_reflectance - leaf_transmittance
-    leaf_orientation_factor = mean_leaf_orientation_factor(leaf_angle_distribution_parameter)
-    diffuse_backscatter_coefficient = 0.5 * (leaf_scattering_coefficient + leaf_orientation_factor * leaf_scattering_asymmetry)
-    diffuse_attenuation_rate = sqrt(leaf_absorptance^2 + 2.0 * leaf_absorptance * diffuse_backscatter_coefficient)
-    diffuse_transmission_factor = exp(-diffuse_attenuation_rate * plant_area_index)
-    return (;
-        leaf_scattering_coefficient, leaf_absorptance, leaf_scattering_asymmetry, leaf_orientation_factor,
-        diffuse_backscatter_coefficient, diffuse_attenuation_rate, diffuse_transmission_factor,
-    )
-end
-
-"""
-    diffuse_two_stream_optics(leaf_optics, ground_reflectance)
-
-Two-stream boundary-condition coefficients for *diffuse* radiation. Unlike
-`leaf_optics`, these depend on ground reflectance, so they're recomputed
-every hour rather than cached — cheap scalar ops, no allocation.
-"""
-function diffuse_two_stream_optics(leaf_optics, ground_reflectance)
-    (; leaf_absorptance, diffuse_backscatter_coefficient, diffuse_attenuation_rate, diffuse_transmission_factor) = leaf_optics
-
-    upward_diffuse_boundary_term = leaf_absorptance + diffuse_backscatter_coefficient * (1.0 - 1.0 / ground_reflectance)
-    downward_diffuse_boundary_term = leaf_absorptance + diffuse_backscatter_coefficient * (1.0 - ground_reflectance)
-
-    upward_diffuse_normalization =
-        (leaf_absorptance + diffuse_backscatter_coefficient + diffuse_attenuation_rate) * (upward_diffuse_boundary_term - diffuse_attenuation_rate) / diffuse_transmission_factor -
-        (leaf_absorptance + diffuse_backscatter_coefficient - diffuse_attenuation_rate) * (upward_diffuse_boundary_term + diffuse_attenuation_rate) * diffuse_transmission_factor
-    downward_diffuse_normalization =
-        (downward_diffuse_boundary_term + diffuse_attenuation_rate) / diffuse_transmission_factor -
-        (downward_diffuse_boundary_term - diffuse_attenuation_rate) * diffuse_transmission_factor
-
-    diffuse_reflected_decay_coefficient = (diffuse_backscatter_coefficient / (upward_diffuse_normalization * diffuse_transmission_factor)) * (upward_diffuse_boundary_term - diffuse_attenuation_rate)
-    diffuse_reflected_growth_coefficient = (-diffuse_backscatter_coefficient * diffuse_transmission_factor / upward_diffuse_normalization) * (upward_diffuse_boundary_term + diffuse_attenuation_rate)
-    diffuse_transmitted_decay_coefficient = (1.0 / (downward_diffuse_normalization * diffuse_transmission_factor)) * (downward_diffuse_boundary_term + diffuse_attenuation_rate)
-    diffuse_transmitted_growth_coefficient = (-diffuse_transmission_factor / downward_diffuse_normalization) * (downward_diffuse_boundary_term - diffuse_attenuation_rate)
-
-    return (;
-        upward_diffuse_boundary_term, downward_diffuse_boundary_term,
-        upward_diffuse_normalization, downward_diffuse_normalization,
-        diffuse_reflected_decay_coefficient, diffuse_reflected_growth_coefficient,
-        diffuse_transmitted_decay_coefficient, diffuse_transmitted_growth_coefficient,
-    )
-end
-
-"""
-    direct_two_stream_optics(direct_beam_extinction_coefficient, ground_reflectance,
-                              leaf_optics, diffuse_optics)
-
-Two-stream coefficients for the *direct* beam. Depends on solar zenith angle
-(via `direct_beam_extinction_coefficient`), so — like `diffuse_optics` — this
-is recomputed every hour, not cached.
-
-Note: this is the classic Dickinson/Sellers direct-beam particular solution,
-and it does not exactly satisfy the ground boundary condition (reflected
-upward flux = `ground_reflectance` × downward flux at the canopy base) —
-verified independently via flux-divergence energy conservation, resolution-
-independent, confined to the direct-beam term (the diffuse-only solution
-closes to floating-point precision). Max relative error in whole-canopy
-energy conservation from this is ~6e-4 across a zenith/reflectance sweep —
-small, but real; see `test/canopy_radiation_test.jl`.
-"""
-function direct_two_stream_optics(plant_area_index, direct_beam_extinction_coefficient, ground_reflectance, leaf_optics, diffuse_optics)
-    (; leaf_scattering_coefficient, leaf_absorptance, leaf_scattering_asymmetry, leaf_orientation_factor,
-       diffuse_backscatter_coefficient, diffuse_attenuation_rate, diffuse_transmission_factor) = leaf_optics
-    (; upward_diffuse_boundary_term, downward_diffuse_boundary_term,
-       upward_diffuse_normalization, downward_diffuse_normalization) = diffuse_optics
-    k = direct_beam_extinction_coefficient
-
-    direct_beam_solution_denominator = k^2 + diffuse_backscatter_coefficient^2 - (leaf_absorptance + diffuse_backscatter_coefficient)^2
-    direct_upward_source_term = 0.5 * (leaf_scattering_coefficient + leaf_orientation_factor * leaf_scattering_asymmetry / k) * k
-    direct_downward_source_term = leaf_scattering_coefficient * k - direct_upward_source_term
-    direct_beam_transmission_factor = exp(-k * plant_area_index)
-
-    direct_reflected_beam_coefficient = -direct_upward_source_term * (leaf_absorptance + diffuse_backscatter_coefficient - k) -
-        diffuse_backscatter_coefficient * direct_downward_source_term
-    v1 = direct_upward_source_term - direct_reflected_beam_coefficient * (leaf_absorptance + diffuse_backscatter_coefficient + k) / direct_beam_solution_denominator
-    v2 = direct_upward_source_term - diffuse_backscatter_coefficient -
-        (direct_reflected_beam_coefficient / direct_beam_solution_denominator) * (upward_diffuse_boundary_term + k)
-    direct_reflected_decay_coefficient = (1.0 / upward_diffuse_normalization) *
-        ((v1 / diffuse_transmission_factor) * (upward_diffuse_boundary_term - diffuse_attenuation_rate) -
-         (leaf_absorptance + diffuse_backscatter_coefficient - diffuse_attenuation_rate) * direct_beam_transmission_factor * v2)
-    direct_reflected_growth_coefficient = (-1.0 / upward_diffuse_normalization) *
-        ((v1 * diffuse_transmission_factor) * (upward_diffuse_boundary_term + diffuse_attenuation_rate) -
-         (leaf_absorptance + diffuse_backscatter_coefficient + diffuse_attenuation_rate) * direct_beam_transmission_factor * v2)
-
-    direct_transmitted_beam_coefficient = direct_downward_source_term * (leaf_absorptance + diffuse_backscatter_coefficient + k) -
-        diffuse_backscatter_coefficient * direct_upward_source_term
-    v3 = (direct_downward_source_term + diffuse_backscatter_coefficient * ground_reflectance -
-          (direct_transmitted_beam_coefficient / -direct_beam_solution_denominator) * (downward_diffuse_boundary_term - k)) * direct_beam_transmission_factor
-    direct_transmitted_decay_coefficient = (-1.0 / downward_diffuse_normalization) *
-        ((direct_transmitted_beam_coefficient / (-direct_beam_solution_denominator * diffuse_transmission_factor)) * (downward_diffuse_boundary_term + diffuse_attenuation_rate) + v3)
-    direct_transmitted_growth_coefficient = (1.0 / downward_diffuse_normalization) *
-        ((direct_transmitted_beam_coefficient * diffuse_transmission_factor / -direct_beam_solution_denominator) * (downward_diffuse_boundary_term - diffuse_attenuation_rate) + v3)
-
-    return (;
-        direct_beam_solution_denominator,
-        direct_reflected_beam_coefficient, direct_reflected_decay_coefficient, direct_reflected_growth_coefficient,
-        direct_transmitted_beam_coefficient, direct_transmitted_decay_coefficient, direct_transmitted_growth_coefficient,
-    )
-end
-
-"""
-    two_stream_flux_fractions(leaf_optics, diffuse_optics, direct_optics,
-                               direct_beam_extinction_coefficient, maximum_layer_reflectance,
-                               has_direct_beam, plant_area_index_above)
-
-Diffuse and direct up/down flux fractions (of incoming diffuse/direct
-horizontal irradiance respectively) at a given cumulative plant area index
-`plant_area_index_above`. Shared between the per-layer profile, the layer
-*boundaries* (for the flux-divergence absorption below), and the whole-canopy
-ground-level totals, so the clamp/exp algebra is written once.
-"""
-function two_stream_flux_fractions(leaf_optics, diffuse_optics, direct_optics,
-    direct_beam_extinction_coefficient, maximum_layer_reflectance, has_direct_beam, plant_area_index_above,
-)
-    (; diffuse_attenuation_rate) = leaf_optics
-    (; diffuse_reflected_decay_coefficient, diffuse_reflected_growth_coefficient,
-       diffuse_transmitted_decay_coefficient, diffuse_transmitted_growth_coefficient) = diffuse_optics
-    diffuse_decay = exp(-diffuse_attenuation_rate * plant_area_index_above)
-    diffuse_growth = exp(diffuse_attenuation_rate * plant_area_index_above)
-    diffuse_up = clamp(diffuse_reflected_decay_coefficient * diffuse_decay + diffuse_reflected_growth_coefficient * diffuse_growth, 0.0, 1.0)
-    diffuse_down = clamp(diffuse_transmitted_decay_coefficient * diffuse_decay + diffuse_transmitted_growth_coefficient * diffuse_growth, 0.0, 1.0)
-
-    if has_direct_beam
-        (; direct_beam_solution_denominator, direct_reflected_beam_coefficient, direct_reflected_decay_coefficient,
-           direct_reflected_growth_coefficient, direct_transmitted_beam_coefficient, direct_transmitted_decay_coefficient,
-           direct_transmitted_growth_coefficient) = direct_optics
-        direct_transmission = exp(-direct_beam_extinction_coefficient * plant_area_index_above)
-        direct_up = clamp(
-            direct_reflected_beam_coefficient / direct_beam_solution_denominator * direct_transmission +
-            direct_reflected_decay_coefficient * diffuse_decay + direct_reflected_growth_coefficient * diffuse_growth,
-            0.0, maximum_layer_reflectance)
-        direct_down = clamp(
-            direct_transmitted_beam_coefficient / -direct_beam_solution_denominator * direct_transmission +
-            direct_transmitted_decay_coefficient * diffuse_decay + direct_transmitted_growth_coefficient * diffuse_growth,
-            0.0, maximum_layer_reflectance)
-    else
-        direct_transmission = 0.0
-        direct_up = 0.0
-        direct_down = 0.0
-    end
-    return (; diffuse_up, diffuse_down, direct_up, direct_down, direct_transmission)
-end
-
-function allocate_canopy(model::MultilayerCanopy, heights)
+function allocate_canopy(model::MultilayerCanopy, heights, boundary_layer_model)
     n_layers = n_canopy_layers(model, heights)
-    layer_thickness = model.plant_area_index / n_layers
-    # boundary i is the PAI above the top of layer i (layer i spans boundary i to i+1)
-    layer_plant_area_index_boundaries = [(i - 1) * layer_thickness for i in 1:(n_layers + 1)]
-    layer_plant_area_index_above = [(i - 0.5) * layer_thickness for i in 1:n_layers]
-
-    leaf_optics_precomputed = leaf_optics(
-        model.plant_area_index, model.leaf_angle_distribution_parameter,
-        model.leaf_reflectance, model.leaf_transmittance,
-    )
+    leaf_angle_distribution_parameter = model.leaf_parameters.leaf_angle_distribution_parameter
 
     return (;
-        layer_plant_area_index_boundaries, layer_plant_area_index_above,
-        leaf_optics = leaf_optics_precomputed,
-        boundary_downward_shortwave = zeros(typeof(0.0u"W/m^2"), n_layers + 1),
-        boundary_upward_shortwave = zeros(typeof(0.0u"W/m^2"), n_layers + 1),
-        downward_direct_shortwave = zeros(typeof(0.0u"W/m^2"), n_layers),
-        downward_diffuse_shortwave = zeros(typeof(0.0u"W/m^2"), n_layers),
-        upward_diffuse_shortwave = zeros(typeof(0.0u"W/m^2"), n_layers),
-        sunlit_fraction = zeros(n_layers),
-        absorbed_shortwave = zeros(typeof(0.0u"W/m^2"), n_layers),
+        shortwave = allocate_shortwave(model.shortwave_model, model.canopy_height, model.plant_area_index, n_layers, leaf_angle_distribution_parameter),
+        longwave = allocate_longwave(model.longwave_model, model.plant_area_index, n_layers),
+        wind = allocate_wind(model.wind_model, model.canopy_height, model.plant_area_index, boundary_layer_model, heights, n_layers),
+        air_profile = allocate_air_profile(model.air_profile_model, model.canopy_height, model.plant_area_index, heights, n_layers, boundary_layer_model),
+        interception = allocate_interception(model.interception_model, model.canopy_height, model.plant_area_index, heights, n_layers, boundary_layer_model),
+        leaf = (;
+            leaf_body = leaf_body(model.leaf_parameters.leaf_length, model.leaf_parameters.leaf_width),
+            leaf_temperature = zeros(typeof(0.0u"K"), n_layers),
+            leaf_temperature_prev = zeros(typeof(0.0u"K"), n_layers),
+            sensible_heat_source = zeros(typeof(0.0u"W/m^2"), n_layers),
+            evaporation_mass_flow = zeros(typeof(0.0u"g/s"), n_layers),
+        ),
     )
 end
 
-# Downward (diffuse + direct) and upward irradiance through a horizontal
-# plane at a plant-area-index level, given precomputed flux fractions there —
-# used at layer boundaries for flux-divergence absorption, and at the canopy
-# base/top for ground/sky fluxes. The uncollided direct beam's contribution
-# uses `direct_horizontal_irradiance` (the horizontal-plane projection), not
-# the beam-normal irradiance — the latter is only meaningful as the
-# `downward_direct_shortwave` diagnostic, not for a ground-area energy budget.
-function two_stream_irradiances(fractions, direct_horizontal_irradiance, diffuse_horizontal_irradiance)
-    downward = fractions.diffuse_down * diffuse_horizontal_irradiance + fractions.direct_down * direct_horizontal_irradiance +
-        direct_horizontal_irradiance * fractions.direct_transmission
-    upward = fractions.diffuse_up * diffuse_horizontal_irradiance + fractions.direct_up * direct_horizontal_irradiance
-    return (; downward, upward)
-end
+canopy_shortwave!(buffers, model::MultilayerCanopy; kw...) =
+    canopy_shortwave!(buffers.shortwave, model.shortwave_model, model.plant_area_index; kw...)
 
-function canopy_radiation!(buffers, model::MultilayerCanopy;
-    zenith_angle, direct_horizontal_irradiance, diffuse_horizontal_irradiance, ground_reflectance,
-)
-    (; layer_plant_area_index_boundaries, layer_plant_area_index_above, boundary_downward_shortwave,
-       boundary_upward_shortwave, downward_direct_shortwave, downward_diffuse_shortwave,
-       upward_diffuse_shortwave, sunlit_fraction, absorbed_shortwave) = buffers
-    n_layers = length(layer_plant_area_index_above)
+canopy_longwave!(buffers, model::MultilayerCanopy; kw...) =
+    canopy_longwave!(buffers.longwave, model.longwave_model, model.leaf_parameters.leaf_emissivity; kw...)
 
-    fill!(downward_direct_shortwave, 0.0u"W/m^2")
-    fill!(downward_diffuse_shortwave, 0.0u"W/m^2")
-    fill!(upward_diffuse_shortwave, 0.0u"W/m^2")
-    fill!(sunlit_fraction, 0.0)
-    fill!(absorbed_shortwave, 0.0u"W/m^2")
+canopy_wind_profile!(buffers, model::MultilayerCanopy, boundary_layer_model; kw...) =
+    canopy_wind_profile!(buffers.wind, model.wind_model, boundary_layer_model; kw...)
 
-    global_horizontal_irradiance = direct_horizontal_irradiance + diffuse_horizontal_irradiance
-    if global_horizontal_irradiance <= 0.0u"W/m^2" || zenith_angle >= 90.0u"°"
-        return (; ground_absorbed_shortwave = 0.0u"W/m^2", canopy_absorbed_shortwave = 0.0u"W/m^2")
-    end
+canopy_air_profile!(buffers, model::MultilayerCanopy, boundary_layer_model; kw...) =
+    canopy_air_profile!(buffers.air_profile, model.air_profile_model, boundary_layer_model; kw...)
 
-    leaf = buffers.leaf_optics
-    diffuse = diffuse_two_stream_optics(leaf, ground_reflectance)
-    direct_beam_extinction_coefficient = ellipsoidal_extinction_coefficient(zenith_angle, model.leaf_angle_distribution_parameter)
-    has_direct_beam = direct_horizontal_irradiance > 0.0u"W/m^2"
-    direct_beam_irradiance = has_direct_beam ? direct_horizontal_irradiance / cos(zenith_angle) : 0.0u"W/m^2"
-    maximum_layer_reflectance = max(ground_reflectance, model.leaf_reflectance)
-    direct = direct_two_stream_optics(model.plant_area_index, direct_beam_extinction_coefficient, ground_reflectance, leaf, diffuse)
+canopy_interception!(buffers, model::MultilayerCanopy; kw...) =
+    canopy_interception!(buffers.interception, model.interception_model, model.leaf_parameters.leaf_angle_distribution_parameter; kw...)
 
-    # boundary fluxes, reused across adjacent layers (boundary i is shared by layers i-1 and i)
-    @inbounds for i in eachindex(layer_plant_area_index_boundaries)
-        fractions = two_stream_flux_fractions(leaf, diffuse, direct, direct_beam_extinction_coefficient,
-            maximum_layer_reflectance, has_direct_beam, layer_plant_area_index_boundaries[i])
-        irradiances = two_stream_irradiances(fractions, direct_horizontal_irradiance, diffuse_horizontal_irradiance)
-        boundary_downward_shortwave[i] = irradiances.downward
-        boundary_upward_shortwave[i] = irradiances.upward
-    end
+wet_canopy_fraction(model::MultilayerCanopy, buffers, layer) =
+    wet_canopy_fraction(model.interception_model, buffers.interception, layer)
 
-    @inbounds for i in 1:n_layers
-        absorbed_shortwave[i] = (boundary_downward_shortwave[i] - boundary_downward_shortwave[i + 1]) +
-                                 (boundary_upward_shortwave[i + 1] - boundary_upward_shortwave[i])
-
-        mid_fractions = two_stream_flux_fractions(leaf, diffuse, direct, direct_beam_extinction_coefficient,
-            maximum_layer_reflectance, has_direct_beam, layer_plant_area_index_above[i])
-        downward_diffuse_shortwave[i] = mid_fractions.diffuse_down * diffuse_horizontal_irradiance + mid_fractions.direct_down * direct_horizontal_irradiance
-        upward_diffuse_shortwave[i] = mid_fractions.diffuse_up * diffuse_horizontal_irradiance + mid_fractions.direct_up * direct_horizontal_irradiance
-        downward_direct_shortwave[i] = direct_beam_irradiance * mid_fractions.direct_transmission
-        sunlit_fraction[i] = mid_fractions.direct_transmission
-    end
-
-    ground_absorbed_shortwave = (1.0 - ground_reflectance) * boundary_downward_shortwave[n_layers + 1]
-    canopy_absorbed_shortwave = global_horizontal_irradiance - boundary_upward_shortwave[1]
-
-    return (; ground_absorbed_shortwave, canopy_absorbed_shortwave)
-end
+deplete_canopy_water!(model::MultilayerCanopy, buffers, layer, evaporated_mass) =
+    deplete_canopy_water!(model.interception_model, buffers.interception, layer, evaporated_mass)
