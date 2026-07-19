@@ -95,14 +95,18 @@ Relative humidity is uniform through the canopy for now (the
 reference/above-canopy value).
 
 Returns `(; ground_absorbed_shortwave, canopy_absorbed_shortwave,
-ground_absorbed_longwave, canopy_absorbed_longwave, ground_throughfall, iterations)`.
+ground_absorbed_longwave, canopy_absorbed_longwave, ground_throughfall,
+canopy_potential_transpiration, iterations)`. `canopy_potential_transpiration`
+is the canopy-summed unstressed (water_potential=0) transpiration rate, for
+feeding a soil-hydraulics demand term (e.g. `CampbellSoilHydraulics`).
 """
 function canopy_energy_balance!(buffers, model::MultilayerCanopy, boundary_layer_model, inputs::CanopyEnergyBalanceInputs)
     (; site, environment_instant, zenith_angle, direct_horizontal_irradiance, diffuse_horizontal_irradiance,
        ground_reflectance, ground_temperature, ground_emissivity, canopy_source_temperature, rainfall,
        leaf_water_potential, vapour_pressure_equation) = inputs
 
-    (; leaf_body, leaf_temperature_prev, sensible_heat_source, evaporation_mass_flow) = buffers.leaf
+    (; leaf_body, leaf_temperature_prev, sensible_heat_source, evaporation_mass_flow,
+       potential_evaporation_mass_flow) = buffers.leaf
     leaf_temperature_buffer = buffers.leaf.leaf_temperature  # avoids shadowing the leaf_temperature(solver, ...) function
     (; absorbed_shortwave) = buffers.shortwave
     (; absorbed_longwave, layer_transmission) = buffers.longwave
@@ -157,6 +161,13 @@ function canopy_energy_balance!(buffers, model::MultilayerCanopy, boundary_layer
                 conductance, leaf_water_potential, leaf_body, leaf_area)
             sensible_heat_source[layer] = balance.conv.convection_flow / 1.0u"m^2"
             evaporation_mass_flow[layer] = balance.evap.transpiration_mass_flow
+
+            # Unstressed (water_potential=0) reference transpiration, for a
+            # soil-hydraulics demand term — not the leaf's own energy balance.
+            atmos = AtmosphericConditions(relative_humidity, wind_speed[layer], atmospheric_pressure)
+            potential_evap = HeatExchange.evaporation(dry_conductance, balance.conv.mass_transfer_coefficient,
+                atmos, leaf_area, leaf_temperature_buffer[layer], air_temperature_layer; water_potential=0.0u"J/kg")
+            potential_evaporation_mass_flow[layer] = potential_evap.transpiration_mass_flow
         end
 
         canopy_air_profile!(buffers, model, boundary_layer_model;
@@ -172,5 +183,7 @@ function canopy_energy_balance!(buffers, model::MultilayerCanopy, boundary_layer
         deplete_canopy_water!(model, buffers, layer, evaporated_mass)
     end
 
-    return (; shortwave_result..., longwave_result..., interception_result..., iterations=iter)
+    canopy_potential_transpiration = sum(potential_evaporation_mass_flow) / 1.0u"m^2"
+
+    return (; shortwave_result..., longwave_result..., interception_result..., canopy_potential_transpiration, iterations=iter)
 end

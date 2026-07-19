@@ -139,6 +139,7 @@ function infiltration_step!(buffers, soil_hydraulic_model::CampbellSoilHydraulic
     moisture_tolerance,
     moisture_max_iterations,
     vapour_pressure_equation=GoffGratch(),
+    canopy_transpiration_potential=nothing,
 )
     # Local variable names
     θ_soil = soil_moisture
@@ -252,7 +253,8 @@ function infiltration_step!(buffers, soil_hydraulic_model::CampbellSoilHydraulic
 
     # Evapotranspiration
     evaporation_potential = exp(-0.82 * ustrip(lai)) * evapotranspiration # partition potential evaporation from potential evapotranspiration, EQ12.30
-    transpiration_potential = evapotranspiration - evaporation_potential # now get potential transpiration
+    transpiration_potential = isnothing(canopy_transpiration_potential) ?
+        evapotranspiration - evaporation_potential : canopy_transpiration_potential
 
     # Plant water uptake
     potential_sum = 0.0u"J*s/m^4"  # numerator of first term on left of EQ11.18, J * s / m⁴
@@ -393,6 +395,7 @@ function soil_water_balance!(buffers, soil_hydraulic_model::CampbellSoilHydrauli
     evaporation_model::AbstractEvaporationModel=BulkTransferEvaporation(),
     vapour_pressure_equation=GoffGratch(),
     snow_present=false,
+    canopy_transpiration_potential=nothing,
 )
     air_temperature = environment_instant.reference_temperature
     atmospheric_pressure = environment_instant.atmospheric_pressure
@@ -456,7 +459,7 @@ function soil_water_balance!(buffers, soil_hydraulic_model::CampbellSoilHydrauli
         evapotranspiration=evaporation_potential,
         input_soil_temperature=T0,
         moisture_timestep, moisture_tolerance, moisture_max_iterations,
-        vapour_pressure_equation,
+        vapour_pressure_equation, canopy_transpiration_potential,
     )
     soil_moisture = infil_out.soil_moisture
     surf_evap = max(0.0u"kg/m^2", infil_out.evaporation)
@@ -474,7 +477,7 @@ function soil_water_balance!(buffers, soil_hydraulic_model::CampbellSoilHydrauli
             evapotranspiration=evaporation_potential,
             input_soil_temperature=T0,
             moisture_timestep, moisture_tolerance, moisture_max_iterations,
-            vapour_pressure_equation,
+            vapour_pressure_equation, canopy_transpiration_potential,
         )
         soil_moisture = infil_out.soil_moisture
         surf_evap = max(0.0u"kg/m^2", infil_out.evaporation)

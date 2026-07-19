@@ -43,6 +43,7 @@ end
     @test all(t -> 250.0u"K" < t < 340.0u"K", buffers.leaf.leaf_temperature)
     @test all(isfinite, ustrip.(u"K", buffers.air_profile.air_temperature))
     @test result.canopy_absorbed_shortwave > 0.0u"W/m^2"
+    @test result.canopy_potential_transpiration >= sum(buffers.leaf.evaporation_mass_flow) / 1.0u"m^2"
 
     # Visual check — run manually (not in CI)
     #= using Plots
@@ -75,6 +76,48 @@ end
     @test night_result.canopy_absorbed_shortwave == 0.0u"W/m^2"
     @test all(isfinite, ustrip.(u"K", buffers.leaf.leaf_temperature))
     @test all(t -> 250.0u"K" < t < 310.0u"K", buffers.leaf.leaf_temperature)
+end
+
+@testset "leaf_water_potential (Campbell coupling input) warms canopy leaves" begin
+    mean_leaf_temperature(lwp) = begin
+        m = Microclimate.example_multilayer_canopy(;
+            canopy_height, plant_area_index, convergence = FixedSoilTemperatureIterations(20),
+        )
+        b = Microclimate.allocate_canopy(m, heights, boundary_layer_model)
+        inputs = Microclimate.CanopyEnergyBalanceInputs(m;
+            site, environment_instant = make_environment_instant(; zenith_angle = 30.0u"°", reference_temperature = 298.0u"K"),
+            zenith_angle = 30.0u"°",
+            direct_horizontal_irradiance = 500.0u"W/m^2", diffuse_horizontal_irradiance = 100.0u"W/m^2",
+            ground_reflectance = 0.15, ground_temperature = 295.0u"K", ground_emissivity = 0.95,
+            canopy_source_temperature = 298.0u"K", leaf_water_potential = lwp,
+        )
+        Microclimate.canopy_energy_balance!(b, m, boundary_layer_model, inputs)
+        sum(ustrip.(u"K", b.leaf.leaf_temperature)) / length(b.leaf.leaf_temperature)
+    end
+    hydrated = mean_leaf_temperature(0.0u"J/kg")
+    stressed = mean_leaf_temperature(-1.0e6u"J/kg")
+    @test stressed > hydrated  # less evaporative cooling under water stress
+end
+
+@testset "canopy_energy_balance! is allocation-light" begin
+    # Fixed iteration count for a reproducible byte budget (SoilTemperatureConvergenceTolerance's
+    # own convergence-dependent iteration count would make this threshold nondeterministic).
+    fixed_model = Microclimate.example_multilayer_canopy(;
+        canopy_height, plant_area_index, convergence = FixedSoilTemperatureIterations(3),
+    )
+    fixed_buffers = Microclimate.allocate_canopy(fixed_model, heights, boundary_layer_model)
+    inputs = Microclimate.CanopyEnergyBalanceInputs(fixed_model;
+        site, environment_instant = make_environment_instant(; zenith_angle = 30.0u"°"), zenith_angle = 30.0u"°",
+        direct_horizontal_irradiance = 500.0u"W/m^2", diffuse_horizontal_irradiance = 100.0u"W/m^2",
+        ground_reflectance = 0.15, ground_temperature = 290.0u"K", ground_emissivity = 0.95,
+        canopy_source_temperature = 293.0u"K",
+    )
+    f() = Microclimate.canopy_energy_balance!(fixed_buffers, fixed_model, boundary_layer_model, inputs)
+    f() # warm up
+    # ~3000-3500 bytes measured for 3 iterations x 10 layers (confirmed unchanged
+    # before/after adding the potential-transpiration calc); generous headroom
+    # above that, not a tight bound.
+    @test (@allocated f()) < 8_000
 end
 
 @testset "fixed-iteration convergence strategy still runs to completion" begin

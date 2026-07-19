@@ -87,6 +87,7 @@ end
 @inline function apply_canopy_overrides(::NoCanopy, buffers, canopy_inputs;
     boundary_layer_model, site, environment_instant, ground_temperature, ground_emissivity,
     canopy_source_temperature, rainfall, direct_horizontal_irradiance, diffuse_horizontal_irradiance, ground_reflectance,
+    leaf_water_potential,
 )
     return (;
         ground_shortwave_transmission = nothing,
@@ -99,11 +100,12 @@ end
 @inline function apply_canopy_overrides(model::MultilayerCanopy, buffers, canopy_inputs;
     boundary_layer_model, site, environment_instant, ground_temperature, ground_emissivity,
     canopy_source_temperature, rainfall, direct_horizontal_irradiance, diffuse_horizontal_irradiance, ground_reflectance,
+    leaf_water_potential,
 )
     update_canopy_energy_balance_inputs!(canopy_inputs;
         environment_instant, zenith_angle = environment_instant.zenith_angle,
         direct_horizontal_irradiance, diffuse_horizontal_irradiance, ground_reflectance,
-        ground_temperature, ground_emissivity, canopy_source_temperature, rainfall,
+        ground_temperature, ground_emissivity, canopy_source_temperature, rainfall, leaf_water_potential,
     )
     canopy_result = canopy_energy_balance!(buffers, model, boundary_layer_model, canopy_inputs)
     global_horizontal_irradiance = direct_horizontal_irradiance + diffuse_horizontal_irradiance
@@ -491,6 +493,7 @@ function solve_soil!(cache::MicroCache)
     Q_freeze = 0.0u"W/m^2"  # Fortran COMMON/melt/QFREZE: persists across hours
     infil_out = nothing
     canopy_source_temperature = T0[1]  # lagged canopy-atmosphere coupling boundary; bootstrap at ground equilibrium
+    leaf_water_potential = 0.0u"J/kg"  # lagged Campbell-solved value; bootstrap fully hydrated
     canopy_inputs = allocate_canopy_inputs(canopy_model; site, environment_instant, boundary_layer_model)
     for j in 1:ndays
         iday = j
@@ -566,6 +569,7 @@ function solve_soil!(cache::MicroCache)
         T0_day_start    = T0
         T_snow_day_start = T_snow
         canopy_source_temperature_day_start = canopy_source_temperature
+        leaf_water_potential_day_start = leaf_water_potential
         # Snapshot day-start ∑phase into pre-allocated buffer (no copy alloc).
         @inbounds for i in eachindex(∑phase)
             ∑phase_day_start[i] = ∑phase[i]
@@ -582,6 +586,7 @@ function solve_soil!(cache::MicroCache)
                 T0 = T0_day_start
                 T_snow = T_snow_day_start
                 canopy_source_temperature = canopy_source_temperature_day_start
+                leaf_water_potential = leaf_water_potential_day_start
             end
             ∑phase .= ∑phase_day_start  # restore carry-over (zeros under reset_phase_per_iter)
             # PR #102: also reset snow sum_phase at start of each iter when the
@@ -652,7 +657,7 @@ function solve_soil!(cache::MicroCache)
                     ground_emissivity = environment_instant.surface_emissivity, canopy_source_temperature, rainfall = rainfall_step,
                     direct_horizontal_irradiance = output.global_radiation[step] * (1.0 - output.diffuse_fraction[step]),
                     diffuse_horizontal_irradiance = output.global_radiation[step] * output.diffuse_fraction[step],
-                    ground_reflectance = albedo)
+                    ground_reflectance = albedo, leaf_water_potential)
             # day_init_step == step here (both (j-1)*length(hours)+1) — the NMR
             # "state at minute 0" row is this hour's canopy result.
             if is_last_iter
@@ -786,7 +791,7 @@ function solve_soil!(cache::MicroCache)
                             ground_emissivity = environment_instant.surface_emissivity, canopy_source_temperature, rainfall = rainfall_next,
                             direct_horizontal_irradiance = output.global_radiation[next_step] * (1.0 - output.diffuse_fraction[next_step]),
                             diffuse_horizontal_irradiance = output.global_radiation[next_step] * output.diffuse_fraction[next_step],
-                            ground_reflectance = albedo)
+                            ground_reflectance = albedo, leaf_water_potential)
                     if n_snow > 0
                         if !is_last_iter
                             buffers.snow.snow_depth_hourly[next_step] = snow_state.current_depth
@@ -841,10 +846,14 @@ function solve_soil!(cache::MicroCache)
                         pool = clamp(pool + rain + rain_melt_water + melted_water, 0.0u"kg/m^2", max_surface_pool)
                     end
                     # Soil moisture physics; output write happens below at output_step
+                    canopy_transpiration_potential = isnothing(canopy_result) ? nothing : canopy_result.canopy_potential_transpiration
                     (; pool, soil_moisture, infil_out) = step_soil_moisture!(moisture_mode, buffers, soil_hydraulic_model;
                         soil_profile, depths, site, boundary_layer_model, environment_instant, T0, pool, soil_moisture,
-                        max_surface_pool, evaporation_model, vapour_pressure_equation, snow_present,
+                        max_surface_pool, evaporation_model, vapour_pressure_equation, snow_present, canopy_transpiration_potential,
                     )
+                    if !isnothing(infil_out)
+                        leaf_water_potential = infil_out.leaf_water_potential
+                    end
                 end
                 # Write hour i's result to step + 1 (NMR convention: state at minute i*60
                 # belongs in row (j-1)*nhours + i + 1 = start of hour i+1). Skip when
@@ -1031,6 +1040,7 @@ end
 function step_soil_moisture!(mode::DynamicSoilMoisture, buffers, soil_hydraulic_model;
     soil_profile, depths, site, boundary_layer_model, environment_instant, T0, pool, soil_moisture,
     max_surface_pool, evaporation_model, vapour_pressure_equation, snow_present=false,
+    canopy_transpiration_potential=nothing,
 )
     (; moisture_tolerance, moisture_max_iterations, moisture_timestep) = mode
     niter_moist = ustrip(u"s^-1", 3600 / moisture_timestep)
@@ -1038,7 +1048,7 @@ function step_soil_moisture!(mode::DynamicSoilMoisture, buffers, soil_hydraulic_
         soil_profile, depths, site, boundary_layer_model, environment_instant, T0, niter_moist, pool,
         soil_wetness=mode.soil_wetness, soil_moisture,
         moisture_timestep, moisture_tolerance, moisture_max_iterations, max_surface_pool,
-        evaporation_model, vapour_pressure_equation, snow_present,
+        evaporation_model, vapour_pressure_equation, snow_present, canopy_transpiration_potential,
     )
     mode.soil_wetness = soil_wetness
     return (; pool, soil_moisture, infil_out)

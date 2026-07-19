@@ -10,7 +10,10 @@ open fraction is `1 / (1 + stomatal_closure_factor)`. Cuticular conductance
 is unaffected. Shuts fully at night (`zenith_angle >= 90°`).
 
 `leaf_water_potential` is supplied by the caller each call (e.g. from
-`CampbellSoilHydraulics`'s own solve).
+`CampbellSoilHydraulics`'s own solve). If pairing with `CampbellSoilHydraulics`
+on a `MultilayerCanopy`, prefer `PrescribedStomatalConductance` instead —
+Campbell's own demand/supply solve already applies this same closure curve to
+derive `leaf_water_potential`, so using both applies it twice.
 """
 @kwdef struct MoistureResponsiveStomatalConductance{C,SCP,SSP} <: AbstractStomatalConductanceModel
     conductance::C = LeafEvaporationParameters(;

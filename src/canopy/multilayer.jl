@@ -31,7 +31,12 @@ Composes swappable sub-models the same way `MicroModel` composes
   (default [`NoInterception`](@ref): off)
 - `leaf_parameters::LeafParameters` — per-leaf structural/physiological data
 - `stomatal_model::AbstractStomatalConductanceModel` — stomatal response
-  (default [`PrescribedStomatalConductance`](@ref): day/night gating only)
+  (default [`PrescribedStomatalConductance`](@ref): day/night gating only).
+  Recommended pairing with `CampbellSoilHydraulics`: keep the default here —
+  Campbell's own demand/supply solve is already the water-stress mechanism
+  once its `leaf_water_potential` output feeds this canopy each hour, so
+  [`MoistureResponsiveStomatalConductance`](@ref) would apply the same
+  closure curve twice.
 - `leaf_temperature_solver::AbstractLeafTemperatureSolver` — how leaf
   temperature is solved each call (default [`LinearizedLeafTemperature`](@ref))
 - `convergence::AbstractSoilTemperatureConvergence` — hourly Picard-loop
@@ -105,6 +110,7 @@ function allocate_canopy(model::MultilayerCanopy, heights, boundary_layer_model)
             leaf_temperature_prev = zeros(typeof(0.0u"K"), n_layers),
             sensible_heat_source = zeros(typeof(0.0u"W/m^2"), n_layers),
             evaporation_mass_flow = zeros(typeof(0.0u"g/s"), n_layers),
+            potential_evaporation_mass_flow = zeros(typeof(0.0u"g/s"), n_layers),
         ),
     )
 end
