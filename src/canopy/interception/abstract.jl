@@ -14,8 +14,7 @@ abstract type AbstractCanopyInterceptionModel end
 """
     allocate_interception(model, canopy_height, plant_area_index, heights, n_layers, boundary_layer_model)
 
-Pre-allocate and precompute the structural (once-per-run) buffers a
-[`AbstractCanopyInterceptionModel`](@ref) needs.
+Pre-allocate and precompute the structural buffers a model needs.
 """
 function allocate_interception end
 
@@ -38,6 +37,14 @@ convergence (not itself Picard-iterated). No-op for `NoInterception`.
 function deplete_canopy_water! end
 
 """
+    reset_interception!(model, buffers)
+
+Zero accumulated leaf-surface water. Day-boundary reset (like
+`pool`/`soil_moisture`), not per-Picard-iteration. No-op for `NoInterception`.
+"""
+function reset_interception! end
+
+"""
     wet_canopy_fraction(model, buffers, layer) -> Float64 ∈ [0, 1]
 
 Fractional saturation of layer `layer`'s stored leaf-surface water (0 =
@@ -51,11 +58,9 @@ function wet_canopy_fraction end
 
 A stomatal/cuticular conductance large enough that `HeatExchange.evaporation`'s
 series combination with the boundary-layer mass-transfer coefficient
-collapses to the boundary layer alone — a free water film has no
-stomatal/cuticular resistance. Verified at representative in-canopy wind
-speeds (~1 m/s): a further 10x increase changes evaporation by <0.1%. The
-boundary-layer conductance itself scales with wind speed, so this margin
-narrows at high (above-canopy-scale) wind speeds — see
+collapses to the boundary layer alone (a free water film has no
+stomatal/cuticular resistance). Verified at ~1 m/s in-canopy wind: a further
+10x increase changes evaporation by <0.1% — see
 `test/canopy_interception_test.jl`.
 """
 const WET_SURFACE_CONDUCTANCE = 1000.0u"mol/m^2/s"

@@ -6,8 +6,7 @@ structural attenuation-shape profile (Massman/Katul-style mixing-length
 argument); above and at canopy top, wind is the shared
 `AbstractBoundaryLayerModel` (e.g. `MoninObukhov`) evaluated with the
 canopy's displacement height and roughness length. No free parameters of
-its own — see [`AbstractCanopyWindModel`](@ref) for where an alternative
-(e.g. a different roughness parameterisation) would plug in.
+its own.
 """
 struct CanopyWindAttenuation <: AbstractCanopyWindModel end
 

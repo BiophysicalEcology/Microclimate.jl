@@ -2,20 +2,15 @@
     TwoStreamRadiation(; leaf_reflectance=0.05, leaf_transmittance=0.05)
 
 Dickinson/Sellers two-stream canopy radiative transfer (the same closed-form
-solution used in Dickinson (1983), Sellers (1985), and — evaluated only for
-canopy-integrated totals rather than a per-layer profile — in ClimaLand's
+solution used in Dickinson (1983), Sellers (1985), and ClimaLand's
 `TwoStreamModel`).
 
 - `leaf_reflectance`, `leaf_transmittance` — leaf shortwave optical properties
 
-Leaf angle distribution (`x`) is *not* stored here — it's a geometric leaf
+Leaf angle distribution (`x`) is not stored here — it's a geometric leaf
 trait shared with the rain-interception model, so it lives on
-[`LeafParameters`](@ref) and is supplied by the caller (from
-`MultilayerCanopy.leaf_parameters.leaf_angle_distribution_parameter`).
-Ground reflectance is likewise *not* stored here — it is supplied to
-[`canopy_shortwave!`](@ref) by the caller (from `Site.albedo` or the current
-`environment_instant`), matching how other radiation models in this package
-read albedo from their caller rather than duplicating it on the process model.
+[`LeafParameters`](@ref). Ground reflectance is likewise supplied by the
+caller to [`canopy_shortwave!`](@ref) (e.g. `Site.albedo`), not stored here.
 
 # References
 - Dickinson, R. E. (1983). Land surface processes and climate—surface
@@ -124,17 +119,15 @@ end
                               ground_reflectance, leaf_optics, diffuse_optics)
 
 Two-stream coefficients for the *direct* beam. Depends on solar zenith angle
-(via `direct_beam_extinction_coefficient`), so — like `diffuse_optics` — this
-is recomputed every hour, not cached.
+(via `direct_beam_extinction_coefficient`), so recomputed every hour like
+`diffuse_optics`.
 
-Note: this is the classic Dickinson/Sellers direct-beam particular solution,
-and it does not exactly satisfy the ground boundary condition (reflected
-upward flux = `ground_reflectance` × downward flux at the canopy base) —
-verified independently via flux-divergence energy conservation, resolution-
-independent, confined to the direct-beam term (the diffuse-only solution
-closes to floating-point precision). Max relative error in whole-canopy
-energy conservation from this is ~6e-4 across a zenith/reflectance sweep —
-small, but real; see `test/canopy_radiation_test.jl`.
+Note: the classic Dickinson/Sellers direct-beam particular solution doesn't
+exactly satisfy the ground boundary condition (reflected upward flux =
+`ground_reflectance` × downward flux at canopy base) — max relative error
+in whole-canopy energy conservation is ~6e-4 across a zenith/reflectance
+sweep (the diffuse-only solution closes to floating-point precision); see
+`test/canopy_radiation_test.jl`.
 """
 function direct_two_stream_optics(plant_area_index, direct_beam_extinction_coefficient, ground_reflectance, leaf_optics, diffuse_optics)
     (; leaf_scattering_coefficient, leaf_absorptance, leaf_scattering_asymmetry, leaf_orientation_factor,

@@ -4,16 +4,13 @@
                                              stomatal_stability_parameter=10.0)
 
 Stomatal (abaxial/adaxial) conductance closes as leaf water potential drops,
-using the same closure curve as `CampbellSoilHydraulics`
-(`soil_hydraulics/campbell.jl`, EQ12.28): with
+using the same closure curve as `CampbellSoilHydraulics` (EQ12.28): with
 `stomatal_closure_factor = (leaf_water_potential / stomatal_closure_potential)^stomatal_stability_parameter`,
-the open fraction is `1 / (1 + stomatal_closure_factor)`. Cuticular
-conductance is unaffected (it isn't stomatally controlled). Also shuts fully
-at night (`zenith_angle >= 90°`), matching `PrescribedStomatalConductance`.
+open fraction is `1 / (1 + stomatal_closure_factor)`. Cuticular conductance
+is unaffected. Shuts fully at night (`zenith_angle >= 90°`).
 
 `leaf_water_potential` is supplied by the caller each call (e.g. from
-`CampbellSoilHydraulics`'s own leaf-water-potential solve) — see
-[`AbstractStomatalConductanceModel`](@ref).
+`CampbellSoilHydraulics`'s own solve).
 """
 @kwdef struct MoistureResponsiveStomatalConductance{C,SCP,SSP} <: AbstractStomatalConductanceModel
     conductance::C = LeafEvaporationParameters(;

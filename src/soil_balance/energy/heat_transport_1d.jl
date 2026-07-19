@@ -38,7 +38,7 @@ instead of allocating a fresh struct each hour. All fields are concretely
 typed via the parametric `{F,B,…}` slots; the underlying heap object is the
 same across hours.
 """
-mutable struct SoilEnergyInputs{M<:SoilHeatTransportModel,EVM<:AbstractEvaporationModel,ARM<:AbstractAtmosphericRadiationModel,F,B,SP,SPR,D<:Vector{<:Number},H<:Vector{<:Number},S,BLM,EI,SW,VP,LW,QF,SNM,SNS,SM}
+mutable struct SoilEnergyInputs{M<:SoilHeatTransportModel,EVM<:AbstractEvaporationModel,ARM<:AbstractAtmosphericRadiationModel,F,B,SP,SPR,D<:Vector{<:Number},H<:Vector{<:Number},S,BLM,EI,SW,VP,LW,QF,SNM,SNS,SM,GST,GIL}
     model::M
     evaporation_model::EVM
     atmospheric_radiation_model::ARM
@@ -60,6 +60,9 @@ mutable struct SoilEnergyInputs{M<:SoilHeatTransportModel,EVM<:AbstractEvaporati
     snow_model::SNM
     snow_state::SNS
     soil_moisture::SM
+    # Canopy ground-boundary overrides (nothing under NoCanopy; see apply_canopy_overrides)
+    ground_shortwave_transmission::GST
+    ground_incoming_longwave::GIL
 end
 
 function SoilEnergyInputs(; model=SoilHeatTransport1D(), evaporation_model=BulkTransferEvaporation(),
@@ -70,19 +73,21 @@ function SoilEnergyInputs(; model=SoilHeatTransport1D(), evaporation_model=BulkT
     longwave_sky, albedo, Q_freeze=0.0u"W/m^2",
     snow_model=nothing, snow_state=nothing,
     soil_moisture=nothing,
+    ground_shortwave_transmission=nothing, ground_incoming_longwave=nothing,
 )
     SoilEnergyInputs(model, evaporation_model, atmospheric_radiation_model,
         forcing, buffers, soil_properties_model, soil_profile,
         depths, heights, site, boundary_layer_model, environment_instant,
         soil_wetness, vapour_pressure_equation, longwave_sky, albedo, Q_freeze,
-        snow_model, snow_state, soil_moisture)
+        snow_model, snow_state, soil_moisture,
+        ground_shortwave_transmission, ground_incoming_longwave)
 end
 
 # In-place per-hour update — no allocation. Only the fields that change per
 # hour are written; static fields stay put.
 @inline function update_soil_energy_inputs!(p::SoilEnergyInputs;
     depths, environment_instant, soil_wetness, longwave_sky, albedo, Q_freeze,
-    snow_state,
+    snow_state, ground_shortwave_transmission=nothing, ground_incoming_longwave=nothing,
 )
     p.depths = depths
     p.environment_instant = environment_instant
@@ -91,6 +96,8 @@ end
     p.albedo = albedo
     p.Q_freeze = Q_freeze
     p.snow_state = snow_state
+    p.ground_shortwave_transmission = ground_shortwave_transmission
+    p.ground_incoming_longwave = ground_incoming_longwave
     return p
 end
 
@@ -122,6 +129,18 @@ end
 # Compile-time snow node count for an ODE's `p.snow_model`. The `::SnowModel{N}`
 # method is in snow/snow_model.jl; both ::Nothing and ::NoSnow return 0.
 @inline _n_snow(::Nothing) = 0
+
+# Ground shortwave fraction: NoCanopy uses `shade`; MultilayerCanopy substitutes
+# its hourly transmission ratio (see apply_canopy_overrides).
+@inline ground_shortwave_fraction(shade, ::Nothing) = 1.0 - shade
+@inline ground_shortwave_fraction(shade, transmission) = transmission
+
+# Ground longwave terms: NoCanopy passes the shade-based split through;
+# MultilayerCanopy supersedes it with its own converged incoming flux.
+@inline ground_longwave_terms(incoming, outgoing_coeff, shade_term, surface_emissivity, ::Nothing) =
+    (incoming, outgoing_coeff, shade_term)
+@inline ground_longwave_terms(incoming, outgoing_coeff, shade_term, surface_emissivity, override) =
+    (override, σ * surface_emissivity, 0.0u"W/m^2")
 
 function allocate_soil_energy_balance(::SoilHeatTransport1D, num_nodes::Int)
     layer_depths = fill(0.0u"cm", num_nodes + 1)
@@ -220,7 +239,7 @@ function soil_energy_balance(model::SoilHeatTransport1D,
     # global flux by `cos_slope_zenith / cos_zenith` (the old behaviour)
     # zeroes both components when the sun is behind the slope, which
     # produced sharp per-pixel sun/shadow streaks at fine DEM resolution.
-    Q_solar = absorptivity * solar_radiation * (1.0 - shade)
+    Q_solar = absorptivity * solar_radiation * ground_shortwave_fraction(shade, p.ground_shortwave_transmission)
     if slope > 0 && zenith_angle < 90u"°"
         cos_zenith = cosd(zenith_angle)
         cos_slope_zenith = cosd(slope_zenith_angle)
@@ -247,6 +266,8 @@ function soil_energy_balance(model::SoilHeatTransport1D,
                         hillshade_radiation * (1.0 - sky_view_fraction)
     outgoing_coeff = (1.0 - shade) * σ * surface_emissivity
     ground_shade_term = shade * hillshade_radiation
+    (incoming_longwave, outgoing_coeff, ground_shade_term) = ground_longwave_terms(
+        incoming_longwave, outgoing_coeff, ground_shade_term, surface_emissivity, p.ground_incoming_longwave)
     Q_infrared = incoming_longwave - outgoing_coeff * (u"K"(soil_temperature[j]))^4 - ground_shade_term
 
     # Conduction from first active node to the node below it

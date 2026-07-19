@@ -1,9 +1,8 @@
 """
     CANOPY_TIMESTEP
 
-Fixed one-hour step for the one canopy quantity that integrates a rate
-(rain-interception storage depletion) rather than staying diagnostic,
-matching `MicroModel`'s hourly forcing cadence.
+Fixed one-hour step for rain-interception storage depletion, matching
+`MicroModel`'s hourly forcing cadence.
 """
 const CANOPY_TIMESTEP = 1.0u"hr"
 
@@ -16,9 +15,8 @@ const CANOPY_TIMESTEP = 1.0u"hr"
                                vapour_pressure_equation=GoffGratch())
 
 Per-hour inputs to [`canopy_energy_balance!`](@ref), mirroring
-`SoilEnergyInputs`: built once, refreshed in place each hour via
-[`update_canopy_energy_balance_inputs!`](@ref) rather than passed as a
-growing keyword-argument list at every call.
+`SoilEnergyInputs`: built once, refreshed in place via
+[`update_canopy_energy_balance_inputs!`](@ref).
 """
 mutable struct CanopyEnergyBalanceInputs{S,EI,ZA,DHI,DFI,GR,GT,GE,CST,RF,LWP,VP}
     site::S
@@ -53,8 +51,8 @@ end
                                           canopy_source_temperature, rainfall=0.0u"kg/m^2",
                                           leaf_water_potential=inputs.leaf_water_potential)
 
-In-place per-hour update — no allocation. `site`/`vapour_pressure_equation`
-aren't refreshed (static for a run), matching `update_soil_energy_inputs!`.
+In-place per-hour update, no allocation. `site`/`vapour_pressure_equation`
+aren't refreshed (static for a run).
 """
 function update_canopy_energy_balance_inputs!(inputs::CanopyEnergyBalanceInputs;
     environment_instant, zenith_angle, direct_horizontal_irradiance, diffuse_horizontal_irradiance,
@@ -78,26 +76,23 @@ end
     canopy_energy_balance!(buffers, model::MultilayerCanopy, boundary_layer_model, inputs::CanopyEnergyBalanceInputs)
 
 Hourly Picard loop tying every canopy sub-model together. Shortwave, the
-above-canopy wind/temperature profile, and rain interception are each
-computed once per call (none depends on leaf temperature). Longwave, the
-in-canopy air profile, and per-layer leaf temperature are then iterated
-together until `model.convergence` is satisfied, reusing
-`AbstractSoilTemperatureConvergence`'s dispatch (generic over any
-temperature array, not soil-specific).
+above-canopy wind/temperature profile, and rain interception are computed
+once per call (none depends on leaf temperature). Longwave, the in-canopy
+air profile, and per-layer leaf temperature are then iterated until
+`model.convergence` is satisfied, reusing
+`AbstractSoilTemperatureConvergence`'s dispatch.
 
 A wetted leaf surface ([`wet_canopy_fraction`](@ref)) blends stomatal
 conductance toward [`WET_SURFACE_CONDUCTANCE`](@ref)
-([`blend_stomatal_conductance`](@ref)) throughout the loop; storage
-depletion from that evaporation is applied once, after convergence.
+([`blend_stomatal_conductance`](@ref)); storage depletion from that
+evaporation is applied once, after convergence.
 
-`inputs.ground_temperature`/`canopy_source_temperature` are *lagged*
-boundary conditions (the previous hour's converged values) — this
-package's soil-canopy coupling; only canopy-internal state is
+`inputs.ground_temperature`/`canopy_source_temperature` are lagged
+(previous-hour) boundary conditions; only canopy-internal state is
 Picard-iterated.
 
 Relative humidity is uniform through the canopy for now (the
-reference/above-canopy value) — a K-theory humidity profile analogous to
-[`KTheoryAirProfile`](@ref) is the natural next extension.
+reference/above-canopy value).
 
 Returns `(; ground_absorbed_shortwave, canopy_absorbed_shortwave,
 ground_absorbed_longwave, canopy_absorbed_longwave, ground_throughfall, iterations)`.
@@ -110,10 +105,9 @@ function canopy_energy_balance!(buffers, model::MultilayerCanopy, boundary_layer
     (; leaf_body, leaf_temperature_prev, sensible_heat_source, evaporation_mass_flow) = buffers.leaf
     leaf_temperature_buffer = buffers.leaf.leaf_temperature  # avoids shadowing the leaf_temperature(solver, ...) function
     (; absorbed_shortwave) = buffers.shortwave
-    (; absorbed_longwave) = buffers.longwave
+    (; absorbed_longwave, layer_transmission) = buffers.longwave
     (; wind_speed) = buffers.wind
     n_layers = length(leaf_temperature_buffer)
-    (; layer_plant_area_index) = canopy_layer_geometry(model.plant_area_index, n_layers)
     (; atmospheric_pressure) = environment_instant
     relative_humidity = environment_instant.reference_humidity
     leaf_emissivity = model.leaf_parameters.leaf_emissivity
@@ -142,8 +136,13 @@ function canopy_energy_balance!(buffers, model::MultilayerCanopy, boundary_layer
             site, environment_instant, vapour_pressure_equation)
 
         @inbounds for layer in 1:n_layers
-            absorbed_radiation = absorbed_shortwave[layer] + absorbed_longwave[layer]
-            leaf_area = layer_plant_area_index[layer] * 1.0u"m^2"
+            # Exchange area is the layer's interception fraction (1-τ), not PAI
+            # directly (self-shading means (1-τ)<PAI); canopy_longwave!'s own
+            # emission scales the same way.
+            leaf_area = 2.0 * (1.0 - layer_transmission[layer]) * 1.0u"m^2"
+            # absorbed_shortwave/absorbed_longwave are per unit ground area;
+            # leaf_heat_balance/leaf_temperature want per unit leaf_area.
+            absorbed_radiation = (absorbed_shortwave[layer] + absorbed_longwave[layer]) / (2.0 * (1.0 - layer_transmission[layer]))
             dry_conductance = stomatal_conductance(model.stomatal_model, zenith_angle, leaf_water_potential)
             conductance = blend_stomatal_conductance(dry_conductance, wet_canopy_fraction(model, buffers, layer))
             air_temperature_layer = buffers.air_profile.air_temperature[layer]

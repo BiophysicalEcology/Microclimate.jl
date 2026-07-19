@@ -21,3 +21,4 @@ using Microclimate, Test, SafeTestsets
 @safetestset "monthly simulation" begin include("micro_testrun_monthly.jl") end
 @safetestset "monthly simulation with snow" begin include("micro_testrun_monthly_snow.jl") end
 @safetestset "daily simulation" begin include("micro_testrun_daily.jl") end
+@safetestset "canopy in main solve loop" begin include("micro_testrun_canopy.jl") end

@@ -5,12 +5,10 @@ Per-layer rain interception: extinction at a rain-fall angle
 (`atan(local_wind_speed / raindrop_fall_velocity)`, drop velocity from
 Best 1950's `3.78 * rainfall^0.067`) using the same leaf-angle machinery as
 direct-beam shortwave ([`ellipsoidal_extinction_coefficient`](@ref)), local
-wind from [`CanopyWindAttenuation`](@ref). Storage capacity scales with
-each layer's own plant area index (`leaf_water_storage_capacity *
-layer_pai`, mass per unit *leaf* area — 0.1 kg/m² ~ 0.1 mm film, e.g. von
-Hoyningen-Huene 1981; Dickinson 1984); drip is whatever mass conservation
-leaves over capacity each layer. Wetness ([`wet_canopy_fraction`](@ref)) is
-a linear fractional-saturation blend, not an empirical decay constant.
+wind from [`CanopyWindAttenuation`](@ref). Storage capacity scales with each
+layer's own PAI (mass per unit leaf area, 0.1 kg/m² ~ 0.1 mm film); drip is
+whatever exceeds capacity each layer. Wetness ([`wet_canopy_fraction`](@ref))
+is a linear fractional-saturation blend, not an empirical decay constant.
 
 # References
 - Best, A. C. (1950). The size distribution of raindrops. *Quarterly
@@ -69,5 +67,10 @@ end
 
 function deplete_canopy_water!(::LayeredRainInterception, buffers, layer, evaporated_mass)
     buffers.leaf_surface_water[layer] = max(buffers.leaf_surface_water[layer] - evaporated_mass, 0.0u"kg/m^2")
+    return nothing
+end
+
+function reset_interception!(::LayeredRainInterception, buffers)
+    fill!(buffers.leaf_surface_water, 0.0u"kg/m^2")
     return nothing
 end

@@ -15,11 +15,10 @@ many layers as there are `MicroModel.heights` entries at or below
 `canopy_height`.
 
 Composes swappable sub-models the same way `MicroModel` composes
-`RadiationModel`/`boundary_layer_model`/`soil_energy_model` — physics choices
-live on the sub-model, not as flat fields here:
+`RadiationModel`/`boundary_layer_model`/`soil_energy_model`:
 
 - `canopy_height`, `plant_area_index` — solver geometry shared by every
-  sub-model (like `MicroModel.depths`/`heights`), not owned by any one of them
+  sub-model, not owned by any one of them
 - `shortwave_model::AbstractCanopyShortwaveModel` — layer-resolved shortwave
   radiative transfer (default [`TwoStreamRadiation`](@ref), Dickinson/Sellers)
 - `longwave_model::AbstractCanopyLongwaveModel` — layer-resolved longwave
@@ -29,24 +28,19 @@ live on the sub-model, not as flat fields here:
 - `air_profile_model::AbstractCanopyAirProfileModel` — in-canopy air-
   temperature profile (default [`KTheoryAirProfile`](@ref))
 - `interception_model::AbstractCanopyInterceptionModel` — rain interception
-  (default [`NoInterception`](@ref): off, rain passes straight through)
+  (default [`NoInterception`](@ref): off)
 - `leaf_parameters::LeafParameters` — per-leaf structural/physiological data
-  (dimensions, emissivity, water-potential fallback, leaf angle distribution)
 - `stomatal_model::AbstractStomatalConductanceModel` — stomatal response
   (default [`PrescribedStomatalConductance`](@ref): day/night gating only)
 - `leaf_temperature_solver::AbstractLeafTemperatureSolver` — how leaf
   temperature is solved each call (default [`LinearizedLeafTemperature`](@ref))
-- `convergence::AbstractSoilTemperatureConvergence` — the hourly Picard-loop
-  convergence criterion (default `FixedSoilTemperatureIterations(3)`). Reuses
-  the same dispatch already used for the soil day-level spin-up loop
-  (`is_converged`/`may_iterate`/`max_iterations` are generic over any array
-  of temperatures and don't reference soil at all) rather than introducing a
-  parallel canopy-specific convergence type.
+- `convergence::AbstractSoilTemperatureConvergence` — hourly Picard-loop
+  convergence criterion (default `FixedSoilTemperatureIterations(3)`); reuses
+  the soil spin-up loop's dispatch (generic over any temperature array).
 
-Ground reflectance is *not* stored here — it is supplied to
-[`canopy_shortwave!`](@ref) by the caller (from `Site.albedo` or the current
-`environment_instant`), matching how other radiation models in this package
-read albedo from their caller rather than duplicating it on the process model.
+Ground reflectance is not stored here — supplied to
+[`canopy_shortwave!`](@ref) by the caller (e.g. `Site.albedo`), matching how
+other radiation models read albedo from their caller.
 """
 @kwdef struct MultilayerCanopy{H,PAI,RM,LWM,WM,APM,IM,LP,SM,LTS,CV} <: AbstractCanopyModel
     canopy_height::H
@@ -90,12 +84,10 @@ n_canopy_layers(model::MultilayerCanopy, heights) = count(h -> h <= model.canopy
 Buffers nest one sub-struct per sub-model — `buffers.shortwave`,
 `buffers.longwave`, `buffers.wind`, `buffers.air_profile`,
 `buffers.interception`, `buffers.leaf` — mirroring `MicroBuffers`'s own
-composition (`buffers.soil_energy_balance`, `buffers.soil_properties`, ...)
-rather than flattening every sub-model's fields into one `NamedTuple`: a
-flat `merge` would let two sub-models' same-named fields silently
-overwrite each other with no warning. `buffers.leaf` bundles the
-orchestrator-owned (not any one sub-model's) per-layer state: leaf body,
-temperature, and the source terms the other sub-models read/write.
+composition, rather than flattening every sub-model's fields into one
+`NamedTuple` (which would let same-named fields silently collide).
+`buffers.leaf` bundles orchestrator-owned per-layer state: leaf body,
+temperature, and the source terms other sub-models read/write.
 """
 function allocate_canopy(model::MultilayerCanopy, heights, boundary_layer_model)
     n_layers = n_canopy_layers(model, heights)
@@ -137,3 +129,20 @@ wet_canopy_fraction(model::MultilayerCanopy, buffers, layer) =
 
 deplete_canopy_water!(model::MultilayerCanopy, buffers, layer, evaporated_mass) =
     deplete_canopy_water!(model.interception_model, buffers.interception, layer, evaporated_mass)
+
+reset_canopy_scratch!(model::MultilayerCanopy, buffers) =
+    reset_interception!(model.interception_model, buffers.interception)
+
+# Bootstrap values only — refreshed before first real use by apply_canopy_overrides.
+function allocate_canopy_inputs(model::MultilayerCanopy; site, environment_instant, boundary_layer_model)
+    CanopyEnergyBalanceInputs(model;
+        site, environment_instant, zenith_angle = environment_instant.zenith_angle,
+        direct_horizontal_irradiance = 0.0u"W/m^2", diffuse_horizontal_irradiance = 0.0u"W/m^2",
+        ground_reflectance = _baseline_albedo(site, environment_instant),
+        ground_temperature = environment_instant.reference_temperature,
+        ground_emissivity = environment_instant.surface_emissivity,
+        canopy_source_temperature = environment_instant.reference_temperature,
+    )
+end
+
+initial_ground_overrides(::MultilayerCanopy) = (; ground_shortwave_transmission = 1.0, ground_incoming_longwave = 0.0u"W/m^2")

@@ -1,10 +1,8 @@
 """
     NoInterception()
 
-Default interception model: rain passes straight through the canopy
-untouched, and no leaf-surface wetness ever accrues. Reproduces the
-package's previous (pre-canopy) rainfall handling bit-for-bit for
-`MultilayerCanopy` users who don't opt into interception.
+Default interception model: rain passes straight through, no leaf-surface
+wetness ever accrues. Reproduces pre-canopy rainfall handling bit-for-bit.
 """
 struct NoInterception <: AbstractCanopyInterceptionModel end
 
@@ -14,5 +12,7 @@ canopy_interception!(buffers, ::NoInterception, leaf_angle_distribution_paramete
     (; ground_throughfall = rainfall)
 
 wet_canopy_fraction(::NoInterception, buffers, layer) = 0.0
+
+reset_interception!(::NoInterception, buffers) = nothing
 
 deplete_canopy_water!(::NoInterception, buffers, layer, evaporated_mass) = nothing

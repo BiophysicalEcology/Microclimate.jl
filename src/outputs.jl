@@ -15,7 +15,38 @@ function AtmosphericProfile(nsteps::Int, nheights::Int)
     )
 end
 
-@kwdef struct MicroResult{P,AT,WS,RH,CC,GS,DF,SkT,SoT,SM,SWP,SH,STC,SPH,SBD,SW,SR,Pr,SF,SD,SDN,SNT}
+"""
+    CanopyOutput
+
+Per-layer and per-hour canopy diagnostics. Zero-column/all-zero for
+`NoCanopy` (mirrors `snow_temperature` being `(nsteps, 0)` for `NoSnow`).
+"""
+struct CanopyOutput{LT,AT,WS,GAS,GAL,CAS,CAL,GTF,IT}
+    leaf_temperature::LT              # nsteps × n_canopy_layers Matrix
+    air_temperature::AT               # nsteps × n_canopy_layers Matrix (in-canopy, distinct from profile.air_temperature)
+    wind_speed::WS                    # nsteps × n_canopy_layers Matrix (in-canopy)
+    ground_absorbed_shortwave::GAS    # nsteps Vector
+    ground_absorbed_longwave::GAL     # nsteps Vector
+    canopy_absorbed_shortwave::CAS    # nsteps Vector
+    canopy_absorbed_longwave::CAL     # nsteps Vector
+    ground_throughfall::GTF           # nsteps Vector
+    iterations::IT                    # nsteps Vector{Int}, Picard iteration count
+end
+function CanopyOutput(nsteps::Int, n_canopy_layers::Int)
+    CanopyOutput(
+        zeros(typeof(1.0u"K"), nsteps, n_canopy_layers),
+        zeros(typeof(1.0u"K"), nsteps, n_canopy_layers),
+        zeros(typeof(1.0u"m/s"), nsteps, n_canopy_layers),
+        zeros(typeof(1.0u"W/m^2"), nsteps),
+        zeros(typeof(1.0u"W/m^2"), nsteps),
+        zeros(typeof(1.0u"W/m^2"), nsteps),
+        zeros(typeof(1.0u"W/m^2"), nsteps),
+        zeros(typeof(1.0u"kg/m^2"), nsteps),
+        zeros(Int, nsteps),
+    )
+end
+
+@kwdef struct MicroResult{P,AT,WS,RH,CC,GS,DF,SkT,SoT,SM,SWP,SH,STC,SPH,SBD,SW,SR,Pr,SF,SD,SDN,SNT,CB}
     pressure::P
     reference_temperature::AT
     reference_wind_speed::WS
@@ -38,8 +69,9 @@ end
     snow_depth::SD
     snow_density::SDN
     snow_temperature::SNT  # nsteps × n_snow matrix; size (nsteps, 0) when NoSnow
+    canopy::CB
 end
-function MicroResult(nsteps::Int, num_nodes::Int, nheights::Int, solar_radiation::NamedTuple, n_snow::Int=0)
+function MicroResult(nsteps::Int, num_nodes::Int, nheights::Int, solar_radiation::NamedTuple, n_snow::Int=0, n_canopy_layers::Int=0)
     return MicroResult(;
         pressure = Array{typeof(1.0u"Pa")}(undef, nsteps),
         reference_temperature = Array{typeof(1.0u"K")}(undef, nsteps),
@@ -63,6 +95,7 @@ function MicroResult(nsteps::Int, num_nodes::Int, nheights::Int, solar_radiation
         snow_depth = zeros(typeof(1.0u"cm"), nsteps),
         snow_density = zeros(typeof(1.0u"g/cm^3"), nsteps),
         snow_temperature = zeros(typeof(1.0u"K"), nsteps, n_snow),
+        canopy = CanopyOutput(nsteps, n_canopy_layers),
     )
 end
 

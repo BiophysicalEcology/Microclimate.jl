@@ -1,8 +1,7 @@
 # Shared leaf-level heat/mass transfer physics, used by every
 # AbstractLeafTemperatureSolver variant. Built on HeatExchange.jl's
-# convection()/evaporation(): shape-specific Nusselt correlations (Gates 1980;
-# Bird, Stewart & Lightfoot 1960) and water-potential-driven surface humidity
-# (Kelvin equation).
+# convection()/evaporation(): shape-specific Nusselt correlations and
+# water-potential-driven surface humidity (Kelvin equation).
 
 # Campbell & Norman (1998): leaf boundary-layer characteristic dimension is
 # 0.7 x leaf width.
@@ -12,9 +11,8 @@ const LEAF_CHARACTERISTIC_DIMENSION = ScaledDimension(0.7, :width_skin)
     leaf_body(leaf_length, leaf_width)
 
 A `BiophysicalGeometry.Body` representing a leaf as a thin plate, sized so
-its `width_skin` equals `sqrt(leaf_length * leaf_width)`. Mass, density, and
-thinness only affect `width_skin` through this one constraint (fixed here to
-convenient values); nothing else about them is used downstream.
+its `width_skin` equals `sqrt(leaf_length * leaf_width)`. Mass/density/
+thinness only matter through that constraint; unused downstream otherwise.
 """
 function leaf_body(leaf_length, leaf_width)
     characteristic_width = sqrt(leaf_length * leaf_width)

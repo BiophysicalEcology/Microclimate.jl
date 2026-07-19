@@ -196,6 +196,7 @@ function example_microclimate_problem(;
     soil_properties_model = example_soil_properties_model(),
     soil_hydraulic_model = example_soil_hydraulic_model(),
     snow_model = NoSnow(),
+    canopy_model = NoCanopy(),
     environment_minmax = example_monthly_weather(),
     environment_daily = example_daily_environment(days),
     environment_hourly = example_hourly_environment(days, hours; elevation=site.elevation),
@@ -203,8 +204,8 @@ function example_microclimate_problem(;
     initial_soil_temperature = fill(u"K"(7.741667u"°C"), length(depths)),
     initial_soil_moisture = fill(0.42 * 0.25, length(depths)),
 )
-    model = MicroModel(; 
-        hours, depths, heights, soil_properties_model, soil_hydraulic_model, snow_model, config
+    model = MicroModel(;
+        hours, depths, heights, soil_properties_model, soil_hydraulic_model, snow_model, canopy_model, config
     )
     inputs = MicroInputs(;
         site, soil_profile, environment_minmax, environment_daily, environment_hourly,
@@ -234,7 +235,7 @@ end
 Pre-allocated workspace. Every buffer the hot path touches lands here once
 in `init`. Lives on `MicroCache.buffers`.
 """
-struct MicroBuffers{SO,SOB,P,PB,SEB,SP,PT,SWB,SS,IB}
+struct MicroBuffers{SO,SOB,P,PB,SEB,SP,PT,SWB,SS,IB,CB}
     solar_out::SO                  # SolarRadiation output (NamedTuple of arrays)
     solar::SOB                     # SolarRadiation internal buffers (NamedTuple)
     soil_water_profile::P          # soil moisture profile scratch used by the moisture solver
@@ -245,6 +246,7 @@ struct MicroBuffers{SO,SOB,P,PB,SEB,SP,PT,SWB,SS,IB}
     soil_water_balance::SWB
     snow::SS                       # snow buffers (NamedTuple for SnowModel; nothing for NoSnow)
     interpolation::IB              # unused; diel `evaluate!` needs no scratch
+    canopy::CB                     # canopy buffers (nested NamedTuple for MultilayerCanopy; nothing for NoCanopy)
 end
 
 """

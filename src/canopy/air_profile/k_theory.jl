@@ -4,28 +4,19 @@
 Steady first-order-closure (K-theory) in-canopy air-temperature profile: a
 tridiagonal diffusion balance (finite-volume discretisation of
 `d/dz(K dT/dz) = -S`) between each layer's leaf-supplied sensible-heat
-source and its neighbours, re-solved once per Picard pass — not the C++
-reference's transient Lagrangian near/far-field model (Raupach 1989).
-Treating the in-canopy air as reaching quasi-equilibrium within an hour
-(fast relative to the leaf-temperature Picard iteration already converging
-each hour) is the deliberate simplification here.
+source and its neighbours, re-solved once per Picard pass. Assumes in-canopy
+air reaches quasi-equilibrium within an hour, unlike Raupach's (1989)
+transient Lagrangian near/far-field model.
 
-The layer-to-layer conductance network is built exactly like
-`SoilHeatTransport1D`'s `thermal_conductance` (`bulk_thermal_conductivity /
-Δd` between soil nodes) — same finite-volume shape, an eddy-diffusivity
-conductance between air nodes instead of a thermal one — and solved with
-`LinearAlgebra`'s tridiagonal solver rather than a hand-rolled elimination.
-Unitful quantities are stripped to plain `Float64` for that solve and
-reattached after: generic tridiagonal LU needs a dimensionless `oneunit`
-internally, so it can't consume `Unitful` vectors directly — the same
-solver/physics boundary `RootFindLeafTemperature` already draws around
-`HeatExchange.zbrent`.
+Conductance network mirrors `SoilHeatTransport1D`'s `thermal_conductance`
+(eddy-diffusivity instead of thermal), solved via `LinearAlgebra`'s
+tridiagonal solver. Unitful quantities are stripped/reattached around the
+solve (generic tridiagonal LU needs a dimensionless `oneunit`), the same
+boundary `RootFindLeafTemperature` draws around `HeatExchange.zbrent`.
 
 Eddy diffusivity shape follows the wind-attenuation profile
-([`CanopyWindAttenuation`](@ref)/`wind_attenuation_profile`) scaled to the
-canopy-top value `κ u* (canopy_height - displacement_height)` (standard
-surface-layer K-theory) — reusing the same structural shape rather than
-introducing a second empirical attenuation model.
+([`CanopyWindAttenuation`](@ref)/`wind_attenuation_profile`), scaled to the
+canopy-top value `κ u* (canopy_height - displacement_height)`.
 
 # References
 - Raupach, M. R. (1989). A practical Lagrangian method for relating scalar
