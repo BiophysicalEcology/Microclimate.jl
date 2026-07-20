@@ -21,7 +21,7 @@ end
 Per-layer and per-hour canopy diagnostics. Zero-column/all-zero for
 `NoCanopy` (mirrors `snow_temperature` being `(nsteps, 0)` for `NoSnow`).
 """
-struct CanopyOutput{LT,AT,WS,RH,GAS,GAL,CAS,CAL,GTF,IT}
+struct CanopyOutput{LT,AT,WS,RH,GAS,GAL,CAS,CAL,GTF,IT,DSW,USW,DLW,ULW}
     leaf_temperature::LT              # nsteps × n_canopy_layers Matrix
     air_temperature::AT               # nsteps × n_canopy_layers Matrix (in-canopy, distinct from profile.air_temperature)
     wind_speed::WS                    # nsteps × n_canopy_layers Matrix (in-canopy)
@@ -32,8 +32,13 @@ struct CanopyOutput{LT,AT,WS,RH,GAS,GAL,CAS,CAL,GTF,IT}
     canopy_absorbed_longwave::CAL     # nsteps Vector
     ground_throughfall::GTF           # nsteps Vector
     iterations::IT                    # nsteps Vector{Int}, Picard iteration count
+    boundary_downward_shortwave::DSW  # nsteps × (n_canopy_layers+1) Matrix, canopy top -> ground
+    boundary_upward_shortwave::USW    # nsteps × (n_canopy_layers+1) Matrix, canopy top -> ground
+    boundary_downward_longwave::DLW   # nsteps × (n_canopy_layers+1) Matrix, canopy top -> ground
+    boundary_upward_longwave::ULW     # nsteps × (n_canopy_layers+1) Matrix, canopy top -> ground
 end
 function CanopyOutput(nsteps::Int, n_canopy_layers::Int)
+    n_boundaries = n_canopy_layers == 0 ? 0 : n_canopy_layers + 1
     CanopyOutput(
         zeros(typeof(1.0u"K"), nsteps, n_canopy_layers),
         zeros(typeof(1.0u"K"), nsteps, n_canopy_layers),
@@ -45,6 +50,10 @@ function CanopyOutput(nsteps::Int, n_canopy_layers::Int)
         zeros(typeof(1.0u"W/m^2"), nsteps),
         zeros(typeof(1.0u"kg/m^2"), nsteps),
         zeros(Int, nsteps),
+        zeros(typeof(1.0u"W/m^2"), nsteps, n_boundaries),
+        zeros(typeof(1.0u"W/m^2"), nsteps, n_boundaries),
+        zeros(typeof(1.0u"W/m^2"), nsteps, n_boundaries),
+        zeros(typeof(1.0u"W/m^2"), nsteps, n_boundaries),
     )
 end
 

@@ -1029,6 +1029,10 @@ function write_canopy_output!(::MultilayerCanopy, output, canopy_buffers, canopy
     _write_row!(output.canopy.air_temperature, step, canopy_buffers.air_profile.air_temperature)
     _write_row!(output.canopy.wind_speed, step, canopy_buffers.wind.wind_speed)
     _write_row!(output.canopy.relative_humidity, step, canopy_buffers.air_profile.relative_humidity)
+    _write_row!(output.canopy.boundary_downward_shortwave, step, canopy_buffers.shortwave.boundary_downward_shortwave)
+    _write_row!(output.canopy.boundary_upward_shortwave, step, canopy_buffers.shortwave.boundary_upward_shortwave)
+    _write_row!(output.canopy.boundary_downward_longwave, step, canopy_buffers.longwave.boundary_downward_longwave)
+    _write_row!(output.canopy.boundary_upward_longwave, step, canopy_buffers.longwave.boundary_upward_longwave)
     return nothing
 end
 
