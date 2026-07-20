@@ -62,16 +62,7 @@ asserted finite rather than silently clipped.
 end
 
 function allocate_air_profile(::RaupachLTheoryAirProfile, canopy_height, plant_area_index, heights, n_layers, boundary_layer_model)
-    layer_heights = sort(heights[heights .<= canopy_height]; rev=true)  # top-to-bottom, matching K-theory/radiation/wind convention
-    length(layer_heights) == n_layers ||
-        throw(ArgumentError("number of `heights` at or below `canopy_height` must equal n_layers"))
-
-    min_spacing = 1.0e-3u"m"
-    layer_thickness = similar(layer_heights)
-    @inbounds for i in 1:(n_layers - 1)
-        layer_thickness[i] = max(layer_heights[i] - layer_heights[i + 1], min_spacing)
-    end
-    layer_thickness[n_layers] = max(layer_heights[n_layers], min_spacing)  # bottom layer down to the ground (z=0)
+    (; layer_heights, layer_thickness) = canopy_layer_heights(heights, canopy_height, n_layers)
 
     return (;
         layer_heights, layer_thickness,

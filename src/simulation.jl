@@ -854,6 +854,7 @@ function solve_soil!(cache::MicroCache)
                     (; pool, soil_moisture, infil_out) = step_soil_moisture!(moisture_mode, buffers, soil_hydraulic_model;
                         soil_profile, depths, site, boundary_layer_model, environment_instant, T0, pool, soil_moisture,
                         max_surface_pool, evaporation_model, vapour_pressure_equation, snow_present, canopy_transpiration_potential,
+                        canopy_leaf_area_index = canopy_leaf_area_index(canopy_model),
                     )
                     if !isnothing(infil_out)
                         leaf_water_potential = infil_out.leaf_water_potential
@@ -1045,7 +1046,7 @@ end
 function step_soil_moisture!(mode::DynamicSoilMoisture, buffers, soil_hydraulic_model;
     soil_profile, depths, site, boundary_layer_model, environment_instant, T0, pool, soil_moisture,
     max_surface_pool, evaporation_model, vapour_pressure_equation, snow_present=false,
-    canopy_transpiration_potential=nothing,
+    canopy_transpiration_potential=nothing, canopy_leaf_area_index=nothing,
 )
     (; moisture_tolerance, moisture_max_iterations, moisture_timestep) = mode
     niter_moist = ustrip(u"s^-1", 3600 / moisture_timestep)
@@ -1053,7 +1054,7 @@ function step_soil_moisture!(mode::DynamicSoilMoisture, buffers, soil_hydraulic_
         soil_profile, depths, site, boundary_layer_model, environment_instant, T0, niter_moist, pool,
         soil_wetness=mode.soil_wetness, soil_moisture,
         moisture_timestep, moisture_tolerance, moisture_max_iterations, max_surface_pool,
-        evaporation_model, vapour_pressure_equation, snow_present, canopy_transpiration_potential,
+        evaporation_model, vapour_pressure_equation, snow_present, canopy_transpiration_potential, canopy_leaf_area_index,
     )
     mode.soil_wetness = soil_wetness
     return (; pool, soil_moisture, infil_out)

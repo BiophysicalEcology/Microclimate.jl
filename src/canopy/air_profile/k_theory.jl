@@ -29,24 +29,13 @@ canopy-top value `κ u* (canopy_height - displacement_height)`.
 struct KTheoryAirProfile <: AbstractCanopyAirProfileModel end
 
 function allocate_air_profile(::KTheoryAirProfile, canopy_height, plant_area_index, heights, n_layers, boundary_layer_model)
-    layer_heights = sort(heights[heights .<= canopy_height]; rev=true)  # top-to-bottom, matching radiation/wind convention
-    length(layer_heights) == n_layers ||
-        throw(ArgumentError("number of `heights` at or below `canopy_height` must equal n_layers"))
-
-    # Floored: node heights can legitimately coincide with a boundary (e.g. the
-    # existing shortwave/wind tests put a node exactly at canopy_height — fine
-    # for PAI-based physics, but a literal zero gap here would divide by zero.
-    min_spacing = 1.0e-3u"m"
-    layer_spacing = similar(layer_heights)
-    @inbounds for i in 1:(n_layers - 1)
-        layer_spacing[i] = max(layer_heights[i] - layer_heights[i + 1], min_spacing)
-    end
-    layer_spacing[n_layers] = max(layer_heights[n_layers], min_spacing)  # bottom layer down to the ground (z=0)
-    top_spacing = max(canopy_height - layer_heights[1], min_spacing)
+    (; layer_heights, layer_thickness) = canopy_layer_heights(heights, canopy_height, n_layers)
+    layer_spacing = layer_thickness
+    top_spacing = max(canopy_height - layer_heights[1], 1.0e-3u"m")
 
     (; layer_plant_area_index) = canopy_layer_geometry(plant_area_index, n_layers)
     relative_eddy_diffusivity = wind_attenuation_profile(
-        layer_plant_area_index, canopy_height, plant_area_index, boundary_layer_model.karman_constant,
+        layer_plant_area_index, canopy_height, sum(plant_area_index), boundary_layer_model.karman_constant,
     )
 
     return (;

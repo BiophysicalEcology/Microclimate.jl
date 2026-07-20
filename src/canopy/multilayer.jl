@@ -1,5 +1,5 @@
 """
-    MultilayerCanopy(; canopy_height, plant_area_index,
+    MultilayerCanopy(; canopy_height, plant_area_index, woody_area_fraction=0.0,
                        shortwave_model=TwoStreamRadiation(),
                        longwave_model=LayeredLongwaveExchange(),
                        wind_model=CanopyWindAttenuation(),
@@ -18,7 +18,14 @@ Composes swappable sub-models the same way `MicroModel` composes
 `RadiationModel`/`boundary_layer_model`/`soil_energy_model`:
 
 - `canopy_height`, `plant_area_index` — solver geometry shared by every
-  sub-model, not owned by any one of them
+  sub-model, not owned by any one of them. `plant_area_index` (PAI: leaves
+  plus woody material) is a scalar total (split evenly across layers) or an
+  `AbstractVector` of per-layer values, top-to-bottom (see
+  [`plant_area_index_from_density`](@ref) for a density-profile builder).
+- `woody_area_fraction` — fraction of `plant_area_index` that is woody
+  rather than leaf. Every sub-model here uses the full PAI (bark intercepts
+  light/rain/momentum too); only [`canopy_leaf_area_index`](@ref)'s Campbell
+  hookup narrows PAI down to LAI with it. Default `0.0` (PAI ≈ LAI).
 - `shortwave_model::AbstractCanopyShortwaveModel` — layer-resolved shortwave
   radiative transfer (default [`TwoStreamRadiation`](@ref), Dickinson/Sellers)
 - `longwave_model::AbstractCanopyLongwaveModel` — layer-resolved longwave
@@ -47,9 +54,10 @@ Ground reflectance is not stored here — supplied to
 [`canopy_shortwave!`](@ref) by the caller (e.g. `Site.albedo`), matching how
 other radiation models read albedo from their caller.
 """
-@kwdef struct MultilayerCanopy{H,PAI,RM,LWM,WM,APM,IM,LP,SM,LTS,CV} <: AbstractCanopyModel
+@kwdef struct MultilayerCanopy{H,PAI,WAF,RM,LWM,WM,APM,IM,LP,SM,LTS,CV} <: AbstractCanopyModel
     canopy_height::H
     plant_area_index::PAI
+    woody_area_fraction::WAF = 0.0
     shortwave_model::RM = TwoStreamRadiation()
     longwave_model::LWM = LayeredLongwaveExchange()
     wind_model::WM = CanopyWindAttenuation()
@@ -64,6 +72,7 @@ end
 function example_multilayer_canopy(;
     canopy_height = 1.0u"m",
     plant_area_index = 3.0,
+    woody_area_fraction = 0.0,
     shortwave_model = TwoStreamRadiation(; leaf_reflectance = 0.1),
     longwave_model = LayeredLongwaveExchange(),
     wind_model = CanopyWindAttenuation(),
@@ -75,8 +84,8 @@ function example_multilayer_canopy(;
     convergence = FixedSoilTemperatureIterations(3),
 )
     MultilayerCanopy(;
-        canopy_height, plant_area_index, shortwave_model, longwave_model, wind_model, air_profile_model,
-        interception_model, leaf_parameters, stomatal_model, leaf_temperature_solver, convergence,
+        canopy_height, plant_area_index, woody_area_fraction, shortwave_model, longwave_model, wind_model,
+        air_profile_model, interception_model, leaf_parameters, stomatal_model, leaf_temperature_solver, convergence,
     )
 end
 
@@ -153,3 +162,5 @@ function allocate_canopy_inputs(model::MultilayerCanopy; site, environment_insta
 end
 
 initial_ground_overrides(::MultilayerCanopy) = (; ground_shortwave_transmission = 1.0, ground_incoming_longwave = 0.0u"W/m^2")
+
+canopy_leaf_area_index(model::MultilayerCanopy) = sum(model.plant_area_index) * (1 - model.woody_area_fraction)

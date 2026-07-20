@@ -396,11 +396,12 @@ function soil_water_balance!(buffers, soil_hydraulic_model::CampbellSoilHydrauli
     vapour_pressure_equation=GoffGratch(),
     snow_present=false,
     canopy_transpiration_potential=nothing,
+    canopy_leaf_area_index=nothing,
 )
     air_temperature = environment_instant.reference_temperature
     atmospheric_pressure = environment_instant.atmospheric_pressure
     relative_humidity = environment_instant.reference_humidity
-    leaf_area_index = environment_instant.leaf_area_index
+    leaf_area_index = isnothing(canopy_leaf_area_index) ? environment_instant.leaf_area_index : canopy_leaf_area_index
 
     (; bulk_density, mineral_density) = soil_profile
 

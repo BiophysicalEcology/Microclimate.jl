@@ -17,3 +17,5 @@ allocate_canopy_inputs(::NoCanopy; kw...) = nothing
 initial_ground_overrides(::NoCanopy) = (; ground_shortwave_transmission = nothing, ground_incoming_longwave = nothing)
 
 n_canopy_layers(::NoCanopy, heights) = 0
+
+canopy_leaf_area_index(::NoCanopy) = nothing

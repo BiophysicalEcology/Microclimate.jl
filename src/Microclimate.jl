@@ -39,7 +39,7 @@ export AB3, AB4, AB5, ABM32, ABM43, ABM54
 export AbstractSnowModel, NoSnow, SnowModel, SnowState
 
 # Canopy model
-export AbstractCanopyModel, NoCanopy, MultilayerCanopy
+export AbstractCanopyModel, NoCanopy, MultilayerCanopy, plant_area_index_from_density
 export allocate_canopy, canopy_shortwave!, canopy_longwave!, canopy_wind_profile!, canopy_energy_balance!
 export example_multilayer_canopy
 export AbstractCanopyShortwaveModel, TwoStreamRadiation, allocate_shortwave

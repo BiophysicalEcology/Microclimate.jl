@@ -231,7 +231,7 @@ function allocate_shortwave(radiation_model::TwoStreamRadiation, canopy_height, 
     (; layer_plant_area_index_boundaries, layer_plant_area_index_above) = canopy_layer_geometry(plant_area_index, n_layers)
 
     leaf_optics_precomputed = leaf_optics(
-        plant_area_index, leaf_angle_distribution_parameter,
+        sum(plant_area_index), leaf_angle_distribution_parameter,
         radiation_model.leaf_reflectance, radiation_model.leaf_transmittance,
     )
 
@@ -274,7 +274,7 @@ function canopy_shortwave!(buffers, radiation_model::TwoStreamRadiation, plant_a
     has_direct_beam = direct_horizontal_irradiance > 0.0u"W/m^2"
     direct_beam_irradiance = has_direct_beam ? direct_horizontal_irradiance / cos(zenith_angle) : 0.0u"W/m^2"
     maximum_layer_reflectance = max(ground_reflectance, radiation_model.leaf_reflectance)
-    direct = direct_two_stream_optics(plant_area_index, direct_beam_extinction_coefficient, ground_reflectance, leaf, diffuse)
+    direct = direct_two_stream_optics(sum(plant_area_index), direct_beam_extinction_coefficient, ground_reflectance, leaf, diffuse)
 
     # boundary fluxes, reused across adjacent layers (boundary i is shared by layers i-1 and i)
     @inbounds for i in eachindex(layer_plant_area_index_boundaries)

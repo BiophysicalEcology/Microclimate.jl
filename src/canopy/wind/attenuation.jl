@@ -81,13 +81,14 @@ end
 
 function allocate_wind(::CanopyWindAttenuation, canopy_height, plant_area_index, boundary_layer_model, heights, n_layers)
     (; layer_plant_area_index) = canopy_layer_geometry(plant_area_index, n_layers)
+    total_plant_area_index = sum(plant_area_index)
 
-    displacement_height = zero_plane_displacement(canopy_height, plant_area_index)
+    displacement_height = zero_plane_displacement(canopy_height, total_plant_area_index)
     roughness_length = canopy_roughness_length(
-        canopy_height, plant_area_index, displacement_height, boundary_layer_model.karman_constant,
+        canopy_height, total_plant_area_index, displacement_height, boundary_layer_model.karman_constant,
     )
     wind_attenuation = wind_attenuation_profile(
-        layer_plant_area_index, canopy_height, plant_area_index, boundary_layer_model.karman_constant,
+        layer_plant_area_index, canopy_height, total_plant_area_index, boundary_layer_model.karman_constant,
     )
 
     return (;
