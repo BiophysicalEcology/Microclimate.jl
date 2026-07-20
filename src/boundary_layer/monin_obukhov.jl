@@ -471,9 +471,13 @@ of the true Businger–Dyer φₘ stability function, φₘ = (1 - γ z / L)^(-1
   *Boundary-Layer Meteorology*, 7(3), 363–372.
 """
 @inline function calc_φ_m(z, γ, obukhov_length)
-    # return (1.0 - min(1.0, γ * (z / obukhov_length)))^(1//4)
+    # Businger-Dyer/Paulson relations are only valid for |z/L| up to ~10;
+    # unbounded, ζ→neutral can diverge and blow up friction_velocity/wind_speed.
+    # Floor |L| at z/10, always negative (unstable) since only called from there.
+    L_floor = z / 10.0
+    L = obukhov_length < -L_floor ? obukhov_length : -L_floor
     # sqrt is faster than ^1/4
-    return sqrt(sqrt(1.0 - γ * z / obukhov_length))
+    return sqrt(sqrt(1.0 - γ * z / L))
 end
 
 
