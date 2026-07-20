@@ -20,12 +20,23 @@ heights = vcat(0.1:0.1:1.0, [2.0]) .* u"m"
     @test all(isfinite, ustrip.(u"m/s", output.canopy.wind_speed))
     @test all(>=(0.0u"W/m^2"), output.canopy.ground_absorbed_shortwave)
     @test all(>(0), output.canopy.iterations)
+
+    @test size(output.canopy.boundary_downward_shortwave, 2) == 11
+    @test size(output.canopy.boundary_downward_longwave, 2) == 11
+    @test all(>=(0.0u"W/m^2"), output.canopy.boundary_downward_shortwave)
+    @test all(>=(0.0u"W/m^2"), output.canopy.boundary_upward_shortwave)
+    @test all(>=(0.0u"W/m^2"), output.canopy.boundary_downward_longwave)
+    @test all(>=(0.0u"W/m^2"), output.canopy.boundary_upward_longwave)
+    # canopy top (boundary 1) receives at least as much downward shortwave as the ground (boundary end)
+    @test all(output.canopy.boundary_downward_shortwave[:, 1] .>= output.canopy.boundary_downward_shortwave[:, end])
 end
 
 @testset "NoCanopy leaves canopy output zero-columned" begin
     output = solve(example_microclimate_problem(; heights))
     @test size(output.canopy.leaf_temperature) == (size(output.soil_temperature, 1), 0)
     @test all(iszero, output.canopy.ground_absorbed_shortwave)
+    @test size(output.canopy.boundary_downward_shortwave) == (size(output.soil_temperature, 1), 0)
+    @test size(output.canopy.boundary_upward_longwave) == (size(output.soil_temperature, 1), 0)
 end
 
 @testset "MultilayerCanopy changes soil temperature relative to NoCanopy" begin
