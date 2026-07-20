@@ -109,8 +109,9 @@ function canopy_energy_balance!(buffers, model::MultilayerCanopy, boundary_layer
        rainfall, leaf_water_potential, vapour_pressure_equation) = inputs
 
     (; leaf_body, leaf_temperature_prev, sensible_heat_source, evaporation_mass_flow,
-       potential_evaporation_mass_flow) = buffers.leaf
+       potential_evaporation_mass_flow, net_balance, air_temperature_prev, relative_humidity_prev) = buffers.leaf
     leaf_temperature_buffer = buffers.leaf.leaf_temperature  # avoids shadowing the leaf_temperature(solver, ...) function
+    absorbed_radiation_buffer = buffers.leaf.absorbed_radiation  # avoids shadowing the per-layer local below
     (; absorbed_shortwave) = buffers.shortwave
     (; absorbed_longwave, layer_transmission) = buffers.longwave
     (; wind_speed) = buffers.wind
@@ -128,8 +129,9 @@ function canopy_energy_balance!(buffers, model::MultilayerCanopy, boundary_layer
 
     fill!(buffers.air_profile.air_temperature, wind_result.canopy_top_air_temperature)
     fill!(buffers.air_profile.relative_humidity, wind_result.canopy_top_relative_humidity)
-    # LinearizedLeafTemperature divides by leaf_temperature_guess, so it must not start at 0 K.
-    fill!(leaf_temperature_buffer, wind_result.canopy_top_air_temperature)
+    # Warm-start from last hour's converged leaf temperatures; only reset on
+    # the very first call (buffer still zero, and the guess must not be 0 K).
+    iszero(leaf_temperature_buffer[1]) && fill!(leaf_temperature_buffer, wind_result.canopy_top_air_temperature)
 
     niter = max_iterations(model.convergence)
     local longwave_result
@@ -137,6 +139,9 @@ function canopy_energy_balance!(buffers, model::MultilayerCanopy, boundary_layer
     for i in 1:niter
         iter = i
         leaf_temperature_prev .= leaf_temperature_buffer
+        # A binding clamp can hold the value unchanged between iterations,
+        # falsely satisfying the convergence check while net stays nonzero.
+        any_clamped = false
 
         longwave_result = canopy_longwave!(buffers, model;
             leaf_temperature=leaf_temperature_buffer, ground_temperature, ground_emissivity,
@@ -155,16 +160,26 @@ function canopy_energy_balance!(buffers, model::MultilayerCanopy, boundary_layer
             air_temperature_layer = buffers.air_profile.air_temperature[layer]
             relative_humidity_layer = buffers.air_profile.relative_humidity[layer]
 
-            leaf_temperature_buffer[layer] = leaf_temperature(model.leaf_temperature_solver, absorbed_radiation,
+            new_leaf_temperature = leaf_temperature(model.leaf_temperature_solver, absorbed_radiation,
                 air_temperature_layer, relative_humidity_layer, wind_speed[layer], atmospheric_pressure,
                 leaf_emissivity, conductance, leaf_water_potential, leaf_body;
                 leaf_area, leaf_temperature_guess=leaf_temperature_buffer[layer])
+            # Under-relax, then clamp to a physically sane range (same bracket
+            # RootFindLeafTemperature uses) as a hard backstop.
+            relaxed_leaf_temperature = model.relaxation * new_leaf_temperature +
+                (1.0 - model.relaxation) * leaf_temperature_prev[layer]
+            clamp_lo = air_temperature_layer - 30.0u"K"
+            clamp_hi = air_temperature_layer + 40.0u"K"
+            any_clamped |= relaxed_leaf_temperature < clamp_lo || relaxed_leaf_temperature > clamp_hi
+            leaf_temperature_buffer[layer] = clamp(relaxed_leaf_temperature, clamp_lo, clamp_hi)
 
             balance = leaf_heat_balance(leaf_temperature_buffer[layer], absorbed_radiation, air_temperature_layer,
                 relative_humidity_layer, wind_speed[layer], atmospheric_pressure, leaf_emissivity,
                 conductance, leaf_water_potential, leaf_body, leaf_area)
             sensible_heat_source[layer] = balance.conv.convection_flow / 1.0u"m^2"
             evaporation_mass_flow[layer] = balance.evap.transpiration_mass_flow
+            absorbed_radiation_buffer[layer] = absorbed_radiation
+            net_balance[layer] = balance.net
 
             # Unstressed (water_potential=0) reference transpiration, for a
             # soil-hydraulics demand term — not the leaf's own energy balance.
@@ -174,6 +189,9 @@ function canopy_energy_balance!(buffers, model::MultilayerCanopy, boundary_layer
             potential_evaporation_mass_flow[layer] = potential_evap.transpiration_mass_flow
         end
 
+        air_temperature_prev .= buffers.air_profile.air_temperature
+        relative_humidity_prev .= buffers.air_profile.relative_humidity
+
         canopy_air_profile!(buffers, model, boundary_layer_model;
             canopy_height=model.canopy_height, displacement_height=buffers.wind.displacement_height,
             friction_velocity=wind_result.friction_velocity, canopy_top_air_temperature=wind_result.canopy_top_air_temperature,
@@ -181,7 +199,15 @@ function canopy_energy_balance!(buffers, model::MultilayerCanopy, boundary_layer
             ground_temperature, ground_relative_humidity, sensible_heat_source, evaporation_mass_flow,
             obukhov_length=wind_result.obukhov_length, atmospheric_pressure, vapour_pressure_equation)
 
-        is_converged(model.convergence, iter, niter, leaf_temperature_buffer, leaf_temperature_prev) && break
+        # Under-relax the air profile too: it feeds back into next iteration's
+        # leaf temperature via sensible_heat_source, so damping only the leaf
+        # side doesn't stop a joint leaf/air runaway.
+        buffers.air_profile.air_temperature .= model.relaxation .* buffers.air_profile.air_temperature .+
+            (1.0 - model.relaxation) .* air_temperature_prev
+        buffers.air_profile.relative_humidity .= model.relaxation .* buffers.air_profile.relative_humidity .+
+            (1.0 - model.relaxation) .* relative_humidity_prev
+
+        !any_clamped && is_converged(model.convergence, iter, niter, leaf_temperature_buffer, leaf_temperature_prev) && break
     end
 
     @inbounds for layer in 1:n_layers

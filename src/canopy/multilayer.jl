@@ -49,12 +49,16 @@ Composes swappable sub-models the same way `MicroModel` composes
 - `convergence::AbstractSoilTemperatureConvergence` — hourly Picard-loop
   convergence criterion (default `FixedSoilTemperatureIterations(3)`); reuses
   the soil spin-up loop's dispatch (generic over any temperature array).
+- `relaxation` — under-relaxation on each Picard pass's leaf-temperature
+  update (`x_new = relaxation*x_solved + (1-relaxation)*x_prev`), default
+  `0.5`. Prevents overshoot when heat-transfer coefficients are small (e.g.
+  near-zero stomatal conductance); same fix as `RaupachLTheoryAirProfile`.
 
 Ground reflectance is not stored here — supplied to
 [`canopy_shortwave!`](@ref) by the caller (e.g. `Site.albedo`), matching how
 other radiation models read albedo from their caller.
 """
-@kwdef struct MultilayerCanopy{H,PAI,WAF,RM,LWM,WM,APM,IM,LP,SM,LTS,CV} <: AbstractCanopyModel
+@kwdef struct MultilayerCanopy{H,PAI,WAF,RM,LWM,WM,APM,IM,LP,SM,LTS,CV,RL} <: AbstractCanopyModel
     canopy_height::H
     plant_area_index::PAI
     woody_area_fraction::WAF = 0.0
@@ -67,6 +71,7 @@ other radiation models read albedo from their caller.
     stomatal_model::SM = PrescribedStomatalConductance()
     leaf_temperature_solver::LTS = LinearizedLeafTemperature()
     convergence::CV = FixedSoilTemperatureIterations(3)
+    relaxation::RL = 0.5
 end
 
 function example_multilayer_canopy(;
@@ -82,10 +87,12 @@ function example_multilayer_canopy(;
     stomatal_model = PrescribedStomatalConductance(),
     leaf_temperature_solver = LinearizedLeafTemperature(),
     convergence = FixedSoilTemperatureIterations(3),
+    relaxation = 0.5,
 )
     MultilayerCanopy(;
         canopy_height, plant_area_index, woody_area_fraction, shortwave_model, longwave_model, wind_model,
         air_profile_model, interception_model, leaf_parameters, stomatal_model, leaf_temperature_solver, convergence,
+        relaxation,
     )
 end
 
@@ -120,6 +127,10 @@ function allocate_canopy(model::MultilayerCanopy, heights, boundary_layer_model)
             sensible_heat_source = zeros(typeof(0.0u"W/m^2"), n_layers),
             evaporation_mass_flow = zeros(typeof(0.0u"g/s"), n_layers),
             potential_evaporation_mass_flow = zeros(typeof(0.0u"g/s"), n_layers),
+            absorbed_radiation = zeros(typeof(0.0u"W/m^2"), n_layers),
+            net_balance = zeros(typeof(0.0u"W"), n_layers),
+            air_temperature_prev = zeros(typeof(0.0u"K"), n_layers),
+            relative_humidity_prev = zeros(n_layers),
         ),
     )
 end

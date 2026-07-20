@@ -1033,6 +1033,8 @@ function write_canopy_output!(::MultilayerCanopy, output, canopy_buffers, canopy
     _write_row!(output.canopy.boundary_upward_shortwave, step, canopy_buffers.shortwave.boundary_upward_shortwave)
     _write_row!(output.canopy.boundary_downward_longwave, step, canopy_buffers.longwave.boundary_downward_longwave)
     _write_row!(output.canopy.boundary_upward_longwave, step, canopy_buffers.longwave.boundary_upward_longwave)
+    _write_row!(output.canopy.absorbed_radiation, step, canopy_buffers.leaf.absorbed_radiation)
+    _write_row!(output.canopy.net_balance, step, canopy_buffers.leaf.net_balance)
     return nothing
 end
 

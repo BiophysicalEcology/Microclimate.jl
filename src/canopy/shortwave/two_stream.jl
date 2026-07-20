@@ -262,6 +262,8 @@ function canopy_shortwave!(buffers, radiation_model::TwoStreamRadiation, plant_a
     fill!(upward_diffuse_shortwave, 0.0u"W/m^2")
     fill!(sunlit_fraction, 0.0)
     fill!(absorbed_shortwave, 0.0u"W/m^2")
+    fill!(boundary_downward_shortwave, 0.0u"W/m^2")
+    fill!(boundary_upward_shortwave, 0.0u"W/m^2")
 
     global_horizontal_irradiance = direct_horizontal_irradiance + diffuse_horizontal_irradiance
     if global_horizontal_irradiance <= 0.0u"W/m^2" || zenith_angle >= 90.0u"°"
