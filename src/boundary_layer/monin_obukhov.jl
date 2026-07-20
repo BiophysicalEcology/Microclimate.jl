@@ -191,11 +191,12 @@ function atmospheric_surface_profile!(bl::MoninObukhov, buffers;
             ψ_m1 = calc_ψ_m(φ_m1)
             ψ_h2 = calc_ψ_h(φ_m1)
             h_ratio = h / z0  # dimensionless h/z0
-            # Clamp to a small positive value to prevent non-physical results when
-            # stability corrections are large near the surface.
-            wind_log_arg = max(log(h_ratio) - ψ_m1, 1e-6)
+            # Floor at a fraction of the neutral log term (see calc_Obukhov_length) --
+            # an absolute constant is meaningless when log(h_ratio) is itself O(1).
+            log_h_ratio = log(h_ratio)
+            wind_log_arg = max(log_h_ratio - ψ_m1, 0.1 * log_h_ratio, 1e-6)
             wind_speed[i] = (friction_velocity / κ) * wind_log_arg
-            temp_log_arg = max(log(h_ratio) - ψ_h2, 1e-6)
+            temp_log_arg = max(log_h_ratio - ψ_h2, 0.1 * log_h_ratio, 1e-6)
             air_temperature[i] = roughness_height_temp + (reference_temp - roughness_height_temp) * temp_log_arg / (log(z / z0) - ψ_h)
         end
     end
@@ -577,10 +578,11 @@ Iteratively solve for Monin-Obukhov length and convective heat flux.
         φ_m = calc_φ_m(z, γ, obukhov_length)
         ψ_m = calc_ψ_m(φ_m)
         ψ_h = calc_ψ_h(φ_m)
-        log_ratio_corrected = log(z / z0) - ψ_m
-        if log_ratio_corrected <= 0.0
-            log_ratio_corrected = just_above_zero
-        end
+        # Floor at a fraction of the neutral log term, not an absolute
+        # constant -- log(z/z0) can be O(1) for canopy geometry, where an
+        # absolute 1e-6 floor lets friction_velocity blow up ~1e6-fold.
+        log_z_ratio_i = log(z / z0)
+        log_ratio_corrected = max(log_z_ratio_i - ψ_m, 0.1 * log_z_ratio_i, just_above_zero)
         friction_velocity = κ * v_ref_height / log_ratio_corrected
         if friction_velocity < just_above_zero * 1u"m/s"
             friction_velocity = just_above_zero * 1u"m/s"
