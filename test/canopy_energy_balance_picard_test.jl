@@ -120,6 +120,34 @@ end
     @test (@allocated f()) < 8_000
 end
 
+@testset "vector plant_area_index matches equivalent scalar and stays allocation-light" begin
+    run_once(pai) = begin
+        m = Microclimate.example_multilayer_canopy(; canopy_height, plant_area_index = pai,
+            convergence = FixedSoilTemperatureIterations(3))
+        b = Microclimate.allocate_canopy(m, heights, boundary_layer_model)
+        inputs = Microclimate.CanopyEnergyBalanceInputs(m;
+            site, environment_instant = make_environment_instant(; zenith_angle = 30.0u"°"), zenith_angle = 30.0u"°",
+            direct_horizontal_irradiance = 500.0u"W/m^2", diffuse_horizontal_irradiance = 100.0u"W/m^2",
+            ground_reflectance = 0.15, ground_temperature = 290.0u"K", ground_emissivity = 0.95,
+            ground_relative_humidity = 0.5, canopy_source_temperature = 293.0u"K",
+        )
+        f() = Microclimate.canopy_energy_balance!(b, m, boundary_layer_model, inputs)
+        f() # warm up
+        (; leaf_temperature = b.leaf.leaf_temperature, bytes = @allocated f())
+    end
+
+    scalar = run_once(plant_area_index)
+    uniform_vector = run_once(fill(plant_area_index / 10, 10))
+    @test all(isapprox.(ustrip.(u"K", scalar.leaf_temperature), ustrip.(u"K", uniform_vector.leaf_temperature); atol=1e-9))
+    @test uniform_vector.bytes < 8_000
+
+    # Non-uniform (top-heavy) profile: runs finite and stays allocation-light too.
+    top_heavy = [0.6, 0.5, 0.45, 0.4, 0.35, 0.3, 0.2, 0.15, 0.1, 0.05]
+    result = run_once(top_heavy)
+    @test all(isfinite, ustrip.(u"K", result.leaf_temperature))
+    @test result.bytes < 8_000
+end
+
 @testset "fixed-iteration convergence strategy still runs to completion" begin
     fixed_model = Microclimate.example_multilayer_canopy(;
         canopy_height, plant_area_index, convergence = FixedSoilTemperatureIterations(3),
