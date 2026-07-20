@@ -166,6 +166,7 @@ function atmospheric_surface_profile!(bl::MoninObukhov, buffers;
 
     # stability check (assuming stable conditions at night)
     if reference_temp ≥ surface_temp || zenith_angle ≥ 90° # temperature inversion or night-time conditions
+        obukhov_length = Inf * u"m"  # neutral/stable: no stability correction, Φ_h→1
         # Floor avoids sublayer_stanton (∝ u*^-9/20) hitting Inf at u*=0,
         # e.g. from real dead-calm reanalysis wind. Mirrors calc_Obukhov_length's guard.
         friction_velocity = max(calc_friction_velocity(; reference_wind_speed, log_z_ratio, κ), 1.0e-6u"m/s")
@@ -209,6 +210,7 @@ function atmospheric_surface_profile!(bl::MoninObukhov, buffers;
         relative_humidity,
         convective_heat_flux=u"W/m^2"(convective_heat_flux),
         friction_velocity,
+        obukhov_length,
     )
 end
 
@@ -472,6 +474,23 @@ of the true Businger–Dyer φₘ stability function, φₘ = (1 - γ z / L)^(-1
     # return (1.0 - min(1.0, γ * (z / obukhov_length)))^(1//4)
     # sqrt is faster than ^1/4
     return sqrt(sqrt(1.0 - γ * z / obukhov_length))
+end
+
+
+"""
+    calc_Φ_h(z, γ, obukhov_length)
+
+True Businger–Dyer stability correction function for heat, Φ_h = x⁻², the
+reciprocal square of `calc_φ_m`'s Paulson x-substitution (unlike `calc_φ_m`
+itself, which returns `x`, not the momentum φₘ = x⁻¹).
+
+# References
+- Businger, J. A., Wyngaard, J. C., Izumi, Y., & Bradley, E. F. (1971).
+  Flux–profile relationships in the atmospheric surface layer.
+  *Journal of the Atmospheric Sciences*, 28(2), 181–189.
+"""
+@inline function calc_Φ_h(z, γ, obukhov_length)
+    return calc_φ_m(z, γ, obukhov_length)^(-2)
 end
 
 

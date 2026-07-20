@@ -10,7 +10,7 @@ const CANOPY_TIMESTEP = 1.0u"hr"
     CanopyEnergyBalanceInputs(model::MultilayerCanopy; site, environment_instant, zenith_angle,
                                direct_horizontal_irradiance, diffuse_horizontal_irradiance,
                                ground_reflectance, ground_temperature, ground_emissivity,
-                               canopy_source_temperature, rainfall=0.0u"kg/m^2",
+                               ground_relative_humidity, canopy_source_temperature, rainfall=0.0u"kg/m^2",
                                leaf_water_potential=model.leaf_parameters.leaf_water_potential,
                                vapour_pressure_equation=GoffGratch())
 
@@ -18,7 +18,7 @@ Per-hour inputs to [`canopy_energy_balance!`](@ref), mirroring
 `SoilEnergyInputs`: built once, refreshed in place via
 [`update_canopy_energy_balance_inputs!`](@ref).
 """
-mutable struct CanopyEnergyBalanceInputs{S,EI,ZA,DHI,DFI,GR,GT,GE,CST,RF,LWP,VP}
+mutable struct CanopyEnergyBalanceInputs{S,EI,ZA,DHI,DFI,GR,GT,GE,GRH,CST,RF,LWP,VP}
     site::S
     environment_instant::EI
     zenith_angle::ZA
@@ -27,6 +27,7 @@ mutable struct CanopyEnergyBalanceInputs{S,EI,ZA,DHI,DFI,GR,GT,GE,CST,RF,LWP,VP}
     ground_reflectance::GR
     ground_temperature::GT
     ground_emissivity::GE
+    ground_relative_humidity::GRH
     canopy_source_temperature::CST
     rainfall::RF
     leaf_water_potential::LWP
@@ -35,20 +36,20 @@ end
 
 function CanopyEnergyBalanceInputs(model::MultilayerCanopy;
     site, environment_instant, zenith_angle, direct_horizontal_irradiance, diffuse_horizontal_irradiance,
-    ground_reflectance, ground_temperature, ground_emissivity, canopy_source_temperature,
+    ground_reflectance, ground_temperature, ground_emissivity, ground_relative_humidity, canopy_source_temperature,
     rainfall=0.0u"kg/m^2", leaf_water_potential=model.leaf_parameters.leaf_water_potential,
     vapour_pressure_equation=GoffGratch(),
 )
     CanopyEnergyBalanceInputs(site, environment_instant, zenith_angle, direct_horizontal_irradiance,
         diffuse_horizontal_irradiance, ground_reflectance, ground_temperature, ground_emissivity,
-        canopy_source_temperature, rainfall, leaf_water_potential, vapour_pressure_equation)
+        ground_relative_humidity, canopy_source_temperature, rainfall, leaf_water_potential, vapour_pressure_equation)
 end
 
 """
     update_canopy_energy_balance_inputs!(inputs::CanopyEnergyBalanceInputs; environment_instant, zenith_angle,
                                           direct_horizontal_irradiance, diffuse_horizontal_irradiance,
                                           ground_reflectance, ground_temperature, ground_emissivity,
-                                          canopy_source_temperature, rainfall=0.0u"kg/m^2",
+                                          ground_relative_humidity, canopy_source_temperature, rainfall=0.0u"kg/m^2",
                                           leaf_water_potential=inputs.leaf_water_potential)
 
 In-place per-hour update, no allocation. `site`/`vapour_pressure_equation`
@@ -56,7 +57,7 @@ aren't refreshed (static for a run).
 """
 function update_canopy_energy_balance_inputs!(inputs::CanopyEnergyBalanceInputs;
     environment_instant, zenith_angle, direct_horizontal_irradiance, diffuse_horizontal_irradiance,
-    ground_reflectance, ground_temperature, ground_emissivity, canopy_source_temperature,
+    ground_reflectance, ground_temperature, ground_emissivity, ground_relative_humidity, canopy_source_temperature,
     rainfall=0.0u"kg/m^2", leaf_water_potential=inputs.leaf_water_potential,
 )
     inputs.environment_instant = environment_instant
@@ -66,6 +67,7 @@ function update_canopy_energy_balance_inputs!(inputs::CanopyEnergyBalanceInputs;
     inputs.ground_reflectance = ground_reflectance
     inputs.ground_temperature = ground_temperature
     inputs.ground_emissivity = ground_emissivity
+    inputs.ground_relative_humidity = ground_relative_humidity
     inputs.canopy_source_temperature = canopy_source_temperature
     inputs.rainfall = rainfall
     inputs.leaf_water_potential = leaf_water_potential
@@ -91,8 +93,9 @@ evaporation is applied once, after convergence.
 (previous-hour) boundary conditions; only canopy-internal state is
 Picard-iterated.
 
-Relative humidity is uniform through the canopy for now (the
-reference/above-canopy value).
+Per-layer relative humidity is resolved by `model.air_profile_model` from
+each layer's own evaporation source, the same way per-layer air temperature
+is.
 
 Returns `(; ground_absorbed_shortwave, canopy_absorbed_shortwave,
 ground_absorbed_longwave, canopy_absorbed_longwave, ground_throughfall,
@@ -102,8 +105,8 @@ feeding a soil-hydraulics demand term (e.g. `CampbellSoilHydraulics`).
 """
 function canopy_energy_balance!(buffers, model::MultilayerCanopy, boundary_layer_model, inputs::CanopyEnergyBalanceInputs)
     (; site, environment_instant, zenith_angle, direct_horizontal_irradiance, diffuse_horizontal_irradiance,
-       ground_reflectance, ground_temperature, ground_emissivity, canopy_source_temperature, rainfall,
-       leaf_water_potential, vapour_pressure_equation) = inputs
+       ground_reflectance, ground_temperature, ground_emissivity, ground_relative_humidity, canopy_source_temperature,
+       rainfall, leaf_water_potential, vapour_pressure_equation) = inputs
 
     (; leaf_body, leaf_temperature_prev, sensible_heat_source, evaporation_mass_flow,
        potential_evaporation_mass_flow) = buffers.leaf
@@ -113,7 +116,6 @@ function canopy_energy_balance!(buffers, model::MultilayerCanopy, boundary_layer
     (; wind_speed) = buffers.wind
     n_layers = length(leaf_temperature_buffer)
     (; atmospheric_pressure) = environment_instant
-    relative_humidity = environment_instant.reference_humidity
     leaf_emissivity = model.leaf_parameters.leaf_emissivity
 
     shortwave_result = canopy_shortwave!(buffers, model;
@@ -125,6 +127,7 @@ function canopy_energy_balance!(buffers, model::MultilayerCanopy, boundary_layer
     interception_result = canopy_interception!(buffers, model; rainfall, wind_speed)
 
     fill!(buffers.air_profile.air_temperature, wind_result.canopy_top_air_temperature)
+    fill!(buffers.air_profile.relative_humidity, wind_result.canopy_top_relative_humidity)
     # LinearizedLeafTemperature divides by leaf_temperature_guess, so it must not start at 0 K.
     fill!(leaf_temperature_buffer, wind_result.canopy_top_air_temperature)
 
@@ -150,21 +153,22 @@ function canopy_energy_balance!(buffers, model::MultilayerCanopy, boundary_layer
             dry_conductance = stomatal_conductance(model.stomatal_model, zenith_angle, leaf_water_potential)
             conductance = blend_stomatal_conductance(dry_conductance, wet_canopy_fraction(model, buffers, layer))
             air_temperature_layer = buffers.air_profile.air_temperature[layer]
+            relative_humidity_layer = buffers.air_profile.relative_humidity[layer]
 
             leaf_temperature_buffer[layer] = leaf_temperature(model.leaf_temperature_solver, absorbed_radiation,
-                air_temperature_layer, relative_humidity, wind_speed[layer], atmospheric_pressure,
+                air_temperature_layer, relative_humidity_layer, wind_speed[layer], atmospheric_pressure,
                 leaf_emissivity, conductance, leaf_water_potential, leaf_body;
                 leaf_area, leaf_temperature_guess=leaf_temperature_buffer[layer])
 
             balance = leaf_heat_balance(leaf_temperature_buffer[layer], absorbed_radiation, air_temperature_layer,
-                relative_humidity, wind_speed[layer], atmospheric_pressure, leaf_emissivity,
+                relative_humidity_layer, wind_speed[layer], atmospheric_pressure, leaf_emissivity,
                 conductance, leaf_water_potential, leaf_body, leaf_area)
             sensible_heat_source[layer] = balance.conv.convection_flow / 1.0u"m^2"
             evaporation_mass_flow[layer] = balance.evap.transpiration_mass_flow
 
             # Unstressed (water_potential=0) reference transpiration, for a
             # soil-hydraulics demand term — not the leaf's own energy balance.
-            atmos = AtmosphericConditions(relative_humidity, wind_speed[layer], atmospheric_pressure)
+            atmos = AtmosphericConditions(relative_humidity_layer, wind_speed[layer], atmospheric_pressure)
             potential_evap = HeatExchange.evaporation(dry_conductance, balance.conv.mass_transfer_coefficient,
                 atmos, leaf_area, leaf_temperature_buffer[layer], air_temperature_layer; water_potential=0.0u"J/kg")
             potential_evaporation_mass_flow[layer] = potential_evap.transpiration_mass_flow
@@ -173,7 +177,9 @@ function canopy_energy_balance!(buffers, model::MultilayerCanopy, boundary_layer
         canopy_air_profile!(buffers, model, boundary_layer_model;
             canopy_height=model.canopy_height, displacement_height=buffers.wind.displacement_height,
             friction_velocity=wind_result.friction_velocity, canopy_top_air_temperature=wind_result.canopy_top_air_temperature,
-            ground_temperature, sensible_heat_source)
+            canopy_top_relative_humidity=wind_result.canopy_top_relative_humidity,
+            ground_temperature, ground_relative_humidity, sensible_heat_source, evaporation_mass_flow,
+            obukhov_length=wind_result.obukhov_length, atmospheric_pressure, vapour_pressure_equation)
 
         is_converged(model.convergence, iter, niter, leaf_temperature_buffer, leaf_temperature_prev) && break
     end

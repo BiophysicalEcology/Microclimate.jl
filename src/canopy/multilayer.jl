@@ -147,6 +147,7 @@ function allocate_canopy_inputs(model::MultilayerCanopy; site, environment_insta
         ground_reflectance = _baseline_albedo(site, environment_instant),
         ground_temperature = environment_instant.reference_temperature,
         ground_emissivity = environment_instant.surface_emissivity,
+        ground_relative_humidity = environment_instant.reference_humidity,
         canopy_source_temperature = environment_instant.reference_temperature,
     )
 end

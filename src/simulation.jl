@@ -85,7 +85,7 @@ end
 # updated canopy_source_temperature and (for diagnostics) the full canopy
 # result. NoCanopy passes everything through unchanged/nothing.
 @inline function apply_canopy_overrides(::NoCanopy, buffers, canopy_inputs;
-    boundary_layer_model, site, environment_instant, ground_temperature, ground_emissivity,
+    boundary_layer_model, site, environment_instant, ground_temperature, ground_emissivity, ground_relative_humidity,
     canopy_source_temperature, rainfall, direct_horizontal_irradiance, diffuse_horizontal_irradiance, ground_reflectance,
     leaf_water_potential,
 )
@@ -98,14 +98,14 @@ end
 end
 
 @inline function apply_canopy_overrides(model::MultilayerCanopy, buffers, canopy_inputs;
-    boundary_layer_model, site, environment_instant, ground_temperature, ground_emissivity,
+    boundary_layer_model, site, environment_instant, ground_temperature, ground_emissivity, ground_relative_humidity,
     canopy_source_temperature, rainfall, direct_horizontal_irradiance, diffuse_horizontal_irradiance, ground_reflectance,
     leaf_water_potential,
 )
     update_canopy_energy_balance_inputs!(canopy_inputs;
         environment_instant, zenith_angle = environment_instant.zenith_angle,
         direct_horizontal_irradiance, diffuse_horizontal_irradiance, ground_reflectance,
-        ground_temperature, ground_emissivity, canopy_source_temperature, rainfall, leaf_water_potential,
+        ground_temperature, ground_emissivity, ground_relative_humidity, canopy_source_temperature, rainfall, leaf_water_potential,
     )
     canopy_result = canopy_energy_balance!(buffers, model, boundary_layer_model, canopy_inputs)
     global_horizontal_irradiance = direct_horizontal_irradiance + diffuse_horizontal_irradiance
@@ -654,7 +654,9 @@ function solve_soil!(cache::MicroCache)
             (; ground_shortwave_transmission, ground_incoming_longwave, canopy_source_temperature, canopy_result) =
                 apply_canopy_overrides(canopy_model, buffers.canopy, canopy_inputs;
                     boundary_layer_model, site, environment_instant, ground_temperature,
-                    ground_emissivity = environment_instant.surface_emissivity, canopy_source_temperature, rainfall = rainfall_step,
+                    ground_emissivity = environment_instant.surface_emissivity,
+                    ground_relative_humidity = environment_instant.reference_humidity,
+                    canopy_source_temperature, rainfall = rainfall_step,
                     direct_horizontal_irradiance = output.global_radiation[step] * (1.0 - output.diffuse_fraction[step]),
                     diffuse_horizontal_irradiance = output.global_radiation[step] * output.diffuse_fraction[step],
                     ground_reflectance = albedo, leaf_water_potential)
@@ -788,7 +790,9 @@ function solve_soil!(cache::MicroCache)
                     (; ground_shortwave_transmission, ground_incoming_longwave, canopy_source_temperature, canopy_result) =
                         apply_canopy_overrides(canopy_model, buffers.canopy, canopy_inputs;
                             boundary_layer_model, site, environment_instant, ground_temperature,
-                            ground_emissivity = environment_instant.surface_emissivity, canopy_source_temperature, rainfall = rainfall_next,
+                            ground_emissivity = environment_instant.surface_emissivity,
+                            ground_relative_humidity = environment_instant.reference_humidity,
+                            canopy_source_temperature, rainfall = rainfall_next,
                             direct_horizontal_irradiance = output.global_radiation[next_step] * (1.0 - output.diffuse_fraction[next_step]),
                             diffuse_horizontal_irradiance = output.global_radiation[next_step] * output.diffuse_fraction[next_step],
                             ground_reflectance = albedo, leaf_water_potential)
@@ -1023,6 +1027,7 @@ function write_canopy_output!(::MultilayerCanopy, output, canopy_buffers, canopy
     _write_row!(output.canopy.leaf_temperature, step, canopy_buffers.leaf.leaf_temperature)
     _write_row!(output.canopy.air_temperature, step, canopy_buffers.air_profile.air_temperature)
     _write_row!(output.canopy.wind_speed, step, canopy_buffers.wind.wind_speed)
+    _write_row!(output.canopy.relative_humidity, step, canopy_buffers.air_profile.relative_humidity)
     return nothing
 end
 

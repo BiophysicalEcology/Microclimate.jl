@@ -45,7 +45,7 @@ export example_multilayer_canopy
 export AbstractCanopyShortwaveModel, TwoStreamRadiation, allocate_shortwave
 export AbstractCanopyLongwaveModel, LayeredLongwaveExchange, allocate_longwave
 export AbstractCanopyWindModel, CanopyWindAttenuation, allocate_wind
-export AbstractCanopyAirProfileModel, KTheoryAirProfile, allocate_air_profile, canopy_air_profile!
+export AbstractCanopyAirProfileModel, KTheoryAirProfile, RaupachLTheoryAirProfile, allocate_air_profile, canopy_air_profile!
 export AbstractCanopyInterceptionModel, NoInterception, LayeredRainInterception
 export allocate_interception, canopy_interception!, wet_canopy_fraction, blend_stomatal_conductance
 export LeafParameters
@@ -236,6 +236,7 @@ include("canopy/wind/attenuation.jl")
 
 include("canopy/air_profile/abstract.jl")
 include("canopy/air_profile/k_theory.jl")
+include("canopy/air_profile/raupach.jl")
 
 include("canopy/interception/abstract.jl")
 include("canopy/interception/no_interception.jl")

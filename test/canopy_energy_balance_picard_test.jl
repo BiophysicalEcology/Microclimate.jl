@@ -34,7 +34,7 @@ end
         site, environment_instant, zenith_angle = 30.0u"°",
         direct_horizontal_irradiance = 500.0u"W/m^2", diffuse_horizontal_irradiance = 100.0u"W/m^2",
         ground_reflectance = 0.15, ground_temperature = 290.0u"K", ground_emissivity = 0.95,
-        canopy_source_temperature = 293.0u"K",
+        ground_relative_humidity = 0.5, canopy_source_temperature = 293.0u"K",
     )
     result = Microclimate.canopy_energy_balance!(buffers, model, boundary_layer_model, inputs)
 
@@ -60,7 +60,7 @@ end
         site, environment_instant = make_environment_instant(; zenith_angle = 30.0u"°"), zenith_angle = 30.0u"°",
         direct_horizontal_irradiance = 500.0u"W/m^2", diffuse_horizontal_irradiance = 100.0u"W/m^2",
         ground_reflectance = 0.15, ground_temperature = 290.0u"K", ground_emissivity = 0.95,
-        canopy_source_temperature = 293.0u"K",
+        ground_relative_humidity = 0.5, canopy_source_temperature = 293.0u"K",
     )
     day_result = Microclimate.canopy_energy_balance!(buffers, model, boundary_layer_model, inputs)
     @test day_result.canopy_absorbed_shortwave > 0.0u"W/m^2"
@@ -70,7 +70,7 @@ end
         zenith_angle = 100.0u"°",
         direct_horizontal_irradiance = 0.0u"W/m^2", diffuse_horizontal_irradiance = 0.0u"W/m^2",
         ground_reflectance = 0.15, ground_temperature = 280.0u"K", ground_emissivity = 0.95,
-        canopy_source_temperature = 283.0u"K",
+        ground_relative_humidity = 0.5, canopy_source_temperature = 283.0u"K",
     )
     night_result = Microclimate.canopy_energy_balance!(buffers, model, boundary_layer_model, inputs)
     @test night_result.canopy_absorbed_shortwave == 0.0u"W/m^2"
@@ -89,7 +89,7 @@ end
             zenith_angle = 30.0u"°",
             direct_horizontal_irradiance = 500.0u"W/m^2", diffuse_horizontal_irradiance = 100.0u"W/m^2",
             ground_reflectance = 0.15, ground_temperature = 295.0u"K", ground_emissivity = 0.95,
-            canopy_source_temperature = 298.0u"K", leaf_water_potential = lwp,
+            ground_relative_humidity = 0.5, canopy_source_temperature = 298.0u"K", leaf_water_potential = lwp,
         )
         Microclimate.canopy_energy_balance!(b, m, boundary_layer_model, inputs)
         sum(ustrip.(u"K", b.leaf.leaf_temperature)) / length(b.leaf.leaf_temperature)
@@ -110,7 +110,7 @@ end
         site, environment_instant = make_environment_instant(; zenith_angle = 30.0u"°"), zenith_angle = 30.0u"°",
         direct_horizontal_irradiance = 500.0u"W/m^2", diffuse_horizontal_irradiance = 100.0u"W/m^2",
         ground_reflectance = 0.15, ground_temperature = 290.0u"K", ground_emissivity = 0.95,
-        canopy_source_temperature = 293.0u"K",
+        ground_relative_humidity = 0.5, canopy_source_temperature = 293.0u"K",
     )
     f() = Microclimate.canopy_energy_balance!(fixed_buffers, fixed_model, boundary_layer_model, inputs)
     f() # warm up
@@ -129,7 +129,7 @@ end
         site, environment_instant = make_environment_instant(; zenith_angle = 30.0u"°"), zenith_angle = 30.0u"°",
         direct_horizontal_irradiance = 500.0u"W/m^2", diffuse_horizontal_irradiance = 100.0u"W/m^2",
         ground_reflectance = 0.15, ground_temperature = 290.0u"K", ground_emissivity = 0.95,
-        canopy_source_temperature = 293.0u"K",
+        ground_relative_humidity = 0.5, canopy_source_temperature = 293.0u"K",
     )
     result = Microclimate.canopy_energy_balance!(fixed_buffers, fixed_model, boundary_layer_model, inputs)
     @test result.iterations == 3

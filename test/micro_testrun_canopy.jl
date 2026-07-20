@@ -109,11 +109,44 @@ lwp_leaf_temps = map(lwp_values) do lwp
         site, environment_instant, zenith_angle = 30.0u"°",
         direct_horizontal_irradiance = 500.0u"W/m^2", diffuse_horizontal_irradiance = 100.0u"W/m^2",
         ground_reflectance = 0.15, ground_temperature = 295.0u"K", ground_emissivity = 0.95,
-        canopy_source_temperature = 298.0u"K", leaf_water_potential = lwp,
+        ground_relative_humidity = 0.5, canopy_source_temperature = 298.0u"K", leaf_water_potential = lwp,
     )
     Microclimate.canopy_energy_balance!(b, m, boundary_layer_model, inputs)
     sum(b.leaf.leaf_temperature) / length(b.leaf.leaf_temperature)
 end
 plot(lwp_values, lwp_leaf_temps;
     xlabel="Leaf water potential", ylabel="Mean leaf temperature", label=false, marker=:circle) |> display
+=#
+
+# Visual check: L-theory (RaupachLTheoryAirProfile) vs K-theory
+# (KTheoryAirProfile) in-canopy profiles — run manually (not in CI)
+#= using Plots
+canopy_height = 1.0u"m"
+plant_area_index = 3.0
+layer_heights = sort(heights[heights .<= canopy_height]; rev=true)
+step = 24 * 5 + 13  # day 6, hour 13 (afternoon)
+
+k_model = example_multilayer_canopy(; canopy_height, plant_area_index, air_profile_model = KTheoryAirProfile())
+l_model = example_multilayer_canopy(; canopy_height, plant_area_index, air_profile_model = RaupachLTheoryAirProfile())
+k_output = solve(example_microclimate_problem(; heights, canopy_model = k_model))
+l_output = solve(example_microclimate_problem(; heights, canopy_model = l_model))
+
+plot(ustrip.(u"°C", k_output.canopy.air_temperature[step, :]), ustrip.(u"m", layer_heights);
+    xlabel="Air temperature (°C)", ylabel="Height (m)", label="K-theory", marker=:circle) |> display
+plot!(ustrip.(u"°C", l_output.canopy.air_temperature[step, :]), ustrip.(u"m", layer_heights);
+    label="L-theory (Raupach)", marker=:square) |> display
+
+plot(k_output.canopy.relative_humidity[step, :], ustrip.(u"m", layer_heights);
+    xlabel="Relative humidity", ylabel="Height (m)", label="K-theory", marker=:circle) |> display
+plot!(l_output.canopy.relative_humidity[step, :], ustrip.(u"m", layer_heights);
+    label="L-theory (Raupach)", marker=:square) |> display
+
+# Wind speed doesn't depend on air_profile_model directly (the shared
+# wind_model, CanopyWindAttenuation, doesn't read it) but differs anyway:
+# different air/leaf temperatures feed back into ground/soil state each hour,
+# which shifts the next hour's stability correction on the wind profile.
+plot(ustrip.(u"m/s", k_output.canopy.wind_speed[step, :]), ustrip.(u"m", layer_heights);
+    xlabel="Wind speed (m/s)", ylabel="Height (m)", label="K-theory", marker=:circle) |> display
+plot!(ustrip.(u"m/s", l_output.canopy.wind_speed[step, :]), ustrip.(u"m", layer_heights);
+    label="L-theory (Raupach)", marker=:square) |> display
 =#
