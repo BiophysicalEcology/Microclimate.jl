@@ -703,6 +703,10 @@ function solve_soil!(cache::MicroCache)
                 step = (j - 1) * length(hours) + i
                 T0_before = T0
                 T_snow_before = T_snow
+                # canopy_result holds this hour's value here; the lookahead
+                # block below overwrites it with hour i+1's. Snapshot first so
+                # rain/transpiration below stay on hour i.
+                current_hour_canopy_result = canopy_result
 
                 # ── Step integrator to this hour boundary ──
                 T_result = step_to_hour!(ode_integrator, i)
@@ -824,10 +828,10 @@ function solve_soil!(cache::MicroCache)
                 # Fortran OSUB.f: soil moisture runs only on final iteration (after line 353 guard)
                 if is_last_iter
                     # Rain reaching the ground is post-canopy-interception throughfall, not raw rainfall.
-                    rain = isnothing(canopy_result) ? current_rainfall(rainfall_schedule;
+                    rain = isnothing(current_hour_canopy_result) ? current_rainfall(rainfall_schedule;
                         environment_instant, environment_hourly=environment_hourly,
                         step, i, midnight_i,
-                    ) : canopy_result.ground_throughfall
+                    ) : current_hour_canopy_result.ground_throughfall
                     # Fortran OSUB.f: apply rainmult to rainfall entering condep
                     if n_snow > 0
                         rain = rain * snow_model.rain_multiplier
@@ -851,7 +855,7 @@ function solve_soil!(cache::MicroCache)
                         pool = clamp(pool + rain + rain_melt_water + melted_water, 0.0u"kg/m^2", max_surface_pool)
                     end
                     # Soil moisture physics; output write happens below at output_step
-                    canopy_transpiration_potential = isnothing(canopy_result) ? nothing : canopy_result.canopy_potential_transpiration
+                    canopy_transpiration_potential = isnothing(current_hour_canopy_result) ? nothing : current_hour_canopy_result.canopy_potential_transpiration
                     (; pool, soil_moisture, infil_out) = step_soil_moisture!(moisture_mode, buffers, soil_hydraulic_model;
                         soil_profile, depths, site, boundary_layer_model, environment_instant, T0, pool, soil_moisture,
                         max_surface_pool, evaporation_model, vapour_pressure_equation, snow_present, canopy_transpiration_potential,
