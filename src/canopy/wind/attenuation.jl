@@ -62,7 +62,11 @@ function wind_attenuation_profile(layer_plant_area_index, canopy_height, plant_a
     # internally bottom-to-top (index n = canopy top = unattenuated)
     whole_canopy_attenuation = _element_attenuation(plant_area_index_total, canopy_height)
     layer_attenuation = [_element_attenuation(pai, canopy_height) for pai in Iterators.reverse(layer_plant_area_index)]
-    layer_attenuation .*= whole_canopy_attenuation / sum(layer_attenuation)
+    layer_attenuation_sum = sum(layer_attenuation)
+    # zero total PAI (leafless canopy): every element is already 0, no attenuation to rescale
+    if !iszero(layer_attenuation_sum)
+        layer_attenuation .*= whole_canopy_attenuation / layer_attenuation_sum
+    end
 
     n_ground_layers = n ÷ 10
     relative_wind = ones(n)
@@ -80,6 +84,7 @@ function wind_attenuation_profile(layer_plant_area_index, canopy_height, plant_a
 end
 
 function allocate_wind(::CanopyWindAttenuation, canopy_height, plant_area_index, boundary_layer_model, heights, n_layers)
+    canopy_height = max(canopy_height, 1.0e-3u"m")  # avoid 0/0 in the per-element/roughness formulas below
     (; layer_plant_area_index) = canopy_layer_geometry(plant_area_index, n_layers)
     total_plant_area_index = sum(plant_area_index)
 
