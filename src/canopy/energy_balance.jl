@@ -150,15 +150,28 @@ function canopy_energy_balance!(buffers, model::MultilayerCanopy, boundary_layer
         @inbounds for layer in 1:n_layers
             # Exchange area is the layer's interception fraction (1-τ), not PAI
             # directly (self-shading means (1-τ)<PAI); canopy_longwave!'s own
-            # emission scales the same way.
-            leaf_area = 2.0 * (1.0 - layer_transmission[layer]) * 1.0u"m^2"
-            # absorbed_shortwave/absorbed_longwave are per unit ground area;
-            # leaf_heat_balance/leaf_temperature want per unit leaf_area.
-            absorbed_radiation = (absorbed_shortwave[layer] + absorbed_longwave[layer]) / (2.0 * (1.0 - layer_transmission[layer]))
-            dry_conductance = stomatal_conductance(model.stomatal_model, zenith_angle, leaf_water_potential)
-            conductance = blend_stomatal_conductance(dry_conductance, wet_canopy_fraction(model, buffers, layer))
+            # emission scales the same way. 2.0 = both leaf surfaces.
+            exchange_fraction = 1.0 - layer_transmission[layer]
             air_temperature_layer = buffers.air_profile.air_temperature[layer]
             relative_humidity_layer = buffers.air_profile.relative_humidity[layer]
+
+            if iszero(exchange_fraction)
+                # No leaf area (zero PAI): avoid 0/0 below, no distinct leaf temperature.
+                leaf_temperature_buffer[layer] = air_temperature_layer
+                sensible_heat_source[layer] = zero(sensible_heat_source[layer])
+                evaporation_mass_flow[layer] = zero(evaporation_mass_flow[layer])
+                absorbed_radiation_buffer[layer] = zero(absorbed_radiation_buffer[layer])
+                net_balance[layer] = zero(net_balance[layer])
+                potential_evaporation_mass_flow[layer] = zero(potential_evaporation_mass_flow[layer])
+                continue
+            end
+
+            leaf_area = 2.0 * exchange_fraction * 1.0u"m^2"
+            # absorbed_shortwave/absorbed_longwave are per unit ground area;
+            # leaf_heat_balance/leaf_temperature want per unit leaf_area.
+            absorbed_radiation = (absorbed_shortwave[layer] + absorbed_longwave[layer]) / (2.0 * exchange_fraction)
+            dry_conductance = stomatal_conductance(model.stomatal_model, zenith_angle, leaf_water_potential)
+            conductance = blend_stomatal_conductance(dry_conductance, wet_canopy_fraction(model, buffers, layer))
 
             new_leaf_temperature = leaf_temperature(model.leaf_temperature_solver, absorbed_radiation,
                 air_temperature_layer, relative_humidity_layer, wind_speed[layer], atmospheric_pressure,
@@ -211,7 +224,11 @@ function canopy_energy_balance!(buffers, model::MultilayerCanopy, boundary_layer
     end
 
     @inbounds for layer in 1:n_layers
-        evaporated_mass = uconvert(u"kg", evaporation_mass_flow[layer] * CANOPY_TIMESTEP) / 1.0u"m^2"
+        # evaporation_mass_flow blends transpiration and wet-surface
+        # evaporation; only the wet fraction should draw down intercepted
+        # rain — transpiration draws from soil/plant water instead.
+        wet_fraction = wet_canopy_fraction(model, buffers, layer)
+        evaporated_mass = uconvert(u"kg", evaporation_mass_flow[layer] * wet_fraction * CANOPY_TIMESTEP) / 1.0u"m^2"
         deplete_canopy_water!(model, buffers, layer, evaporated_mass)
     end
 
