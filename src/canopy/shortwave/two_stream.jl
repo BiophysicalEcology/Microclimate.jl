@@ -31,8 +31,8 @@ end
 
 Campbell's (1990) ellipsoidal-leaf-angle-distribution extinction coefficient
 for a direct beam at `zenith_angle`, for a canopy with leaf angle distribution
-parameter `x`. `x == 1` (spherical), `x == 0` (horizontal leaves), and
-`x == Inf` (vertical leaves) are closed-form special cases.
+parameter `x`. `x == 1` (spherical), `x == 0` (vertical leaves), and
+`x == Inf` (horizontal leaves) are closed-form special cases.
 """
 function ellipsoidal_extinction_coefficient(zenith_angle, leaf_angle_distribution_parameter)
     x = leaf_angle_distribution_parameter
@@ -41,7 +41,8 @@ function ellipsoidal_extinction_coefficient(zenith_angle, leaf_angle_distributio
     elseif x == 1.0
         return 1.0 / (2.0 * cos(zenith_angle))
     elseif x == 0.0
-        return tan(zenith_angle)
+        # limit of the general formula below as x->0
+        return tan(zenith_angle) / (1.774 * 1.182^(-0.733))
     else
         return sqrt(x^2 + tan(zenith_angle)^2) / (x + 1.774 * (x + 1.182)^(-0.733))
     end
@@ -91,7 +92,9 @@ every hour rather than cached — cheap scalar ops, no allocation.
 function diffuse_two_stream_optics(leaf_optics, ground_reflectance)
     (; leaf_absorptance, diffuse_backscatter_coefficient, diffuse_attenuation_rate, diffuse_transmission_factor) = leaf_optics
 
-    upward_diffuse_boundary_term = leaf_absorptance + diffuse_backscatter_coefficient * (1.0 - 1.0 / ground_reflectance)
+    # floor avoids 1/0 -> -Inf for a fully-absorbing ground surface
+    safe_ground_reflectance = max(ground_reflectance, 1.0e-4)
+    upward_diffuse_boundary_term = leaf_absorptance + diffuse_backscatter_coefficient * (1.0 - 1.0 / safe_ground_reflectance)
     downward_diffuse_boundary_term = leaf_absorptance + diffuse_backscatter_coefficient * (1.0 - ground_reflectance)
 
     upward_diffuse_normalization =
