@@ -823,10 +823,11 @@ function solve_soil!(cache::MicroCache)
                 init_surface_fluxes!(boundary_layer_model, buffers, forcing, site, heights, T0, i)
                 # Fortran OSUB.f: soil moisture runs only on final iteration (after line 353 guard)
                 if is_last_iter
-                    rain = current_rainfall(rainfall_schedule;
+                    # Rain reaching the ground is post-canopy-interception throughfall, not raw rainfall.
+                    rain = isnothing(canopy_result) ? current_rainfall(rainfall_schedule;
                         environment_instant, environment_hourly=environment_hourly,
                         step, i, midnight_i,
-                    )
+                    ) : canopy_result.ground_throughfall
                     # Fortran OSUB.f: apply rainmult to rainfall entering condep
                     if n_snow > 0
                         rain = rain * snow_model.rain_multiplier
