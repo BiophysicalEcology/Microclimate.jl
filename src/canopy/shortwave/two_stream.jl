@@ -5,7 +5,8 @@ Dickinson/Sellers two-stream canopy radiative transfer (the same closed-form
 solution used in Dickinson (1983), Sellers (1985), and ClimaLand's
 `TwoStreamModel`).
 
-- `leaf_reflectance`, `leaf_transmittance` — leaf shortwave optical properties
+- `leaf_reflectance`, `leaf_transmittance` — leaf shortwave optical properties.
+  Defaults are free/tunable, uncited.
 
 Leaf angle distribution (`x`) is not stored here — it's a geometric leaf
 trait shared with the rain-interception model, so it lives on

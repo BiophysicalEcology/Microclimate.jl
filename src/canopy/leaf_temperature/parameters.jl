@@ -6,13 +6,13 @@ Per-leaf structural/physiological data — leaf traits, not a swappable
 model choice (analogous to `SoilProfile`'s per-depth soil data).
 
 - `leaf_length`, `leaf_width` — for `HeatExchange.jl`'s boundary-layer
-  convection model (`leaf_body`)
-- `leaf_emissivity` — leaf longwave emissivity
+  convection model (`leaf_body`). Defaults free/tunable, uncited.
+- `leaf_emissivity` — leaf longwave emissivity. Default free/tunable, uncited.
 - `leaf_water_potential` — fallback default for standalone/no-soil-coupling
   use; normally overridden each hour by `CampbellSoilHydraulics`'s live
   leaf-water-potential solve
 - `leaf_angle_distribution_parameter` — Campbell's ellipsoidal leaf-angle `x`
-  (1.0 = spherical, default; 0.0 = horizontal; `Inf` = vertical). Lives here
+  (1.0 = spherical, default; 0.0 = vertical; `Inf` = horizontal). Lives here
   rather than on one radiative-transfer model since both
   [`TwoStreamRadiation`](@ref) and the rain-interception model use it.
 """

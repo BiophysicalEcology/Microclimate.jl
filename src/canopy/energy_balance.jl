@@ -178,7 +178,10 @@ function canopy_energy_balance!(buffers, model::MultilayerCanopy, boundary_layer
                 leaf_emissivity, conductance, leaf_water_potential, leaf_body;
                 leaf_area, leaf_temperature_guess=leaf_temperature_buffer[layer])
             # Under-relax, then clamp to a physically sane range (same bracket
-            # RootFindLeafTemperature uses) as a hard backstop.
+            # RootFindLeafTemperature uses) as a hard backstop. Free/tunable,
+            # uncited; asymmetric since radiative/convective heating under low
+            # wind can push a leaf further above air temperature than
+            # evaporative cooling pushes it below.
             relaxed_leaf_temperature = model.relaxation * new_leaf_temperature +
                 (1.0 - model.relaxation) * leaf_temperature_prev[layer]
             clamp_lo = air_temperature_layer - 30.0u"K"

@@ -6,6 +6,9 @@ Stomata open to `conductance` in daylight (`zenith_angle < 90°`) and shut to
 `closed_conductance` (cuticular-only, by default) at night. Not coupled to
 soil moisture or photosynthesis — see [`AbstractStomatalConductanceModel`](@ref)
 for where those variants plug in.
+
+`conductance` defaults are free/tunable, uncited (same values
+`MoistureResponsiveStomatalConductance` uses).
 """
 @kwdef struct PrescribedStomatalConductance{C,CC} <: AbstractStomatalConductanceModel
     conductance::C = LeafEvaporationParameters(;

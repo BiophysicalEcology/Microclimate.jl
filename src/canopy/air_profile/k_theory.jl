@@ -31,7 +31,7 @@ struct KTheoryAirProfile <: AbstractCanopyAirProfileModel end
 function allocate_air_profile(::KTheoryAirProfile, canopy_height, plant_area_index, heights, n_layers, boundary_layer_model)
     (; layer_heights, layer_thickness) = canopy_layer_heights(heights, canopy_height, n_layers)
     layer_spacing = layer_thickness
-    top_spacing = max(canopy_height - layer_heights[1], 1.0e-3u"m")
+    top_spacing = max(canopy_height - layer_heights[1], 1.0e-3u"m")  # numerical floor, not a physical parameter
 
     (; layer_plant_area_index) = canopy_layer_geometry(plant_area_index, n_layers)
     relative_eddy_diffusivity = wind_attenuation_profile(
@@ -77,7 +77,7 @@ function canopy_air_profile!(buffers, ::KTheoryAirProfile, boundary_layer_model;
 
     ρ_cp = calc_ρ_cp(canopy_top_air_temperature)
     eddy_diffusivity_top = boundary_layer_model.karman_constant * friction_velocity *
-        max(canopy_height - displacement_height, 1.0e-3u"m")
+        max(canopy_height - displacement_height, 1.0e-3u"m")  # numerical floor, not a physical parameter
 
     # Heat solve — boundary conductances g[0] (canopy top <-> layer 1) .. g[n] (layer n <-> ground), W/m^2/K.
     g_top, g_ground = _ktheory_conductances!(dl, du, relative_eddy_diffusivity, eddy_diffusivity_top,

@@ -68,9 +68,9 @@ end
 
 function example_soil_hydraulic_model(;
     root_resistance = 2.5e+10u"m^3/kg/s",     # resistance per unit length of root
-    stomatal_closure_potential = -1500.0u"J/kg", # critical leaf water potential for stomatal closure
+    stomatal_closure_potential = -1500.0u"J/kg", # critical leaf water potential for stomatal closure; free/tunable, uncited (same value MoistureResponsiveStomatalConductance uses)
     leaf_resistance = 2.0e6u"m^4/kg/s",       # resistance per unit length of leaf
-    stomatal_stability_parameter = 10.0,      # stability parameter, -
+    stomatal_stability_parameter = 10.0,      # stability parameter, -; free/tunable, uncited (same value MoistureResponsiveStomatalConductance uses)
     root_radius = 0.001u"m",                  # root radius, m
     infiltration_algorithm = MatricPotentialAlgorithm(),
 )

@@ -14,6 +14,12 @@ is unaffected. Shuts fully at night (`zenith_angle >= 90°`).
 on a `MultilayerCanopy`, prefer `PrescribedStomatalConductance` instead —
 Campbell's own demand/supply solve already applies this same closure curve to
 derive `leaf_water_potential`, so using both applies it twice.
+
+All defaults below (conductances, `stomatal_closure_potential`,
+`stomatal_stability_parameter`) are free/tunable, uncited —
+`stomatal_closure_potential`/`stomatal_stability_parameter` are the same
+uncited values `CampbellSoilHydraulics` (`campbell.jl`) uses for its own
+closure curve.
 """
 @kwdef struct MoistureResponsiveStomatalConductance{C,SCP,SSP} <: AbstractStomatalConductanceModel
     conductance::C = LeafEvaporationParameters(;

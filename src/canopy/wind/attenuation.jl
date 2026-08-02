@@ -15,9 +15,14 @@ struct CanopyWindAttenuation <: AbstractCanopyWindModel end
 
 Zero-plane displacement height from canopy height and total plant area
 index (structural, computed once).
+
+# References
+- Raupach, M. R. (1994). Simplified expressions for vegetation roughness
+  length and zero-plane displacement as functions of canopy height and
+  area index. *Boundary-Layer Meteorology*, 71(1-2), 211-216.
 """
 function zero_plane_displacement(canopy_height, plant_area_index)
-    pai = max(plant_area_index, 0.001)
+    pai = max(plant_area_index, 0.001)  # numerical floor, not a physical parameter
     return (1.0 - (1.0 - exp(-sqrt(7.5 * pai))) / sqrt(7.5 * pai)) * canopy_height
 end
 
@@ -29,15 +34,16 @@ applied separately by `atmospheric_surface_profile!`'s own Monin-Obukhov
 machinery, not folded in here.
 """
 function canopy_roughness_length(canopy_height, plant_area_index, displacement_height, karman_constant)
-    canopy_element_shelter = sqrt(0.003 + 0.1 * plant_area_index)
+    canopy_element_shelter = sqrt(0.003 + 0.1 * plant_area_index)  # shelter-factor form, empirical, source unconfirmed
     canopy_depth = canopy_height - displacement_height
     roughness = canopy_depth * exp(-karman_constant / canopy_element_shelter)
-    return clamp(roughness, 0.0005u"m", 0.9 * canopy_depth)
+    return clamp(roughness, 0.0005u"m", 0.9 * canopy_depth)  # free/tunable floor and ceiling, uncited
 end
 
 # Attenuation coefficient for one plant-area-index element (structural
 # mixing-length argument): larger local plant area density -> more
-# attenuation per unit height.
+# attenuation per unit height. 0.003/0.1 shelter-factor and 2.0/0.25
+# mixing-length constants are empirical, source unconfirmed.
 function _element_attenuation(element_plant_area_index, canopy_height)
     element_shelter = sqrt(0.003 + 0.1 * element_plant_area_index)
     area_density = element_plant_area_index / canopy_height
@@ -74,6 +80,8 @@ function wind_attenuation_profile(layer_plant_area_index, canopy_height, plant_a
         relative_wind[i - 1] = relative_wind[i] * (1.0 - layer_attenuation[i - 1])
     end
 
+    # 10.0 here is the same "bottom tenth" ratio as n_ground_layers = n÷10;
+    # 20.0 sets ground_roughness ~ half the bottom layer's own thickness.
     ground_roughness = canopy_height / (20.0 * n_ground_layers)
     friction_scale = karman_constant * relative_wind[n_ground_layers] / log(canopy_height / (10.0 * ground_roughness))
     for i in 1:n_ground_layers

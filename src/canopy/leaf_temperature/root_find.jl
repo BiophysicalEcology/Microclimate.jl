@@ -10,6 +10,7 @@ struct RootFindLeafTemperature <: AbstractLeafTemperatureSolver end
 function leaf_temperature(::RootFindLeafTemperature, absorbed_radiation, air_temperature, relative_humidity,
     wind_speed, atmospheric_pressure, leaf_emissivity, stomatal_conductance, leaf_water_potential, body;
     leaf_area=1.0u"m^2", leaf_temperature_guess=air_temperature,
+    # Free/tunable, uncited; same asymmetric bracket energy_balance.jl's clamp uses.
     bracket=(air_temperature - 30.0u"K", air_temperature + 40.0u"K"),
 )
     residual(T) = ustrip(u"W", leaf_heat_balance(T * u"K", absorbed_radiation, air_temperature, relative_humidity,

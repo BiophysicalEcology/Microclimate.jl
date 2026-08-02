@@ -32,6 +32,9 @@ solution: `x_new = relaxation·x_solved + (1-relaxation)·x_prev`. Needed
 because, unlike K-theory's direct tridiagonal solve, this Lagrangian solve is
 not guaranteed monotonically convergent pass-to-pass.
 
+All five keyword defaults above are free/tunable, not literature-derived
+values — no citation for the specific magnitudes.
+
 Humidity is transported as vapor density (kg/m³), not vapor pressure: a
 density gradient is directly a mass flux (Fick's law), the same scalar
 `KTheoryAirProfile`'s own vapor solve uses, with no scale factor analogous
@@ -122,7 +125,7 @@ end
         z_sub = z0 - Δz / 2 + Δz * (k - 0.5) / subdivisions
         signed_direct = (eval_height - z_sub) * inv_len
         direct_sign = signed_direct >= zero(signed_direct) ? 1.0 : -1.0
-        ζ = max(abs(signed_direct), 1.0e-9)
+        ζ = max(abs(signed_direct), 1.0e-9)  # numerical floor, not a physical parameter
         reflected = (eval_height + z_sub) * inv_len
         total += direct_sign * _raupach_kernel(ζ) + _raupach_kernel_signed(reflected)
     end
@@ -164,7 +167,7 @@ function canopy_air_profile!(buffers, model::RaupachLTheoryAirProfile, boundary_
     # top, matching the below-canopy L-theory value σ_w(h)²·T_L against the
     # above-canopy value, using σ_w(h) = a1·u*. Φ_h multiplies the neutral
     # value (Ogée et al. 2003 eq. 8), not divides.
-    z_eval = max(canopy_height - displacement_height, 1.0e-3u"m")
+    z_eval = max(canopy_height - displacement_height, 1.0e-3u"m")  # numerical floor, not a physical parameter
     # obukhov_length is Inf on the stable/neutral branch; calc_Φ_h assumes unstable-only input.
     Φ_h = isfinite(obukhov_length) ? calc_Φ_h(z_eval, γ, obukhov_length) : 1.0
     a2 = Φ_h * boundary_layer_model.karman_constant * (1.0 - displacement_height / canopy_height) / a1^2

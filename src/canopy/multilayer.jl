@@ -49,10 +49,12 @@ Composes swappable sub-models the same way `MicroModel` composes
 - `convergence::AbstractSoilTemperatureConvergence` — hourly Picard-loop
   convergence criterion (default `FixedSoilTemperatureIterations(3)`); reuses
   the soil spin-up loop's dispatch (generic over any temperature array).
+  Iteration count is free/tunable, uncited.
 - `relaxation` — under-relaxation on each Picard pass's leaf-temperature
   update (`x_new = relaxation*x_solved + (1-relaxation)*x_prev`), default
   `0.5`. Prevents overshoot when heat-transfer coefficients are small (e.g.
   near-zero stomatal conductance); same fix as `RaupachLTheoryAirProfile`.
+  Free/tunable, uncited.
 
 Ground reflectance is not stored here — supplied to
 [`canopy_shortwave!`](@ref) by the caller (e.g. `Site.albedo`), matching how

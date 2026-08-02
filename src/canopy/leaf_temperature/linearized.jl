@@ -18,7 +18,7 @@ function leaf_temperature(::LinearizedLeafTemperature, absorbed_radiation, air_t
     radiative_heat_transfer_coefficient = 4.0 * out.emitted_longwave / leaf_temperature_guess
     convective_heat_transfer_coefficient = out.conv.heat_transfer_coefficient.combined * leaf_area
 
-    δ = 0.1u"K"
+    δ = 0.1u"K"  # finite-difference step, free/tunable, uncited
     atmos = AtmosphericConditions(relative_humidity, wind_speed, atmospheric_pressure)
     evap_perturbed = HeatExchange.evaporation(stomatal_conductance, out.conv.mass_transfer_coefficient, atmos,
         leaf_area, leaf_temperature_guess + δ, air_temperature; water_potential=leaf_water_potential)
