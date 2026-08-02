@@ -172,6 +172,10 @@ function allocate_canopy_inputs(model::MultilayerCanopy; site, environment_insta
     )
 end
 
-initial_ground_overrides(::MultilayerCanopy) = (; ground_shortwave_transmission = 1.0, ground_incoming_longwave = 0.0u"W/m^2")
+initial_ground_overrides(::MultilayerCanopy) = (;
+    ground_shortwave_transmission = 1.0, ground_incoming_longwave = 0.0u"W/m^2",
+    ground_wind_speed = 0.0u"m/s", ground_air_temperature = 288.0u"K",
+    ground_air_relative_humidity = 0.5, ground_reference_height = 1.0u"m",
+)
 
 canopy_leaf_area_index(model::MultilayerCanopy) = sum(model.plant_area_index) * (1 - model.woody_area_fraction)

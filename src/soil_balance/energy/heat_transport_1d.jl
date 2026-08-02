@@ -38,7 +38,7 @@ instead of allocating a fresh struct each hour. All fields are concretely
 typed via the parametric `{F,B,…}` slots; the underlying heap object is the
 same across hours.
 """
-mutable struct SoilEnergyInputs{M<:SoilHeatTransportModel,EVM<:AbstractEvaporationModel,ARM<:AbstractAtmosphericRadiationModel,F,B,SP,SPR,D<:Vector{<:Number},H<:Vector{<:Number},S,BLM,EI,SW,VP,LW,QF,SNM,SNS,SM,GST,GIL}
+mutable struct SoilEnergyInputs{M<:SoilHeatTransportModel,EVM<:AbstractEvaporationModel,ARM<:AbstractAtmosphericRadiationModel,F,B,SP,SPR,D<:Vector{<:Number},H<:Vector{<:Number},S,BLM,EI,SW,VP,LW,QF,SNM,SNS,SM,GST,GIL,GWS,GAT,GRH,GRFH}
     model::M
     evaporation_model::EVM
     atmospheric_radiation_model::ARM
@@ -63,6 +63,14 @@ mutable struct SoilEnergyInputs{M<:SoilHeatTransportModel,EVM<:AbstractEvaporati
     # Canopy ground-boundary overrides (nothing under NoCanopy; see apply_canopy_overrides)
     ground_shortwave_transmission::GST
     ground_incoming_longwave::GIL
+    # Canopy-resolved sub-canopy boundary layer for convection/evaporation
+    # (nothing under NoCanopy): the canopy's ground-most-layer wind/air
+    # temperature/humidity and that layer's height, used as the reference
+    # level in place of the free-atmosphere forcing.
+    ground_wind_speed::GWS
+    ground_air_temperature::GAT
+    ground_air_relative_humidity::GRH
+    ground_reference_height::GRFH
 end
 
 function SoilEnergyInputs(; model=SoilHeatTransport1D(), evaporation_model=BulkTransferEvaporation(),
@@ -74,13 +82,16 @@ function SoilEnergyInputs(; model=SoilHeatTransport1D(), evaporation_model=BulkT
     snow_model=nothing, snow_state=nothing,
     soil_moisture=nothing,
     ground_shortwave_transmission=nothing, ground_incoming_longwave=nothing,
+    ground_wind_speed=nothing, ground_air_temperature=nothing,
+    ground_air_relative_humidity=nothing, ground_reference_height=nothing,
 )
     SoilEnergyInputs(model, evaporation_model, atmospheric_radiation_model,
         forcing, buffers, soil_properties_model, soil_profile,
         depths, heights, site, boundary_layer_model, environment_instant,
         soil_wetness, vapour_pressure_equation, longwave_sky, albedo, Q_freeze,
         snow_model, snow_state, soil_moisture,
-        ground_shortwave_transmission, ground_incoming_longwave)
+        ground_shortwave_transmission, ground_incoming_longwave,
+        ground_wind_speed, ground_air_temperature, ground_air_relative_humidity, ground_reference_height)
 end
 
 # In-place per-hour update — no allocation. Only the fields that change per
@@ -88,6 +99,8 @@ end
 @inline function update_soil_energy_inputs!(p::SoilEnergyInputs;
     depths, environment_instant, soil_wetness, longwave_sky, albedo, Q_freeze,
     snow_state, ground_shortwave_transmission=nothing, ground_incoming_longwave=nothing,
+    ground_wind_speed=nothing, ground_air_temperature=nothing,
+    ground_air_relative_humidity=nothing, ground_reference_height=nothing,
 )
     p.depths = depths
     p.environment_instant = environment_instant
@@ -98,6 +111,10 @@ end
     p.snow_state = snow_state
     p.ground_shortwave_transmission = ground_shortwave_transmission
     p.ground_incoming_longwave = ground_incoming_longwave
+    p.ground_wind_speed = ground_wind_speed
+    p.ground_air_temperature = ground_air_temperature
+    p.ground_air_relative_humidity = ground_air_relative_humidity
+    p.ground_reference_height = ground_reference_height
     return p
 end
 
@@ -141,6 +158,19 @@ end
     (incoming, outgoing_coeff, shade_term)
 @inline ground_longwave_terms(incoming, outgoing_coeff, shade_term, surface_emissivity, override) =
     (override, σ * surface_emissivity, 0.0u"W/m^2")
+
+# Sub-canopy convection/evaporation boundary condition: NoCanopy uses the
+# free-atmosphere forcing at reference_height directly; MultilayerCanopy
+# substitutes its resolved ground-most-layer wind/air temperature/humidity
+# and that layer's height as the reference level. roughness_height is
+# untouched in both cases — it's the soil surface's own micro-roughness,
+# unaffected by canopy above it.
+@inline ground_convection_conditions(air_temperature, wind_speed, relative_humidity, reference_height,
+    ::Nothing, ::Nothing, ::Nothing, ::Nothing) =
+    (air_temperature, wind_speed, relative_humidity, reference_height)
+@inline ground_convection_conditions(air_temperature, wind_speed, relative_humidity, reference_height,
+    canopy_air_temperature, canopy_wind_speed, canopy_relative_humidity, canopy_reference_height) =
+    (canopy_air_temperature, canopy_wind_speed, canopy_relative_humidity, canopy_reference_height)
 
 function allocate_soil_energy_balance(::SoilHeatTransport1D, num_nodes::Int)
     layer_depths = fill(0.0u"cm", num_nodes + 1)
@@ -287,10 +317,16 @@ function soil_energy_balance(model::SoilHeatTransport1D,
     end
     # Fortran DSUB.f line 565: CALL EVAP(T(1),TAIR,RH,100.0D0,...) — the 100.0 is
     # surface relative humidity (RHSURF), not wetness. PTWET comes from COMMON block.
+    # Distinct names from the longwave section above, which must keep using the
+    # free-atmosphere air_temperature/relative_humidity, not the canopy-attenuated ones.
+    (convection_air_temperature, convection_wind_speed, convection_relative_humidity, convection_reference_height) =
+        ground_convection_conditions(air_temperature, wind_speed, relative_humidity, reference_height,
+            p.ground_air_temperature, p.ground_wind_speed, p.ground_air_relative_humidity, p.ground_reference_height)
     Q_evaporation, convective_heat_flux = surface_convection_evaporation(evaporation_model;
         boundary_layer_model,
-        surface_temperature, air_temperature, wind_speed, relative_humidity,
-        atmospheric_pressure, roughness_height, reference_height,
+        surface_temperature, air_temperature=convection_air_temperature, wind_speed=convection_wind_speed,
+        relative_humidity=convection_relative_humidity,
+        atmospheric_pressure, roughness_height, reference_height=convection_reference_height,
         zenith_angle, soil_wetness, vapour_pressure_equation,
         obukhov_length_prev=buffers.soil_energy_balance.obukhov_length_prev,
     )

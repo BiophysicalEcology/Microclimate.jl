@@ -95,9 +95,14 @@ function allocate_wind(::CanopyWindAttenuation, canopy_height, plant_area_index,
     wind_attenuation = wind_attenuation_profile(
         layer_plant_area_index, canopy_height, total_plant_area_index, boundary_layer_model.karman_constant,
     )
+    # Ground-most layer's height above the soil surface — not every
+    # air_profile_model buffer stores this (KTheoryAirProfile doesn't), so
+    # compute it once here where it's cheap (allocation-time only).
+    (; layer_heights) = canopy_layer_heights(heights, canopy_height, n_layers)
+    ground_layer_height = layer_heights[n_layers]
 
     return (;
-        displacement_height, roughness_length, wind_attenuation,
+        displacement_height, roughness_length, wind_attenuation, ground_layer_height,
         above_canopy_profile = allocate_profile(boundary_layer_model, [canopy_height, last(heights)]),
         wind_speed = zeros(typeof(0.0u"m/s"), n_layers),
     )

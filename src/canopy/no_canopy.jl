@@ -14,7 +14,11 @@ reset_canopy_scratch!(::NoCanopy, buffers) = nothing
 
 allocate_canopy_inputs(::NoCanopy; kw...) = nothing
 
-initial_ground_overrides(::NoCanopy) = (; ground_shortwave_transmission = nothing, ground_incoming_longwave = nothing)
+initial_ground_overrides(::NoCanopy) = (;
+    ground_shortwave_transmission = nothing, ground_incoming_longwave = nothing,
+    ground_wind_speed = nothing, ground_air_temperature = nothing,
+    ground_air_relative_humidity = nothing, ground_reference_height = nothing,
+)
 
 n_canopy_layers(::NoCanopy, heights) = 0
 
