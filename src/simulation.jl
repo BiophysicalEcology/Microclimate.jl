@@ -655,7 +655,10 @@ function solve_soil!(cache::MicroCache)
                 apply_canopy_overrides(canopy_model, buffers.canopy, canopy_inputs;
                     boundary_layer_model, site, environment_instant, ground_temperature,
                     ground_emissivity = environment_instant.surface_emissivity,
-                    ground_relative_humidity = environment_instant.reference_humidity,
+                    # Lagged soil-surface humidity (mirrors ground_temperature's T0[1]
+                    # lag); falls back to reference RH before any DynamicSoilMoisture
+                    # update has run (PrescribedSoilMoisture never populates infil_out).
+                    ground_relative_humidity = isnothing(infil_out) ? environment_instant.reference_humidity : infil_out.soil_humidity[1],
                     canopy_source_temperature, rainfall = rainfall_step,
                     direct_horizontal_irradiance = output.global_radiation[step] * (1.0 - output.diffuse_fraction[step]),
                     diffuse_horizontal_irradiance = output.global_radiation[step] * output.diffuse_fraction[step],
@@ -795,7 +798,10 @@ function solve_soil!(cache::MicroCache)
                         apply_canopy_overrides(canopy_model, buffers.canopy, canopy_inputs;
                             boundary_layer_model, site, environment_instant, ground_temperature,
                             ground_emissivity = environment_instant.surface_emissivity,
-                            ground_relative_humidity = environment_instant.reference_humidity,
+                            # Lagged soil-surface humidity (mirrors ground_temperature's T0[1]
+                            # lag); falls back to reference RH before any DynamicSoilMoisture
+                            # update has run (PrescribedSoilMoisture never populates infil_out).
+                            ground_relative_humidity = isnothing(infil_out) ? environment_instant.reference_humidity : infil_out.soil_humidity[1],
                             canopy_source_temperature, rainfall = rainfall_next,
                             direct_horizontal_irradiance = output.global_radiation[next_step] * (1.0 - output.diffuse_fraction[next_step]),
                             diffuse_horizontal_irradiance = output.global_radiation[next_step] * output.diffuse_fraction[next_step],
