@@ -95,20 +95,24 @@ const _RAUPACH_KERNEL_C2 = 0.5 - π^2 / (6 * sqrt(2π))
     return _RAUPACH_KERNEL_C1 * log(1.0 - e) + _RAUPACH_KERNEL_C2 * e
 end
 
-# Kernel weight for a source layer's contribution to a point at `eval_height`,
-# including the reflected (ground image-source) term. `source_idx` indexes into
-# `layer_heights`/`layer_thickness`/`inv_near_field_length`.
+# kn is odd (kn(-ζ) = -kn(ζ); eq. 34 gives it for ζ>0 only).
+@inline _raupach_kernel_signed(ζ) = ζ >= zero(ζ) ? _raupach_kernel(ζ) : -_raupach_kernel(-ζ)
+
+# Eq. 37: Cn = ∫ [S(z0)/σw(z0)] · [kn{(z-z0)/λ} + kn{(z+z0)/λ}] dz0 — direct-path
+# and reflected (ground image-source) terms each get their own kernel evaluation.
+# `source_idx` indexes into `layer_heights`/`layer_thickness`/`inv_near_field_length`.
 @inline function _raupach_kernel_weight(eval_height, source_idx, layer_heights, inv_near_field_length)
     inv_len = inv_near_field_length[source_idx]
     signed_direct = (eval_height - layer_heights[source_idx]) * inv_len
     reflected = (eval_height + layer_heights[source_idx]) * inv_len
-    return _raupach_kernel(abs(signed_direct)) * (signed_direct + reflected)
+    return _raupach_kernel_signed(signed_direct) + _raupach_kernel_signed(reflected)
 end
 
 # Self-term: the kernel is singular at zero distance, so a source layer's
 # contribution to a point within its own thickness can't use a single
 # point-source evaluation. Subdivides the layer into `subdivisions` sub-points
-# and averages — a plain midpoint quadrature of the singularity.
+# and averages — a plain midpoint quadrature of the singularity. Only the
+# direct-path term is ever near-singular; the reflected term isn't.
 @inline function _raupach_self_kernel_weight(eval_height, source_idx, layer_heights, layer_thickness, inv_near_field_length, subdivisions)
     Δz = layer_thickness[source_idx]
     z0 = layer_heights[source_idx]
@@ -117,9 +121,10 @@ end
     @inbounds for k in 1:subdivisions
         z_sub = z0 - Δz / 2 + Δz * (k - 0.5) / subdivisions
         signed_direct = (eval_height - z_sub) * inv_len
+        direct_sign = signed_direct >= zero(signed_direct) ? 1.0 : -1.0
         ζ = max(abs(signed_direct), 1.0e-9)
         reflected = (eval_height + z_sub) * inv_len
-        total += _raupach_kernel(ζ) * (signed_direct + reflected)
+        total += direct_sign * _raupach_kernel(ζ) + _raupach_kernel_signed(reflected)
     end
     return total / subdivisions
 end
@@ -157,10 +162,11 @@ function canopy_air_profile!(buffers, model::RaupachLTheoryAirProfile, boundary_
     # T_L is held constant through the canopy (a2·h/u*), not a function of z:
     # a2 is set by requiring eddy diffusivity to be continuous at the canopy
     # top, matching the below-canopy L-theory value σ_w(h)²·T_L against the
-    # above-canopy Monin-Obukhov value κu*(h-d)/Φ_h — using σ_w(h) = a1·u*
-    # (Ogée et al. 2003).
+    # above-canopy value, using σ_w(h) = a1·u*. Φ_h multiplies the neutral
+    # value (Ogée et al. 2003 eq. 8), not divides.
     z_eval = max(canopy_height - displacement_height, 1.0e-3u"m")
-    Φ_h = calc_Φ_h(z_eval, γ, obukhov_length)
+    # obukhov_length is Inf on the stable/neutral branch; calc_Φ_h assumes unstable-only input.
+    Φ_h = isfinite(obukhov_length) ? calc_Φ_h(z_eval, γ, obukhov_length) : 1.0
     a2 = Φ_h * boundary_layer_model.karman_constant * (1.0 - displacement_height / canopy_height) / a1^2
     TL = a2 * canopy_height / friction_velocity
 
