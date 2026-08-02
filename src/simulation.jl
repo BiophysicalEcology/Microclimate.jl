@@ -719,10 +719,15 @@ function solve_soil!(cache::MicroCache)
                 step = (j - 1) * length(hours) + i
                 T0_before = T0
                 T_snow_before = T_snow
-                # canopy_result holds this hour's value here; the lookahead
-                # block below overwrites it with hour i+1's. Snapshot first so
-                # rain/transpiration below stay on hour i.
+                # canopy_result and the ground_* canopy overrides hold this
+                # hour's values here; the lookahead block below overwrites
+                # them with hour i+1's. Snapshot first so rain/transpiration/
+                # soil-moisture below stay on hour i.
                 current_hour_canopy_result = canopy_result
+                current_hour_ground_wind_speed = ground_wind_speed
+                current_hour_ground_air_temperature = ground_air_temperature
+                current_hour_ground_air_relative_humidity = ground_air_relative_humidity
+                current_hour_ground_reference_height = ground_reference_height
 
                 # ── Step integrator to this hour boundary ──
                 T_result = step_to_hour!(ode_integrator, i)
@@ -881,6 +886,10 @@ function solve_soil!(cache::MicroCache)
                         soil_profile, depths, site, boundary_layer_model, environment_instant, T0, pool, soil_moisture,
                         max_surface_pool, evaporation_model, vapour_pressure_equation, snow_present, canopy_transpiration_potential,
                         canopy_leaf_area_index = canopy_leaf_area_index(canopy_model),
+                        ground_wind_speed = current_hour_ground_wind_speed,
+                        ground_air_temperature = current_hour_ground_air_temperature,
+                        ground_air_relative_humidity = current_hour_ground_air_relative_humidity,
+                        ground_reference_height = current_hour_ground_reference_height,
                     )
                     if !isnothing(infil_out)
                         leaf_water_potential = infil_out.leaf_water_potential
@@ -1079,6 +1088,8 @@ function step_soil_moisture!(mode::DynamicSoilMoisture, buffers, soil_hydraulic_
     soil_profile, depths, site, boundary_layer_model, environment_instant, T0, pool, soil_moisture,
     max_surface_pool, evaporation_model, vapour_pressure_equation, snow_present=false,
     canopy_transpiration_potential=nothing, canopy_leaf_area_index=nothing,
+    ground_wind_speed=nothing, ground_air_temperature=nothing,
+    ground_air_relative_humidity=nothing, ground_reference_height=nothing,
 )
     (; moisture_tolerance, moisture_max_iterations, moisture_timestep) = mode
     niter_moist = ustrip(u"s^-1", 3600 / moisture_timestep)
@@ -1087,6 +1098,7 @@ function step_soil_moisture!(mode::DynamicSoilMoisture, buffers, soil_hydraulic_
         soil_wetness=mode.soil_wetness, soil_moisture,
         moisture_timestep, moisture_tolerance, moisture_max_iterations, max_surface_pool,
         evaporation_model, vapour_pressure_equation, snow_present, canopy_transpiration_potential, canopy_leaf_area_index,
+        ground_wind_speed, ground_air_temperature, ground_air_relative_humidity, ground_reference_height,
     )
     mode.soil_wetness = soil_wetness
     return (; pool, soil_moisture, infil_out)

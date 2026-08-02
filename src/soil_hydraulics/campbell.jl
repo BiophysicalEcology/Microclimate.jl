@@ -397,10 +397,10 @@ function soil_water_balance!(buffers, soil_hydraulic_model::CampbellSoilHydrauli
     snow_present=false,
     canopy_transpiration_potential=nothing,
     canopy_leaf_area_index=nothing,
+    ground_wind_speed=nothing, ground_air_temperature=nothing,
+    ground_air_relative_humidity=nothing, ground_reference_height=nothing,
 )
-    air_temperature = environment_instant.reference_temperature
     atmospheric_pressure = environment_instant.atmospheric_pressure
-    relative_humidity = environment_instant.reference_humidity
     leaf_area_index = isnothing(canopy_leaf_area_index) ? environment_instant.leaf_area_index : canopy_leaf_area_index
 
     (; bulk_density, mineral_density) = soil_profile
@@ -408,18 +408,39 @@ function soil_water_balance!(buffers, soil_hydraulic_model::CampbellSoilHydrauli
     θ_soil = soil_moisture
     surface_temperature = T0[1]
 
-    # compute scalar profiles
-    profile_out = atmospheric_surface_profile!(boundary_layer_model, buffers.soil_water_profile;
-        site, environment_instant, surface_temperature, vapour_pressure_equation,
-    )
-
-    # convection
-    convective_heat_flux = profile_out.convective_heat_flux
-
-    # evaporation
-    wet_air_out_ref = wet_air_properties(u"K"(last(profile_out.air_temperature)), last(profile_out.relative_humidity), atmospheric_pressure; vapour_pressure_equation)
-    wet_air_out_loc = wet_air_properties(u"K"(profile_out.air_temperature[1]), 1.0, atmospheric_pressure; vapour_pressure_equation)
-    local_relative_humidity = clamp(wet_air_out_ref.vapour_pressure / wet_air_out_loc.vapour_pressure, 0.0, 0.99)
+    if isnothing(ground_air_relative_humidity)
+        # NoCanopy: full MOST profile from the free-atmosphere reference down
+        # to the soil surface, as before.
+        air_temperature = environment_instant.reference_temperature
+        relative_humidity = environment_instant.reference_humidity
+        profile_out = atmospheric_surface_profile!(boundary_layer_model, buffers.soil_water_profile;
+            site, environment_instant, surface_temperature, vapour_pressure_equation,
+        )
+        convective_heat_flux = profile_out.convective_heat_flux
+        wet_air_out_ref = wet_air_properties(u"K"(last(profile_out.air_temperature)), last(profile_out.relative_humidity), atmospheric_pressure; vapour_pressure_equation)
+        wet_air_out_loc = wet_air_properties(u"K"(profile_out.air_temperature[1]), 1.0, atmospheric_pressure; vapour_pressure_equation)
+        local_relative_humidity = clamp(wet_air_out_ref.vapour_pressure / wet_air_out_loc.vapour_pressure, 0.0, 0.99)
+    else
+        # Canopy present: MOST is only valid above canopy top (already used
+        # there, in canopy_wind_profile!) -- within the canopy, transport is
+        # the canopy's own resolved profile. Below the canopy's lowest
+        # resolved layer, treat that layer's conditions as the reference for
+        # a thin sub-canopy MOST segment down to the soil surface, rather
+        # than reusing the free-atmosphere reference. roughness_height stays
+        # the site's own bare-ground value, unaffected by canopy above it.
+        # The canopy's resolved ground-layer humidity is already the
+        # near-surface value directly, no MOST profile approximation needed.
+        air_temperature = ground_air_temperature
+        relative_humidity = ground_air_relative_humidity
+        flux_out = surface_fluxes(boundary_layer_model;
+            surface_temperature, air_temperature=u"K"(ground_air_temperature), wind_speed=ground_wind_speed,
+            zenith_angle=environment_instant.zenith_angle,
+            roughness_height=site.roughness_height, reference_height=ground_reference_height,
+            obukhov_length_prev=buffers.soil_water_profile.obukhov_length_prev,
+        )
+        convective_heat_flux = flux_out.convective_heat_flux
+        local_relative_humidity = clamp(ground_air_relative_humidity, 0.0, 0.99)
+    end
     heat_transfer_coefficient = max(abs(convective_heat_flux / (surface_temperature - air_temperature)), 0.5u"W/m^2/K")
     wet_air_out = wet_air_properties(air_temperature, relative_humidity, atmospheric_pressure; vapour_pressure_equation)
     air_heat_capacity = wet_air_out.specific_heat
