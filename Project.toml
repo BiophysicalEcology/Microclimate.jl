@@ -31,7 +31,7 @@ Makie = "ee78f7c6-11fb-53f2-987a-cfe4a2b5a57a"
 [sources]
 BiophysicalGeometry = {rev = "main", url = "https://github.com/BiophysicalEcology/BiophysicalGeometry.jl"}
 FluidProperties = {rev = "main", url = "https://github.com/BiophysicalEcology/FluidProperties.jl"}
-HeatExchange = {rev = "main", url = "https://github.com/BiophysicalEcology/HeatExchange.jl"}
+HeatExchange = {rev = "transient-model", url = "https://github.com/BiophysicalEcology/HeatExchange.jl"}
 SolarRadiation = {rev = "main", url = "https://github.com/BiophysicalEcology/SolarRadiation.jl"}
 
 [extensions]

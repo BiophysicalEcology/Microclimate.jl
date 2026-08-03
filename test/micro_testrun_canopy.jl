@@ -114,7 +114,7 @@ environment_instant = (;
 lwp_values = [0.0, -0.5e6, -1.0e6, -1.5e6, -2.0e6, -3.0e6] .* u"J/kg"
 lwp_leaf_temps = map(lwp_values) do lwp
     m = example_multilayer_canopy(; canopy_height = 1.0u"m", plant_area_index = 3.0,
-        convergence = FixedSoilTemperatureIterations(20))
+        convergence = FixedIterationConvergence(20))
     b = Microclimate.allocate_canopy(m, heights, boundary_layer_model)
     inputs = Microclimate.CanopyEnergyBalanceInputs(m;
         site, environment_instant, zenith_angle = 30.0u"°",

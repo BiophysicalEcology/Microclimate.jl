@@ -81,7 +81,7 @@ end
 @testset "leaf_water_potential (Campbell coupling input) warms canopy leaves" begin
     mean_leaf_temperature(lwp) = begin
         m = Microclimate.example_multilayer_canopy(;
-            canopy_height, plant_area_index, convergence = FixedSoilTemperatureIterations(20),
+            canopy_height, plant_area_index, convergence = FixedIterationConvergence(20),
         )
         b = Microclimate.allocate_canopy(m, heights, boundary_layer_model)
         inputs = Microclimate.CanopyEnergyBalanceInputs(m;
@@ -103,7 +103,7 @@ end
     # Fixed iteration count for a reproducible byte budget (SoilTemperatureConvergenceTolerance's
     # own convergence-dependent iteration count would make this threshold nondeterministic).
     fixed_model = Microclimate.example_multilayer_canopy(;
-        canopy_height, plant_area_index, convergence = FixedSoilTemperatureIterations(3),
+        canopy_height, plant_area_index, convergence = FixedIterationConvergence(3),
     )
     fixed_buffers = Microclimate.allocate_canopy(fixed_model, heights, boundary_layer_model)
     inputs = Microclimate.CanopyEnergyBalanceInputs(fixed_model;
@@ -123,7 +123,7 @@ end
 @testset "vector plant_area_index matches equivalent scalar and stays allocation-light" begin
     run_once(pai) = begin
         m = Microclimate.example_multilayer_canopy(; canopy_height, plant_area_index = pai,
-            convergence = FixedSoilTemperatureIterations(3))
+            convergence = FixedIterationConvergence(3))
         b = Microclimate.allocate_canopy(m, heights, boundary_layer_model)
         inputs = Microclimate.CanopyEnergyBalanceInputs(m;
             site, environment_instant = make_environment_instant(; zenith_angle = 30.0u"°"), zenith_angle = 30.0u"°",
@@ -150,7 +150,7 @@ end
 
 @testset "fixed-iteration convergence strategy still runs to completion" begin
     fixed_model = Microclimate.example_multilayer_canopy(;
-        canopy_height, plant_area_index, convergence = FixedSoilTemperatureIterations(3),
+        canopy_height, plant_area_index, convergence = FixedIterationConvergence(3),
     )
     fixed_buffers = Microclimate.allocate_canopy(fixed_model, heights, boundary_layer_model)
     inputs = Microclimate.CanopyEnergyBalanceInputs(fixed_model;

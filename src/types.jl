@@ -62,14 +62,14 @@ Solver/iteration/data-delivery strategy. Lives on `MicroModel.config`.
 Physical-process models live directly on `MicroModel`; this struct is
 strictly the "how we iterate and how data is delivered" side of the model.
 
-- `convergence`: `FixedSoilTemperatureIterations(3)` or `SoilTemperatureConvergenceTolerance(; tolerance, max_iterations_per_day)`
+- `convergence`: `FixedIterationConvergence(3)` or `SoilTemperatureConvergenceTolerance(; tolerance, max_iterations_per_day)`
 - `rainfall_schedule`: `DailyRainfall()` (default) or `HourlyRainfall()`
 - `soil_moisture_strategy`: `PrescribedSoilMoisture()` or `DynamicSoilMoisture(; ...)`
 - `max_surface_pool`: numerical clamp on the surface-pool state variable
   (not a physical limit — keeps the pool integration from running away)
 """
 @kwdef struct MicroConfig{CV,RFS,SMM,MSP}
-    convergence::CV = FixedSoilTemperatureIterations(3)
+    convergence::CV = FixedIterationConvergence(3)
     rainfall_schedule::RFS = DailyRainfall()
     soil_moisture_strategy::SMM = PrescribedSoilMoisture()
     max_surface_pool::MSP = 1.0e4u"kg/m^2"

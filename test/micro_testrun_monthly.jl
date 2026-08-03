@@ -124,7 +124,7 @@ time_mode = _daily ? ConsecutiveDayMode(; spinup_first_day=_spinup) :
     NonConsecutiveDayMode(; iterations_per_day=Int(microinput[:ndmax]))
 
 config = MicroConfig(;
-    convergence = FixedSoilTemperatureIterations(10),
+    convergence = FixedIterationConvergence(10),
     rainfall_schedule = Bool(Int(microinput[:rainhourly])) ? HourlyRainfall() : DailyRainfall(),
     soil_moisture_strategy = _runmoist ? DynamicSoilMoisture() :
         PrescribedSoilMoisture(; precomputed_soil_moisture),

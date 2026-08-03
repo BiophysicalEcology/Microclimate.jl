@@ -71,7 +71,7 @@ export AbstractInfiltrationAlgorithm, MatricPotentialAlgorithm, MatricFluxPotent
 export AbstractSoilMoistureStrategy, PrescribedSoilMoisture, DynamicSoilMoisture
 
 # Convergence strategies
-export AbstractSoilTemperatureConvergence, FixedSoilTemperatureIterations, SoilTemperatureConvergenceTolerance
+export AbstractSoilTemperatureConvergence, FixedIterationConvergence, SoilTemperatureConvergenceTolerance
 
 # Time modes
 export AbstractTimeMode, NonConsecutiveDayMode, ConsecutiveDayMode

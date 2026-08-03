@@ -142,7 +142,7 @@ soil_moisture_strategy = _runmoist ?
     PrescribedSoilMoisture()
 
 config = MicroConfig(;
-    convergence = FixedSoilTemperatureIterations(Int(microinput[:ndmax])),
+    convergence = FixedIterationConvergence(Int(microinput[:ndmax])),
     rainfall_schedule = Bool(Int(microinput[:rainhourly])) ? HourlyRainfall() : DailyRainfall(),
     soil_moisture_strategy,
     max_surface_pool = microinput[:maxpool] * 1000.0u"kg/m^2",

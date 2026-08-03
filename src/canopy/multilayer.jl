@@ -9,7 +9,7 @@
                        stomatal_model=PrescribedStomatalConductance(),
                        leaf_temperature_solver=LinearizedLeafTemperature(),
                        leaf_convection_model=ElaborateLeafConvection(),
-                       convergence=FixedSoilTemperatureIterations(3))
+                       convergence=FixedIterationConvergence(3))
 
 Multi-layer canopy structure resolved by height. Splits the canopy into as
 many layers as there are `MicroModel.heights` entries at or below
@@ -51,7 +51,7 @@ Composes swappable sub-models the same way `MicroModel` composes
   Nusselt correlation (default [`ElaborateLeafConvection`](@ref); see also
   [`SimpleLeafConvection`](@ref))
 - `convergence::AbstractSoilTemperatureConvergence` — hourly Picard-loop
-  convergence criterion (default `FixedSoilTemperatureIterations(3)`); reuses
+  convergence criterion (default `FixedIterationConvergence(3)`); reuses
   the soil spin-up loop's dispatch (generic over any temperature array).
   Iteration count is free/tunable, uncited.
 - `relaxation` — under-relaxation on each Picard pass's leaf-temperature
@@ -77,7 +77,7 @@ other radiation models read albedo from their caller.
     stomatal_model::SM = PrescribedStomatalConductance()
     leaf_temperature_solver::LTS = LinearizedLeafTemperature()
     leaf_convection_model::LCM = ElaborateLeafConvection()
-    convergence::CV = FixedSoilTemperatureIterations(3)
+    convergence::CV = FixedIterationConvergence(3)
     relaxation::RL = 0.5
 end
 
@@ -94,7 +94,7 @@ function example_multilayer_canopy(;
     stomatal_model = PrescribedStomatalConductance(),
     leaf_temperature_solver = LinearizedLeafTemperature(),
     leaf_convection_model = ElaborateLeafConvection(),
-    convergence = FixedSoilTemperatureIterations(3),
+    convergence = FixedIterationConvergence(3),
     relaxation = 0.5,
 )
     MultilayerCanopy(;

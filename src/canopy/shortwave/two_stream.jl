@@ -1,5 +1,5 @@
 """
-    TwoStreamRadiation(; leaf_reflectance=0.05, leaf_transmittance=0.05)
+    TwoStreamRadiation(; leaf_reflectance=0.2, leaf_transmittance=0.05)
 
 Dickinson/Sellers two-stream canopy radiative transfer (the same closed-form
 solution used in Dickinson (1983), Sellers (1985), and ClimaLand's
@@ -23,8 +23,8 @@ caller to [`canopy_shortwave!`](@ref) (e.g. `Site.albedo`), not stored here.
   Forest Meteorology*, 49(3), 173–176.
 """
 @kwdef struct TwoStreamRadiation{LR,LT} <: AbstractCanopyShortwaveModel
-    leaf_reflectance::LR = 0.05
-    leaf_transmittance::LT = 0.05
+    leaf_reflectance::LR = 0.25
+    leaf_transmittance::LT = 0.25
 end
 
 """
