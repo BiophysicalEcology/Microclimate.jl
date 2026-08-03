@@ -14,8 +14,8 @@ every layer's concentration depends on every other layer's source directly.
 `a0`/`a1`) set the vertical velocity standard deviation profile: `σ_w(z) =
 (a1+a0)/2·u* + (a1-a0)/2·u*·cos(π(1 - z/h))`, minimum at the ground
 (`a0·u*`), maximum at canopy top (`a1·u*`). `min_ground_resistance` floors the
-ground-to-layer aerodynamic resistance (avoids a runaway ground flux for a
-very open canopy).
+ground-most layer's own aerodynamic resistance, used once to evaluate the
+ground flux Fg (avoids a runaway Fg for a very open canopy).
 
 The near-field kernel is singular at zero distance, so a layer's contribution
 to a point within (or coincident with) itself can't be evaluated as a single
@@ -45,11 +45,11 @@ conditions and the relative-humidity readout go through
 `wet_air_properties`'s vapor-pressure/vapor-density primitives, the same
 ones `monin_obukhov.jl` uses.
 
-The per-layer cumulative source sum and far-field integral are each an
-O(n) prefix/suffix sum, not recomputed per layer. The near-field double sum
-stays O(n²) — its kernel is nonlinear in both indices — but heat and vapor
-share one kernel evaluation per (i,j) pair. Out-of-range results are
-asserted finite rather than silently clipped.
+The far-field term is eq. 19a's integral (O(n) prefix sum of each layer's
+local flux over its own local resistance). The near-field double sum stays
+O(n²) — its kernel is nonlinear in both indices — but heat and vapor share
+one kernel evaluation per (i,j) pair. Out-of-range results are asserted
+finite rather than silently clipped.
 
 # References
 - Raupach, M. R. (1989). A practical Lagrangian method for relating scalar
@@ -73,8 +73,8 @@ function allocate_air_profile(::RaupachLTheoryAirProfile, canopy_height, plant_a
         inv_near_field_length = zeros(typeof(1.0 / (1.0u"m/s" * 1.0u"s")), n_layers),
         eddy_diffusivity = zeros(typeof(0.0u"m^2/s"), n_layers),
         layer_resistance = zeros(typeof(0.0u"s/m"), n_layers),
-        resistance_from_top = zeros(typeof(0.0u"s/m"), n_layers),
-        resistance_to_ground = zeros(typeof(0.0u"s/m"), n_layers),
+        far_field_accum = zeros(typeof(0.0u"J/m^3"), n_layers),
+        far_field_accum_latent = zeros(typeof(0.0u"kg/m^3"), n_layers),
         cumulative_sensible_below = zeros(typeof(0.0u"W/m^2"), n_layers),
         sensible_near_field_weight = zeros(typeof(0.0u"W/m^2" / 1.0u"m/s"), n_layers),
         cumulative_latent_below = zeros(typeof(0.0u"kg/m^2/s"), n_layers),
@@ -138,7 +138,7 @@ function canopy_air_profile!(buffers, model::RaupachLTheoryAirProfile, boundary_
     sensible_heat_source, evaporation_mass_flow, obukhov_length, atmospheric_pressure, vapour_pressure_equation=GoffGratch(),
 )
     (; layer_heights, layer_thickness, vertical_velocity_std, inv_near_field_length, eddy_diffusivity,
-       layer_resistance, resistance_from_top, resistance_to_ground, cumulative_sensible_below,
+       layer_resistance, far_field_accum, far_field_accum_latent, cumulative_sensible_below,
        sensible_near_field_weight, cumulative_latent_below, latent_near_field_weight,
        air_temperature, air_temperature_prev, vapour_density, vapour_density_prev, relative_humidity) = buffers
     n = length(air_temperature)
@@ -185,16 +185,6 @@ function canopy_air_profile!(buffers, model::RaupachLTheoryAirProfile, boundary_
         latent_near_field_weight[i] = (evaporation_mass_flow[i] / 1.0u"m^2") / σ_w
     end
 
-    # Prefix (canopy top -> i) and suffix (i -> ground) cumulative resistance.
-    resistance_from_top[1] = layer_resistance[1]
-    @inbounds for i in 2:n
-        resistance_from_top[i] = resistance_from_top[i - 1] + layer_resistance[i]
-    end
-    resistance_to_ground[n] = layer_resistance[n]
-    @inbounds for i in (n - 1):-1:1
-        resistance_to_ground[i] = resistance_to_ground[i + 1] + layer_resistance[i]
-    end
-
     cumulative_sensible_below[n] = sensible_heat_source[n]
     cumulative_latent_below[n] = evaporation_mass_flow[n] / 1.0u"m^2"
     @inbounds for i in (n - 1):-1:1
@@ -202,12 +192,27 @@ function canopy_air_profile!(buffers, model::RaupachLTheoryAirProfile, boundary_
         cumulative_latent_below[i] = cumulative_latent_below[i + 1] + evaporation_mass_flow[i] / 1.0u"m^2"
     end
 
+    ground_vapour_density = wet_air_properties(ground_temperature, ground_relative_humidity,
+        atmospheric_pressure; vapour_pressure_equation).vapour_density
+
+    # Eq. 19a: Cf(z)-Cf(zR) = ∫[z,zR] F(z')/Kf(z') dz' -- each layer's own
+    # local flux over its own local resistance, summed; not one flux value
+    # times the total resistance across the range. Fg is a single ground
+    # flux, evaluated once from the ground-most layer.
+    ground_resistance = max(layer_resistance[n], min_ground_resistance)
+    ground_flux = (calc_ρ_cp(air_temperature_prev[n]) / ground_resistance) * (ground_temperature - air_temperature_prev[n])
+    ground_vapour_flux = (ground_vapour_density - vapour_density_prev[n]) / ground_resistance
+
+    far_field_accum[1] = (cumulative_sensible_below[1] + ground_flux) * layer_resistance[1]
+    far_field_accum_latent[1] = (cumulative_latent_below[1] + ground_vapour_flux) * layer_resistance[1]
+    @inbounds for i in 2:n
+        far_field_accum[i] = far_field_accum[i - 1] + (cumulative_sensible_below[i] + ground_flux) * layer_resistance[i]
+        far_field_accum_latent[i] = far_field_accum_latent[i - 1] + (cumulative_latent_below[i] + ground_vapour_flux) * layer_resistance[i]
+    end
+
     ρ_cp_top = calc_ρ_cp(canopy_top_air_temperature)
     concentration_top = ρ_cp_top * canopy_top_air_temperature
     concentration_top_latent = wet_air_properties(canopy_top_air_temperature, canopy_top_relative_humidity,
-        atmospheric_pressure; vapour_pressure_equation).vapour_density
-
-    ground_vapour_density = wet_air_properties(ground_temperature, ground_relative_humidity,
         atmospheric_pressure; vapour_pressure_equation).vapour_density
 
     # Near-field concentration at the canopy top, subtracted from every
@@ -229,15 +234,8 @@ function canopy_air_profile!(buffers, model::RaupachLTheoryAirProfile, boundary_
     end
 
     @inbounds for i in 1:n
-        # Heat and vapor share the ground-to-layer resistance (K_H = K_V assumed).
-        ground_resistance = max(resistance_to_ground[i], min_ground_resistance)
-        ground_flux = (calc_ρ_cp(air_temperature_prev[i]) / ground_resistance) * (ground_temperature - air_temperature_prev[i])
-        far_field_source = cumulative_sensible_below[i] + ground_flux
-        far_field = far_field_source * resistance_from_top[i]
-
-        ground_vapour_flux = (ground_vapour_density - vapour_density_prev[i]) / ground_resistance
-        far_field_source_latent = cumulative_latent_below[i] + ground_vapour_flux
-        far_field_latent = far_field_source_latent * resistance_from_top[i]
+        far_field = far_field_accum[i]
+        far_field_latent = far_field_accum_latent[i]
 
         near_field = zero(concentration_top)
         near_field_latent = zero(concentration_top_latent)
