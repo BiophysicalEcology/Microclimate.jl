@@ -33,8 +33,7 @@ off-diagonal terms use a single point-source evaluation each.
 Fg (ground flux) depends on the same air_temperature it helps solve,
 coupled through up to the whole canopy's resistance — gain through that
 loop can exceed 1 for a tall/dense canopy, which no fixed relaxation
-factor stabilizes. Adaptive Aitken Δ²-acceleration (ports R micropoint's
-`aitkin_weightdif`) handles this: `omega` is relearned each pass from the
+factor stabilizes. Adaptive Aitken Δ²-acceleration handles this: `omega` is relearned each pass from the
 residual history, clamped to `[aitken_omega_min, aitken_omega_max]`, and
 weighted to under-relax hardest at the ground (`aitken_weight_bottom`)
 and lightest at canopy top (`aitken_weight_top`); `aitken_bottom_emphasis`
@@ -54,23 +53,30 @@ conditions and the relative-humidity readout go through
 `wet_air_properties`'s vapor-pressure/vapor-density primitives, the same
 ones `monin_obukhov.jl` uses.
 
-`far_field_mode` selects the far-field/ground-flux formula. `Val(:exact)`
-(default) is eq. 19a's genuine integral: each layer's own local flux over
-its own local resistance, summed (O(n) prefix sum), with a single ground
-flux evaluated once from the ground-most layer. `Val(:bulk)` matches R
-micropoint's `LangrangianOne` (and its C++ port): the flux *at* the query
-layer times the total resistance from that layer to the top (or to the
-ground, for the ground flux), recomputed per layer — structurally the same
-flux-times-total-resistance shortcut :exact avoids, not the per-layer
-integral — plus a near-field small-sample-size correction (`mu`, a function
-of layer count alone) that :exact omits. Neither is strictly "more correct":
-:exact is the literature-faithful form, :bulk trades that for matching R's
-actual reference output, useful when comparing against data or trading
-speed for realism (:bulk is a bit cheaper — no prefix *and* suffix sum of
-resistance, just the two combined). The near-field double sum stays O(n²)
-regardless of mode — its kernel is nonlinear in both indices — but heat and
-vapor share one kernel evaluation per (i,j) pair. Out-of-range results are
-asserted finite rather than silently clipped.
+`far_field_mode` selects between two self-consistent formulations of both
+the far-field and near-field terms. `Val(:exact)` (default) is
+literature-faithful: far-field is eq. 19a's genuine integral (each layer's
+own local flux over its own local resistance, summed as an O(n) prefix sum,
+with a single ground flux evaluated once from the ground-most layer), and
+near-field is eq. 37's separately-signed kernel evaluation with a coincident
+self term resolved by subdivision quadrature. `Val(:bulk)` is an alternate
+formulation cross-checked against another independent implementation of
+this model: far-field is the flux *at* the query layer times the total
+resistance from that layer to the top (or to the ground, for the ground
+flux), recomputed per layer, not the per-layer integral; near-field
+evaluates the kernel once (at the direct distance) and multiplies by the
+raw signed sum of direct+reflected normalized distances, and drops any self
+term outright rather than resolving it; both terms also pick up a
+near-field small-sample-size correction (`mu`, a function of layer count
+alone) that :exact omits. Neither is strictly "more correct": :exact is the
+literature-faithful form, :bulk trades that for matching the other
+implementation's output, useful when comparing against data or trading
+speed for realism (:bulk is a bit cheaper too: no subdivision quadrature,
+and one prefix sum instead of the prefix-and-suffix pair :exact's far-field
+needs). The near-field double sum
+stays O(n²) regardless of mode — its kernel is nonlinear in both indices —
+but heat and vapor share one kernel evaluation per (i,j) pair. Out-of-range
+results are asserted finite rather than silently clipped.
 
 # References
 - Raupach, M. R. (1989). A practical Lagrangian method for relating scalar
@@ -117,8 +123,8 @@ function allocate_air_profile(model::RaupachLTheoryAirProfile, canopy_height, pl
         vapour_density = zeros(typeof(0.0u"kg/m^3"), n_layers),
         vapour_density_prev = zeros(typeof(0.0u"kg/m^3"), n_layers),
         relative_humidity = zeros(n_layers),
-        # Aitken state persists across Picard passes and hours (mirrors R
-        # micropoint's WAitkenState) -- omega warm-starts hour to hour.
+        # Aitken state persists across Picard passes and hours -- omega
+        # warm-starts hour to hour.
         aitken_omega = Ref(initial_omega),
         aitken_omega_latent = Ref(initial_omega),
         aitken_have_prev = Ref(false),
@@ -173,7 +179,44 @@ end
     return total / subdivisions
 end
 
-# Weighted Aitken Δ²-acceleration (ports R micropoint's aitkin_weightdif).
+# :bulk's near-field kernel evaluates kn once (at the direct distance only)
+# and multiplies by the raw sum of direct+reflected normalized distances,
+# not eq. 37's separately-signed evaluation -- the same shortcut as its
+# far-field. It also drops any self term outright rather than resolving it
+# by subdivision quadrature.
+@inline function _raupach_bulk_kernel_weight(eval_height, source_idx, layer_heights, inv_near_field_length)
+    inv_len = inv_near_field_length[source_idx]
+    direct = (eval_height - layer_heights[source_idx]) * inv_len
+    reflected = (eval_height + layer_heights[source_idx]) * inv_len
+    return _raupach_kernel(abs(direct)) * (direct + reflected)
+end
+
+# Top-boundary near-field weight for source layer i, dispatched on
+# far_field_mode. :exact resolves numerical coincidence with canopy_height
+# via subdivision quadrature; :bulk unconditionally treats layer_heights[1]
+# (the layer closest to canopy_height, Julia's analog of R's index n) as the
+# self term and drops it, matching R exactly regardless of exact coincidence.
+@inline function _raupach_top_kernel_weight(::Val{:exact}, i, canopy_height, layer_heights, layer_thickness, inv_near_field_length, subdivisions)
+    signed_direct = (canopy_height - layer_heights[i]) * inv_near_field_length[i]
+    return abs(signed_direct) > 1.0e-9 ?
+        _raupach_kernel_weight(canopy_height, i, layer_heights, inv_near_field_length) :
+        _raupach_self_kernel_weight(canopy_height, i, layer_heights, layer_thickness, inv_near_field_length, subdivisions)
+end
+@inline function _raupach_top_kernel_weight(::Val{:bulk}, i, canopy_height, layer_heights, layer_thickness, inv_near_field_length, subdivisions)
+    return i == 1 ? 0.0 : _raupach_bulk_kernel_weight(canopy_height, i, layer_heights, inv_near_field_length)
+end
+
+# Near-field weight for one (eval layer i, source layer j) pair.
+@inline function _raupach_pair_kernel_weight(::Val{:exact}, i, j, layer_heights, layer_thickness, inv_near_field_length, subdivisions)
+    return j == i ?
+        _raupach_self_kernel_weight(layer_heights[i], j, layer_heights, layer_thickness, inv_near_field_length, subdivisions) :
+        _raupach_kernel_weight(layer_heights[i], j, layer_heights, inv_near_field_length)
+end
+@inline function _raupach_pair_kernel_weight(::Val{:bulk}, i, j, layer_heights, layer_thickness, inv_near_field_length, subdivisions)
+    return j == i ? 0.0 : _raupach_bulk_kernel_weight(layer_heights[i], j, layer_heights, inv_near_field_length)
+end
+
+# Weighted Aitken Δ²-acceleration.
 # `newv` holds the raw unrelaxed solve on entry, the blended result on exit.
 # `unit` strips units for the (dimensionless) omega fit only.
 function _aitken_relax!(newv, oldv, layer_heights, canopy_height, omega_ref, have_prev_ref, residual_prev,
@@ -233,10 +276,10 @@ function _raupach_far_field!(::Val{:exact}, far_field_accum, far_field_accum_lat
     return nothing
 end
 
-# Matches R micropoint's LangrangianOne (and its C++ port): both the ground
-# flux and the far-field term use the flux value at the query layer times
-# the total resistance from that layer to the top/ground, recomputed per
-# layer -- not eq. 19a's per-layer-weighted integral.
+# :bulk's far-field: both the ground flux and the far-field term use the
+# flux value at the query layer times the total resistance from that layer
+# to the top/ground, recomputed per layer -- not eq. 19a's per-layer-weighted
+# integral.
 function _raupach_far_field!(::Val{:bulk}, far_field_accum, far_field_accum_latent, resistance_from_top, resistance_to_ground,
     cumulative_sensible_below, cumulative_latent_below, layer_resistance,
     ground_temperature, ground_vapour_density, air_temperature_prev, vapour_density_prev, min_ground_resistance, n)
@@ -258,7 +301,7 @@ function _raupach_far_field!(::Val{:bulk}, far_field_accum, far_field_accum_late
     return nothing
 end
 
-# R micropoint's near-field small-sample-size correction, a function of layer
+# Near-field small-sample-size correction for :bulk, a function of layer
 # count alone; :exact stays eq.-19a/37-faithful and omits it.
 @inline _raupach_near_field_scale(::Val{:exact}, n) = 1.0
 @inline _raupach_near_field_scale(::Val{:bulk}, n) = 1.0 + 0.894 * exp(-0.01386 * n) + 9.82 * exp(-0.15 * n)
@@ -348,12 +391,7 @@ function canopy_air_profile!(buffers, model::RaupachLTheoryAirProfile, boundary_
     near_field_top = zero(concentration_top)
     near_field_top_latent = zero(concentration_top_latent)
     @inbounds for i in 1:n
-        signed_direct = (canopy_height - layer_heights[i]) * inv_near_field_length[i]
-        kernel_weight = if abs(signed_direct) > 1.0e-9
-            _raupach_kernel_weight(canopy_height, i, layer_heights, inv_near_field_length)
-        else
-            _raupach_self_kernel_weight(canopy_height, i, layer_heights, layer_thickness, inv_near_field_length, near_field_subdivisions)
-        end
+        kernel_weight = _raupach_top_kernel_weight(model.far_field_mode, i, canopy_height, layer_heights, layer_thickness, inv_near_field_length, near_field_subdivisions)
         near_field_top += sensible_near_field_weight[i] * kernel_weight
         near_field_top_latent += latent_near_field_weight[i] * kernel_weight
     end
@@ -367,11 +405,7 @@ function canopy_air_profile!(buffers, model::RaupachLTheoryAirProfile, boundary_
         near_field = zero(concentration_top)
         near_field_latent = zero(concentration_top_latent)
         for j in 1:n
-            kernel_weight = if j == i
-                _raupach_self_kernel_weight(layer_heights[i], j, layer_heights, layer_thickness, inv_near_field_length, near_field_subdivisions)
-            else
-                _raupach_kernel_weight(layer_heights[i], j, layer_heights, inv_near_field_length)
-            end
+            kernel_weight = _raupach_pair_kernel_weight(model.far_field_mode, i, j, layer_heights, layer_thickness, inv_near_field_length, near_field_subdivisions)
             near_field += sensible_near_field_weight[j] * kernel_weight
             near_field_latent += latent_near_field_weight[j] * kernel_weight
         end
