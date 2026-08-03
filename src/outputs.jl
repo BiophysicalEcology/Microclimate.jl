@@ -21,7 +21,7 @@ end
 Per-layer and per-hour canopy diagnostics. Zero-column/all-zero for
 `NoCanopy` (mirrors `snow_temperature` being `(nsteps, 0)` for `NoSnow`).
 """
-struct CanopyOutput{LT,AT,WS,RH,GAS,GAL,CAS,CAL,GTF,IT,DSW,USW,DLW,ULW,AR,NB}
+struct CanopyOutput{LT,AT,WS,RH,GAS,GAL,CAS,CAL,GTF,IT,DSW,USW,DLW,ULW,AR,NB,CSH,CLH}
     leaf_temperature::LT              # nsteps × n_canopy_layers Matrix
     air_temperature::AT               # nsteps × n_canopy_layers Matrix (in-canopy, distinct from profile.air_temperature)
     wind_speed::WS                    # nsteps × n_canopy_layers Matrix (in-canopy)
@@ -38,6 +38,8 @@ struct CanopyOutput{LT,AT,WS,RH,GAS,GAL,CAS,CAL,GTF,IT,DSW,USW,DLW,ULW,AR,NB}
     boundary_upward_longwave::ULW     # nsteps × (n_canopy_layers+1) Matrix, canopy top -> ground
     absorbed_radiation::AR            # nsteps × n_canopy_layers Matrix, W/m^2 leaf area (leaf_heat_balance's own input)
     net_balance::NB                   # nsteps × n_canopy_layers Matrix, W, leaf_heat_balance's residual at the converged temperature
+    canopy_sensible_heat_flux::CSH    # nsteps Vector, W/m^2 ground area, layers summed
+    canopy_latent_heat_flux::CLH      # nsteps Vector, W/m^2 ground area, layers summed
 end
 function CanopyOutput(nsteps::Int, n_canopy_layers::Int)
     n_boundaries = n_canopy_layers == 0 ? 0 : n_canopy_layers + 1
@@ -58,6 +60,8 @@ function CanopyOutput(nsteps::Int, n_canopy_layers::Int)
         zeros(typeof(1.0u"W/m^2"), nsteps, n_boundaries),
         zeros(typeof(1.0u"W/m^2"), nsteps, n_canopy_layers),
         zeros(typeof(1.0u"W"), nsteps, n_canopy_layers),
+        zeros(typeof(1.0u"W/m^2"), nsteps),
+        zeros(typeof(1.0u"W/m^2"), nsteps),
     )
 end
 
