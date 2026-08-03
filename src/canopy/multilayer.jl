@@ -123,7 +123,7 @@ function allocate_canopy(model::MultilayerCanopy, heights, boundary_layer_model)
         air_profile = allocate_air_profile(model.air_profile_model, model.canopy_height, model.plant_area_index, heights, n_layers, boundary_layer_model),
         interception = allocate_interception(model.interception_model, model.canopy_height, model.plant_area_index, heights, n_layers, boundary_layer_model),
         leaf = (;
-            leaf_body = leaf_body(model.leaf_parameters.leaf_length, model.leaf_parameters.leaf_width),
+            leaf_body = leaf_body(model.leaf_parameters.leaf_length, model.leaf_parameters.leaf_width, leaf_angle_distribution_parameter),
             leaf_temperature = zeros(typeof(0.0u"K"), n_layers),
             leaf_temperature_prev = zeros(typeof(0.0u"K"), n_layers),
             sensible_heat_source = zeros(typeof(0.0u"W/m^2"), n_layers),

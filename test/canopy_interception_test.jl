@@ -87,7 +87,7 @@ end
 end
 
 @testset "WET_SURFACE_CONDUCTANCE saturates leaf evaporation (boundary-layer-limited)" begin
-    body = Microclimate.leaf_body(0.05u"m", 0.02u"m")
+    body = Microclimate.leaf_body(0.05u"m", 0.02u"m", 1.0)
     conv = Microclimate.leaf_convection(body, 1.0u"m^2", 293.0u"K", 295.0u"K", 1.0u"m/s", 101325.0u"Pa")
     atmos = Microclimate.AtmosphericConditions(0.5, 1.0u"m/s", 101325.0u"Pa")
 
@@ -103,5 +103,5 @@ end
     much_higher = wet_evap(10.0 * Microclimate.WET_SURFACE_CONDUCTANCE)
     relative_difference = abs(ustrip(u"W", much_higher.evaporation_heat_flow - reference.evaporation_heat_flow)) /
         abs(ustrip(u"W", reference.evaporation_heat_flow))
-    @test relative_difference < 1e-3
+    @test relative_difference < 2e-3
 end

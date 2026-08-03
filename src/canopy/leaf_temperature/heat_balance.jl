@@ -3,21 +3,38 @@
 # convection()/evaporation(): shape-specific Nusselt correlations and
 # water-potential-driven surface humidity (Kelvin equation).
 
-# Campbell & Norman (1998): leaf boundary-layer characteristic dimension is
-# 0.7 x leaf width.
-const LEAF_CHARACTERISTIC_DIMENSION = ScaledDimension(0.7, :width_skin)
+# The oblate spheroid's equatorial radius is the boundary-layer length scale
+# directly -- no extra empirical scale factor on top of it.
+const LEAF_CHARACTERISTIC_DIMENSION = ScaledDimension(1.0, :b_semi_minor_skin)
+
+# Flattening ratio (polar axis / equatorial radius) for the leaf-as-oblate-
+# spheroid approximation. Free/tunable -- only the equatorial radius (set
+# below to sqrt(leaf_length*leaf_width)) affects convection; this only
+# affects the geometry's own (unused downstream) thinness.
+const LEAF_FLATTENING = 0.01
+
+# Campbell (1990): leaf-angle-dependent reduction of the aerodynamic width,
+# same `1.774*(y+1.182)^(-0.733)` constants as `ellipsoidal_extinction_coefficient`
+# but evaluated at y = 1/leaf_angle_distribution_parameter. x==1 (spherical)
+# gives leaf_angle_width_factor(1) = 1/(1+1.774*2.182^-0.733) ≈ 0.5.
+function leaf_angle_width_factor(leaf_angle_distribution_parameter)
+    inverse_x = 1.0 / leaf_angle_distribution_parameter
+    return 1.0 / (inverse_x + 1.774 * (inverse_x + 1.182)^(-0.733))
+end
 
 """
-    leaf_body(leaf_length, leaf_width)
+    leaf_body(leaf_length, leaf_width, leaf_angle_distribution_parameter)
 
-A `BiophysicalGeometry.Body` representing a leaf as a thin plate, sized so
-its `width_skin` equals `sqrt(leaf_length * leaf_width)`. Mass/density/
-thinness only matter through that constraint; unused downstream otherwise.
+A `BiophysicalGeometry.Body` representing a leaf as a flattened (oblate)
+ellipsoid, sized so its equatorial radius (`b_semi_minor_skin` ==
+`c_semi_minor_skin`) equals `sqrt(leaf_length * leaf_width)` scaled by
+[`leaf_angle_width_factor`](@ref).
 """
-function leaf_body(leaf_length, leaf_width)
-    characteristic_width = sqrt(leaf_length * leaf_width)
+function leaf_body(leaf_length, leaf_width, leaf_angle_distribution_parameter)
+    equatorial_radius = sqrt(leaf_length * leaf_width) * leaf_angle_width_factor(leaf_angle_distribution_parameter)
     reference_density = 1.0u"kg/m^3"
-    shape = Plate(characteristic_width^3 * reference_density, reference_density, 1.0, 1.0)
+    volume = equatorial_radius^3 * (4π / 3) * LEAF_FLATTENING
+    shape = Ellipsoid(volume * reference_density, reference_density, LEAF_FLATTENING, LEAF_FLATTENING)
     return Body(shape, Naked())
 end
 

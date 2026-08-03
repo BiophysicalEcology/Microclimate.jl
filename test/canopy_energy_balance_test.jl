@@ -2,7 +2,7 @@ using Microclimate
 using Unitful
 using Test
 
-body = Microclimate.leaf_body(0.05u"m", 0.02u"m")
+body = Microclimate.leaf_body(0.05u"m", 0.02u"m", 1.0)
 stomatal_conductance = LeafEvaporationParameters(;
     abaxial_vapour_conductance = 0.3u"mol/m^2/s", adaxial_vapour_conductance = 0.0u"mol/m^2/s",
     cuticular_conductance = 0.01u"mol/m^2/s",
@@ -15,8 +15,10 @@ leaf_emissivity = 0.97
 leaf_water_potential = 0.0u"J/kg"
 
 @testset "leaf_body sizing" begin
-    b = Microclimate.leaf_body(0.05u"m", 0.02u"m")
-    @test ustrip(u"m", b.geometry.length.width_skin) ≈ sqrt(0.05 * 0.02) rtol=1e-10
+    b = Microclimate.leaf_body(0.05u"m", 0.02u"m", 1.0)
+    expected_radius = sqrt(0.05 * 0.02) * Microclimate.leaf_angle_width_factor(1.0)
+    @test ustrip(u"m", b.geometry.length.b_semi_minor_skin) ≈ expected_radius rtol=1e-10
+    @test b.geometry.length.b_semi_minor_skin == b.geometry.length.c_semi_minor_skin
 end
 
 @testset "leaf temperature increases monotonically with absorbed radiation" begin

@@ -24,7 +24,7 @@ using SolarRadiation
 # evaporation called as HeatExchange.convection/.evaporation to avoid name clashes
 import HeatExchange
 using HeatExchange: LeafEvaporationParameters, AtmosphericConditions, ScaledDimension, zbrent, Air
-using BiophysicalGeometry: Plate, Body, Naked
+using BiophysicalGeometry: Ellipsoid, Body, Naked
 
 
 export MicroProblem, MicroModel, MicroInputs, MicroCache, MicroConfig
