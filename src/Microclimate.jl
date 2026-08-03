@@ -52,6 +52,7 @@ export LeafParameters
 export AbstractStomatalConductanceModel, PrescribedStomatalConductance,
     MoistureResponsiveStomatalConductance, stomatal_conductance
 export AbstractLeafTemperatureSolver, LinearizedLeafTemperature, RootFindLeafTemperature
+export AbstractLeafConvectionModel, ElaborateLeafConvection, SimpleLeafConvection
 export leaf_temperature, leaf_heat_balance, leaf_body
 export LeafEvaporationParameters
 

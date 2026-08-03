@@ -11,9 +11,11 @@ struct LinearizedLeafTemperature <: AbstractLeafTemperatureSolver end
 function leaf_temperature(::LinearizedLeafTemperature, absorbed_radiation, air_temperature, relative_humidity,
     wind_speed, atmospheric_pressure, leaf_emissivity, stomatal_conductance, leaf_water_potential, body;
     leaf_area=1.0u"m^2", leaf_temperature_guess=air_temperature,
+    convection_model=ElaborateLeafConvection(),
 )
     out = leaf_heat_balance(leaf_temperature_guess, absorbed_radiation, air_temperature, relative_humidity,
-        wind_speed, atmospheric_pressure, leaf_emissivity, stomatal_conductance, leaf_water_potential, body, leaf_area)
+        wind_speed, atmospheric_pressure, leaf_emissivity, stomatal_conductance, leaf_water_potential, body, leaf_area,
+        convection_model)
 
     radiative_heat_transfer_coefficient = 4.0 * out.emitted_longwave / leaf_temperature_guess
     convective_heat_transfer_coefficient = out.conv.heat_transfer_coefficient.combined * leaf_area

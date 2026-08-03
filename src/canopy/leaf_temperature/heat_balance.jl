@@ -38,24 +38,52 @@ function leaf_body(leaf_length, leaf_width, leaf_angle_distribution_parameter)
     return Body(shape, Naked())
 end
 
+"""
+    AbstractLeafConvectionModel
+
+Selects the Nusselt correlation `leaf_convection` uses.
+"""
+abstract type AbstractLeafConvectionModel end
+
+"""
+    ElaborateLeafConvection()
+
+Combined free+forced convection, shape-dispatched via the leaf's
+oblate-ellipsoid geometry (`HeatExchange.ShapeCorrelation`). Default.
+"""
+struct ElaborateLeafConvection <: AbstractLeafConvectionModel end
+
+"""
+    SimpleLeafConvection()
+
+Forced convection only, `Nu = 0.6·√Re`, no shape dependence
+(`HeatExchange.SimpleForcedCorrelation`). Cheaper and less complete than
+[`ElaborateLeafConvection`](@ref), not more accurate.
+"""
+struct SimpleLeafConvection <: AbstractLeafConvectionModel end
+
+_convection_correlation(::ElaborateLeafConvection) = HeatExchange.ShapeCorrelation()
+_convection_correlation(::SimpleLeafConvection) = HeatExchange.SimpleForcedCorrelation()
+
 # Boundary-layer heat/mass transfer coefficients for one leaf layer.
-leaf_convection(body, leaf_area, air_temperature, leaf_temperature, wind_speed, atmospheric_pressure) =
+leaf_convection(convection_model, body, leaf_area, air_temperature, leaf_temperature, wind_speed, atmospheric_pressure) =
     HeatExchange.convection(; body, area=leaf_area, air_temperature, surface_temperature=leaf_temperature,
-        wind_speed, atmospheric_pressure, fluid=Air(), characteristic_dimension_formula=LEAF_CHARACTERISTIC_DIMENSION)
+        wind_speed, atmospheric_pressure, fluid=Air(), characteristic_dimension_formula=LEAF_CHARACTERISTIC_DIMENSION,
+        correlation=_convection_correlation(convection_model))
 
 """
     leaf_heat_balance(leaf_temperature, absorbed_radiation, air_temperature, relative_humidity,
                        wind_speed, atmospheric_pressure, leaf_emissivity, stomatal_conductance,
-                       leaf_water_potential, body, leaf_area)
+                       leaf_water_potential, body, leaf_area, convection_model)
 
 Net leaf energy balance (W, positive = leaf gaining energy): absorbed
 radiation minus emitted longwave, convection, and transpiration.
 """
 function leaf_heat_balance(leaf_temperature, absorbed_radiation, air_temperature, relative_humidity,
     wind_speed, atmospheric_pressure, leaf_emissivity, stomatal_conductance, leaf_water_potential,
-    body, leaf_area,
+    body, leaf_area, convection_model=ElaborateLeafConvection(),
 )
-    conv = leaf_convection(body, leaf_area, air_temperature, leaf_temperature, wind_speed, atmospheric_pressure)
+    conv = leaf_convection(convection_model, body, leaf_area, air_temperature, leaf_temperature, wind_speed, atmospheric_pressure)
     atmos = AtmosphericConditions(relative_humidity, wind_speed, atmospheric_pressure)
     evap = HeatExchange.evaporation(stomatal_conductance, conv.mass_transfer_coefficient, atmos, leaf_area,
         leaf_temperature, air_temperature; water_potential=leaf_water_potential)

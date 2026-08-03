@@ -88,7 +88,7 @@ end
 
 @testset "WET_SURFACE_CONDUCTANCE saturates leaf evaporation (boundary-layer-limited)" begin
     body = Microclimate.leaf_body(0.05u"m", 0.02u"m", 1.0)
-    conv = Microclimate.leaf_convection(body, 1.0u"m^2", 293.0u"K", 295.0u"K", 1.0u"m/s", 101325.0u"Pa")
+    conv = Microclimate.leaf_convection(Microclimate.ElaborateLeafConvection(), body, 1.0u"m^2", 293.0u"K", 295.0u"K", 1.0u"m/s", 101325.0u"Pa")
     atmos = Microclimate.AtmosphericConditions(0.5, 1.0u"m/s", 101325.0u"Pa")
 
     function wet_evap(conductance)

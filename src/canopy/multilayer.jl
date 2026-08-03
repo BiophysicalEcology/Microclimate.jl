@@ -8,6 +8,7 @@
                        leaf_parameters=LeafParameters(),
                        stomatal_model=PrescribedStomatalConductance(),
                        leaf_temperature_solver=LinearizedLeafTemperature(),
+                       leaf_convection_model=ElaborateLeafConvection(),
                        convergence=FixedSoilTemperatureIterations(3))
 
 Multi-layer canopy structure resolved by height. Splits the canopy into as
@@ -46,6 +47,9 @@ Composes swappable sub-models the same way `MicroModel` composes
   closure curve twice.
 - `leaf_temperature_solver::AbstractLeafTemperatureSolver` — how leaf
   temperature is solved each call (default [`LinearizedLeafTemperature`](@ref))
+- `leaf_convection_model::AbstractLeafConvectionModel` — leaf boundary-layer
+  Nusselt correlation (default [`ElaborateLeafConvection`](@ref); see also
+  [`SimpleLeafConvection`](@ref))
 - `convergence::AbstractSoilTemperatureConvergence` — hourly Picard-loop
   convergence criterion (default `FixedSoilTemperatureIterations(3)`); reuses
   the soil spin-up loop's dispatch (generic over any temperature array).
@@ -60,7 +64,7 @@ Ground reflectance is not stored here — supplied to
 [`canopy_shortwave!`](@ref) by the caller (e.g. `Site.albedo`), matching how
 other radiation models read albedo from their caller.
 """
-@kwdef struct MultilayerCanopy{H,PAI,WAF,RM,LWM,WM,APM,IM,LP,SM,LTS,CV,RL} <: AbstractCanopyModel
+@kwdef struct MultilayerCanopy{H,PAI,WAF,RM,LWM,WM,APM,IM,LP,SM,LTS,LCM,CV,RL} <: AbstractCanopyModel
     canopy_height::H
     plant_area_index::PAI
     woody_area_fraction::WAF = 0.0
@@ -72,6 +76,7 @@ other radiation models read albedo from their caller.
     leaf_parameters::LP = LeafParameters()
     stomatal_model::SM = PrescribedStomatalConductance()
     leaf_temperature_solver::LTS = LinearizedLeafTemperature()
+    leaf_convection_model::LCM = ElaborateLeafConvection()
     convergence::CV = FixedSoilTemperatureIterations(3)
     relaxation::RL = 0.5
 end
@@ -88,13 +93,14 @@ function example_multilayer_canopy(;
     leaf_parameters = LeafParameters(),
     stomatal_model = PrescribedStomatalConductance(),
     leaf_temperature_solver = LinearizedLeafTemperature(),
+    leaf_convection_model = ElaborateLeafConvection(),
     convergence = FixedSoilTemperatureIterations(3),
     relaxation = 0.5,
 )
     MultilayerCanopy(;
         canopy_height, plant_area_index, woody_area_fraction, shortwave_model, longwave_model, wind_model,
-        air_profile_model, interception_model, leaf_parameters, stomatal_model, leaf_temperature_solver, convergence,
-        relaxation,
+        air_profile_model, interception_model, leaf_parameters, stomatal_model, leaf_temperature_solver,
+        leaf_convection_model, convergence, relaxation,
     )
 end
 
