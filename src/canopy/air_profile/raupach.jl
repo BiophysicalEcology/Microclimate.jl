@@ -1,6 +1,9 @@
 """
     RaupachLTheoryAirProfile(; ground_velocity_std_factor=0.25, canopy_top_velocity_std_factor=1.25,
-                              min_ground_resistance=2.0u"s/m", relaxation=0.5, near_field_subdivisions=20)
+                              min_ground_resistance=2.0u"s/m", relaxation=0.5,
+                              aitken_omega_min=0.02, aitken_omega_max=0.9,
+                              aitken_weight_bottom=0.05, aitken_weight_top=0.8,
+                              aitken_bottom_emphasis=10.0, near_field_subdivisions=20)
 
 Raupach's (1989) localized near-field (LNF) Lagrangian in-canopy scalar
 transport model: each layer's temperature and humidity is the sum of a
@@ -27,12 +30,18 @@ correction. Raising `near_field_subdivisions` trades runtime for accuracy;
 the O(n²) near-field double sum only needs it for the O(n) diagonal terms; the
 off-diagonal terms use a single point-source evaluation each.
 
-`relaxation` under-relaxes each Picard pass against the previous pass's own
-solution: `x_new = relaxation·x_solved + (1-relaxation)·x_prev`. Needed
-because, unlike K-theory's direct tridiagonal solve, this Lagrangian solve is
-not guaranteed monotonically convergent pass-to-pass.
+Fg (ground flux) depends on the same air_temperature it helps solve,
+coupled through up to the whole canopy's resistance — gain through that
+loop can exceed 1 for a tall/dense canopy, which no fixed relaxation
+factor stabilizes. Adaptive Aitken Δ²-acceleration (ports R micropoint's
+`aitkin_weightdif`) handles this: `omega` is relearned each pass from the
+residual history, clamped to `[aitken_omega_min, aitken_omega_max]`, and
+weighted to under-relax hardest at the ground (`aitken_weight_bottom`)
+and lightest at canopy top (`aitken_weight_top`); `aitken_bottom_emphasis`
+weights ground-proximate residuals more heavily in the omega fit.
+`relaxation` seeds the first pass, before there's a residual history.
 
-All five keyword defaults above are free/tunable, not literature-derived
+All keyword defaults above are free/tunable, not literature-derived
 values — no citation for the specific magnitudes.
 
 Humidity is transported as vapor density (kg/m³), not vapor pressure: a
@@ -56,16 +65,22 @@ finite rather than silently clipped.
   concentrations to source distributions in vegetation canopies. *Quarterly
   Journal of the Royal Meteorological Society*, 115(487), 609-632.
 """
-@kwdef struct RaupachLTheoryAirProfile{GVSF,CVSF,GR,RL,NS} <: AbstractCanopyAirProfileModel
+@kwdef struct RaupachLTheoryAirProfile{GVSF,CVSF,GR,RL,OMIN,OMAX,WBOT,WTOP,BETA,NS} <: AbstractCanopyAirProfileModel
     ground_velocity_std_factor::GVSF = 0.25
     canopy_top_velocity_std_factor::CVSF = 1.25
     min_ground_resistance::GR = 2.0u"s/m"
     relaxation::RL = 0.5
+    aitken_omega_min::OMIN = 0.02
+    aitken_omega_max::OMAX = 0.9
+    aitken_weight_bottom::WBOT = 0.05
+    aitken_weight_top::WTOP = 0.8
+    aitken_bottom_emphasis::BETA = 10.0
     near_field_subdivisions::NS = 20
 end
 
-function allocate_air_profile(::RaupachLTheoryAirProfile, canopy_height, plant_area_index, heights, n_layers, boundary_layer_model)
+function allocate_air_profile(model::RaupachLTheoryAirProfile, canopy_height, plant_area_index, heights, n_layers, boundary_layer_model)
     (; layer_heights, layer_thickness) = canopy_layer_heights(heights, canopy_height, n_layers)
+    initial_omega = clamp(Float64(model.relaxation), model.aitken_omega_min, model.aitken_omega_max)
 
     return (;
         layer_heights, layer_thickness,
@@ -84,6 +99,14 @@ function allocate_air_profile(::RaupachLTheoryAirProfile, canopy_height, plant_a
         vapour_density = zeros(typeof(0.0u"kg/m^3"), n_layers),
         vapour_density_prev = zeros(typeof(0.0u"kg/m^3"), n_layers),
         relative_humidity = zeros(n_layers),
+        # Aitken state persists across Picard passes and hours (mirrors R
+        # micropoint's WAitkenState) -- omega warm-starts hour to hour.
+        aitken_omega = Ref(initial_omega),
+        aitken_omega_latent = Ref(initial_omega),
+        aitken_have_prev = Ref(false),
+        aitken_have_prev_latent = Ref(false),
+        aitken_residual_prev = zeros(typeof(0.0u"K"), n_layers),
+        aitken_residual_prev_latent = zeros(typeof(0.0u"kg/m^3"), n_layers),
     )
 end
 
@@ -132,6 +155,47 @@ end
     return total / subdivisions
 end
 
+# Weighted Aitken Δ²-acceleration (ports R micropoint's aitkin_weightdif).
+# `newv` holds the raw unrelaxed solve on entry, the blended result on exit.
+# `unit` strips units for the (dimensionless) omega fit only.
+function _aitken_relax!(newv, oldv, layer_heights, canopy_height, omega_ref, have_prev_ref, residual_prev,
+    omega_min, omega_max, weight_bottom, weight_top, bottom_emphasis, unit)
+    n = length(newv)
+    Δw = weight_top - weight_bottom
+    if !have_prev_ref[]
+        ω = clamp(omega_ref[], omega_min, omega_max)
+        @inbounds for i in 1:n
+            r = newv[i] - oldv[i]
+            residual_prev[i] = r
+            wz = weight_bottom + Δw * (layer_heights[i] / canopy_height)^2
+            newv[i] = oldv[i] + (ω * wz) * r
+        end
+        omega_ref[] = ω
+        have_prev_ref[] = true
+        return nothing
+    end
+    num = 0.0
+    den = 0.0
+    @inbounds for i in 1:n
+        r = newv[i] - oldv[i]
+        dr = r - residual_prev[i]
+        t = 1.0 - layer_heights[i] / canopy_height
+        g = 1.0 + bottom_emphasis * t^2
+        num += g * ustrip(unit, residual_prev[i]) * ustrip(unit, dr)
+        den += g * ustrip(unit, dr)^2
+    end
+    ω = den > 0.0 ? -omega_ref[] * (num / den) : omega_ref[]
+    ω = clamp(ω, omega_min, omega_max)
+    @inbounds for i in 1:n
+        r = newv[i] - oldv[i]
+        residual_prev[i] = r
+        wz = weight_bottom + Δw * (layer_heights[i] / canopy_height)^2
+        newv[i] = oldv[i] + (ω * wz) * r
+    end
+    omega_ref[] = ω
+    return nothing
+end
+
 function canopy_air_profile!(buffers, model::RaupachLTheoryAirProfile, boundary_layer_model;
     canopy_height, displacement_height, friction_velocity,
     canopy_top_air_temperature, canopy_top_relative_humidity, ground_temperature, ground_relative_humidity,
@@ -140,7 +204,9 @@ function canopy_air_profile!(buffers, model::RaupachLTheoryAirProfile, boundary_
     (; layer_heights, layer_thickness, vertical_velocity_std, inv_near_field_length, eddy_diffusivity,
        layer_resistance, far_field_accum, far_field_accum_latent, cumulative_sensible_below,
        sensible_near_field_weight, cumulative_latent_below, latent_near_field_weight,
-       air_temperature, air_temperature_prev, vapour_density, vapour_density_prev, relative_humidity) = buffers
+       air_temperature, air_temperature_prev, vapour_density, vapour_density_prev, relative_humidity,
+       aitken_omega, aitken_omega_latent, aitken_have_prev, aitken_have_prev_latent,
+       aitken_residual_prev, aitken_residual_prev_latent) = buffers
     n = length(air_temperature)
     length(sensible_heat_source) == n || throw(ArgumentError("sensible_heat_source must have one entry per canopy layer"))
     length(evaporation_mass_flow) == n || throw(ArgumentError("evaporation_mass_flow must have one entry per canopy layer"))
@@ -158,7 +224,9 @@ function canopy_air_profile!(buffers, model::RaupachLTheoryAirProfile, boundary_
     end
     vapour_density_prev .= vapour_density
 
-    (; ground_velocity_std_factor, canopy_top_velocity_std_factor, min_ground_resistance, relaxation, near_field_subdivisions) = model
+    (; ground_velocity_std_factor, canopy_top_velocity_std_factor, min_ground_resistance,
+       aitken_omega_min, aitken_omega_max, aitken_weight_bottom, aitken_weight_top, aitken_bottom_emphasis,
+       near_field_subdivisions) = model
     a0, a1 = ground_velocity_std_factor, canopy_top_velocity_std_factor  # Raupach's own notation, aliased for the formulas below
     γ = boundary_layer_model.dyer_constant
 
@@ -250,12 +318,20 @@ function canopy_air_profile!(buffers, model::RaupachLTheoryAirProfile, boundary_
         end
 
         concentration = concentration_top - near_field_top + far_field + near_field
-        new_air_temperature = concentration / calc_ρ_cp(air_temperature_prev[i])
-        air_temperature[i] = relaxation * new_air_temperature + (1.0 - relaxation) * air_temperature_prev[i]
+        air_temperature[i] = concentration / calc_ρ_cp(air_temperature_prev[i])  # raw; Aitken-blended below
 
         concentration_latent = concentration_top_latent - near_field_top_latent + far_field_latent + near_field_latent
-        vapour_density[i] = relaxation * concentration_latent + (1.0 - relaxation) * vapour_density_prev[i]
+        vapour_density[i] = concentration_latent  # raw; Aitken-blended below
     end
+
+    # Aitken needs the whole residual vector to fit omega, so this is a
+    # separate pass over the raw solve above, not folded into that loop.
+    _aitken_relax!(air_temperature, air_temperature_prev, layer_heights, canopy_height,
+        aitken_omega, aitken_have_prev, aitken_residual_prev,
+        aitken_omega_min, aitken_omega_max, aitken_weight_bottom, aitken_weight_top, aitken_bottom_emphasis, u"K")
+    _aitken_relax!(vapour_density, vapour_density_prev, layer_heights, canopy_height,
+        aitken_omega_latent, aitken_have_prev_latent, aitken_residual_prev_latent,
+        aitken_omega_min, aitken_omega_max, aitken_weight_bottom, aitken_weight_top, aitken_bottom_emphasis, u"kg/m^3")
 
     all(isfinite, ustrip.(u"K", air_temperature)) ||
         throw(DomainError(air_temperature, "RaupachLTheoryAirProfile produced a non-finite air temperature"))
