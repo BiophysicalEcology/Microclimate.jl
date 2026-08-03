@@ -491,6 +491,7 @@ function solve_soil!(cache::MicroCache)
     end
     _write_row!(output.soil_temperature, 1, T0)
     _write_row!(output.soil_moisture, 1, soil_moisture)
+    _ground_heat_flux!(output, 1, depths)
 
     initialise_soil_humidity!(moisture_mode, output,
         view(output.soil_water_potential, 1, :), T0)
@@ -645,6 +646,7 @@ function solve_soil!(cache::MicroCache)
                     atmospheric_pressure=output.pressure[day_init_step],
                     step=day_init_step, vapour_pressure_equation,
                 )
+                _ground_heat_flux!(output, day_init_step, depths)
                 # PR #102: snow is now recorded at `step` (the hour-loop index)
                 # not at `day_init_step`. Matches Fortran OSUB convention where
                 # snow is computed and output at the same TIME point it is
@@ -916,6 +918,7 @@ function solve_soil!(cache::MicroCache)
                         mineral_conductivity, mineral_heat_capacity,
                         atmospheric_pressure=environment_instant.atmospheric_pressure, step=output_step, vapour_pressure_equation
                     )
+                    _ground_heat_flux!(output, output_step, depths)
                 end
                 # PR #102: snow output writes at `step` (not `step+1`), matching
                 # Fortran OSUB convention where snow is computed and recorded at
@@ -1050,6 +1053,14 @@ end
     end
     return dst
 end
+
+# Fourier's law between the top two soil nodes, downward-positive (matches
+# flux-tower Fg convention). Call once soil_temperature/soil_thermal_conductivity
+# are both written for `step`.
+_ground_heat_flux!(output, step, depths) = output.ground_heat_flux[step] =
+    output.soil_thermal_conductivity[step, 1] *
+    (output.soil_temperature[step, 1] - output.soil_temperature[step, 2]) /
+    (depths[2] - depths[1])
 
 write_canopy_output!(::NoCanopy, output, canopy_buffers, canopy_result, step) = nothing
 

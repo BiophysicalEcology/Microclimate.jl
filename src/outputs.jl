@@ -65,7 +65,7 @@ function CanopyOutput(nsteps::Int, n_canopy_layers::Int)
     )
 end
 
-@kwdef struct MicroResult{P,AT,WS,RH,CC,GS,DF,SkT,SoT,SM,SWP,SH,STC,SPH,SBD,SW,SR,Pr,SF,SD,SDN,SNT,CB}
+@kwdef struct MicroResult{P,AT,WS,RH,CC,GS,DF,SkT,SoT,SM,SWP,SH,STC,SPH,SBD,SW,SR,Pr,SF,SD,SDN,SNT,GHF,CB}
     pressure::P
     reference_temperature::AT
     reference_wind_speed::WS
@@ -88,6 +88,7 @@ end
     snow_depth::SD
     snow_density::SDN
     snow_temperature::SNT  # nsteps × n_snow matrix; size (nsteps, 0) when NoSnow
+    ground_heat_flux::GHF  # nsteps Vector, W/m^2, Fourier's law between the top two soil nodes, downward-positive
     canopy::CB
 end
 function MicroResult(nsteps::Int, num_nodes::Int, nheights::Int, solar_radiation::NamedTuple, n_snow::Int=0, n_canopy_layers::Int=0)
@@ -114,6 +115,7 @@ function MicroResult(nsteps::Int, num_nodes::Int, nheights::Int, solar_radiation
         snow_depth = zeros(typeof(1.0u"cm"), nsteps),
         snow_density = zeros(typeof(1.0u"g/cm^3"), nsteps),
         snow_temperature = zeros(typeof(1.0u"K"), nsteps, n_snow),
+        ground_heat_flux = zeros(typeof(1.0u"W/m^2"), nsteps),
         canopy = CanopyOutput(nsteps, n_canopy_layers),
     )
 end
