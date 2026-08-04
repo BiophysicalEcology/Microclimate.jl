@@ -27,8 +27,8 @@ end
 
 A `BiophysicalGeometry.Body` representing a leaf as a flattened (oblate)
 ellipsoid, sized so its equatorial radius (`b_semi_minor_skin` ==
-`c_semi_minor_skin`) equals `sqrt(leaf_length * leaf_width)` scaled by
-[`leaf_angle_width_factor`](@ref).
+`c_semi_minor_skin`) equals `sqrt(leaf_length * leaf_width)` scaled by a leaf-angle width factor
+(Campbell 1990).
 """
 function leaf_body(leaf_length, leaf_width, leaf_angle_distribution_parameter)
     equatorial_radius = sqrt(leaf_length * leaf_width) * leaf_angle_width_factor(leaf_angle_distribution_parameter)
