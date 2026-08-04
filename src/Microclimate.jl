@@ -108,7 +108,7 @@ export TimeOfDay, Sunrise, Sunset, Midday, Midnight, ClockTime
 export Shape, Sine, Decay, Linear, DielCurve, DielForcing, ForcingSpec, Derived, RelativeHumidityFromVapourPressureAndTemperature, VapourPressureFromRelativeHumidityAndTemperature
 export MINMAX_FORCING_MODEL, bind_forcings, minmax_forcings
 export Site, AbstractSite
-export AbstractBoundaryLayerModel, MoninObukhov
+export AbstractBoundaryLayerModel, MoninObukhov, atmospheric_surface_profile, atmospheric_surface_profile!
 export Forcing, AtmosphericProfile
 
 
