@@ -187,3 +187,14 @@ initial_ground_overrides(::MultilayerCanopy) = (;
 )
 
 canopy_leaf_area_index(model::MultilayerCanopy) = sum(model.plant_area_index) * (1 - model.woody_area_fraction)
+
+# Canopy-displaced log-profile origin for solve_air!'s output.profile --
+# matches canopy_wind_profile!'s own above-canopy evaluation (attenuation.jl)
+# so both stay consistent at the canopy_height seam.
+canopy_profile_origin(::MultilayerCanopy, buffers, site) =
+    (; displacement_height = buffers.wind.displacement_height, roughness_length = buffers.wind.roughness_length)
+
+# Top-of-canopy leaf temperature for solve_air!'s output.profile above
+# canopy -- not lagged (solve_air! is a full post-solve pass).
+profile_surface_temperature(::MultilayerCanopy, output, i, ground_surface_temperature) =
+    output.canopy.leaf_temperature[i, 1]

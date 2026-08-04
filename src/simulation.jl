@@ -948,16 +948,18 @@ function solve_air!(cache::MicroCache)
     output = cache.output
     solar_radiation_out = cache.buffers.solar_out
     site = mp.inputs.site
-    (; boundary_layer_model, vapour_pressure_equation, snow_model) = mp.model
+    (; canopy_model, boundary_layer_model, vapour_pressure_equation, snow_model) = mp.model
     profile_buffers = cache.buffers.air_profile
     n_snow = n_snow_nodes(snow_model)
+    (; displacement_height, roughness_length) = canopy_profile_origin(canopy_model, cache.buffers.canopy, site)
     for i in 1:size(output.profile.air_temperature, 1)
         # PR #102: when snow is present, the boundary-layer surface is the
         # top of the snowpack (snow node 1) not the soil surface.
         has_snow = n_snow > 0 && output.snow_depth[i] > 0.0u"cm"
-        surface_temperature = has_snow ?
+        ground_surface_temperature = has_snow ?
             u"°C"(output.snow_temperature[i, 1]) :
             u"°C"(output.soil_temperature[i, 1])
+        surface_temperature = profile_surface_temperature(canopy_model, output, i, ground_surface_temperature)
         environment_instant = (;
             atmospheric_pressure=output.pressure[i],
             reference_temperature=output.reference_temperature[i],
@@ -965,7 +967,7 @@ function solve_air!(cache::MicroCache)
             reference_humidity=output.reference_humidity[i],
             zenith_angle=solar_radiation_out.zenith_angle[i],
         )
-        result = atmospheric_surface_profile!(boundary_layer_model, profile_buffers; site, environment_instant, surface_temperature, vapour_pressure_equation)
+        result = atmospheric_surface_profile!(boundary_layer_model, profile_buffers; site, environment_instant, surface_temperature, vapour_pressure_equation, displacement_height, roughness_length)
         _write_row!(output.profile.air_temperature,   i, result.air_temperature)
         _write_row!(output.profile.wind_speed,        i, result.wind_speed)
         _write_row!(output.profile.relative_humidity, i, result.relative_humidity)

@@ -123,7 +123,8 @@ function atmospheric_surface_profile!(bl::MoninObukhov, buffers;
 
     if !warned_below_roughness[] && minimum(heights) - displacement_height < z0
         @warn """Some requested heights are below the roughness length ($z0) above the displacement height ($displacement_height).
-    Monin-Obukhov similarity theory is not valid in this sublayer region.
+    Monin-Obukhov similarity theory is not valid in this sublayer region -- expected
+    for below-canopy heights canopy model is running.
     Assumptions applied:
       • wind speed → 0 (log-law gives u = 0 at z = z0 by definition)
       • air temperature linearly interpolated between T_surface (z = 0) and T_z0 (z = z0)
