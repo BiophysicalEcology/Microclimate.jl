@@ -13,6 +13,13 @@ The `atmospheric_radiation_model` lives on the longwave model rather than on
     atmospheric_radiation_model::ARM = CampbellNormanAtmosphericRadiation()
 end
 
+"""
+    precompute_longwave_sky(model::ViewFactorLongwave; site, environment_instant,
+                             vapour_pressure_equation, surface_emissivity, shade)
+
+If `environment_instant.longwave_radiation` is set, uses it directly as the
+sky term instead of deriving one from `cloud_cover`.
+"""
 function precompute_longwave_sky(model::ViewFactorLongwave;
     site,
     environment_instant,
@@ -24,17 +31,21 @@ function precompute_longwave_sky(model::ViewFactorLongwave;
 )
     sky_view_fraction = site.sky_view_fraction
     (; atmospheric_pressure, reference_humidity, reference_temperature, cloud_emissivity, cloud_cover) = environment_instant
-
-    wet_air_out = wet_air_properties(u"K"(reference_temperature), reference_humidity, atmospheric_pressure; vapour_pressure_equation)
-    atmospheric_longwave = atmospheric_radiation(model.atmospheric_radiation_model, wet_air_out.vapour_pressure, reference_temperature)
+    supplied_longwave = get(environment_instant, :longwave_radiation, nothing)
 
     cloud_radiation = σ * cloud_emissivity * (u"K"(reference_temperature) - 2.0u"K")^4
     hillshade_radiation = σ * cloud_emissivity * (u"K"(reference_temperature))^4
 
-    clear_sky_fraction = 1.0 - cloud_cover
-    clear_component = atmospheric_longwave * clear_sky_fraction
-    cloudy_component = cloud_radiation * cloud_cover
-    longwave_radiation_sky = (clear_component + cloudy_component) * (1.0 - shade)
+    if supplied_longwave !== nothing
+        longwave_radiation_sky = supplied_longwave * (1.0 - shade)
+    else
+        wet_air_out = wet_air_properties(u"K"(reference_temperature), reference_humidity, atmospheric_pressure; vapour_pressure_equation)
+        atmospheric_longwave = atmospheric_radiation(model.atmospheric_radiation_model, wet_air_out.vapour_pressure, reference_temperature)
+        clear_sky_fraction = 1.0 - cloud_cover
+        clear_component = atmospheric_longwave * clear_sky_fraction
+        cloudy_component = cloud_radiation * cloud_cover
+        longwave_radiation_sky = (clear_component + cloudy_component) * (1.0 - shade)
+    end
     longwave_radiation_vegetation = shade * hillshade_radiation
     longwave_radiation_hillshade = hillshade_radiation
 

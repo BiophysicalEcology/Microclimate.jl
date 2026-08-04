@@ -1042,6 +1042,12 @@ end
 # field is `nothing` so the inferred return type is concrete per call site.
 @inline _maybe_indexed(::Nothing, _) = nothing
 @inline _maybe_indexed(v, iday) = v[iday]
+
+# environment_hourly itself can also be nothing (minmax-driven problems) --
+# dispatch on that first, then _maybe_indexed handles the field-level case.
+@inline _maybe_hourly_longwave(::Nothing, _) = nothing
+@inline _maybe_hourly_longwave(environment_hourly, i) = _maybe_indexed(environment_hourly.longwave_radiation, i)
+
 function get_instant(environment_day, environment_hourly, output, soil_moisture, i)
     return (;
         environment_day...,
@@ -1054,6 +1060,11 @@ function get_instant(environment_day, environment_hourly, output, soil_moisture,
         zenith_angle = output.solar_radiation.zenith_angle[i],
         cloud_cover = output.cloud_cover[i],
         global_radiation = output.global_radiation[i],
+        # User-supplied downward longwave (e.g. reanalysis output such as
+        # ERA5/BARRA, not necessarily a direct measurement), read by
+        # precompute_longwave_sky in preference to the cloud_cover-derived
+        # estimate when available.
+        longwave_radiation = _maybe_hourly_longwave(environment_hourly, i),
         soil_moisture=soil_moisture,
     )
 end
