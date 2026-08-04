@@ -9,7 +9,7 @@
                        stomatal_model=PrescribedStomatalConductance(),
                        leaf_temperature_solver=LinearizedLeafTemperature(),
                        leaf_convection_model=ElaborateLeafConvection(),
-                       convergence=FixedIterationConvergence(3))
+                       convergence=IterationToleranceConvergence(; tolerance=0.1u"K", max_iterations_per_day=20))
 
 Multi-layer canopy structure resolved by height. Splits the canopy into as
 many layers as there are `MicroModel.heights` entries at or below
@@ -51,9 +51,9 @@ Composes swappable sub-models the same way `MicroModel` composes
   Nusselt correlation (default [`ElaborateLeafConvection`](@ref); see also
   [`SimpleLeafConvection`](@ref))
 - `convergence::AbstractSoilTemperatureConvergence` — hourly Picard-loop
-  convergence criterion (default `FixedIterationConvergence(3)`); reuses
-  the soil spin-up loop's dispatch (generic over any temperature array).
-  Iteration count is free/tunable, uncited.
+  convergence criterion (default `IterationToleranceConvergence`, 0.1K/20
+  passes); reuses the soil spin-up loop's dispatch. `FixedIterationConvergence(n)`
+  runs exactly `n` passes regardless of convergence -- free/tunable, uncited.
 - `relaxation` — under-relaxation on each Picard pass's leaf-temperature
   update (`x_new = relaxation*x_solved + (1-relaxation)*x_prev`), default
   `0.5`. Prevents overshoot when heat-transfer coefficients are small (e.g.
@@ -77,7 +77,7 @@ other radiation models read albedo from their caller.
     stomatal_model::SM = PrescribedStomatalConductance()
     leaf_temperature_solver::LTS = LinearizedLeafTemperature()
     leaf_convection_model::LCM = ElaborateLeafConvection()
-    convergence::CV = FixedIterationConvergence(10)
+    convergence::CV = IterationToleranceConvergence(; tolerance=0.1u"K", max_iterations_per_day=20)
     relaxation::RL = 0.05
 end
 
@@ -94,7 +94,7 @@ function example_multilayer_canopy(;
     stomatal_model = PrescribedStomatalConductance(),
     leaf_temperature_solver = LinearizedLeafTemperature(),
     leaf_convection_model = ElaborateLeafConvection(),
-    convergence = FixedIterationConvergence(10),
+    convergence = IterationToleranceConvergence(; tolerance=0.1u"K", max_iterations_per_day=20),
     relaxation = 0.05,
 )
     MultilayerCanopy(;

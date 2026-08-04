@@ -62,7 +62,7 @@ Solver/iteration/data-delivery strategy. Lives on `MicroModel.config`.
 Physical-process models live directly on `MicroModel`; this struct is
 strictly the "how we iterate and how data is delivered" side of the model.
 
-- `convergence`: `FixedIterationConvergence(3)` or `SoilTemperatureConvergenceTolerance(; tolerance, max_iterations_per_day)`
+- `convergence`: `FixedIterationConvergence(3)` or `IterationToleranceConvergence(; tolerance, max_iterations_per_day)`
 - `rainfall_schedule`: `DailyRainfall()` (default) or `HourlyRainfall()`
 - `soil_moisture_strategy`: `PrescribedSoilMoisture()` or `DynamicSoilMoisture(; ...)`
 - `max_surface_pool`: numerical clamp on the surface-pool state variable

@@ -1,19 +1,19 @@
 """
-    SoilTemperatureConvergenceTolerance(; tolerance, max_iterations_per_day)
+    IterationToleranceConvergence(; tolerance, max_iterations_per_day)
 
-Iterate the soil temperature solver until the maximum nodal temperature change
-between successive full-day passes falls below `tolerance`, or until
-`max_iterations_per_day` passes have been completed.
+Iterate until the max state change between passes is below `tolerance`, or
+`max_iterations_per_day` passes have run. Generic -- used by both
+`MicroConfig.convergence` and `MultilayerCanopy.convergence`.
 """
-@kwdef struct SoilTemperatureConvergenceTolerance{T} <: AbstractSoilTemperatureConvergence
+@kwdef struct IterationToleranceConvergence{T} <: AbstractSoilTemperatureConvergence
     tolerance::T
     max_iterations_per_day::Int
 end
 
-max_iterations(c::SoilTemperatureConvergenceTolerance) = c.max_iterations_per_day
-may_iterate(::SoilTemperatureConvergenceTolerance) = true
+max_iterations(c::IterationToleranceConvergence) = c.max_iterations_per_day
+may_iterate(::IterationToleranceConvergence) = true
 
-function is_converged(c::SoilTemperatureConvergenceTolerance, iter, niter, T0, T0_prev)
+function is_converged(c::IterationToleranceConvergence, iter, niter, T0, T0_prev)
     iter >= niter && return true
     iter <= 1 && return niter <= 1
     tol = ustrip(u"K", c.tolerance)
