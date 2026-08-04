@@ -10,7 +10,7 @@ boundary_layer_model = MoninObukhov()
 
 model = Microclimate.example_multilayer_canopy(;
     canopy_height, plant_area_index,
-    convergence = SoilTemperatureConvergenceTolerance(; tolerance = 0.01u"K", max_iterations_per_day = 15),
+    convergence = IterationToleranceConvergence(; tolerance = 0.01u"K", max_iterations_per_day = 15),
 )
 buffers = Microclimate.allocate_canopy(model, heights, boundary_layer_model)
 
@@ -100,7 +100,7 @@ end
 end
 
 @testset "canopy_energy_balance! is allocation-light" begin
-    # Fixed iteration count for a reproducible byte budget (SoilTemperatureConvergenceTolerance's
+    # Fixed iteration count for a reproducible byte budget (IterationToleranceConvergence's
     # own convergence-dependent iteration count would make this threshold nondeterministic).
     fixed_model = Microclimate.example_multilayer_canopy(;
         canopy_height, plant_area_index, convergence = FixedIterationConvergence(3),
