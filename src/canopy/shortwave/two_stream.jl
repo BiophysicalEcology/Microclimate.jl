@@ -90,6 +90,11 @@ Two-stream boundary-condition coefficients for *diffuse* radiation. Unlike
 `leaf_optics`, these depend on ground reflectance, so they're recomputed
 every hour rather than cached — cheap scalar ops, no allocation.
 """
+
+# Floors |x| away from zero, sign-preserving (0 -> +ε) -- a plain max() floor
+# would flip the sign of a legitimately-negative value instead.
+_safe_nonzero(x, ε=1.0e-6) = abs(x) < ε ? (x < 0 ? -ε : ε) : x
+
 function diffuse_two_stream_optics(leaf_optics, ground_reflectance)
     (; leaf_absorptance, diffuse_backscatter_coefficient, diffuse_attenuation_rate, diffuse_transmission_factor) = leaf_optics
 
@@ -98,12 +103,13 @@ function diffuse_two_stream_optics(leaf_optics, ground_reflectance)
     upward_diffuse_boundary_term = leaf_absorptance + diffuse_backscatter_coefficient * (1.0 - 1.0 / safe_ground_reflectance)
     downward_diffuse_boundary_term = leaf_absorptance + diffuse_backscatter_coefficient * (1.0 - ground_reflectance)
 
-    upward_diffuse_normalization =
+    # divided into below and in direct_two_stream_optics -- can hit zero
+    upward_diffuse_normalization = _safe_nonzero(
         (leaf_absorptance + diffuse_backscatter_coefficient + diffuse_attenuation_rate) * (upward_diffuse_boundary_term - diffuse_attenuation_rate) / diffuse_transmission_factor -
-        (leaf_absorptance + diffuse_backscatter_coefficient - diffuse_attenuation_rate) * (upward_diffuse_boundary_term + diffuse_attenuation_rate) * diffuse_transmission_factor
-    downward_diffuse_normalization =
+        (leaf_absorptance + diffuse_backscatter_coefficient - diffuse_attenuation_rate) * (upward_diffuse_boundary_term + diffuse_attenuation_rate) * diffuse_transmission_factor)
+    downward_diffuse_normalization = _safe_nonzero(
         (downward_diffuse_boundary_term + diffuse_attenuation_rate) / diffuse_transmission_factor -
-        (downward_diffuse_boundary_term - diffuse_attenuation_rate) * diffuse_transmission_factor
+        (downward_diffuse_boundary_term - diffuse_attenuation_rate) * diffuse_transmission_factor)
 
     diffuse_reflected_decay_coefficient = (diffuse_backscatter_coefficient / (upward_diffuse_normalization * diffuse_transmission_factor)) * (upward_diffuse_boundary_term - diffuse_attenuation_rate)
     diffuse_reflected_growth_coefficient = (-diffuse_backscatter_coefficient * diffuse_transmission_factor / upward_diffuse_normalization) * (upward_diffuse_boundary_term + diffuse_attenuation_rate)
@@ -140,7 +146,8 @@ function direct_two_stream_optics(plant_area_index, direct_beam_extinction_coeff
        upward_diffuse_normalization, downward_diffuse_normalization) = diffuse_optics
     k = direct_beam_extinction_coefficient
 
-    direct_beam_solution_denominator = k^2 + diffuse_backscatter_coefficient^2 - (leaf_absorptance + diffuse_backscatter_coefficient)^2
+    # known Dickinson/Sellers singularity: vanishes at some k, swept through continuously via zenith_angle
+    direct_beam_solution_denominator = _safe_nonzero(k^2 + diffuse_backscatter_coefficient^2 - (leaf_absorptance + diffuse_backscatter_coefficient)^2)
     direct_upward_source_term = 0.5 * (leaf_scattering_coefficient + leaf_orientation_factor * leaf_scattering_asymmetry / k) * k
     direct_downward_source_term = leaf_scattering_coefficient * k - direct_upward_source_term
     direct_beam_transmission_factor = exp(-k * plant_area_index)
