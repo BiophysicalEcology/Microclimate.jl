@@ -1,4 +1,5 @@
 using Microclimate
+using Microclimate: allocate_air_profile, canopy_air_profile!
 using Unitful
 using Test
 

@@ -1,4 +1,6 @@
 using Microclimate
+using Microclimate: allocate_interception, allocate_longwave, allocate_shortwave,
+    canopy_interception!, canopy_longwave!, canopy_shortwave!
 using Unitful
 using Test
 

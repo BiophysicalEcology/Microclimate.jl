@@ -1,4 +1,6 @@
 using Microclimate
+using Microclimate: allocate_interception, blend_stomatal_conductance, canopy_interception!,
+    evaporation, wet_canopy_fraction
 using Unitful
 using Test
 

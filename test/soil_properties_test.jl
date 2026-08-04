@@ -1,4 +1,5 @@
 using Microclimate
+using Microclimate: allocate_soil_properties
 using Unitful
 using FluidProperties
 using Test

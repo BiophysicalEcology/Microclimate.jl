@@ -40,24 +40,22 @@ export AbstractSnowModel, NoSnow, SnowModel, SnowState
 
 # Canopy model
 export AbstractCanopyModel, NoCanopy, MultilayerCanopy, plant_area_index_from_density
-export allocate_canopy, canopy_shortwave!, canopy_longwave!, canopy_wind_profile!, canopy_energy_balance!
 export example_multilayer_canopy
-export AbstractCanopyShortwaveModel, TwoStreamRadiation, allocate_shortwave
-export AbstractCanopyLongwaveModel, LayeredLongwaveExchange, allocate_longwave
-export AbstractCanopyWindModel, CanopyWindAttenuation, allocate_wind
-export AbstractCanopyAirProfileModel, KTheoryAirProfile, RaupachLTheoryAirProfile, allocate_air_profile, canopy_air_profile!
+export AbstractCanopyShortwaveModel, TwoStreamRadiation
+export AbstractCanopyLongwaveModel, LayeredLongwaveExchange
+export AbstractCanopyWindModel, CanopyWindAttenuation
+export AbstractCanopyAirProfileModel, KTheoryAirProfile, RaupachLTheoryAirProfile
 export AbstractCanopyInterceptionModel, NoInterception, LayeredRainInterception
-export allocate_interception, canopy_interception!, wet_canopy_fraction, blend_stomatal_conductance
 export LeafParameters
 export AbstractStomatalConductanceModel, PrescribedStomatalConductance,
-    MoistureResponsiveStomatalConductance, stomatal_conductance
+    MoistureResponsiveStomatalConductance
 export AbstractLeafTemperatureSolver, LinearizedLeafTemperature, RootFindLeafTemperature
 export AbstractLeafConvectionModel, ElaborateLeafConvection, SimpleLeafConvection
-export leaf_temperature, leaf_heat_balance, leaf_body
+export leaf_body
 export LeafEvaporationParameters
 
 # Apparent heat capacity (latent-heat-of-fusion treatment in snow)
-export AbstractApparentHeatCapacity, BonacinaStep, TanhSmoothed, Gaussian, WestermannSigmoid, apparent_heat_capacity
+export AbstractApparentHeatCapacity, BonacinaStep, TanhSmoothed, Gaussian, WestermannSigmoid
 
 # Soil thermal model
 export AbstractSoilProperties, CampbelldeVriesSoilProperties
@@ -80,10 +78,10 @@ export AbstractTimeMode, NonConsecutiveDayMode, ConsecutiveDayMode
 export AbstractDiffuseFractionModel, ErbsDiffuseFraction
 
 # Atmospheric radiation models (clear-sky longwave building block)
-export AbstractAtmosphericRadiationModel, SwinbankAtmosphericRadiation, CampbellNormanAtmosphericRadiation, atmospheric_radiation
+export AbstractAtmosphericRadiationModel, SwinbankAtmosphericRadiation, CampbellNormanAtmosphericRadiation
 
 # Sunshine fraction models (Ångström building block)
-export AbstractSunshineFractionModel, Angstrom, sunshine_fraction
+export AbstractSunshineFractionModel, Angstrom
 
 # Longwave budget algorithms
 export AbstractLongwaveModel, ViewFactorLongwave
@@ -92,33 +90,25 @@ export AbstractLongwaveModel, ViewFactorLongwave
 export AbstractShortwaveModel, AngstromMaxwellShortwave
 
 # Surface evaporation models
-export AbstractEvaporationModel, BulkTransferEvaporation, surface_convection_evaporation
+export AbstractEvaporationModel, BulkTransferEvaporation
 
 # Soil energy balance models
 export SoilHeatTransportModel, SoilHeatTransport1D
 
 # Soil freezing models
-export SoilPhaseTransitionModel, PhaseTransitionLatentHeat, allocate_phase_transition
+export SoilPhaseTransitionModel, PhaseTransitionLatentHeat
 
 # Rainfall schedule
-export AbstractRainfallSchedule, DailyRainfall, HourlyRainfall, is_hourly
+export AbstractRainfallSchedule, DailyRainfall, HourlyRainfall
 
 export AbstractEnvironment, MonthlyMinMaxEnvironment, DailyMinMaxEnvironment, DailyTimeseries, HourlyTimeseries
 export TimeOfDay, Sunrise, Sunset, Midday, Midnight, ClockTime
 export Shape, Sine, Decay, Linear, DielCurve, DielForcing, ForcingSpec, Derived, RelativeHumidityFromVapourPressureAndTemperature, VapourPressureFromRelativeHumidityAndTemperature
-export MINMAX_FORCING_MODEL, bind_forcings, minmax_forcings
+export minmax_forcings
 export Site, AbstractSite
 export AbstractBoundaryLayerModel, MoninObukhov, atmospheric_surface_profile, atmospheric_surface_profile!
 export Forcing, AtmosphericProfile
 
-
-export shortwave_radiation!, longwave_radiation, precompute_longwave_sky
-
-export calc_convection
-
-export soil_properties, soil_properties!, allocate_soil_properties
-
-export soil_energy_balance, evaporation, soil_water_balance!, phase_transition
 
 export example_site, example_monthly_weather,
     example_daily_environment, example_hourly_environment,

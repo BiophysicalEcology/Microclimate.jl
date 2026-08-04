@@ -1,4 +1,5 @@
 using Microclimate
+using Microclimate: allocate_canopy, stomatal_conductance
 using Unitful
 using Test
 

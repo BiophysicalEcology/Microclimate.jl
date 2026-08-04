@@ -1,4 +1,5 @@
 using Microclimate
+using Microclimate: allocate_longwave, canopy_longwave!, precompute_longwave_sky
 using Unitful
 using Test
 

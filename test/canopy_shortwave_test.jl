@@ -1,4 +1,5 @@
 using Microclimate
+using Microclimate: allocate_canopy, canopy_shortwave!
 using Unitful
 using Test
 

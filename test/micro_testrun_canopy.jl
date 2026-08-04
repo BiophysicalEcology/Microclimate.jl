@@ -1,4 +1,5 @@
 using Microclimate
+using Microclimate: allocate_canopy, canopy_energy_balance!
 using Unitful
 using Test
 
