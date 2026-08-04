@@ -77,8 +77,8 @@ other radiation models read albedo from their caller.
     stomatal_model::SM = PrescribedStomatalConductance()
     leaf_temperature_solver::LTS = LinearizedLeafTemperature()
     leaf_convection_model::LCM = ElaborateLeafConvection()
-    convergence::CV = FixedIterationConvergence(3)
-    relaxation::RL = 0.5
+    convergence::CV = FixedIterationConvergence(10)
+    relaxation::RL = 0.05
 end
 
 function example_multilayer_canopy(;
@@ -94,8 +94,8 @@ function example_multilayer_canopy(;
     stomatal_model = PrescribedStomatalConductance(),
     leaf_temperature_solver = LinearizedLeafTemperature(),
     leaf_convection_model = ElaborateLeafConvection(),
-    convergence = FixedIterationConvergence(3),
-    relaxation = 0.5,
+    convergence = FixedIterationConvergence(10),
+    relaxation = 0.05,
 )
     MultilayerCanopy(;
         canopy_height, plant_area_index, woody_area_fraction, shortwave_model, longwave_model, wind_model,
