@@ -194,15 +194,15 @@ end
 end
 
 # Top-boundary near-field weight for source layer i, dispatched on
-# far_field_mode. :exact resolves numerical coincidence with canopy_height
-# via subdivision quadrature; :bulk unconditionally treats layer_heights[1]
-# (the layer closest to canopy_height, Julia's analog of R's index n) as the
-# self term and drops it, matching R exactly regardless of exact coincidence.
+# far_field_mode. Layer 1 (closest to canopy_height) is always the self term
+# -- matching _raupach_pair_kernel_weight's own j==i criterion, not a
+# height-coincidence check, since layer_heights[1] need not sit exactly at
+# canopy_height and the two criteria disagreeing double-counts/drops the
+# singular kernel inconsistently between near_field_top and near_field[1].
 @inline function _raupach_top_kernel_weight(::Val{:exact}, i, canopy_height, layer_heights, layer_thickness, inv_near_field_length, subdivisions)
-    signed_direct = (canopy_height - layer_heights[i]) * inv_near_field_length[i]
-    return abs(signed_direct) > 1.0e-9 ?
-        _raupach_kernel_weight(canopy_height, i, layer_heights, inv_near_field_length) :
-        _raupach_self_kernel_weight(canopy_height, i, layer_heights, layer_thickness, inv_near_field_length, subdivisions)
+    return i == 1 ?
+        _raupach_self_kernel_weight(canopy_height, i, layer_heights, layer_thickness, inv_near_field_length, subdivisions) :
+        _raupach_kernel_weight(canopy_height, i, layer_heights, inv_near_field_length)
 end
 @inline function _raupach_top_kernel_weight(::Val{:bulk}, i, canopy_height, layer_heights, layer_thickness, inv_near_field_length, subdivisions)
     return i == 1 ? 0.0 : _raupach_bulk_kernel_weight(canopy_height, i, layer_heights, inv_near_field_length)

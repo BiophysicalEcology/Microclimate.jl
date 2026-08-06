@@ -399,6 +399,7 @@ function soil_water_balance!(buffers, soil_hydraulic_model::CampbellSoilHydrauli
     canopy_leaf_area_index=nothing,
     ground_wind_speed=nothing, ground_air_temperature=nothing,
     ground_air_relative_humidity=nothing, ground_reference_height=nothing,
+    ground_heat_conductance=nothing, ground_vapor_conductance=nothing,
 )
     atmospheric_pressure = environment_instant.atmospheric_pressure
     leaf_area_index = isnothing(canopy_leaf_area_index) ? environment_instant.leaf_area_index : canopy_leaf_area_index
@@ -416,36 +417,44 @@ function soil_water_balance!(buffers, soil_hydraulic_model::CampbellSoilHydrauli
         profile_out = atmospheric_surface_profile!(boundary_layer_model, buffers.soil_water_profile;
             site, environment_instant, surface_temperature, vapour_pressure_equation,
         )
-        convective_heat_flux = profile_out.convective_heat_flux
+        heat_transfer_coefficient = max(abs(profile_out.convective_heat_flux / (surface_temperature - air_temperature)), 0.5u"W/m^2/K")
+        wet_air_out = wet_air_properties(air_temperature, relative_humidity, atmospheric_pressure; vapour_pressure_equation)
+        mass_transfer_coefficient = calc_mass_transfer_coefficient(heat_transfer_coefficient, wet_air_out.specific_heat, wet_air_out.density)
         wet_air_out_ref = wet_air_properties(u"K"(last(profile_out.air_temperature)), last(profile_out.relative_humidity), atmospheric_pressure; vapour_pressure_equation)
         wet_air_out_loc = wet_air_properties(u"K"(profile_out.air_temperature[1]), 1.0, atmospheric_pressure; vapour_pressure_equation)
         local_relative_humidity = clamp(wet_air_out_ref.vapour_pressure / wet_air_out_loc.vapour_pressure, 0.0, 0.99)
     else
         # Canopy present: MOST is only valid above canopy top (already used
         # there, in canopy_wind_profile!) -- within the canopy, transport is
-        # the canopy's own resolved profile. Below the canopy's lowest
-        # resolved layer, treat that layer's conditions as the reference for
-        # a thin sub-canopy MOST segment down to the soil surface, rather
-        # than reusing the free-atmosphere reference. roughness_height stays
-        # the site's own bare-ground value, unaffected by canopy above it.
-        # The canopy's resolved ground-layer humidity is already the
-        # near-surface value directly, no MOST profile approximation needed.
+        # the canopy's own resolved profile. The canopy's resolved ground-
+        # layer humidity is already the near-surface value directly, no MOST
+        # profile approximation needed.
         air_temperature = ground_air_temperature
         relative_humidity = ground_air_relative_humidity
-        flux_out = surface_fluxes(boundary_layer_model;
-            surface_temperature, air_temperature=u"K"(ground_air_temperature), wind_speed=ground_wind_speed,
-            zenith_angle=environment_instant.zenith_angle,
-            roughness_height=site.roughness_height, reference_height=ground_reference_height,
-            obukhov_length_prev=buffers.soil_water_profile.obukhov_length_prev,
-        )
-        convective_heat_flux = flux_out.convective_heat_flux
         local_relative_humidity = clamp(ground_air_relative_humidity, 0.0, 0.99)
+        if isnothing(ground_heat_conductance)
+            # Fallback (canopy supplied ground_air_* but not its own
+            # conductances): surface_fluxes's Monin-Obukhov log-law
+            # inversion, invalid at the canopy's ground-most layer height
+            # (too close to roughness_height -- see _MIN_LOGLAW_RATIO).
+            flux_out = surface_fluxes(boundary_layer_model;
+                surface_temperature, air_temperature=u"K"(ground_air_temperature), wind_speed=ground_wind_speed,
+                zenith_angle=environment_instant.zenith_angle,
+                roughness_height=site.roughness_height, reference_height=ground_reference_height,
+                obukhov_length_prev=buffers.soil_water_profile.obukhov_length_prev,
+            )
+            heat_transfer_coefficient = max(abs(flux_out.convective_heat_flux / (surface_temperature - air_temperature)), 0.5u"W/m^2/K")
+            wet_air_out = wet_air_properties(air_temperature, relative_humidity, atmospheric_pressure; vapour_pressure_equation)
+            mass_transfer_coefficient = calc_mass_transfer_coefficient(heat_transfer_coefficient, wet_air_out.specific_heat, wet_air_out.density)
+        else
+            # Canopy's own resolved ground-to-lowest-layer conductances --
+            # same fix as heat_transport_1d.jl's ground_heat_vapor_flux,
+            # avoids surface_fluxes's invalid-geometry log-law inversion
+            # entirely rather than working around it.
+            heat_transfer_coefficient = max(abs(ground_heat_conductance), 0.5u"W/m^2/K")
+            mass_transfer_coefficient = ground_vapor_conductance
+        end
     end
-    heat_transfer_coefficient = max(abs(convective_heat_flux / (surface_temperature - air_temperature)), 0.5u"W/m^2/K")
-    wet_air_out = wet_air_properties(air_temperature, relative_humidity, atmospheric_pressure; vapour_pressure_equation)
-    air_heat_capacity = wet_air_out.specific_heat
-    air_density = wet_air_out.density
-    mass_transfer_coefficient = (heat_transfer_coefficient / (air_heat_capacity * air_density)) * (0.71 / 0.60)^0.666
     Q_evaporation, evaporation_mass_flux = evaporation(evaporation_model;
         surface_temperature,
         air_temperature,

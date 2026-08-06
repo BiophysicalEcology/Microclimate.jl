@@ -172,17 +172,17 @@ end
 """
     _canopy_picard_pass!(buffers, model, boundary_layer_model, ctx, relaxation)
 
-One relaxed Picard pass: longwave exchange, per-layer leaf temperature
+One relaxed Picard pass: re-anchor the above-canopy boundary on this pass's
+own top-leaf temperature, longwave exchange, per-layer leaf temperature
 (under-relaxed against `buffers.leaf.leaf_temperature_prev`, which the
 caller must set beforehand), then the in-canopy air/vapor profile (also
 under-relaxed). Shared by [`PicardCanopyConvergence`](@ref)'s own loop and
 [`NonlinearSolveCanopyConvergence`](@ref)'s Picard warm-up fallback tier.
-Returns `(longwave_result, any_clamped)`.
+Returns `(longwave_result, any_clamped, canopy_top_air_temperature)`.
 """
 function _canopy_picard_pass!(buffers, model::MultilayerCanopy, boundary_layer_model, ctx, relaxation)
     (; site, environment_instant, zenith_angle, ground_temperature, ground_emissivity, ground_relative_humidity,
-       vapour_pressure_equation, leaf_water_potential, canopy_top_air_temperature, canopy_top_relative_humidity,
-       friction_velocity, obukhov_length) = ctx
+       vapour_pressure_equation, leaf_water_potential) = ctx
 
     (; leaf_body, leaf_temperature_prev, sensible_heat_source, evaporation_mass_flow,
        potential_evaporation_mass_flow, net_balance, air_temperature_prev, relative_humidity_prev) = buffers.leaf
@@ -190,11 +190,22 @@ function _canopy_picard_pass!(buffers, model::MultilayerCanopy, boundary_layer_m
     absorbed_radiation_buffer = buffers.leaf.absorbed_radiation
     (; absorbed_shortwave) = buffers.shortwave
     (; absorbed_longwave, layer_transmission) = buffers.longwave
-    (; wind_speed, displacement_height) = buffers.wind
+    displacement_height = buffers.wind.displacement_height
     n_layers = length(leaf_temperature_buffer)
     (; atmospheric_pressure) = environment_instant
     leaf_emissivity = model.leaf_parameters.leaf_emissivity
     canopy_height = model.canopy_height
+
+    # Re-anchor on this pass's own top-leaf temperature (not the ctx value
+    # frozen from last hour's convergence) -- closes canopy_source_temperature
+    # into the same-hour fixed point instead of lagging it a full hour.
+    wind_result = canopy_wind_profile!(buffers, model, boundary_layer_model;
+        site, environment_instant, canopy_source_temperature=leaf_temperature_buffer[1], vapour_pressure_equation)
+    canopy_top_air_temperature = wind_result.canopy_top_air_temperature
+    canopy_top_relative_humidity = wind_result.canopy_top_relative_humidity
+    friction_velocity = wind_result.friction_velocity
+    obukhov_length = wind_result.obukhov_length
+    wind_speed = buffers.wind.wind_speed
 
     # A binding clamp can hold the value unchanged between iterations, falsely
     # satisfying the convergence check while net stays nonzero.
@@ -273,7 +284,7 @@ function _canopy_picard_pass!(buffers, model::MultilayerCanopy, boundary_layer_m
 
     _relax_air_profile!(buffers, model.air_profile_model, relaxation, air_temperature_prev, relative_humidity_prev)
 
-    return longwave_result, any_clamped
+    return longwave_result, any_clamped, canopy_top_air_temperature
 end
 
 # Under-relax the air profile: it feeds back into next pass's leaf
@@ -291,6 +302,15 @@ function _relax_air_profile!(buffers, ::AbstractCanopyAirProfileModel, relaxatio
 end
 _relax_air_profile!(buffers, ::RaupachLTheoryAirProfile, relaxation, air_temperature_prev, relative_humidity_prev) = nothing
 
+# Whether the canopy-top boundary (re-anchored each pass by
+# _canopy_picard_pass!) has itself stopped moving -- checked alongside the
+# per-layer leaf-temperature convergence so a still-drifting boundary can't
+# hide behind an already-converged leaf array. FixedIterationConvergence
+# always runs its full count regardless, so this is a no-op for it.
+_canopy_top_converged(::FixedIterationConvergence, canopy_top_air_temperature, canopy_top_air_temperature_prev) = true
+_canopy_top_converged(c::IterationToleranceConvergence, canopy_top_air_temperature, canopy_top_air_temperature_prev) =
+    abs(canopy_top_air_temperature - canopy_top_air_temperature_prev) < c.tolerance
+
 """
     converge_canopy!(buffers, model::MultilayerCanopy, boundary_layer_model, ctx, convergence_model)
 
@@ -298,20 +318,28 @@ Drives the per-hour leaf/air-temperature fixed point to convergence, per
 `convergence_model` ([`PicardCanopyConvergence`](@ref)/
 [`NonlinearSolveCanopyConvergence`](@ref)). `ctx` bundles the per-hour
 boundary conditions `canopy_energy_balance!` doesn't already expose via
-`buffers`/`model` (site/environment/ground state, `canopy_wind_profile!`'s
-canopy-top values). Returns `(longwave_result, iterations)`.
+`buffers`/`model` (site/environment/ground state). `PicardCanopyConvergence`
+re-anchors the canopy-top boundary on the current pass's own leaf
+temperature each pass (see `_canopy_picard_pass!`); `NonlinearSolveCanopyConvergence`
+still uses `ctx`'s canopy-top values frozen for the whole hour. Returns
+`(longwave_result, iterations)`.
 """
 function converge_canopy!(buffers, model::MultilayerCanopy, boundary_layer_model, ctx, cm::PicardCanopyConvergence)
     leaf_temperature_buffer = buffers.leaf.leaf_temperature
     leaf_temperature_prev = buffers.leaf.leaf_temperature_prev
     niter = max_iterations(cm.convergence)
     local longwave_result
+    canopy_top_air_temperature_prev = leaf_temperature_buffer[1]
     iter = 0
     for i in 1:niter
         iter = i
         leaf_temperature_prev .= leaf_temperature_buffer
-        longwave_result, any_clamped = _canopy_picard_pass!(buffers, model, boundary_layer_model, ctx, cm.relaxation)
-        !any_clamped && is_converged(cm.convergence, iter, niter, leaf_temperature_buffer, leaf_temperature_prev) && break
+        longwave_result, any_clamped, canopy_top_air_temperature =
+            _canopy_picard_pass!(buffers, model, boundary_layer_model, ctx, cm.relaxation)
+        boundary_converged = _canopy_top_converged(cm.convergence, canopy_top_air_temperature, canopy_top_air_temperature_prev)
+        canopy_top_air_temperature_prev = canopy_top_air_temperature
+        !any_clamped && boundary_converged &&
+            is_converged(cm.convergence, iter, niter, leaf_temperature_buffer, leaf_temperature_prev) && break
     end
     return longwave_result, iter
 end

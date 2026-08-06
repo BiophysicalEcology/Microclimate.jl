@@ -71,7 +71,8 @@ end
 # the n_free = n_layers-1 free layers 2:n_layers. `scale` converts the raw
 # eddy-diffusivity/spacing ratio into the right flux law (ρ_cp for a heat
 # flux, 1 for a vapor-density flux already being a mass flux). `g_top` is the
-# conductance between the fixed layer-1 boundary and layer 2.
+# conductance between the fixed layer-1 boundary and layer 2; `g_ground` the
+# conductance between the last free layer and the ground boundary.
 function _ktheory_conductances!(dl, du, relative_eddy_diffusivity, eddy_diffusivity_top, layer_spacing, scale, unit)
     n_free = length(dl) + 1
     g_top = ustrip(unit, scale * eddy_diffusivity_top * 0.5 *

@@ -67,12 +67,17 @@ strictly the "how we iterate and how data is delivered" side of the model.
 - `soil_moisture_strategy`: `PrescribedSoilMoisture()` or `DynamicSoilMoisture(; ...)`
 - `max_surface_pool`: numerical clamp on the surface-pool state variable
   (not a physical limit — keeps the pool integration from running away)
+- `canopy_soil_convergence`: per-hour convergence between the canopy solve
+  and the soil-heat ODE, `FixedIterationConvergence(1)` by default (single
+  pass, canopy uses the previous hour's soil temperature). Raise to iterate
+  the two to a jointly self-consistent state within the hour.
 """
-@kwdef struct MicroConfig{CV,RFS,SMM,MSP}
+@kwdef struct MicroConfig{CV,RFS,SMM,MSP,CSC}
     convergence::CV = FixedIterationConvergence(3)
     rainfall_schedule::RFS = DailyRainfall()
     soil_moisture_strategy::SMM = PrescribedSoilMoisture()
     max_surface_pool::MSP = 1.0e4u"kg/m^2"
+    canopy_soil_convergence::CSC = FixedIterationConvergence(1)
 end
 
 """

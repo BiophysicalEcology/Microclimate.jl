@@ -179,7 +179,9 @@ function atmospheric_surface_profile!(bl::MoninObukhov, buffers;
         for i in 1:N_heights
             h = heights[i] - displacement_height
             if h < z0
-                frac = ustrip(h / z0)
+                # h goes negative below the displaced origin -- clamp so the
+                # interpolation saturates at surface_temp instead of extrapolating.
+                frac = clamp(ustrip(h / z0), 0.0, 1.0)
                 wind_speed[i] = zero(friction_velocity)
                 air_temperature[i] = surface_temp + (roughness_height_temp - surface_temp) * frac
             elseif i == ref_idx
@@ -205,7 +207,9 @@ function atmospheric_surface_profile!(bl::MoninObukhov, buffers;
         for i in 1:N_heights
             h = heights[i] - displacement_height
             if h < z0
-                frac = ustrip(h / z0)
+                # h goes negative below the displaced origin -- clamp so the
+                # interpolation saturates at surface_temp instead of extrapolating.
+                frac = clamp(ustrip(h / z0), 0.0, 1.0)
                 wind_speed[i] = zero(friction_velocity)
                 air_temperature[i] = surface_temp + (roughness_height_temp - surface_temp) * frac
             elseif i == ref_idx
