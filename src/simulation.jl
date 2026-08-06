@@ -364,7 +364,8 @@ function solve_soil!(cache::MicroCache)
     soil_freezing_model = soil_energy_model.freezing_model
     (; site, soil_profile, environment_daily, environment_hourly,
        initial_soil_temperature, initial_soil_moisture,
-       initial_snow_depth, initial_snow_temperature, initial_snow_density) = mp.inputs
+       initial_snow_depth, initial_snow_temperature, initial_snow_density,
+       lateral_inflow) = mp.inputs
     n_snow = n_snow_nodes(snow_model)
     soil_moisture = cache.state.soil_moisture
     ∑phase = cache.state.∑phase
@@ -376,6 +377,8 @@ function solve_soil!(cache::MicroCache)
     forcing = cache.forcing
 
     (; convergence, rainfall_schedule, max_surface_pool) = config
+    # Per-site override (e.g. a very large pool for endorheic sink cells).
+    max_surface_pool = something(mp.inputs.max_surface_pool, max_surface_pool)
     time_mode = mp.time_mode
     moisture_mode = config.soil_moisture_strategy
     (; campbell_b_parameter, air_entry_water_potential) = soil_profile.hydraulics
@@ -762,13 +765,21 @@ function solve_soil!(cache::MicroCache)
                     snow_temp_threshold = n_snow > 0 ? snow_model.snow_temperature_threshold : 0.0u"°C"
                     melted_water = n_snow > 0 ? uconvert(u"kg/m^2", thermal_melt * 1.0u"g/cm^3") : 0.0u"kg/m^2"
                     rain_melt_water = n_snow > 0 ? uconvert(u"kg/m^2", rain_melt_snow * snow_state.density) : 0.0u"kg/m^2"
+                    # Lateral surface water routed in from upslope cells (0 when uncoupled).
+                    # Aligned with `output.surface_water[step + 1]` (= output_step below).
+                    lateral_in = _lateral_inflow_at(lateral_inflow, step + 1)
                     if snow_present && u"°C"(environment_instant.reference_temperature) < snow_temp_threshold
                         # Cold snow: rain absorbed into snowpack (handled in update_snow! as snowfall); only thermal melt enters pool
-                        pool = clamp(pool + melted_water, 0.0u"kg/m^2", max_surface_pool)
+                        pool_supply = pool + melted_water + lateral_in
                     else
-                        # Warm snow or no snow: rain + rain_melt water + thermal melt enter pool
-                        pool = clamp(pool + rain + rain_melt_water + melted_water, 0.0u"kg/m^2", max_surface_pool)
+                        # Warm snow or no snow: rain + rain_melt water + thermal melt + lateral inflow enter pool
+                        pool_supply = pool + rain + rain_melt_water + melted_water + lateral_in
                     end
+                    pool = clamp(pool_supply, 0.0u"kg/m^2", max_surface_pool)
+                    # Surface water in excess of the pool's holding capacity is shed
+                    # laterally (routed downslope by a spatial driver). Previously the
+                    # clamp discarded this water; now it is conserved as an output.
+                    runoff_generated = max(pool_supply - max_surface_pool, 0.0u"kg/m^2")
                     # Soil moisture physics; output write happens below at output_step
                     (; pool, soil_moisture, infil_out) = step_soil_moisture!(moisture_mode, buffers, soil_hydraulic_model;
                         soil_profile, depths, site, boundary_layer_model, environment_instant, T0, pool, soil_moisture,
@@ -786,6 +797,7 @@ function solve_soil!(cache::MicroCache)
                 write_output = is_last_iter && in_bounds && !next_day_resets
                 if write_output
                     output.surface_water[output_step] = pool
+                    output.runoff_generated[output_step] = runoff_generated
                     _write_row!(output.soil_temperature, output_step, T0_output)
                     output.sky_temperature[output_step] = longwave_sky.sky_temperature
                     update_soil_water!(output, soil_moisture, infil_out, output_step)
@@ -1047,6 +1059,12 @@ end
 # dispatch on that first, then _maybe_indexed handles the field-level case.
 @inline _maybe_hourly_longwave(::Nothing, _) = nothing
 @inline _maybe_hourly_longwave(environment_hourly, i) = _maybe_indexed(environment_hourly.longwave_radiation, i)
+
+# Lateral surface-water inflow (kg/m^2) for output row `i`. `nothing` (uncoupled)
+# or an out-of-range index yields zero, so the pool update stays valid on the
+# final row where `output_step = step + 1` can point one past the last stored step.
+@inline _lateral_inflow_at(::Nothing, _) = 0.0u"kg/m^2"
+@inline _lateral_inflow_at(v, i) = (1 <= i <= length(v)) ? v[i] : 0.0u"kg/m^2"
 
 function get_instant(environment_day, environment_hourly, output, soil_moisture, i)
     return (;

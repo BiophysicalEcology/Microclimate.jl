@@ -15,7 +15,7 @@ function AtmosphericProfile(nsteps::Int, nheights::Int)
     )
 end
 
-@kwdef struct MicroResult{P,AT,WS,RH,CC,GS,DF,SkT,SoT,SM,SWP,SH,STC,SPH,SBD,SW,SR,Pr,SF,SD,SDN,SNT}
+@kwdef struct MicroResult{P,AT,WS,RH,CC,GS,DF,SkT,SoT,SM,SWP,SH,STC,SPH,SBD,SW,RG,SR,Pr,SF,SD,SDN,SNT}
     pressure::P
     reference_temperature::AT
     reference_wind_speed::WS
@@ -32,6 +32,10 @@ end
     soil_heat_capacity::SPH
     soil_bulk_density::SBD
     surface_water::SW
+    # Surface water (kg/m^2) shed laterally per output step — the overflow above
+    # `max_surface_pool` that would otherwise be discarded by the pool clamp.
+    # A spatial driver routes this downslope along a topographic flow graph.
+    runoff_generated::RG
     solar_radiation::SR
     profile::Pr
     snow_fall::SF
@@ -57,6 +61,7 @@ function MicroResult(nsteps::Int, num_nodes::Int, nheights::Int, solar_radiation
         soil_heat_capacity = Array{typeof(1.0u"J/kg/K")}(undef, nsteps, num_nodes),
         soil_bulk_density = Array{typeof(1.0u"kg/m^3")}(undef, nsteps, num_nodes),
         surface_water = Array{typeof(1.0u"kg/m^2")}(undef, nsteps),
+        runoff_generated = zeros(typeof(1.0u"kg/m^2"), nsteps),
         solar_radiation = solar_radiation,
         profile = AtmosphericProfile(nsteps, nheights),
         snow_fall = zeros(typeof(1.0u"cm/hr"), nsteps),
