@@ -19,6 +19,13 @@ Dyer, A. J. (1974). A review of flux–profile relationships.
     dyer_constant::DC = 16.0
 end
 
+# Below this reference-height/roughness-length ratio, log(z/z0) is small
+# enough that inverting the log law for friction velocity becomes
+# ill-conditioned (the roughness-sublayer regime, where MOST itself doesn't
+# apply) -- not a scientifically precise cutoff, just a documented, adjustable
+# point past which surface_fluxes's log-law inversion is no longer trustworthy.
+const _MIN_LOGLAW_RATIO = 5.0
+
 function allocate_profile(::MoninObukhov, heights)
     wind_speed = similar(heights, typeof(0.0u"m/s")) # output wind speeds
     air_temperature = similar(heights, typeof(0.0u"K")) # output temperatures, need to do this otherwise get InexactError
@@ -191,6 +198,10 @@ function atmospheric_surface_profile!(bl::MoninObukhov, buffers;
         convective_heat_flux = Obukhov_out.convective_heat_flux
         friction_velocity = Obukhov_out.friction_velocity
         ψ_h = Obukhov_out.ψ_h
+        # Floor: under strong instability ψ_h can approach/exceed log(z/z0),
+        # blowing up every non-reference air_temperature.
+        ref_log_ratio = log(z / z0)
+        temp_denom = max(ref_log_ratio - ψ_h, 0.1 * ref_log_ratio, 1e-6)
         for i in 1:N_heights
             h = heights[i] - displacement_height
             if h < z0
@@ -211,7 +222,7 @@ function atmospheric_surface_profile!(bl::MoninObukhov, buffers;
                 wind_log_arg = max(log_h_ratio - ψ_m1, 0.1 * log_h_ratio, 1e-6)
                 wind_speed[i] = (friction_velocity / κ) * wind_log_arg
                 temp_log_arg = max(log_h_ratio - ψ_h2, 0.1 * log_h_ratio, 1e-6)
-                air_temperature[i] = roughness_height_temp + (reference_temp - roughness_height_temp) * temp_log_arg / (log(z / z0) - ψ_h)
+                air_temperature[i] = roughness_height_temp + (reference_temp - roughness_height_temp) * temp_log_arg / temp_denom
             end
         end
     end
@@ -233,6 +244,15 @@ function surface_fluxes(bl::MoninObukhov;
     roughness_height, reference_height, obukhov_length_prev=nothing,
 )
     κ = bl.karman_constant
+    loglaw_ratio = reference_height / roughness_height
+    loglaw_ratio > 1 || throw(DomainError(ustrip(loglaw_ratio),
+        "surface_fluxes: reference_height ($reference_height) must exceed roughness_height " *
+        "($roughness_height) for Monin-Obukhov log-law inversion"))
+    loglaw_ratio < _MIN_LOGLAW_RATIO && @warn(
+        "surface_fluxes: reference_height is close to roughness_height -- Monin-Obukhov " *
+        "log-law inversion is unreliable in this roughness-sublayer regime",
+        reference_height, roughness_height, loglaw_ratio, maxlog=10,
+    )
     log_z_ratio = log(reference_height / roughness_height)
     ΔT = air_temperature - surface_temperature
     ρ_cp = calc_ρ_cp((surface_temperature + air_temperature) / 2)

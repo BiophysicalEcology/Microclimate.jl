@@ -11,7 +11,8 @@ boundary_layer_model = MoninObukhov()
 
 model = Microclimate.example_multilayer_canopy(;
     canopy_height, plant_area_index,
-    convergence = IterationToleranceConvergence(; tolerance = 0.01u"K", max_iterations_per_day = 15),
+    convergence_model = PicardCanopyConvergence(;
+        convergence = IterationToleranceConvergence(; tolerance = 0.01u"K", max_iterations_per_day = 15)),
 )
 buffers = Microclimate.allocate_canopy(model, heights, boundary_layer_model)
 
@@ -39,7 +40,7 @@ end
     )
     result = Microclimate.canopy_energy_balance!(buffers, model, boundary_layer_model, inputs)
 
-    @test result.iterations <= Microclimate.max_iterations(model.convergence)
+    @test result.iterations <= Microclimate.max_iterations(model.convergence_model.convergence)
     @test all(isfinite, ustrip.(u"K", buffers.leaf.leaf_temperature))
     @test all(t -> 250.0u"K" < t < 340.0u"K", buffers.leaf.leaf_temperature)
     @test all(isfinite, ustrip.(u"K", buffers.air_profile.air_temperature))
@@ -82,7 +83,7 @@ end
 @testset "leaf_water_potential (Campbell coupling input) warms canopy leaves" begin
     mean_leaf_temperature(lwp) = begin
         m = Microclimate.example_multilayer_canopy(;
-            canopy_height, plant_area_index, convergence = FixedIterationConvergence(20),
+            canopy_height, plant_area_index, convergence_model = PicardCanopyConvergence(; convergence = FixedIterationConvergence(20)),
         )
         b = Microclimate.allocate_canopy(m, heights, boundary_layer_model)
         inputs = Microclimate.CanopyEnergyBalanceInputs(m;
@@ -104,7 +105,7 @@ end
     # Fixed iteration count for a reproducible byte budget (IterationToleranceConvergence's
     # own convergence-dependent iteration count would make this threshold nondeterministic).
     fixed_model = Microclimate.example_multilayer_canopy(;
-        canopy_height, plant_area_index, convergence = FixedIterationConvergence(3),
+        canopy_height, plant_area_index, convergence_model = PicardCanopyConvergence(; convergence = FixedIterationConvergence(3)),
     )
     fixed_buffers = Microclimate.allocate_canopy(fixed_model, heights, boundary_layer_model)
     inputs = Microclimate.CanopyEnergyBalanceInputs(fixed_model;
@@ -124,7 +125,7 @@ end
 @testset "vector plant_area_index matches equivalent scalar and stays allocation-light" begin
     run_once(pai) = begin
         m = Microclimate.example_multilayer_canopy(; canopy_height, plant_area_index = pai,
-            convergence = FixedIterationConvergence(3))
+            convergence_model = PicardCanopyConvergence(; convergence = FixedIterationConvergence(3)))
         b = Microclimate.allocate_canopy(m, heights, boundary_layer_model)
         inputs = Microclimate.CanopyEnergyBalanceInputs(m;
             site, environment_instant = make_environment_instant(; zenith_angle = 30.0u"°"), zenith_angle = 30.0u"°",
@@ -151,7 +152,7 @@ end
 
 @testset "fixed-iteration convergence strategy still runs to completion" begin
     fixed_model = Microclimate.example_multilayer_canopy(;
-        canopy_height, plant_area_index, convergence = FixedIterationConvergence(3),
+        canopy_height, plant_area_index, convergence_model = PicardCanopyConvergence(; convergence = FixedIterationConvergence(3)),
     )
     fixed_buffers = Microclimate.allocate_canopy(fixed_model, heights, boundary_layer_model)
     inputs = Microclimate.CanopyEnergyBalanceInputs(fixed_model;

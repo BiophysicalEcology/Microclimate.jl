@@ -38,7 +38,7 @@ instead of allocating a fresh struct each hour. All fields are concretely
 typed via the parametric `{F,B,…}` slots; the underlying heap object is the
 same across hours.
 """
-mutable struct SoilEnergyInputs{M<:SoilHeatTransportModel,EVM<:AbstractEvaporationModel,ARM<:AbstractAtmosphericRadiationModel,F,B,SP,SPR,D<:Vector{<:Number},H<:Vector{<:Number},S,BLM,EI,SW,VP,LW,QF,SNM,SNS,SM,GST,GIL,GWS,GAT,GRH,GRFH}
+mutable struct SoilEnergyInputs{M<:SoilHeatTransportModel,EVM<:AbstractEvaporationModel,ARM<:AbstractAtmosphericRadiationModel,F,B,SP,SPR,D<:Vector{<:Number},H<:Vector{<:Number},S,BLM,EI,SW,VP,LW,QF,SNM,SNS,SM,GST,GIL,GWS,GAT,GRH,GRFH,GHC,GVC}
     model::M
     evaporation_model::EVM
     atmospheric_radiation_model::ARM
@@ -71,6 +71,12 @@ mutable struct SoilEnergyInputs{M<:SoilHeatTransportModel,EVM<:AbstractEvaporati
     ground_air_temperature::GAT
     ground_air_relative_humidity::GRH
     ground_reference_height::GRFH
+    # Air-profile model's own ground-to-lowest-layer conductances (nothing
+    # under NoCanopy) -- used instead of surface_fluxes's log-law inversion,
+    # which is invalid when ground_reference_height is too close to
+    # site.roughness_height (see ground_heat_vapor_flux).
+    ground_heat_conductance::GHC
+    ground_vapor_conductance::GVC
 end
 
 function SoilEnergyInputs(; model=SoilHeatTransport1D(), evaporation_model=BulkTransferEvaporation(),
@@ -84,6 +90,7 @@ function SoilEnergyInputs(; model=SoilHeatTransport1D(), evaporation_model=BulkT
     ground_shortwave_transmission=nothing, ground_incoming_longwave=nothing,
     ground_wind_speed=nothing, ground_air_temperature=nothing,
     ground_air_relative_humidity=nothing, ground_reference_height=nothing,
+    ground_heat_conductance=nothing, ground_vapor_conductance=nothing,
 )
     SoilEnergyInputs(model, evaporation_model, atmospheric_radiation_model,
         forcing, buffers, soil_properties_model, soil_profile,
@@ -91,7 +98,8 @@ function SoilEnergyInputs(; model=SoilHeatTransport1D(), evaporation_model=BulkT
         soil_wetness, vapour_pressure_equation, longwave_sky, albedo, Q_freeze,
         snow_model, snow_state, soil_moisture,
         ground_shortwave_transmission, ground_incoming_longwave,
-        ground_wind_speed, ground_air_temperature, ground_air_relative_humidity, ground_reference_height)
+        ground_wind_speed, ground_air_temperature, ground_air_relative_humidity, ground_reference_height,
+        ground_heat_conductance, ground_vapor_conductance)
 end
 
 # In-place per-hour update — no allocation. Only the fields that change per
@@ -101,6 +109,7 @@ end
     snow_state, ground_shortwave_transmission=nothing, ground_incoming_longwave=nothing,
     ground_wind_speed=nothing, ground_air_temperature=nothing,
     ground_air_relative_humidity=nothing, ground_reference_height=nothing,
+    ground_heat_conductance=nothing, ground_vapor_conductance=nothing,
 )
     p.depths = depths
     p.environment_instant = environment_instant
@@ -115,6 +124,8 @@ end
     p.ground_air_temperature = ground_air_temperature
     p.ground_air_relative_humidity = ground_air_relative_humidity
     p.ground_reference_height = ground_reference_height
+    p.ground_heat_conductance = ground_heat_conductance
+    p.ground_vapor_conductance = ground_vapor_conductance
     return p
 end
 
@@ -171,6 +182,27 @@ end
 @inline ground_convection_conditions(air_temperature, wind_speed, relative_humidity, reference_height,
     canopy_air_temperature, canopy_wind_speed, canopy_relative_humidity, canopy_reference_height) =
     (canopy_air_temperature, canopy_wind_speed, canopy_relative_humidity, canopy_reference_height)
+
+# Ground sensible/latent heat exchange: without canopy-supplied conductances,
+# use surface_fluxes's Monin-Obukhov log-law inversion (valid for the
+# free-atmosphere reference height). MultilayerCanopy instead supplies its
+# air-profile model's own ground-to-lowest-layer conductances directly --
+# ground_reference_height (the canopy's ground-most layer height) is often
+# too close to roughness_height for the log law to invert validly there
+# (see _MIN_LOGLAW_RATIO in monin_obukhov.jl).
+@inline ground_heat_vapor_flux(evaporation_model, ::Nothing, ::Nothing, ctx) =
+    surface_convection_evaporation(evaporation_model; ctx...)
+@inline function ground_heat_vapor_flux(evaporation_model, ground_heat_conductance, ground_vapor_conductance, ctx)
+    convective_heat_flux = uconvert(u"W/m^2", ground_heat_conductance * (ctx.air_temperature - ctx.surface_temperature))
+    Q_evaporation, _ = evaporation(evaporation_model;
+        surface_temperature=u"K"(ctx.surface_temperature), air_temperature=u"K"(ctx.air_temperature),
+        relative_humidity=ctx.relative_humidity, surface_relative_humidity=1.0,
+        mass_transfer_coefficient=ground_vapor_conductance,
+        atmospheric_pressure=ctx.atmospheric_pressure, soil_wetness=ctx.soil_wetness,
+        saturated=false, vapour_pressure_equation=ctx.vapour_pressure_equation,
+    )
+    return Q_evaporation, convective_heat_flux
+end
 
 function allocate_soil_energy_balance(::SoilHeatTransport1D, num_nodes::Int)
     layer_depths = fill(0.0u"cm", num_nodes + 1)
@@ -322,14 +354,15 @@ function soil_energy_balance(model::SoilHeatTransport1D,
     (convection_air_temperature, convection_wind_speed, convection_relative_humidity, convection_reference_height) =
         ground_convection_conditions(air_temperature, wind_speed, relative_humidity, reference_height,
             p.ground_air_temperature, p.ground_wind_speed, p.ground_air_relative_humidity, p.ground_reference_height)
-    Q_evaporation, convective_heat_flux = surface_convection_evaporation(evaporation_model;
-        boundary_layer_model,
+    convection_ctx = (; boundary_layer_model,
         surface_temperature, air_temperature=convection_air_temperature, wind_speed=convection_wind_speed,
         relative_humidity=convection_relative_humidity,
         atmospheric_pressure, roughness_height, reference_height=convection_reference_height,
         zenith_angle, soil_wetness, vapour_pressure_equation,
         obukhov_length_prev=buffers.soil_energy_balance.obukhov_length_prev,
     )
+    Q_evaporation, convective_heat_flux = ground_heat_vapor_flux(evaporation_model,
+        p.ground_heat_conductance, p.ground_vapor_conductance, convection_ctx)
 
     # Surface energy derivative for the first active node
     # QFREZE: snow melt energy correction, matching Fortran DSUB.f line 567

@@ -9,7 +9,7 @@
                        stomatal_model=PrescribedStomatalConductance(),
                        leaf_temperature_solver=LinearizedLeafTemperature(),
                        leaf_convection_model=ElaborateLeafConvection(),
-                       convergence=IterationToleranceConvergence(; tolerance=0.1u"K", max_iterations_per_day=20))
+                       convergence_model=PicardCanopyConvergence())
 
 Multi-layer canopy structure resolved by height. Splits the canopy into as
 many layers as there are `MicroModel.heights` entries at or below
@@ -50,21 +50,17 @@ Composes swappable sub-models the same way `MicroModel` composes
 - `leaf_convection_model::AbstractLeafConvectionModel` — leaf boundary-layer
   Nusselt correlation (default [`ElaborateLeafConvection`](@ref); see also
   [`SimpleLeafConvection`](@ref))
-- `convergence::AbstractSoilTemperatureConvergence` — hourly Picard-loop
-  convergence criterion (default `IterationToleranceConvergence`, 0.1K/20
-  passes); reuses the soil spin-up loop's dispatch. `FixedIterationConvergence(n)`
-  runs exactly `n` passes regardless of convergence -- free/tunable, uncited.
-- `relaxation` — under-relaxation on each Picard pass's leaf-temperature
-  update (`x_new = relaxation*x_solved + (1-relaxation)*x_prev`), default
-  `0.5`. Prevents overshoot when heat-transfer coefficients are small (e.g.
-  near-zero stomatal conductance); same fix as `RaupachLTheoryAirProfile`.
-  Free/tunable, uncited.
+- `convergence_model::AbstractCanopyConvergenceModel` — how the hourly
+  leaf/air-temperature fixed point is solved (default
+  [`PicardCanopyConvergence`](@ref); see also
+  [`NonlinearSolveCanopyConvergence`](@ref) -- not yet a reliable default,
+  can diverge under strong nonlinearity, see its own docstring).
 
 Ground reflectance is not stored here — supplied to
 [`canopy_shortwave!`](@ref) by the caller (e.g. `Site.albedo`), matching how
 other radiation models read albedo from their caller.
 """
-@kwdef struct MultilayerCanopy{H,PAI,WAF,RM,LWM,WM,APM,IM,LP,SM,LTS,LCM,CV,RL} <: AbstractCanopyModel
+@kwdef struct MultilayerCanopy{H,PAI,WAF,RM,LWM,WM,APM,IM,LP,SM,LTS,LCM,CVM} <: AbstractCanopyModel
     canopy_height::H
     plant_area_index::PAI
     woody_area_fraction::WAF = 0.0
@@ -77,8 +73,7 @@ other radiation models read albedo from their caller.
     stomatal_model::SM = PrescribedStomatalConductance()
     leaf_temperature_solver::LTS = LinearizedLeafTemperature()
     leaf_convection_model::LCM = ElaborateLeafConvection()
-    convergence::CV = IterationToleranceConvergence(; tolerance=0.1u"K", max_iterations_per_day=20)
-    relaxation::RL = 0.05
+    convergence_model::CVM = PicardCanopyConvergence()
 end
 
 function example_multilayer_canopy(;
@@ -94,13 +89,12 @@ function example_multilayer_canopy(;
     stomatal_model = PrescribedStomatalConductance(),
     leaf_temperature_solver = LinearizedLeafTemperature(),
     leaf_convection_model = ElaborateLeafConvection(),
-    convergence = IterationToleranceConvergence(; tolerance=0.1u"K", max_iterations_per_day=20),
-    relaxation = 0.05,
+    convergence_model = PicardCanopyConvergence(),
 )
     MultilayerCanopy(;
         canopy_height, plant_area_index, woody_area_fraction, shortwave_model, longwave_model, wind_model,
         air_profile_model, interception_model, leaf_parameters, stomatal_model, leaf_temperature_solver,
-        leaf_convection_model, convergence, relaxation,
+        leaf_convection_model, convergence_model,
     )
 end
 
@@ -184,6 +178,7 @@ initial_ground_overrides(::MultilayerCanopy) = (;
     ground_shortwave_transmission = 1.0, ground_incoming_longwave = 0.0u"W/m^2",
     ground_wind_speed = 0.0u"m/s", ground_air_temperature = 288.0u"K",
     ground_air_relative_humidity = 0.5, ground_reference_height = 1.0u"m",
+    ground_heat_conductance = 0.0u"W/m^2/K", ground_vapor_conductance = 0.0u"m/s",
 )
 
 canopy_leaf_area_index(model::MultilayerCanopy) = sum(model.plant_area_index) * (1 - model.woody_area_fraction)

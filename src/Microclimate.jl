@@ -10,7 +10,13 @@ using OrdinaryDiffEqAdamsBashforthMoulton: AB3, AB4, AB5, ABM32, ABM43, ABM54
 using Unitful, UnitfulMoles
 using ModelParameters, DelimitedFiles
 using SpecialFunctions, StaticArrays
-using LinearAlgebra: Tridiagonal
+using LinearAlgebra: Tridiagonal, SingularException
+using LinearSolve: LinearProblem
+using SimpleNonlinearSolve: SimpleTrustRegion, SimpleNewtonRaphson
+using ADTypes: AutoFiniteDiff
+using FiniteDiff: FiniteDiff
+# Enzyme (Project.toml dep) isn't loaded here to avoid its compile cost on
+# every package load; AutoFiniteDiff is the active nonlinear-solve default.
 
 using FluidProperties: atmospheric_pressure, wet_air_properties, dry_air_properties, vapour_pressure
 using FluidProperties: enthalpy_of_vaporisation, molar_enthalpy_of_vaporisation, water_properties
@@ -53,6 +59,7 @@ export AbstractLeafTemperatureSolver, LinearizedLeafTemperature, RootFindLeafTem
 export AbstractLeafConvectionModel, ElaborateLeafConvection, SimpleLeafConvection
 export leaf_body
 export LeafEvaporationParameters
+export AbstractCanopyConvergenceModel, PicardCanopyConvergence, NonlinearSolveCanopyConvergence
 
 # Apparent heat capacity (latent-heat-of-fusion treatment in snow)
 export AbstractApparentHeatCapacity, BonacinaStep, TanhSmoothed, Gaussian, WestermannSigmoid
@@ -242,6 +249,10 @@ include("canopy/leaf_temperature/heat_balance.jl")
 include("canopy/leaf_temperature/abstract.jl")
 include("canopy/leaf_temperature/linearized.jl")
 include("canopy/leaf_temperature/root_find.jl")
+
+include("canopy/convergence/abstract.jl")
+include("canopy/convergence/picard.jl")
+include("canopy/convergence/nonlinear_solve.jl")
 
 include("canopy/multilayer.jl")
 include("canopy/energy_balance.jl")

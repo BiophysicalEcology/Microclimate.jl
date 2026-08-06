@@ -96,6 +96,7 @@ end
         canopy_result = nothing,
         ground_wind_speed = nothing, ground_air_temperature = nothing,
         ground_air_relative_humidity = nothing, ground_reference_height = nothing,
+        ground_heat_conductance = nothing, ground_vapor_conductance = nothing,
     )
 end
 
@@ -124,9 +125,15 @@ end
     ground_air_temperature = buffers.air_profile.air_temperature[end]
     ground_air_relative_humidity = buffers.air_profile.relative_humidity[end]
     ground_reference_height = buffers.wind.ground_layer_height
+    # ground_reference_height is often too close to site.roughness_height for
+    # a log-law inversion (surface_fluxes) to be valid -- pass the air-profile
+    # model's own ground-to-lowest-layer conductances so the soil model can
+    # use those directly instead (see ground_convection_conditions).
+    (; ground_heat_conductance, ground_vapor_conductance) = canopy_result
     return (; ground_shortwave_transmission, ground_incoming_longwave,
         canopy_source_temperature = new_canopy_source_temperature, canopy_result,
-        ground_wind_speed, ground_air_temperature, ground_air_relative_humidity, ground_reference_height)
+        ground_wind_speed, ground_air_temperature, ground_air_relative_humidity, ground_reference_height,
+        ground_heat_conductance, ground_vapor_conductance)
 end
 
 # Resolve the non-snow baseline albedo: a populated `environment_daily.albedo`
@@ -665,7 +672,8 @@ function solve_soil!(cache::MicroCache)
             ground_temperature = snow_present_step ? T_snow[1] : T0[1]
             rainfall_step = current_rainfall(rainfall_schedule; environment_instant, environment_hourly, step, i=1, midnight_i)
             (; ground_shortwave_transmission, ground_incoming_longwave, canopy_source_temperature, canopy_result,
-                ground_wind_speed, ground_air_temperature, ground_air_relative_humidity, ground_reference_height) =
+                ground_wind_speed, ground_air_temperature, ground_air_relative_humidity, ground_reference_height,
+                ground_heat_conductance, ground_vapor_conductance) =
                 apply_canopy_overrides(canopy_model, buffers.canopy, canopy_inputs;
                     boundary_layer_model, site, environment_instant, ground_temperature,
                     ground_emissivity = environment_instant.surface_emissivity,
@@ -706,6 +714,7 @@ function solve_soil!(cache::MicroCache)
                 Q_freeze, snow_state,
                 ground_shortwave_transmission, ground_incoming_longwave,
                 ground_wind_speed, ground_air_temperature, ground_air_relative_humidity, ground_reference_height,
+                ground_heat_conductance, ground_vapor_conductance,
             )
 
             # Reset the integrator for a fresh day-pass (0-1440 min), matching
@@ -815,7 +824,8 @@ function solve_soil!(cache::MicroCache)
                     ground_temperature = snow_present_next ? T_snow[1] : T0[1]
                     rainfall_next = current_rainfall(rainfall_schedule; environment_instant, environment_hourly, step=next_step, i=i + 1, midnight_i)
                     (; ground_shortwave_transmission, ground_incoming_longwave, canopy_source_temperature, canopy_result,
-                        ground_wind_speed, ground_air_temperature, ground_air_relative_humidity, ground_reference_height) =
+                        ground_wind_speed, ground_air_temperature, ground_air_relative_humidity, ground_reference_height,
+                        ground_heat_conductance, ground_vapor_conductance) =
                         apply_canopy_overrides(canopy_model, buffers.canopy, canopy_inputs;
                             boundary_layer_model, site, environment_instant, ground_temperature,
                             ground_emissivity = environment_instant.surface_emissivity,
@@ -843,6 +853,7 @@ function solve_soil!(cache::MicroCache)
                         Q_freeze, snow_state,
                         ground_shortwave_transmission, ground_incoming_longwave,
                         ground_wind_speed, ground_air_temperature, ground_air_relative_humidity, ground_reference_height,
+                        ground_heat_conductance, ground_vapor_conductance,
                     )
                 end
                 T0_ode = combine_ode_state(T_snow, T0, n_snow)

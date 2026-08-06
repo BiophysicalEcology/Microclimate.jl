@@ -131,6 +131,8 @@ function allocate_air_profile(model::RaupachLTheoryAirProfile, canopy_height, pl
         aitken_have_prev_latent = Ref(false),
         aitken_residual_prev = zeros(typeof(0.0u"K"), n_layers),
         aitken_residual_prev_latent = zeros(typeof(0.0u"kg/m^3"), n_layers),
+        ground_heat_conductance = Ref(0.0u"W/m^2/K"),
+        ground_vapor_conductance = Ref(0.0u"m/s"),
     )
 end
 
@@ -316,7 +318,8 @@ function canopy_air_profile!(buffers, model::RaupachLTheoryAirProfile, boundary_
        cumulative_sensible_below, sensible_near_field_weight, cumulative_latent_below, latent_near_field_weight,
        air_temperature, air_temperature_prev, vapour_density, vapour_density_prev, relative_humidity,
        aitken_omega, aitken_omega_latent, aitken_have_prev, aitken_have_prev_latent,
-       aitken_residual_prev, aitken_residual_prev_latent) = buffers
+       aitken_residual_prev, aitken_residual_prev_latent,
+       ground_heat_conductance, ground_vapor_conductance) = buffers
     n = length(air_temperature)
     length(sensible_heat_source) == n || throw(ArgumentError("sensible_heat_source must have one entry per canopy layer"))
     length(evaporation_mass_flow) == n || throw(ArgumentError("evaporation_mass_flow must have one entry per canopy layer"))
@@ -362,6 +365,13 @@ function canopy_air_profile!(buffers, model::RaupachLTheoryAirProfile, boundary_
         sensible_near_field_weight[i] = sensible_heat_source[i] / σ_w
         latent_near_field_weight[i] = (evaporation_mass_flow[i] / 1.0u"m^2") / σ_w
     end
+
+    # Ground-to-lowest-layer resistance, same value _raupach_far_field! uses
+    # for its own ground flux (both far_field_mode variants agree at i=n) --
+    # exposed for the soil model's own surface exchange, see ground_convection_conditions.
+    ground_resistance = max(layer_resistance[n], min_ground_resistance)
+    ground_heat_conductance[] = calc_ρ_cp(air_temperature_prev[n]) / ground_resistance
+    ground_vapor_conductance[] = 1.0 / ground_resistance
 
     cumulative_sensible_below[n] = sensible_heat_source[n]
     cumulative_latent_below[n] = evaporation_mass_flow[n] / 1.0u"m^2"
