@@ -135,3 +135,65 @@ function canopy_wind_profile!(buffers, ::CanopyWindAttenuation, boundary_layer_m
     return (; canopy_top_wind_speed, canopy_top_air_temperature, canopy_top_relative_humidity,
         friction_velocity=profile.friction_velocity, obukhov_length=profile.obukhov_length)
 end
+
+"""
+    canopy_top_flux_boundary(boundary_layer_model, canopy_height, displacement_height, roughness_length,
+                              reference_height, friction_velocity, obukhov_length,
+                              total_sensible_flux, total_latent_flux, ground_temperature, ground_vapour_density,
+                              reference_temperature, reference_vapour_density; max_iter=10, tol=0.01u"K")
+
+Canopy-top boundary temperature/vapour density: resistance-weighted from the
+whole canopy's own aggregated source flux (`total_sensible_flux`/
+`total_latent_flux`, per unit ground area, summed over every layer) plus a
+ground flux, referenced to `reference_temperature`/`reference_vapour_density`
+via the canopy-top-to-reference aerodynamic resistance. Ground-to-canopy-top
+resistance uses a bulk top-of-canopy eddy diffusivity (same form as
+`_canopy_direct_conductances`'s `eddy_diffusivity_top`), not a specific
+`air_profile_model`'s own layered resistance -- this boundary is shared by
+every `air_profile_model`. Small fixed point (the ground flux depends on the
+boundary temperature); converges in a handful of passes.
+"""
+function canopy_top_flux_boundary(boundary_layer_model, canopy_height, displacement_height, roughness_length,
+    reference_height, friction_velocity, obukhov_length,
+    total_sensible_flux, total_latent_flux, ground_temperature, ground_vapour_density,
+    reference_temperature, reference_vapour_density; max_iter=10, tol=0.01u"K", relax=0.5,
+)
+    κ = boundary_layer_model.karman_constant
+    γ = boundary_layer_model.dyer_constant
+    z_top = max(canopy_height - displacement_height, 1.0e-3u"m")
+    z_ref = max(reference_height - displacement_height, 1.0e-3u"m")
+
+    ground_resistance = canopy_height / (κ * friction_velocity * z_top)
+
+    log_ratio = log(z_ref / roughness_length)
+    stable = !isfinite(obukhov_length) || obukhov_length >= 0.0u"m"
+    ψ_h = stable ? 0.0 : calc_ψ_h(calc_φ_m(z_ref, γ, obukhov_length))
+    top_resistance = max(log_ratio - ψ_h, 0.1 * log_ratio, 1.0e-6) / (κ * friction_velocity)
+
+    # Self-referential (ground_flux depends on top_temperature) fixed point --
+    # top_resistance/ground_resistance can both grow large under near-zero
+    # wind, so an unrelaxed step can overshoot badly; damp every step, not
+    # just check tolerance on the raw one.
+    top_temperature = reference_temperature
+    top_vapour_density = reference_vapour_density
+    for _ in 1:max_iter
+        ρ_cp = calc_ρ_cp(top_temperature)
+        ground_flux = (ρ_cp / ground_resistance) * (ground_temperature - top_temperature)
+        ground_vapour_flux = (ground_vapour_density - top_vapour_density) / ground_resistance
+        raw_temperature = reference_temperature + (total_sensible_flux + ground_flux) * top_resistance / ρ_cp
+        raw_vapour_density = reference_vapour_density + (total_latent_flux + ground_vapour_flux) * top_resistance
+        new_temperature = top_temperature + relax * (raw_temperature - top_temperature)
+        new_vapour_density = top_vapour_density + relax * (raw_vapour_density - top_vapour_density)
+        converged = abs(new_temperature - top_temperature) < tol
+        top_temperature = new_temperature
+        top_vapour_density = new_vapour_density
+        converged && break
+    end
+    # Hard backstop against a runaway fixed point, same bracket-clamp spirit
+    # as leaf_temperature's own clamp in _canopy_picard_pass!.
+    bound_lo = min(ground_temperature, reference_temperature) - 40.0u"K"
+    bound_hi = max(ground_temperature, reference_temperature) + 40.0u"K"
+    top_temperature = clamp(top_temperature, bound_lo, bound_hi)
+    top_vapour_density = max(top_vapour_density, zero(top_vapour_density))
+    return (; top_temperature, top_vapour_density)
+end

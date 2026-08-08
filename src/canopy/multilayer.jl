@@ -133,6 +133,14 @@ function allocate_canopy(model::MultilayerCanopy, heights, boundary_layer_model)
             net_balance = zeros(typeof(0.0u"W"), n_layers),
             air_temperature_prev = zeros(typeof(0.0u"K"), n_layers),
             relative_humidity_prev = zeros(n_layers),
+            # Aitken Δ²-acceleration state for leaf_temperature's Picard
+            # relaxation (see _canopy_picard_pass!); persists hour to hour.
+            # aitken_dummy_heights is all-zero and unused (uniform weighting),
+            # just a same-length unitted array to stay allocation-free.
+            aitken_omega = Ref(0.5),
+            aitken_have_prev = Ref(false),
+            aitken_residual_prev = zeros(typeof(0.0u"K"), n_layers),
+            aitken_dummy_heights = zeros(typeof(0.0u"m"), n_layers),
         ),
     )
 end
@@ -189,7 +197,7 @@ canopy_leaf_area_index(model::MultilayerCanopy) = sum(model.plant_area_index) * 
 canopy_profile_origin(::MultilayerCanopy, buffers, site) =
     (; displacement_height = buffers.wind.displacement_height, roughness_length = buffers.wind.roughness_length)
 
-# Top-of-canopy leaf temperature for solve_air!'s output.profile above
-# canopy -- not lagged (solve_air! is a full post-solve pass).
+# Top-of-canopy air temperature for solve_air!'s output.profile above canopy
+# -- not lagged (solve_air! is a full post-solve pass).
 profile_surface_temperature(::MultilayerCanopy, output, i, ground_surface_temperature) =
-    output.canopy.leaf_temperature[i, 1]
+    output.canopy.air_temperature[i, 1]

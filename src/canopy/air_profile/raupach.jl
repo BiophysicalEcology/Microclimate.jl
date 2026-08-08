@@ -309,7 +309,7 @@ end
 @inline _raupach_near_field_scale(::Val{:bulk}, n) = 1.0 + 0.894 * exp(-0.01386 * n) + 9.82 * exp(-0.15 * n)
 
 function canopy_air_profile!(buffers, model::RaupachLTheoryAirProfile, boundary_layer_model;
-    canopy_height, displacement_height, friction_velocity,
+    canopy_height, displacement_height, friction_velocity, wind_attenuation,
     canopy_top_air_temperature, canopy_top_relative_humidity, ground_temperature, ground_relative_humidity,
     sensible_heat_source, evaporation_mass_flow, obukhov_length, atmospheric_pressure, vapour_pressure_equation=GoffGratch(),
 )
@@ -366,10 +366,15 @@ function canopy_air_profile!(buffers, model::RaupachLTheoryAirProfile, boundary_
         latent_near_field_weight[i] = (evaporation_mass_flow[i] / 1.0u"m^2") / σ_w
     end
 
-    # Ground-to-lowest-layer resistance, same value _raupach_far_field! uses
-    # for its own ground flux (both far_field_mode variants agree at i=n) --
-    # exposed for the soil model's own surface exchange, see ground_convection_conditions.
-    ground_resistance = max(layer_resistance[n], min_ground_resistance)
+    # Ground-to-lowest-layer resistance for the soil's own surface exchange
+    # (see ground_convection_conditions) -- uses the actual
+    # wind_attenuation_profile shape (what the modeled wind speed itself
+    # follows), not layer_resistance[n]'s cosine sigma_w(z) profile: testing
+    # whether that mismatch (near-ground diffusivity from two disagreeing
+    # profiles) explains excess soil-coupled amplification under Raupach.
+    eddy_diffusivity_top_wind = boundary_layer_model.karman_constant * friction_velocity * z_eval
+    eddy_diffusivity_ground = eddy_diffusivity_top_wind * wind_attenuation[n]
+    ground_resistance = max(layer_thickness[n] / eddy_diffusivity_ground, min_ground_resistance)
     ground_heat_conductance[] = calc_ρ_cp(air_temperature_prev[n]) / ground_resistance
     ground_vapor_conductance[] = 1.0 / ground_resistance
 
@@ -388,8 +393,6 @@ function canopy_air_profile!(buffers, model::RaupachLTheoryAirProfile, boundary_
         ground_temperature, ground_vapour_density, air_temperature_prev, vapour_density_prev, min_ground_resistance, n)
     near_field_scale = _raupach_near_field_scale(model.far_field_mode, n)
 
-    ρ_cp_top = calc_ρ_cp(canopy_top_air_temperature)
-    concentration_top = ρ_cp_top * canopy_top_air_temperature
     concentration_top_latent = wet_air_properties(canopy_top_air_temperature, canopy_top_relative_humidity,
         atmospheric_pressure; vapour_pressure_equation).vapour_density
 
@@ -398,7 +401,7 @@ function canopy_air_profile!(buffers, model::RaupachLTheoryAirProfile, boundary_
     # coincident with canopy_height use the subdivided self kernel; every
     # other layer uses a single point-source evaluation. Heat and vapor share
     # one kernel evaluation per layer (same turbulence field).
-    near_field_top = zero(concentration_top)
+    near_field_top = zero(eltype(far_field_accum))
     near_field_top_latent = zero(concentration_top_latent)
     @inbounds for i in 1:n
         kernel_weight = _raupach_top_kernel_weight(model.far_field_mode, i, canopy_height, layer_heights, layer_thickness, inv_near_field_length, near_field_subdivisions)
@@ -412,7 +415,7 @@ function canopy_air_profile!(buffers, model::RaupachLTheoryAirProfile, boundary_
         far_field = far_field_accum[i]
         far_field_latent = far_field_accum_latent[i]
 
-        near_field = zero(concentration_top)
+        near_field = zero(near_field_top)
         near_field_latent = zero(concentration_top_latent)
         for j in 1:n
             kernel_weight = _raupach_pair_kernel_weight(model.far_field_mode, i, j, layer_heights, layer_thickness, inv_near_field_length, near_field_subdivisions)
@@ -422,9 +425,17 @@ function canopy_air_profile!(buffers, model::RaupachLTheoryAirProfile, boundary_
         near_field *= near_field_scale
         near_field_latent *= near_field_scale
 
-        concentration = concentration_top - near_field_top + far_field + near_field
-        air_temperature[i] = concentration / calc_ρ_cp(air_temperature_prev[i])  # raw; Aitken-blended below
+        # Heat: canopy_top_air_temperature is an absolute temperature baseline,
+        # not a concentration -- ρ_cp(T) ∝ 1/T here, so converting it to ρ_cp*T
+        # and back through a *different* (local) ρ_cp cancels the baseline
+        # exactly, leaving only air_temperature_prev. Add the source-driven
+        # perturbation (already a genuine volumetric energy density) directly
+        # as a temperature increment instead.
+        air_temperature[i] = canopy_top_air_temperature +
+            (far_field + near_field - near_field_top) / calc_ρ_cp(air_temperature_prev[i])  # raw; Aitken-blended below
 
+        # Latent: vapour density is a genuine concentration (kg/m^3), no
+        # ρ_cp-style conversion involved -- unaffected by the heat-path fix above.
         concentration_latent = concentration_top_latent - near_field_top_latent + far_field_latent + near_field_latent
         vapour_density[i] = concentration_latent  # raw; Aitken-blended below
     end
