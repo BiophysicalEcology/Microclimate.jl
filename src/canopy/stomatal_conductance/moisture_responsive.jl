@@ -10,10 +10,10 @@ open fraction is `1 / (1 + stomatal_closure_factor)`. Cuticular conductance
 is unaffected. Shuts fully at night (`zenith_angle >= 90°`).
 
 `leaf_water_potential` is supplied by the caller each call (e.g. from
-`CampbellSoilHydraulics`'s own solve). If pairing with `CampbellSoilHydraulics`
-on a `MultilayerCanopy`, prefer `PrescribedStomatalConductance` instead —
-Campbell's own demand/supply solve already applies this same closure curve to
-derive `leaf_water_potential`, so using both applies it twice.
+`CampbellSoilHydraulics`'s own solve). This is the stomatal_model to pair with
+`CampbellSoilHydraulics` on a `MultilayerCanopy` if soil-moisture stress
+should reach the leaf's transpiration/temperature — `PrescribedStomatalConductance`
+ignores `leaf_water_potential` entirely.
 
 All defaults below (conductances, `stomatal_closure_potential`,
 `stomatal_stability_parameter`) are free/tunable, uncited —

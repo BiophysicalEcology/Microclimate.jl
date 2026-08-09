@@ -288,8 +288,11 @@ function _canopy_picard_pass!(buffers, model::MultilayerCanopy, boundary_layer_m
 
         # Unstressed (water_potential=0) reference transpiration, for a
         # soil-hydraulics demand term — not the leaf's own energy balance.
+        # Conductance is recomputed at water_potential=0 too, so this stays a
+        # true unstressed demand under MoistureResponsiveStomatalConductance.
+        unstressed_dry_conductance = stomatal_conductance(model.stomatal_model, zenith_angle, 0.0u"J/kg")
         atmos = AtmosphericConditions(relative_humidity_layer, wind_speed[layer], atmospheric_pressure)
-        potential_evap = HeatExchange.evaporation(dry_conductance, balance.conv.mass_transfer_coefficient,
+        potential_evap = HeatExchange.evaporation(unstressed_dry_conductance, balance.conv.mass_transfer_coefficient,
             atmos, leaf_area, leaf_temperature_buffer[layer], air_temperature_layer; water_potential=0.0u"J/kg")
         potential_evaporation_mass_flow[layer] = potential_evap.transpiration_mass_flow
     end

@@ -39,12 +39,12 @@ Composes swappable sub-models the same way `MicroModel` composes
   (default [`NoInterception`](@ref): off)
 - `leaf_parameters::LeafParameters` — per-leaf structural/physiological data
 - `stomatal_model::AbstractStomatalConductanceModel` — stomatal response
-  (default [`PrescribedStomatalConductance`](@ref): day/night gating only).
-  Recommended pairing with `CampbellSoilHydraulics`: keep the default here —
-  Campbell's own demand/supply solve is already the water-stress mechanism
-  once its `leaf_water_potential` output feeds this canopy each hour, so
-  [`MoistureResponsiveStomatalConductance`](@ref) would apply the same
-  closure curve twice.
+  (default [`PrescribedStomatalConductance`](@ref): day/night gating only,
+  ignores `leaf_water_potential`). Pair with `CampbellSoilHydraulics` via
+  [`MoistureResponsiveStomatalConductance`](@ref) instead if soil-moisture
+  stress should actually reach the leaf's transpiration/temperature —
+  `PrescribedStomatalConductance` leaves Campbell's `leaf_water_potential`
+  output unused.
 - `leaf_temperature_solver::AbstractLeafTemperatureSolver` — how leaf
   temperature is solved each call (default [`LinearizedLeafTemperature`](@ref))
 - `leaf_convection_model::AbstractLeafConvectionModel` — leaf boundary-layer
