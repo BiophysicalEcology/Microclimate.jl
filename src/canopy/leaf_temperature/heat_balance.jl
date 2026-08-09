@@ -18,7 +18,9 @@ const LEAF_FLATTENING = 0.01
 # but evaluated at y = 1/leaf_angle_distribution_parameter. x==1 (spherical)
 # gives leaf_angle_width_factor(1) = 1/(1+1.774*2.182^-0.733) ≈ 0.5.
 function leaf_angle_width_factor(leaf_angle_distribution_parameter)
-    inverse_x = 1.0 / leaf_angle_distribution_parameter
+    # Floor avoids a zero-radius leaf body (x=0 -> 0/0 in downstream convection).
+    x = max(leaf_angle_distribution_parameter, 0.01)
+    inverse_x = 1.0 / x
     return 1.0 / (inverse_x + 1.774 * (inverse_x + 1.182)^(-0.733))
 end
 
