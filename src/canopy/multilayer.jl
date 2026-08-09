@@ -52,9 +52,7 @@ Composes swappable sub-models the same way `MicroModel` composes
   [`SimpleLeafConvection`](@ref))
 - `convergence_model::AbstractCanopyConvergenceModel` — how the hourly
   leaf/air-temperature fixed point is solved (default
-  [`PicardCanopyConvergence`](@ref); see also
-  [`NonlinearSolveCanopyConvergence`](@ref) -- not yet a reliable default,
-  can diverge under strong nonlinearity, see its own docstring).
+  [`PicardCanopyConvergence`](@ref))
 
 Ground reflectance is not stored here — supplied to
 [`canopy_shortwave!`](@ref) by the caller (e.g. `Site.albedo`), matching how
