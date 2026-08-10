@@ -1,7 +1,7 @@
 """
     AbstractCanopyShortwaveModel
 
-How a canopy resolves layer-resolved shortwave radiative transfer.
+Layer-resolved shortwave radiative transfer in a canopy.
 Canopy-height/plant-area-index are supplied separately by the parent (solver
 geometry shared with every sub-model, not shortwave-specific).
 

@@ -31,7 +31,7 @@ n_layers = length(buffers.shortwave.layer_plant_area_index_above)
         )
         total_foliage_absorbed = sum(buffers.shortwave.absorbed_shortwave)
         @test ustrip(u"W/m^2", total_foliage_absorbed + result.ground_absorbed_shortwave) ≈
-              ustrip(u"W/m^2", result.canopy_absorbed_shortwave) rtol=1e-3
+              ustrip(u"W/m^2", result.landscape_absorbed_shortwave) rtol=1e-3
     end
 end
 
@@ -42,7 +42,7 @@ end
     )
     total_foliage_absorbed = sum(buffers.shortwave.absorbed_shortwave)
     @test ustrip(u"W/m^2", total_foliage_absorbed + result.ground_absorbed_shortwave) ≈
-          ustrip(u"W/m^2", result.canopy_absorbed_shortwave) rtol=1e-10
+          ustrip(u"W/m^2", result.landscape_absorbed_shortwave) rtol=1e-10
     @test all(iszero, buffers.shortwave.sunlit_fraction)
 end
 
@@ -61,7 +61,7 @@ end
         diffuse_horizontal_irradiance = 0.0u"W/m^2", ground_reflectance = 0.15,
     )
     @test result.ground_absorbed_shortwave == 0.0u"W/m^2"
-    @test result.canopy_absorbed_shortwave == 0.0u"W/m^2"
+    @test result.landscape_absorbed_shortwave == 0.0u"W/m^2"
     @test all(iszero, buffers.shortwave.absorbed_shortwave)
 end
 

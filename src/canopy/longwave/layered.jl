@@ -2,16 +2,10 @@
     LayeredLongwaveExchange(; atmospheric_radiation_model=CampbellNormanAtmosphericRadiation())
 
 Multi-layer longwave exchange. Each canopy layer is a semi-transparent,
-isothermal slab that is *opaque on interception* — longwave reaching a leaf
-is fully absorbed, not partly reflected (canopy-internal scattering
-neglected, standard for ε=0.95-0.98 leaves, Norman 1979); emission still
-scales with true `leaf_emissivity` via Stefan-Boltzmann.
-
-Layer transmission (gap fraction) uses Goudriaan's (1977) result that
-diffuse extinction is ≈1 per unit plant area index, almost independent of
-leaf angle — unlike the direct beam (see
-[`ellipsoidal_extinction_coefficient`](@ref)), so no leaf-angle parameter
-is needed here.
+isothermal slab. Canopy-internal scattering is neglected, following, 
+Norman (1979); emission scales with `leaf_emissivity`. Layer transmission
+assumes that diffuse extinction is almost independent of leaf angle 
+(Goudriaan 1977).
 
 Sky longwave reuses [`precompute_longwave_sky`](@ref) with `shade=0` — the
 canopy resolves vegetation shading layer by layer, so the bulk `shade`
@@ -31,7 +25,7 @@ lagged (previous-hour) soil-canopy coupling.
     atmospheric_radiation_model::ARM = CampbellNormanAtmosphericRadiation()
 end
 
-function allocate_longwave(::LayeredLongwaveExchange, plant_area_index, n_layers)
+function allocate_longwave(::LayeredLongwaveExchange, plant_area_index, n_layers, canopy_projection_ratio)
     (; layer_plant_area_index) = canopy_layer_geometry(plant_area_index, n_layers)
     layer_transmission = exp.(-layer_plant_area_index)  # Goudriaan (1977): k_diffuse ≈ 1
     return (;
@@ -48,11 +42,16 @@ end
                       site, environment_instant, vapour_pressure_equation=GoffGratch())
 
 Sequential top-down (sky → ground) then bottom-up (ground → sky) gap-fraction
-exchange, each pass `O(n_layers)` with no matrix solve (non-reflecting
+exchange, each pass `O(n_layers)`. with no matrix solve (non-reflecting
 layers mean the two streams don't couple). Writes `absorbed_longwave`
 (gross per layer, per unit ground area — `leaf_heat_balance` subtracts the
 leaf's own emission separately) and returns `(; ground_absorbed_longwave,
-canopy_absorbed_longwave)`.
+landscape_absorbed_longwave)`.
+
+Absorbs at `1-τ` (full interception, not `leaf_emissivity*(1-τ)`) while
+emitting at `leaf_emissivity*σT^4`: small energy gap is dropped rather than
+double-counted. [`LayeredRadiosityExchange`](@ref), adds reflection properly 
+and stays exact.
 """
 function canopy_longwave!(buffers, model::LayeredLongwaveExchange, leaf_emissivity;
     leaf_temperature, ground_temperature, ground_emissivity,
@@ -84,7 +83,7 @@ function canopy_longwave!(buffers, model::LayeredLongwaveExchange, leaf_emissivi
     end
 
     ground_absorbed_longwave = ground_emissivity * boundary_downward_longwave[n_layers + 1]
-    canopy_absorbed_longwave = boundary_downward_longwave[1] - boundary_upward_longwave[1]
+    landscape_absorbed_longwave = boundary_downward_longwave[1] - boundary_upward_longwave[1]
 
-    return (; ground_absorbed_longwave, canopy_absorbed_longwave)
+    return (; ground_absorbed_longwave, landscape_absorbed_longwave)
 end

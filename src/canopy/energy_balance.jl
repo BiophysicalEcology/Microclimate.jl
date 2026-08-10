@@ -96,8 +96,8 @@ Per-layer relative humidity is resolved by `model.air_profile_model` from
 each layer's own evaporation source, the same way per-layer air temperature
 is.
 
-Returns `(; ground_absorbed_shortwave, canopy_absorbed_shortwave,
-ground_absorbed_longwave, canopy_absorbed_longwave, ground_throughfall,
+Returns `(; ground_absorbed_shortwave, landscape_absorbed_shortwave,
+ground_absorbed_longwave, landscape_absorbed_longwave, ground_throughfall,
 canopy_potential_transpiration, ground_heat_conductance, ground_vapor_conductance,
 iterations)`. `canopy_potential_transpiration` is the canopy-summed unstressed
 (water_potential=0) transpiration rate, for feeding a soil-hydraulics demand

@@ -353,7 +353,7 @@ function canopy_shortwave!(buffers, radiation_model::TwoStreamRadiation, plant_a
 
     global_horizontal_irradiance = direct_horizontal_irradiance + diffuse_horizontal_irradiance
     if global_horizontal_irradiance <= 0.0u"W/m^2" || zenith_angle >= 90.0u"°"
-        return (; ground_absorbed_shortwave = 0.0u"W/m^2", canopy_absorbed_shortwave = 0.0u"W/m^2")
+        return (; ground_absorbed_shortwave = 0.0u"W/m^2", landscape_absorbed_shortwave = 0.0u"W/m^2")
     end
 
     leaf = buffers.leaf_optics
@@ -386,7 +386,7 @@ function canopy_shortwave!(buffers, radiation_model::TwoStreamRadiation, plant_a
     end
 
     ground_absorbed_shortwave = (1.0 - ground_reflectance) * boundary_downward_shortwave[n_layers + 1]
-    canopy_absorbed_shortwave = global_horizontal_irradiance - boundary_upward_shortwave[1]
+    landscape_absorbed_shortwave = global_horizontal_irradiance - boundary_upward_shortwave[1]
 
-    return (; ground_absorbed_shortwave, canopy_absorbed_shortwave)
+    return (; ground_absorbed_shortwave, landscape_absorbed_shortwave)
 end

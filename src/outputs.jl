@@ -21,15 +21,15 @@ end
 Per-layer and per-hour canopy diagnostics. Zero-column/all-zero for
 `NoCanopy` (mirrors `snow_temperature` being `(nsteps, 0)` for `NoSnow`).
 """
-struct CanopyOutput{LT,AT,WS,RH,GAS,GAL,CAS,CAL,GTF,IT,DSW,USW,DLW,ULW,AR,NB,CSH,CLH}
+struct CanopyOutput{LT,AT,WS,RH,GAS,GAL,LAS,LAL,GTF,IT,DSW,USW,DLW,ULW,AR,NB,CSH,CLH}
     leaf_temperature::LT              # nsteps × n_canopy_layers Matrix
     air_temperature::AT               # nsteps × n_canopy_layers Matrix (in-canopy, distinct from profile.air_temperature)
     wind_speed::WS                    # nsteps × n_canopy_layers Matrix (in-canopy)
     relative_humidity::RH             # nsteps × n_canopy_layers Matrix (in-canopy)
     ground_absorbed_shortwave::GAS    # nsteps Vector
     ground_absorbed_longwave::GAL     # nsteps Vector
-    canopy_absorbed_shortwave::CAS    # nsteps Vector
-    canopy_absorbed_longwave::CAL     # nsteps Vector
+    landscape_absorbed_shortwave::LAS # nsteps Vector
+    landscape_absorbed_longwave::LAL  # nsteps Vector
     ground_throughfall::GTF           # nsteps Vector
     iterations::IT                    # nsteps Vector{Int}, Picard iteration count
     boundary_downward_shortwave::DSW  # nsteps × (n_canopy_layers+1) Matrix, canopy top -> ground

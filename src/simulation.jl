@@ -1125,8 +1125,8 @@ end
 function write_canopy_output!(::MultilayerCanopy, output, canopy_buffers, canopy_result, step)
     output.canopy.ground_absorbed_shortwave[step] = canopy_result.ground_absorbed_shortwave
     output.canopy.ground_absorbed_longwave[step] = canopy_result.ground_absorbed_longwave
-    output.canopy.canopy_absorbed_shortwave[step] = canopy_result.canopy_absorbed_shortwave
-    output.canopy.canopy_absorbed_longwave[step] = canopy_result.canopy_absorbed_longwave
+    output.canopy.landscape_absorbed_shortwave[step] = canopy_result.landscape_absorbed_shortwave
+    output.canopy.landscape_absorbed_longwave[step] = canopy_result.landscape_absorbed_longwave
     output.canopy.ground_throughfall[step] = canopy_result.ground_throughfall
     output.canopy.iterations[step] = canopy_result.iterations
     _write_row!(output.canopy.leaf_temperature, step, canopy_buffers.leaf.leaf_temperature)

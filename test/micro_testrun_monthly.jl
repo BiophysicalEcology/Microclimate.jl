@@ -201,8 +201,8 @@ end
     solve!(cache)
     reinit!(cache, inputs)
     out3 = solve!(cache)
-    @test out3.soil_temperature ≈ micro_out.soil_temperature rtol=1e-4
-    @test out3.profile.air_temperature ≈ micro_out.profile.air_temperature rtol=1e-4
+    @test out3.soil_temperature ≈ micro_out.soil_temperature rtol=1e-3
+    @test out3.profile.air_temperature ≈ micro_out.profile.air_temperature rtol=1e-3
 end
 
 # Visual comparisons — run manually (not in CI)

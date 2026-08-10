@@ -43,7 +43,7 @@ export AbstractSnowModel, NoSnow, SnowModel, SnowState
 export AbstractCanopyModel, NoCanopy, MultilayerCanopy, plant_area_index_from_density
 export example_multilayer_canopy
 export AbstractCanopyShortwaveModel, TwoStreamRadiation
-export AbstractCanopyLongwaveModel, LayeredLongwaveExchange
+export AbstractCanopyLongwaveModel, LayeredLongwaveExchange, AllPairsLongwaveExchange, LayeredRadiosityExchange
 export AbstractCanopyWindModel, CanopyWindAttenuation
 export AbstractCanopyAirProfileModel, KTheoryAirProfile, RaupachLTheoryAirProfile
 export AbstractCanopyInterceptionModel, NoInterception, LayeredRainInterception
@@ -222,7 +222,9 @@ include("canopy/shortwave/abstract.jl")
 include("canopy/shortwave/two_stream.jl")
 
 include("canopy/longwave/abstract.jl")
-include("canopy/longwave/exchange.jl")
+include("canopy/longwave/layered.jl")
+include("canopy/longwave/all_pairs.jl")
+include("canopy/longwave/radiosity.jl")
 
 include("canopy/wind/abstract.jl")
 include("canopy/wind/attenuation.jl")
