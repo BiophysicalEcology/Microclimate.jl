@@ -27,7 +27,7 @@ function allocate_interception(::LayeredRainInterception, canopy_height, plant_a
     )
 end
 
-function canopy_interception!(buffers, model::LayeredRainInterception, leaf_angle_distribution_parameter;
+function canopy_interception!(buffers, model::LayeredRainInterception, canopy_projection_ratio;
     rainfall, wind_speed,
 )
     (; layer_plant_area_index, leaf_surface_water, throughfall) = buffers
@@ -45,7 +45,7 @@ function canopy_interception!(buffers, model::LayeredRainInterception, leaf_angl
     capacity = model.leaf_water_storage_capacity
     @inbounds for i in 1:n_layers
         rain_zenith_angle = atan(ustrip(u"m/s", wind_speed[i]) / ustrip(u"m/s", raindrop_fall_velocity)) * u"rad"
-        extinction_coefficient = ellipsoidal_extinction_coefficient(rain_zenith_angle, leaf_angle_distribution_parameter)
+        extinction_coefficient = ellipsoidal_extinction_coefficient(rain_zenith_angle, canopy_projection_ratio)
         transmission = exp(-extinction_coefficient * layer_plant_area_index[i])
 
         intercepted = (1.0 - transmission) * throughfall[i]

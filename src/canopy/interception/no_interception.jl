@@ -8,7 +8,7 @@ struct NoInterception <: AbstractCanopyInterceptionModel end
 
 allocate_interception(::NoInterception, canopy_height, plant_area_index, heights, n_layers, boundary_layer_model) = nothing
 
-canopy_interception!(buffers, ::NoInterception, leaf_angle_distribution_parameter; rainfall, wind_speed) =
+canopy_interception!(buffers, ::NoInterception, canopy_projection_ratio; rainfall, wind_speed) =
     (; ground_throughfall = rainfall)
 
 wet_canopy_fraction(::NoInterception, buffers, layer) = 0.0

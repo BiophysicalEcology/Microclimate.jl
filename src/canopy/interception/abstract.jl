@@ -19,7 +19,7 @@ Pre-allocate and precompute the structural buffers a model needs.
 function allocate_interception end
 
 """
-    canopy_interception!(buffers, model, leaf_angle_distribution_parameter; rainfall, wind_speed)
+    canopy_interception!(buffers, model, canopy_projection_ratio; rainfall, wind_speed)
 
 Cascade `rainfall` (kg/m², arriving at canopy top) down through the layers,
 updating each layer's stored leaf-surface water in place, and return

@@ -15,25 +15,25 @@ const LEAF_FLATTENING = 0.01
 
 # Campbell (1990): leaf-angle-dependent reduction of the aerodynamic width,
 # same `1.774*(y+1.182)^(-0.733)` constants as `ellipsoidal_extinction_coefficient`
-# but evaluated at y = 1/leaf_angle_distribution_parameter. x==1 (spherical)
+# but evaluated at y = 1/canopy_projection_ratio. x==1 (spherical)
 # gives leaf_angle_width_factor(1) = 1/(1+1.774*2.182^-0.733) ≈ 0.5.
-function leaf_angle_width_factor(leaf_angle_distribution_parameter)
+function leaf_angle_width_factor(canopy_projection_ratio)
     # Floor avoids a zero-radius leaf body (x=0 -> 0/0 in downstream convection).
-    x = max(leaf_angle_distribution_parameter, 0.01)
+    x = max(canopy_projection_ratio, 0.01)
     inverse_x = 1.0 / x
     return 1.0 / (inverse_x + 1.774 * (inverse_x + 1.182)^(-0.733))
 end
 
 """
-    leaf_body(leaf_length, leaf_width, leaf_angle_distribution_parameter)
+    leaf_body(leaf_length, leaf_width, canopy_projection_ratio)
 
 A `BiophysicalGeometry.Body` representing a leaf as a flattened (oblate)
 ellipsoid, sized so its equatorial radius (`b_semi_minor_skin` ==
 `c_semi_minor_skin`) equals `sqrt(leaf_length * leaf_width)` scaled by a leaf-angle width factor
 (Campbell 1990).
 """
-function leaf_body(leaf_length, leaf_width, leaf_angle_distribution_parameter)
-    equatorial_radius = sqrt(leaf_length * leaf_width) * leaf_angle_width_factor(leaf_angle_distribution_parameter)
+function leaf_body(leaf_length, leaf_width, canopy_projection_ratio)
+    equatorial_radius = sqrt(leaf_length * leaf_width) * leaf_angle_width_factor(canopy_projection_ratio)
     reference_density = 1.0u"kg/m^3"
     volume = equatorial_radius^3 * (4π / 3) * LEAF_FLATTENING
     shape = Ellipsoid(volume * reference_density, reference_density, LEAF_FLATTENING, LEAF_FLATTENING)

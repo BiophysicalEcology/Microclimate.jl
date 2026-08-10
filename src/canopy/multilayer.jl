@@ -112,16 +112,16 @@ temperature, and the source terms other sub-models read/write.
 """
 function allocate_canopy(model::MultilayerCanopy, heights, boundary_layer_model)
     n_layers = n_canopy_layers(model, heights)
-    leaf_angle_distribution_parameter = model.leaf_parameters.leaf_angle_distribution_parameter
+    canopy_projection_ratio = model.leaf_parameters.canopy_projection_ratio
 
     return (;
-        shortwave = allocate_shortwave(model.shortwave_model, model.canopy_height, model.plant_area_index, n_layers, leaf_angle_distribution_parameter),
+        shortwave = allocate_shortwave(model.shortwave_model, model.canopy_height, model.plant_area_index, n_layers, canopy_projection_ratio),
         longwave = allocate_longwave(model.longwave_model, model.plant_area_index, n_layers),
         wind = allocate_wind(model.wind_model, model.canopy_height, model.plant_area_index, boundary_layer_model, heights, n_layers),
         air_profile = allocate_air_profile(model.air_profile_model, model.canopy_height, model.plant_area_index, heights, n_layers, boundary_layer_model),
         interception = allocate_interception(model.interception_model, model.canopy_height, model.plant_area_index, heights, n_layers, boundary_layer_model),
         leaf = (;
-            leaf_body = leaf_body(model.leaf_parameters.leaf_length, model.leaf_parameters.leaf_width, leaf_angle_distribution_parameter),
+            leaf_body = leaf_body(model.leaf_parameters.leaf_length, model.leaf_parameters.leaf_width, canopy_projection_ratio),
             leaf_temperature = zeros(typeof(0.0u"K"), n_layers),
             leaf_temperature_prev = zeros(typeof(0.0u"K"), n_layers),
             sensible_heat_source = zeros(typeof(0.0u"W/m^2"), n_layers),
@@ -156,7 +156,7 @@ canopy_air_profile!(buffers, model::MultilayerCanopy, boundary_layer_model; kw..
     canopy_air_profile!(buffers.air_profile, model.air_profile_model, boundary_layer_model; kw...)
 
 canopy_interception!(buffers, model::MultilayerCanopy; kw...) =
-    canopy_interception!(buffers.interception, model.interception_model, model.leaf_parameters.leaf_angle_distribution_parameter; kw...)
+    canopy_interception!(buffers.interception, model.interception_model, model.leaf_parameters.canopy_projection_ratio; kw...)
 
 wet_canopy_fraction(model::MultilayerCanopy, buffers, layer) =
     wet_canopy_fraction(model.interception_model, buffers.interception, layer)

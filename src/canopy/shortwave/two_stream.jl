@@ -1,12 +1,9 @@
 """
     TwoStreamRadiation(; leaf_reflectance=0.2, leaf_transmittance=0.05)
 
-Dickinson/Sellers two-stream canopy radiative transfer (the same closed-form
-solution used in Dickinson (1983), Sellers (1985), and ClimaLand's
-`TwoStreamModel`).
+Dickinson/Sellers two-stream canopy radiative transfer.
 
 - `leaf_reflectance`, `leaf_transmittance` — leaf shortwave optical properties.
-  Defaults are free/tunable, uncited.
 
 Leaf angle distribution (`x`) is not stored here — it's a geometric leaf
 trait shared with the rain-interception model, so it lives on
@@ -18,9 +15,6 @@ caller to [`canopy_shortwave!`](@ref) (e.g. `Site.albedo`), not stored here.
   albedos and energy balance. *Advances in Geophysics*, 25, 305–353.
 - Sellers, P. J. (1985). Canopy reflectance, photosynthesis and
   transpiration. *International Journal of Remote Sensing*, 6(8), 1335–1372.
-- Campbell, G. S. (1990). Derivation of an angle density function for
-  canopies with ellipsoidal leaf angle distributions. *Agricultural and
-  Forest Meteorology*, 49(3), 173–176.
 """
 @kwdef struct TwoStreamRadiation{LR,LT} <: AbstractCanopyShortwaveModel
     leaf_reflectance::LR = 0.25
@@ -28,67 +22,97 @@ caller to [`canopy_shortwave!`](@ref) (e.g. `Site.albedo`), not stored here.
 end
 
 """
-    ellipsoidal_extinction_coefficient(zenith_angle, leaf_angle_distribution_parameter)
+    ellipsoidal_extinction_coefficient(zenith_angle, canopy_projection_ratio)
 
 Campbell's (1990) ellipsoidal-leaf-angle-distribution extinction coefficient
-for a direct beam at `zenith_angle`, for a canopy with leaf angle distribution
-parameter `x`. `x == 1` (spherical), `x == 0` (vertical leaves), and
-`x == Inf` (horizontal leaves) are closed-form special cases.
+for a direct beam at `zenith_angle`, for a canopy where the ratio of horizontal
+to vertical projections of canopy elements is parameter `χ`. `χ == 1` 
+(spherical), `χ == 0` (vertical leaves), and `χ == Inf` (horizontal leaves)
+are closed-form special cases.
+
+# References
+- Campbell, G. S. (1990). Derivation of an angle density function for
+  canopies with ellipsoidal leaf angle distributions. *Agricultural and
+  Forest Meteorology*, 49(3), 173–176.
 """
-function ellipsoidal_extinction_coefficient(zenith_angle, leaf_angle_distribution_parameter)
-    x = leaf_angle_distribution_parameter
-    if isinf(x)
+function ellipsoidal_extinction_coefficient(zenith_angle, canopy_projection_ratio)
+    χ = canopy_projection_ratio
+    polynomial_approx = 1.774 * (χ + 1.182)^(-0.733)
+    Λ = χ + polynomial_approx # Campbell eq. 14
+    if isinf(χ)
         return 1.0
-    elseif x == 1.0
+    elseif χ == 1.0
         return 1.0 / (2.0 * cos(zenith_angle))
-    elseif x == 0.0
-        # limit of the general formula below as x->0
-        return tan(zenith_angle) / (1.774 * 1.182^(-0.733))
+    elseif χ == 0.0
+        # limit of the general formula below as χ->0
+        return tan(zenith_angle) / polynomial_approx
     else
-        return sqrt(x^2 + tan(zenith_angle)^2) / (x + 1.774 * (x + 1.182)^(-0.733))
+        return sqrt(χ^2 + tan(zenith_angle)^2) / Λ
     end
 end
 
 # Mean leaf-orientation factor J (Campbell 1990); x==1 is closed-form (J=1/3)
-function mean_leaf_orientation_factor(leaf_angle_distribution_parameter)
-    x = leaf_angle_distribution_parameter
-    if x == 1.0
+"""
+    mean_leaf_angle(canopy_projection_ratio)
+
+Campbell's (1990) numerical integration of 
+ᾱ = ∫ α⋅g(α)⋅dα (eq. 15) from 0 to π/2 to obtain
+ᾱ = 9.65(3+χ)^(-1.65) (eq. 16)
+
+# References
+- Campbell, G. S. (1990). Derivation of an angle density function for
+  canopies with ellipsoidal leaf angle distributions. *Agricultural and
+  Forest Meteorology*, 49(3), 173–176.
+"""
+function mean_leaf_angle(canopy_projection_ratio)
+    χ = canopy_projection_ratio
+    if χ == 1.0
         return 1.0 / 3.0
     else
-        mean_leaf_inclination_angle = min(9.65 * (3.0 + x)^(-1.65), π / 2)
+        mean_leaf_inclination_angle = min(9.65 * (3.0 + χ)^(-1.65), π / 2)
         return cos(mean_leaf_inclination_angle)^2
     end
 end
 
 """
-    leaf_optics(plant_area_index, leaf_angle_distribution_parameter,
+    leaf_optics(plant_area_index, canopy_projection_ratio,
                 leaf_reflectance, leaf_transmittance)
 
 Structural two-stream quantities that depend only on canopy leaf optical
-properties and total plant area index — not on solar position or ground
-reflectance (which can change hour to hour with soil wetness or snow) — so
-this is computed once (in `allocate_radiation`) and reused every hour.
+properties and total plant area index (i.e. not on time-varying solar position 
+or ground reflectance. Compute once.
 """
-function leaf_optics(plant_area_index, leaf_angle_distribution_parameter, leaf_reflectance, leaf_transmittance)
-    leaf_scattering_coefficient = leaf_reflectance + leaf_transmittance
-    leaf_absorptance = 1.0 - leaf_scattering_coefficient
-    leaf_scattering_asymmetry = leaf_reflectance - leaf_transmittance
-    leaf_orientation_factor = mean_leaf_orientation_factor(leaf_angle_distribution_parameter)
-    diffuse_backscatter_coefficient = 0.5 * (leaf_scattering_coefficient + leaf_orientation_factor * leaf_scattering_asymmetry)
-    diffuse_attenuation_rate = sqrt(leaf_absorptance^2 + 2.0 * leaf_absorptance * diffuse_backscatter_coefficient)
-    diffuse_transmission_factor = exp(-diffuse_attenuation_rate * plant_area_index)
+function leaf_optics(plant_area_index, canopy_projection_ratio, leaf_reflectance, leaf_transmittance)
+
+    PAI = plant_area_index
+    ρₗ = leaf_reflectance
+    τₗ = leaf_transmittance
+
+    ω = ρₗ + τₗ # scattered fraction
+    α = 1.0 - ω # absorbed fraction
+
+    g = mean_leaf_angle(canopy_projection_ratio) # leaf orientation factor
+    β = 0.5 * (ω + g * (ρₗ - τₗ)) # effective diffuse backscatter coefficient
+    λ = sqrt(α^2 + 2.0 * α * β) # diffuse attenuation rate
+
+    T_d = exp(-λ * PAI) # whole-canopy transmission factor
+
     return (;
-        leaf_scattering_coefficient, leaf_absorptance, leaf_scattering_asymmetry, leaf_orientation_factor,
-        diffuse_backscatter_coefficient, diffuse_attenuation_rate, diffuse_transmission_factor,
+        leaf_scattering_coefficient = ω,
+        leaf_absorptance = α,
+        leaf_scattering_asymmetry = ρₗ - τₗ,
+        leaf_orientation_factor = g,
+        diffuse_backscatter_coefficient = β,
+        diffuse_attenuation_rate = λ,
+        diffuse_transmission_factor = T_d,
     )
 end
 
 """
     diffuse_two_stream_optics(leaf_optics, ground_reflectance)
 
-Two-stream boundary-condition coefficients for *diffuse* radiation. Unlike
-`leaf_optics`, these depend on ground reflectance, so they're recomputed
-every hour rather than cached — cheap scalar ops, no allocation.
+Two-stream boundary-condition coefficients for *diffuse* radiation 
+(depends on ground reflectance). 
 """
 
 # Floors |x| away from zero, sign-preserving (0 -> +ε) -- a plain max() floor
@@ -97,30 +121,43 @@ _safe_nonzero(x, ε=1.0e-6) = abs(x) < ε ? (x < 0 ? -ε : ε) : x
 
 function diffuse_two_stream_optics(leaf_optics, ground_reflectance)
     (; leaf_absorptance, diffuse_backscatter_coefficient, diffuse_attenuation_rate, diffuse_transmission_factor) = leaf_optics
+    
+    α  = leaf_absorptance
+    β  = diffuse_backscatter_coefficient
+    k  = diffuse_attenuation_rate
+    τ  = diffuse_transmission_factor
+    
+     
+    ρg = max(ground_reflectance, 1.0e-4) # avoid -Inf for a fully-absorbing ground surface
 
-    # floor avoids 1/0 -> -Inf for a fully-absorbing ground surface
-    safe_ground_reflectance = max(ground_reflectance, 1.0e-4)
-    upward_diffuse_boundary_term = leaf_absorptance + diffuse_backscatter_coefficient * (1.0 - 1.0 / safe_ground_reflectance)
-    downward_diffuse_boundary_term = leaf_absorptance + diffuse_backscatter_coefficient * (1.0 - ground_reflectance)
+    Bᵤ = α + β * (1.0 - 1.0 / ρg)
+    B_d = α + β * (1.0 - ρg)
 
     # divided into below and in direct_two_stream_optics -- can hit zero
-    upward_diffuse_normalization = _safe_nonzero(
-        (leaf_absorptance + diffuse_backscatter_coefficient + diffuse_attenuation_rate) * (upward_diffuse_boundary_term - diffuse_attenuation_rate) / diffuse_transmission_factor -
-        (leaf_absorptance + diffuse_backscatter_coefficient - diffuse_attenuation_rate) * (upward_diffuse_boundary_term + diffuse_attenuation_rate) * diffuse_transmission_factor)
-    downward_diffuse_normalization = _safe_nonzero(
-        (downward_diffuse_boundary_term + diffuse_attenuation_rate) / diffuse_transmission_factor -
-        (downward_diffuse_boundary_term - diffuse_attenuation_rate) * diffuse_transmission_factor)
+    Nᵤ = _safe_nonzero(
+        (α + β + k) * (Bᵤ - k) / τ -
+        (α + β - k) * (Bᵤ + k) * τ,
+    )
+    N_d = _safe_nonzero(
+        (B_d + k) / τ -
+        (B_d - k) * τ,
+    )
 
-    diffuse_reflected_decay_coefficient = (diffuse_backscatter_coefficient / (upward_diffuse_normalization * diffuse_transmission_factor)) * (upward_diffuse_boundary_term - diffuse_attenuation_rate)
-    diffuse_reflected_growth_coefficient = (-diffuse_backscatter_coefficient * diffuse_transmission_factor / upward_diffuse_normalization) * (upward_diffuse_boundary_term + diffuse_attenuation_rate)
-    diffuse_transmitted_decay_coefficient = (1.0 / (downward_diffuse_normalization * diffuse_transmission_factor)) * (downward_diffuse_boundary_term + diffuse_attenuation_rate)
-    diffuse_transmitted_growth_coefficient = (-diffuse_transmission_factor / downward_diffuse_normalization) * (downward_diffuse_boundary_term - diffuse_attenuation_rate)
+    diffuse_reflected_decay_coefficient  = β * (Bᵤ - k) / (Nᵤ * τ)
+    diffuse_reflected_growth_coefficient = -β * τ * (Bᵤ + k) / Nᵤ
+
+    diffuse_transmitted_decay_coefficient  = (B_d + k) / (N_d * τ)
+    diffuse_transmitted_growth_coefficient = -τ * (B_d - k) / N_d
 
     return (;
-        upward_diffuse_boundary_term, downward_diffuse_boundary_term,
-        upward_diffuse_normalization, downward_diffuse_normalization,
-        diffuse_reflected_decay_coefficient, diffuse_reflected_growth_coefficient,
-        diffuse_transmitted_decay_coefficient, diffuse_transmitted_growth_coefficient,
+        upward_diffuse_boundary_term = Bᵤ,
+        downward_diffuse_boundary_term = B_d,
+        upward_diffuse_normalization = Nᵤ,
+        downward_diffuse_normalization = N_d,
+        diffuse_reflected_decay_coefficient,
+        diffuse_reflected_growth_coefficient,
+        diffuse_transmitted_decay_coefficient,
+        diffuse_transmitted_growth_coefficient,
     )
 end
 
@@ -128,9 +165,7 @@ end
     direct_two_stream_optics(plant_area_index, direct_beam_extinction_coefficient,
                               ground_reflectance, leaf_optics, diffuse_optics)
 
-Two-stream coefficients for the *direct* beam. Depends on solar zenith angle
-(via `direct_beam_extinction_coefficient`), so recomputed every hour like
-`diffuse_optics`.
+Two-stream coefficients for the *direct* beam as a function of solar zenith angle.
 
 Note: the classic Dickinson/Sellers direct-beam particular solution doesn't
 exactly satisfy the ground boundary condition (reflected upward flux =
@@ -144,39 +179,64 @@ function direct_two_stream_optics(plant_area_index, direct_beam_extinction_coeff
        diffuse_backscatter_coefficient, diffuse_attenuation_rate, diffuse_transmission_factor) = leaf_optics
     (; upward_diffuse_boundary_term, downward_diffuse_boundary_term,
        upward_diffuse_normalization, downward_diffuse_normalization) = diffuse_optics
-    k = direct_beam_extinction_coefficient
 
-    # known Dickinson/Sellers singularity: vanishes at some k, swept through continuously via zenith_angle
-    direct_beam_solution_denominator = _safe_nonzero(k^2 + diffuse_backscatter_coefficient^2 - (leaf_absorptance + diffuse_backscatter_coefficient)^2)
-    direct_upward_source_term = 0.5 * (leaf_scattering_coefficient + leaf_orientation_factor * leaf_scattering_asymmetry / k) * k
-    direct_downward_source_term = leaf_scattering_coefficient * k - direct_upward_source_term
-    direct_beam_transmission_factor = exp(-k * plant_area_index)
+    # Optical properties and structural terms.
+    PAI  = plant_area_index
+    kᵦ = direct_beam_extinction_coefficient
+    ρg = ground_reflectance
 
-    direct_reflected_beam_coefficient = -direct_upward_source_term * (leaf_absorptance + diffuse_backscatter_coefficient - k) -
-        diffuse_backscatter_coefficient * direct_downward_source_term
-    v1 = direct_upward_source_term - direct_reflected_beam_coefficient * (leaf_absorptance + diffuse_backscatter_coefficient + k) / direct_beam_solution_denominator
-    v2 = direct_upward_source_term - diffuse_backscatter_coefficient -
-        (direct_reflected_beam_coefficient / direct_beam_solution_denominator) * (upward_diffuse_boundary_term + k)
-    direct_reflected_decay_coefficient = (1.0 / upward_diffuse_normalization) *
-        ((v1 / diffuse_transmission_factor) * (upward_diffuse_boundary_term - diffuse_attenuation_rate) -
-         (leaf_absorptance + diffuse_backscatter_coefficient - diffuse_attenuation_rate) * direct_beam_transmission_factor * v2)
-    direct_reflected_growth_coefficient = (-1.0 / upward_diffuse_normalization) *
-        ((v1 * diffuse_transmission_factor) * (upward_diffuse_boundary_term + diffuse_attenuation_rate) -
-         (leaf_absorptance + diffuse_backscatter_coefficient + diffuse_attenuation_rate) * direct_beam_transmission_factor * v2)
+    ω = leaf_scattering_coefficient
+    α = leaf_absorptance
+    ζ = leaf_scattering_asymmetry
+    g = leaf_orientation_factor
 
-    direct_transmitted_beam_coefficient = direct_downward_source_term * (leaf_absorptance + diffuse_backscatter_coefficient + k) -
-        diffuse_backscatter_coefficient * direct_upward_source_term
-    v3 = (direct_downward_source_term + diffuse_backscatter_coefficient * ground_reflectance -
-          (direct_transmitted_beam_coefficient / -direct_beam_solution_denominator) * (downward_diffuse_boundary_term - k)) * direct_beam_transmission_factor
-    direct_transmitted_decay_coefficient = (-1.0 / downward_diffuse_normalization) *
-        ((direct_transmitted_beam_coefficient / (-direct_beam_solution_denominator * diffuse_transmission_factor)) * (downward_diffuse_boundary_term + diffuse_attenuation_rate) + v3)
-    direct_transmitted_growth_coefficient = (1.0 / downward_diffuse_normalization) *
-        ((direct_transmitted_beam_coefficient * diffuse_transmission_factor / -direct_beam_solution_denominator) * (downward_diffuse_boundary_term - diffuse_attenuation_rate) + v3)
+    β = diffuse_backscatter_coefficient
+    λ = diffuse_attenuation_rate
+    τ = diffuse_transmission_factor
+
+    # Diffuse-solution boundary and normalization terms.
+    Bᵤ = upward_diffuse_boundary_term
+    B_d = downward_diffuse_boundary_term
+    Nᵤ = upward_diffuse_normalization
+    N_d = downward_diffuse_normalization
+
+    # Particular-solution denominator. This has a known Dickinson/Sellers
+    # singularity at particular values of kᵦ encountered as zenith angle varies.
+    Δ = _safe_nonzero(kᵦ^2 + β^2 - (α + β)^2)
+
+    # Direct-beam source terms for upward and downward diffuse radiation.
+    Sᵤ = 0.5 * (ω + g * ζ / kᵦ) * kᵦ
+    S_d = ω * kᵦ - Sᵤ
+
+    # Direct-beam transmission through the complete canopy.
+    Tᵦ = exp(-kᵦ * PAI)
+
+    # Reflected direct-beam particular-solution coefficient.
+    Cᵣ = -Sᵤ * (α + β - kᵦ) - β * S_d
+    V₁ = Sᵤ - Cᵣ * (α + β + kᵦ) / Δ
+    V₂ = Sᵤ - β - (Cᵣ / Δ) * (Bᵤ + kᵦ)
+
+    # Coefficients of the decaying and growing reflected solutions.
+    R_decay = ((V₁ / τ) * (Bᵤ - λ) - (α + β - λ) * Tᵦ * V₂) / Nᵤ
+    R_growth = -((V₁ * τ) * (Bᵤ + λ) - (α + β + λ) * Tᵦ * V₂) / Nᵤ
+
+    # Transmitted direct-beam particular-solution coefficient.
+    Cₜ = S_d * (α + β + kᵦ) - β * Sᵤ
+
+    V₃ = (S_d + β * ρg - (Cₜ / -Δ) * (B_d - kᵦ)) * Tᵦ
+
+    # Coefficients of the decaying and growing transmitted solutions.
+    T_decay = -((Cₜ / (-Δ * τ)) * (B_d + λ) + V₃) / N_d
+    T_growth = ((Cₜ * τ / -Δ) * (B_d - λ) + V₃) / N_d
 
     return (;
-        direct_beam_solution_denominator,
-        direct_reflected_beam_coefficient, direct_reflected_decay_coefficient, direct_reflected_growth_coefficient,
-        direct_transmitted_beam_coefficient, direct_transmitted_decay_coefficient, direct_transmitted_growth_coefficient,
+        direct_beam_solution_denominator = Δ,
+        direct_reflected_beam_coefficient = Cᵣ,
+        direct_reflected_decay_coefficient = R_decay,
+        direct_reflected_growth_coefficient = R_growth,
+        direct_transmitted_beam_coefficient = Cₜ,
+        direct_transmitted_decay_coefficient = T_decay,
+        direct_transmitted_growth_coefficient = T_growth,
     )
 end
 
@@ -185,11 +245,15 @@ end
                                direct_beam_extinction_coefficient, maximum_layer_reflectance,
                                has_direct_beam, plant_area_index_above)
 
-Diffuse and direct up/down flux fractions (of incoming diffuse/direct
-horizontal irradiance respectively) at a given cumulative plant area index
-`plant_area_index_above`. Shared between the per-layer profile, the layer
-*boundaries* (for the flux-divergence absorption below), and the whole-canopy
-ground-level totals, so the clamp/exp algebra is written once.
+Calculate upward and downward two-stream flux fractions at cumulative plant
+area index `plant_area_index_above`.
+
+Diffuse fluxes are expressed as fractions of incoming diffuse horizontal
+irradiance. Direct-beam-generated fluxes and direct transmission are expressed
+as fractions of incoming direct horizontal irradiance.
+
+This function is shared by the layer profile, layer-boundary absorption
+calculations, and whole-canopy ground-level totals.
 """
 function two_stream_flux_fractions(leaf_optics, diffuse_optics, direct_optics,
     direct_beam_extinction_coefficient, maximum_layer_reflectance, has_direct_beam, plant_area_index_above,
@@ -197,24 +261,38 @@ function two_stream_flux_fractions(leaf_optics, diffuse_optics, direct_optics,
     (; diffuse_attenuation_rate) = leaf_optics
     (; diffuse_reflected_decay_coefficient, diffuse_reflected_growth_coefficient,
        diffuse_transmitted_decay_coefficient, diffuse_transmitted_growth_coefficient) = diffuse_optics
-    diffuse_decay = exp(-diffuse_attenuation_rate * plant_area_index_above)
-    diffuse_growth = exp(diffuse_attenuation_rate * plant_area_index_above)
-    diffuse_up = clamp(diffuse_reflected_decay_coefficient * diffuse_decay + diffuse_reflected_growth_coefficient * diffuse_growth, 0.0, 1.0)
-    diffuse_down = clamp(diffuse_transmitted_decay_coefficient * diffuse_decay + diffuse_transmitted_growth_coefficient * diffuse_growth, 0.0, 1.0)
+
+    PAI = plant_area_index_above
+    λ = diffuse_attenuation_rate
+    kᵦ = direct_beam_extinction_coefficient
+    f_max = maximum_layer_reflectance
+    R⁻ = diffuse_reflected_decay_coefficient
+    R⁺ = diffuse_reflected_growth_coefficient
+    T⁻ = diffuse_transmitted_decay_coefficient
+    T⁺ = diffuse_transmitted_growth_coefficient
+
+    E⁻ = exp(-λ * PAI) # diffuse decay
+    E⁺ = exp( λ * PAI) # diffuse growth
+
+    diffuse_up = clamp(R⁻ * E⁻ + R⁺ * E⁺, 0.0, 1.0,)
+    diffuse_down = clamp(T⁻ * E⁻ + T⁺ * E⁺, 0.0, 1.0,)
 
     if has_direct_beam
         (; direct_beam_solution_denominator, direct_reflected_beam_coefficient, direct_reflected_decay_coefficient,
            direct_reflected_growth_coefficient, direct_transmitted_beam_coefficient, direct_transmitted_decay_coefficient,
            direct_transmitted_growth_coefficient) = direct_optics
-        direct_transmission = exp(-direct_beam_extinction_coefficient * plant_area_index_above)
-        direct_up = clamp(
-            direct_reflected_beam_coefficient / direct_beam_solution_denominator * direct_transmission +
-            direct_reflected_decay_coefficient * diffuse_decay + direct_reflected_growth_coefficient * diffuse_growth,
-            0.0, maximum_layer_reflectance)
-        direct_down = clamp(
-            direct_transmitted_beam_coefficient / -direct_beam_solution_denominator * direct_transmission +
-            direct_transmitted_decay_coefficient * diffuse_decay + direct_transmitted_growth_coefficient * diffuse_growth,
-            0.0, maximum_layer_reflectance)
+        
+        Δ = direct_beam_solution_denominator
+        Cᵣ = direct_reflected_beam_coefficient
+        Cₜ = direct_transmitted_beam_coefficient
+        Rᵦ⁻ = direct_reflected_decay_coefficient
+        Rᵦ⁺ = direct_reflected_growth_coefficient
+        Tᵦ⁻ = direct_transmitted_decay_coefficient
+        Tᵦ⁺ = direct_transmitted_growth_coefficient
+
+        direct_transmission = Eᵦ = exp(-kᵦ * PAI)
+        direct_up = clamp((Cᵣ / Δ) * Eᵦ + Rᵦ⁻ * E⁻ + Rᵦ⁺ * E⁺, 0.0, f_max,)
+        direct_down = clamp(-(Cₜ / Δ) * Eᵦ + Tᵦ⁻ * E⁻ + Tᵦ⁺ * E⁺, 0.0, f_max,)
     else
         direct_transmission = 0.0
         direct_up = 0.0
@@ -226,10 +304,7 @@ end
 # Downward (diffuse + direct) and upward irradiance through a horizontal
 # plane at a plant-area-index level, given precomputed flux fractions there —
 # used at layer boundaries for flux-divergence absorption, and at the canopy
-# base/top for ground/sky fluxes. The uncollided direct beam's contribution
-# uses `direct_horizontal_irradiance` (the horizontal-plane projection), not
-# the beam-normal irradiance — the latter is only meaningful as the
-# `downward_direct_shortwave` diagnostic, not for a ground-area energy budget.
+# base/top for ground/sky fluxes.
 function two_stream_irradiances(fractions, direct_horizontal_irradiance, diffuse_horizontal_irradiance)
     downward = fractions.diffuse_down * diffuse_horizontal_irradiance + fractions.direct_down * direct_horizontal_irradiance +
         direct_horizontal_irradiance * fractions.direct_transmission
@@ -237,18 +312,18 @@ function two_stream_irradiances(fractions, direct_horizontal_irradiance, diffuse
     return (; downward, upward)
 end
 
-function allocate_shortwave(radiation_model::TwoStreamRadiation, canopy_height, plant_area_index, n_layers, leaf_angle_distribution_parameter)
+function allocate_shortwave(radiation_model::TwoStreamRadiation, canopy_height, plant_area_index, n_layers, canopy_projection_ratio)
     # boundary i is the PAI above the top of layer i (layer i spans boundary i to i+1)
     (; layer_plant_area_index_boundaries, layer_plant_area_index_above) = canopy_layer_geometry(plant_area_index, n_layers)
 
     leaf_optics_precomputed = leaf_optics(
-        sum(plant_area_index), leaf_angle_distribution_parameter,
+        sum(plant_area_index), canopy_projection_ratio,
         radiation_model.leaf_reflectance, radiation_model.leaf_transmittance,
     )
 
     return (;
         layer_plant_area_index_boundaries, layer_plant_area_index_above,
-        leaf_angle_distribution_parameter,
+        canopy_projection_ratio,
         leaf_optics = leaf_optics_precomputed,
         boundary_downward_shortwave = zeros(typeof(0.0u"W/m^2"), n_layers + 1),
         boundary_upward_shortwave = zeros(typeof(0.0u"W/m^2"), n_layers + 1),
@@ -283,7 +358,7 @@ function canopy_shortwave!(buffers, radiation_model::TwoStreamRadiation, plant_a
 
     leaf = buffers.leaf_optics
     diffuse = diffuse_two_stream_optics(leaf, ground_reflectance)
-    direct_beam_extinction_coefficient = ellipsoidal_extinction_coefficient(zenith_angle, buffers.leaf_angle_distribution_parameter)
+    direct_beam_extinction_coefficient = ellipsoidal_extinction_coefficient(zenith_angle, buffers.canopy_projection_ratio)
     has_direct_beam = direct_horizontal_irradiance > 0.0u"W/m^2"
     direct_beam_irradiance = has_direct_beam ? direct_horizontal_irradiance / cos(zenith_angle) : 0.0u"W/m^2"
     maximum_layer_reflectance = max(ground_reflectance, radiation_model.leaf_reflectance)

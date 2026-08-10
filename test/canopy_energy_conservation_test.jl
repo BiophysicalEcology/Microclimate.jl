@@ -15,7 +15,7 @@ site = Microclimate.example_site()
 canopy_height = 5.0u"m"
 plant_area_index = 3.0
 n_layers = 10
-leaf_angle_distribution_parameter = 1.0
+canopy_projection_ratio = 1.0
 leaf_emissivity = 0.97
 ground_emissivity = 0.95
 
@@ -35,7 +35,7 @@ conditions = [
 
 @testset "canopy_shortwave! conservation" begin
     shortwave_model = TwoStreamRadiation()
-    buffers = allocate_shortwave(shortwave_model, canopy_height, plant_area_index, n_layers, leaf_angle_distribution_parameter)
+    buffers = allocate_shortwave(shortwave_model, canopy_height, plant_area_index, n_layers, canopy_projection_ratio)
 
     for (label, zenith_angle, direct, diffuse, _) in conditions
         @testset "$label" begin
