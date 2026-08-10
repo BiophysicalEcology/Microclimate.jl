@@ -19,12 +19,7 @@ Dyer, A. J. (1974). A review of flux–profile relationships.
     dyer_constant::DC = 16.0
 end
 
-# Below this reference-height/roughness-length ratio, log(z/z0) is small
-# enough that inverting the log law for friction velocity becomes
-# ill-conditioned (the roughness-sublayer regime, where MOST itself doesn't
-# apply) -- not a scientifically precise cutoff, just a documented, adjustable
-# point past which surface_fluxes's log-law inversion is no longer trustworthy.
-const _MIN_LOGLAW_RATIO = 5.0
+const _MIN_LOGLAW_RATIO = 5.0 # avoid the log-law inversion becoming ill-conditioned
 
 function allocate_profile(::MoninObukhov, heights)
     wind_speed = similar(heights, typeof(0.0u"m/s")) # output wind speeds
