@@ -43,15 +43,15 @@ conditions = [
                 zenith_angle, direct_horizontal_irradiance = direct, diffuse_horizontal_irradiance = diffuse,
                 ground_reflectance = 0.15)
 
-            # landscape_absorbed_shortwave already includes ground absorption
+            # net_absorbed_shortwave already includes ground absorption
             # (everything not reflected back to sky) -- not leaf-only.
             reflected_to_sky = buffers.boundary_upward_shortwave[1]
             # rtol: direct-beam's particular solution doesn't exactly satisfy
             # the ground boundary condition (documented, ~6e-4 max error).
             @test ustrip(u"W/m^2", direct + diffuse) ≈
-                ustrip(u"W/m^2", result.landscape_absorbed_shortwave + reflected_to_sky) rtol=1e-3
+                ustrip(u"W/m^2", result.net_absorbed_shortwave + reflected_to_sky) rtol=1e-3
             @test ustrip(u"W/m^2", sum(buffers.absorbed_shortwave) + result.ground_absorbed_shortwave) ≈
-                ustrip(u"W/m^2", result.landscape_absorbed_shortwave) rtol=1e-3
+                ustrip(u"W/m^2", result.net_absorbed_shortwave) rtol=1e-3
         end
     end
 end

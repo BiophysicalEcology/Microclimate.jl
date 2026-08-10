@@ -134,14 +134,8 @@ function diffuse_two_stream_optics(leaf_optics, ground_reflectance)
     B_d = α + β * (1.0 - ρg)
 
     # divided into below and in direct_two_stream_optics -- can hit zero
-    Nᵤ = _safe_nonzero(
-        (α + β + k) * (Bᵤ - k) / τ -
-        (α + β - k) * (Bᵤ + k) * τ,
-    )
-    N_d = _safe_nonzero(
-        (B_d + k) / τ -
-        (B_d - k) * τ,
-    )
+    Nᵤ = _safe_nonzero((α + β + k) * (Bᵤ - k) / τ - (α + β - k) * (Bᵤ + k) * τ,)
+    N_d = _safe_nonzero((B_d + k) / τ - (B_d - k) * τ,)
 
     diffuse_reflected_decay_coefficient  = β * (Bᵤ - k) / (Nᵤ * τ)
     diffuse_reflected_growth_coefficient = -β * τ * (Bᵤ + k) / Nᵤ
@@ -181,7 +175,7 @@ function direct_two_stream_optics(plant_area_index, direct_beam_extinction_coeff
        upward_diffuse_normalization, downward_diffuse_normalization) = diffuse_optics
 
     # Optical properties and structural terms.
-    PAI  = plant_area_index
+    PAI = plant_area_index
     kᵦ = direct_beam_extinction_coefficient
     ρg = ground_reflectance
 
@@ -341,52 +335,80 @@ function canopy_shortwave!(buffers, radiation_model::TwoStreamRadiation, plant_a
     (; layer_plant_area_index_boundaries, layer_plant_area_index_above, boundary_downward_shortwave,
        boundary_upward_shortwave, downward_direct_shortwave, downward_diffuse_shortwave,
        upward_diffuse_shortwave, sunlit_fraction, absorbed_shortwave) = buffers
-    n_layers = length(layer_plant_area_index_above)
 
-    fill!(downward_direct_shortwave, 0.0u"W/m^2")
-    fill!(downward_diffuse_shortwave, 0.0u"W/m^2")
-    fill!(upward_diffuse_shortwave, 0.0u"W/m^2")
-    fill!(sunlit_fraction, 0.0)
-    fill!(absorbed_shortwave, 0.0u"W/m^2")
-    fill!(boundary_downward_shortwave, 0.0u"W/m^2")
-    fill!(boundary_upward_shortwave, 0.0u"W/m^2")
+    PAI = sum(plant_area_index)
+    Lbound = layer_plant_area_index_boundaries
+    Labove = layer_plant_area_index_above
 
-    global_horizontal_irradiance = direct_horizontal_irradiance + diffuse_horizontal_irradiance
-    if global_horizontal_irradiance <= 0.0u"W/m^2" || zenith_angle >= 90.0u"°"
-        return (; ground_absorbed_shortwave = 0.0u"W/m^2", landscape_absorbed_shortwave = 0.0u"W/m^2")
+    θ = zenith_angle
+    ρground = ground_reflectance
+
+    Idir = direct_horizontal_irradiance
+    Idiff = diffuse_horizontal_irradiance
+    Iglobal = Idir + Idiff
+
+    F_d = boundary_downward_shortwave
+    F_u = boundary_upward_shortwave
+
+    Ibeam_d = downward_direct_shortwave
+    Idiff_d = downward_diffuse_shortwave
+    Idiff_u = upward_diffuse_shortwave
+
+    fsun = sunlit_fraction
+    Qabs = absorbed_shortwave
+
+    n = length(Labove)
+
+    fill!(Ibeam_d, 0.0u"W/m^2");     fill!(Idiff_d, 0.0u"W/m^2")
+    fill!(Idiff_u, 0.0u"W/m^2");     fill!(fsun, 0.0)
+    fill!(Qabs, 0.0u"W/m^2");        fill!(F_d, 0.0u"W/m^2")
+    fill!(F_u, 0.0u"W/m^2")
+
+    # No shortwave radiation reaches the canopy     
+    if Iglobal <= 0.0u"W/m^2" || θ >= 90.0u"°"
+        return (;
+            ground_absorbed_shortwave = 0.0u"W/m^2",
+            net_absorbed_shortwave = 0.0u"W/m^2",
+        )
     end
 
+    # two-stream optical coefficients
     leaf = buffers.leaf_optics
-    diffuse = diffuse_two_stream_optics(leaf, ground_reflectance)
-    direct_beam_extinction_coefficient = ellipsoidal_extinction_coefficient(zenith_angle, buffers.canopy_projection_ratio)
-    has_direct_beam = direct_horizontal_irradiance > 0.0u"W/m^2"
-    direct_beam_irradiance = has_direct_beam ? direct_horizontal_irradiance / cos(zenith_angle) : 0.0u"W/m^2"
-    maximum_layer_reflectance = max(ground_reflectance, radiation_model.leaf_reflectance)
-    direct = direct_two_stream_optics(sum(plant_area_index), direct_beam_extinction_coefficient, ground_reflectance, leaf, diffuse)
+    diffuse = diffuse_two_stream_optics(leaf, ρground)
 
-    # boundary fluxes, reused across adjacent layers (boundary i is shared by layers i-1 and i)
-    @inbounds for i in eachindex(layer_plant_area_index_boundaries)
-        fractions = two_stream_flux_fractions(leaf, diffuse, direct, direct_beam_extinction_coefficient,
-            maximum_layer_reflectance, has_direct_beam, layer_plant_area_index_boundaries[i])
-        irradiances = two_stream_irradiances(fractions, direct_horizontal_irradiance, diffuse_horizontal_irradiance)
-        boundary_downward_shortwave[i] = irradiances.downward
-        boundary_upward_shortwave[i] = irradiances.upward
+    kbeam = ellipsoidal_extinction_coefficient(θ, buffers.canopy_projection_ratio,)
+    hasbeam = Idir > 0.0u"W/m^2"
+
+    # convert direct horizontal irradiance to irradiance normal to the beam
+    Ibeam = hasbeam ? Idir / cos(θ) : 0.0u"W/m^2"
+
+    ρmax = max(ρground, radiation_model.leaf_reflectance)
+    direct = direct_two_stream_optics(PAI, kbeam, ρground, leaf, diffuse,)
+
+    # total downward and upward shortwave fluxes at every layer
+    @inbounds for i in eachindex(Lbound)
+        fractions = two_stream_flux_fractions(leaf, diffuse, direct, kbeam, ρmax, hasbeam, Lbound[i],)
+        irradiances = two_stream_irradiances(fractions, Idir, Idiff,)
+        F_d[i] = irradiances.downward
+        F_u[i] = irradiances.upward
     end
 
-    @inbounds for i in 1:n_layers
-        absorbed_shortwave[i] = (boundary_downward_shortwave[i] - boundary_downward_shortwave[i + 1]) +
-                                 (boundary_upward_shortwave[i + 1] - boundary_upward_shortwave[i])
-
-        mid_fractions = two_stream_flux_fractions(leaf, diffuse, direct, direct_beam_extinction_coefficient,
-            maximum_layer_reflectance, has_direct_beam, layer_plant_area_index_above[i])
-        downward_diffuse_shortwave[i] = mid_fractions.diffuse_down * diffuse_horizontal_irradiance + mid_fractions.direct_down * direct_horizontal_irradiance
-        upward_diffuse_shortwave[i] = mid_fractions.diffuse_up * diffuse_horizontal_irradiance + mid_fractions.direct_up * direct_horizontal_irradiance
-        downward_direct_shortwave[i] = direct_beam_irradiance * mid_fractions.direct_transmission
-        sunlit_fraction[i] = mid_fractions.direct_transmission
+    @inbounds for i in 1:n
+        # shortwave absorption is the flux convergence across layer i
+        Qabs[i] = (F_d[i] - F_d[i + 1]) + (F_u[i + 1] - F_u[i])
+        fractions = two_stream_flux_fractions(leaf, diffuse, direct, kbeam, ρmax, hasbeam, Labove[i],)
+        # downward diffuse radiation
+        Idiff_d[i] = fractions.diffuse_down * Idiff + fractions.direct_down * Idir
+        # upward diffuse radiation
+        Idiff_u[i] = fractions.diffuse_up * Idiff + fractions.direct_up * Idir
+        # unscattered direct-beam irradiance normal to the solar beam
+        Ibeam_d[i] = Ibeam * fractions.direct_transmission
+        # direct-beam transmission is also the modelled sunlit fraction at this canopy depth.
+        fsun[i] = fractions.direct_transmission
     end
 
-    ground_absorbed_shortwave = (1.0 - ground_reflectance) * boundary_downward_shortwave[n_layers + 1]
-    landscape_absorbed_shortwave = global_horizontal_irradiance - boundary_upward_shortwave[1]
+    ground_absorbed_shortwave = (1.0 - ρground) * F_d[n + 1]
+    net_absorbed_shortwave = Iglobal - F_u[1]    
 
-    return (; ground_absorbed_shortwave, landscape_absorbed_shortwave)
+    return (; ground_absorbed_shortwave, net_absorbed_shortwave)
 end

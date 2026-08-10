@@ -44,7 +44,7 @@ end
     @test all(isfinite, ustrip.(u"K", buffers.leaf.leaf_temperature))
     @test all(t -> 250.0u"K" < t < 340.0u"K", buffers.leaf.leaf_temperature)
     @test all(isfinite, ustrip.(u"K", buffers.air_profile.air_temperature))
-    @test result.landscape_absorbed_shortwave > 0.0u"W/m^2"
+    @test result.net_absorbed_shortwave > 0.0u"W/m^2"
     @test result.canopy_potential_transpiration >= sum(buffers.leaf.evaporation_mass_flow) / 1.0u"m^2"
 
     # Visual check — run manually (not in CI)
@@ -65,7 +65,7 @@ end
         ground_relative_humidity = 0.5, canopy_source_temperature = 293.0u"K",
     )
     day_result = Microclimate.canopy_energy_balance!(buffers, model, boundary_layer_model, inputs)
-    @test day_result.landscape_absorbed_shortwave > 0.0u"W/m^2"
+    @test day_result.net_absorbed_shortwave > 0.0u"W/m^2"
 
     Microclimate.update_canopy_energy_balance_inputs!(inputs;
         environment_instant = make_environment_instant(; zenith_angle = 100.0u"°", reference_temperature = 283.0u"K"),
@@ -75,7 +75,7 @@ end
         ground_relative_humidity = 0.5, canopy_source_temperature = 283.0u"K",
     )
     night_result = Microclimate.canopy_energy_balance!(buffers, model, boundary_layer_model, inputs)
-    @test night_result.landscape_absorbed_shortwave == 0.0u"W/m^2"
+    @test night_result.net_absorbed_shortwave == 0.0u"W/m^2"
     @test all(isfinite, ustrip.(u"K", buffers.leaf.leaf_temperature))
     @test all(t -> 250.0u"K" < t < 310.0u"K", buffers.leaf.leaf_temperature)
 end

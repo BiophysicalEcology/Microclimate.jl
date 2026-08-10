@@ -46,7 +46,7 @@ exchange, each pass `O(n_layers)`. with no matrix solve (non-reflecting
 layers mean the two streams don't couple). Writes `absorbed_longwave`
 (gross per layer, per unit ground area — `leaf_heat_balance` subtracts the
 leaf's own emission separately) and returns `(; ground_absorbed_longwave,
-landscape_absorbed_longwave)`.
+net_absorbed_longwave)`.
 
 Absorbs at `1-τ` (full interception, not `leaf_emissivity*(1-τ)`) while
 emitting at `leaf_emissivity*σT^4`: small energy gap is dropped rather than
@@ -83,7 +83,7 @@ function canopy_longwave!(buffers, model::LayeredLongwaveExchange, leaf_emissivi
     end
 
     ground_absorbed_longwave = ground_emissivity * boundary_downward_longwave[n_layers + 1]
-    landscape_absorbed_longwave = boundary_downward_longwave[1] - boundary_upward_longwave[1]
+    net_absorbed_longwave = boundary_downward_longwave[1] - boundary_upward_longwave[1]
 
-    return (; ground_absorbed_longwave, landscape_absorbed_longwave)
+    return (; ground_absorbed_longwave, net_absorbed_longwave)
 end

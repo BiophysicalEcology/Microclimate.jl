@@ -96,7 +96,7 @@ ground reflection, matching the ported source) and every layer at or
 below. `boundary_downward_longwave[1:n_layers]`/`boundary_upward_longwave
 [1:n_layers]` equal `downward_longwave`/`upward_longwave` exactly; index
 `n_layers+1` is the ground surface. Returns `(; ground_absorbed_longwave,
-landscape_absorbed_longwave)`.
+net_absorbed_longwave)`.
 """
 function canopy_longwave!(buffers, model::AllPairsLongwaveExchange, leaf_emissivity;
     leaf_temperature, ground_temperature, ground_emissivity,
@@ -145,7 +145,7 @@ function canopy_longwave!(buffers, model::AllPairsLongwaveExchange, leaf_emissiv
     boundary_upward_longwave[n_layers + 1] = ground_emission * ground_ground_transmission
 
     ground_absorbed_longwave = ground_emissivity * boundary_downward_longwave[n_layers + 1]
-    landscape_absorbed_longwave = boundary_downward_longwave[1] - boundary_upward_longwave[1]
+    net_absorbed_longwave = boundary_downward_longwave[1] - boundary_upward_longwave[1]
 
-    return (; ground_absorbed_longwave, landscape_absorbed_longwave)
+    return (; ground_absorbed_longwave, net_absorbed_longwave)
 end

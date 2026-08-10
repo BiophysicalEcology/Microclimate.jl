@@ -28,8 +28,8 @@ struct CanopyOutput{LT,AT,WS,RH,GAS,GAL,LAS,LAL,GTF,IT,DSW,USW,DLW,ULW,AR,NB,CSH
     relative_humidity::RH             # nsteps × n_canopy_layers Matrix (in-canopy)
     ground_absorbed_shortwave::GAS    # nsteps Vector
     ground_absorbed_longwave::GAL     # nsteps Vector
-    landscape_absorbed_shortwave::LAS # nsteps Vector
-    landscape_absorbed_longwave::LAL  # nsteps Vector
+    net_absorbed_shortwave::LAS # nsteps Vector
+    net_absorbed_longwave::LAL  # nsteps Vector
     ground_throughfall::GTF           # nsteps Vector
     iterations::IT                    # nsteps Vector{Int}, Picard iteration count
     boundary_downward_shortwave::DSW  # nsteps × (n_canopy_layers+1) Matrix, canopy top -> ground

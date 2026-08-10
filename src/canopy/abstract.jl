@@ -52,9 +52,9 @@ function canopy_leaf_area_index end
 
 Layer-resolved absorbed shortwave through the canopy for the current hour;
 writes per-layer results into `buffers`, returns `(;
-ground_absorbed_shortwave, landscape_absorbed_shortwave)`. `ground_reflectance`
+ground_absorbed_shortwave, net_absorbed_shortwave)`. `ground_reflectance`
 is supplied by the caller, not stored on the model. Despite the name,
-`landscape_absorbed_shortwave` is net radiation retained by the whole
+`net_absorbed_shortwave` is net radiation retained by the whole
 canopy+ground system below the top boundary (`incoming -
 top_of_canopy_reflected`), not canopy-only absorption — for that, sum the
 per-layer `absorbed_shortwave` buffer instead.
@@ -80,10 +80,10 @@ function canopy_wind_profile! end
 
 Layer-resolved longwave exchange (leaf emission/absorption plus sky/ground
 boundary terms) for the current hour; writes per-layer results into
-`buffers`, returns `(; ground_absorbed_longwave, landscape_absorbed_longwave)`.
+`buffers`, returns `(; ground_absorbed_longwave, net_absorbed_longwave)`.
 `ground_temperature`/`ground_emissivity` are the lagged (previous-hour)
 soil-surface boundary condition. As with [`canopy_shortwave!`](@ref),
-`landscape_absorbed_longwave` is net longwave retained by the whole
+`net_absorbed_longwave` is net longwave retained by the whole
 canopy+ground system below the top boundary (`incoming_longwave -
 top_of_canopy_upward`), not canopy-only absorption — sum the per-layer
 `absorbed_longwave` buffer for that.

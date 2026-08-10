@@ -34,7 +34,7 @@ leaf_emissivity = 0.97
     end
     net_ground = result.ground_absorbed_longwave - ground_emissivity * Microclimate.σ * u"K"(ground_temperature)^4
 
-    @test ustrip(u"W/m^2", net_layers + net_ground) ≈ ustrip(u"W/m^2", result.landscape_absorbed_longwave) atol=1e-8
+    @test ustrip(u"W/m^2", net_layers + net_ground) ≈ ustrip(u"W/m^2", result.net_absorbed_longwave) atol=1e-8
 end
 
 @testset "warm sky, cold canopy: downward flux monotonically non-increasing, net gain" begin
@@ -47,7 +47,7 @@ end
         leaf_temperature, ground_temperature, ground_emissivity, site, environment_instant=hot_environment)
 
     @test issorted(ustrip.(u"W/m^2", buffers.boundary_downward_longwave), rev=true)
-    @test result.landscape_absorbed_longwave > 0.0u"W/m^2"
+    @test result.net_absorbed_longwave > 0.0u"W/m^2"
     @test all(>(0.0u"W/m^2"), buffers.absorbed_longwave)
 end
 
@@ -67,7 +67,7 @@ end
     result = Microclimate.canopy_longwave!(buffers, model, 1.0;
         leaf_temperature, ground_temperature=T_eq, ground_emissivity=1.0, site, environment_instant)
 
-    @test abs(ustrip(u"W/m^2", result.landscape_absorbed_longwave)) < 1e-6
+    @test abs(ustrip(u"W/m^2", result.net_absorbed_longwave)) < 1e-6
 end
 
 @testset "AllPairsLongwaveExchange: runs and gives physically sane fluxes" begin
@@ -101,7 +101,7 @@ end
         result = Microclimate.canopy_longwave!(lr_buffers, lr_model, 1.0;
             leaf_temperature, ground_temperature=T_eq, ground_emissivity=1.0, site, environment_instant)
 
-        @test abs(ustrip(u"W/m^2", result.landscape_absorbed_longwave)) < 1e-6
+        @test abs(ustrip(u"W/m^2", result.net_absorbed_longwave)) < 1e-6
         @test all(f -> abs(ustrip(u"W/m^2", f)) < 1e-6, lr_buffers.absorbed_longwave .- 2.0 .* Microclimate.σ .* T_eq^4 .* (1.0 .- lr_buffers.layer_transmission))
     end
 
@@ -118,7 +118,7 @@ end
         result = Microclimate.canopy_longwave!(lr_buffers, lr_model, 0.92;
             leaf_temperature, ground_temperature=T_eq, ground_emissivity=0.9, site, environment_instant)
 
-        @test abs(ustrip(u"W/m^2", result.landscape_absorbed_longwave)) < 1e-6
+        @test abs(ustrip(u"W/m^2", result.net_absorbed_longwave)) < 1e-6
         @test all(f -> abs(ustrip(u"W/m^2", f)) < 1e-6, lr_buffers.boundary_upward_longwave .- Microclimate.σ .* T_eq^4)
         @test all(f -> abs(ustrip(u"W/m^2", f)) < 1e-6, lr_buffers.boundary_downward_longwave .- Microclimate.σ .* T_eq^4)
     end
@@ -138,7 +138,7 @@ end
             leaf_emissivity * (1.0 - lr_buffers.layer_transmission[i]) * Microclimate.σ * u"K"(leaf_temperature[i])^4
         end
         ground_emission = ground_emissivity * Microclimate.σ * u"K"(ground_temperature)^4
-        escaping_to_sky = sky.incoming_longwave - result.landscape_absorbed_longwave
+        escaping_to_sky = sky.incoming_longwave - result.net_absorbed_longwave
 
         total_in = sky.incoming_longwave + total_leaf_emission + ground_emission
         total_out = sum(lr_buffers.absorbed_longwave) + result.ground_absorbed_longwave + escaping_to_sky
