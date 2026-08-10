@@ -18,10 +18,12 @@ Zero day-boundary-reset canopy state (e.g. interception storage). No-op for
 function reset_canopy_scratch! end
 
 """
-    allocate_canopy_inputs(model; site, environment_instant, boundary_layer_model)
+    allocate_canopy_inputs(model; site, environment_instant, boundary_layer_model, soil_hydraulic_model)
 
 Build a canopy model's mutable per-hour inputs (`nothing` for `NoCanopy`;
-a `CanopyEnergyBalanceInputs` for `MultilayerCanopy`).
+a `CanopyEnergyBalanceInputs` for `MultilayerCanopy`). `soil_hydraulic_model`
+is `MicroModel.soil_hydraulic_model`, threaded through statically for
+[`stomatal_conductance`](@ref) (see `CanopyEnergyBalanceInputs`).
 """
 function allocate_canopy_inputs end
 

@@ -12,13 +12,17 @@ const CANOPY_TIMESTEP = 1.0u"hr"
                                ground_reflectance, ground_temperature, ground_emissivity,
                                ground_relative_humidity, canopy_source_temperature, rainfall=0.0u"kg/m^2",
                                leaf_water_potential=model.leaf_parameters.leaf_water_potential,
-                               vapour_pressure_equation=GoffGratch())
+                               vapour_pressure_equation=GoffGratch(), soil_hydraulic_model=nothing)
 
 Per-hour inputs to [`canopy_energy_balance!`](@ref), mirroring
 `SoilEnergyInputs`: built once, refreshed in place via
-[`update_canopy_energy_balance_inputs!`](@ref).
+[`update_canopy_energy_balance_inputs!`](@ref). `soil_hydraulic_model`
+(`MicroModel.soil_hydraulic_model`) is static like `site` — passed through
+to [`stomatal_conductance`](@ref) so models like
+[`MoistureResponsiveStomatalConductance`](@ref) share its parameters
+instead of storing their own copy.
 """
-mutable struct CanopyEnergyBalanceInputs{S,EI,ZA,DHI,DFI,GR,GT,GE,GRH,CST,RF,LWP,VP}
+mutable struct CanopyEnergyBalanceInputs{S,EI,ZA,DHI,DFI,GR,GT,GE,GRH,CST,RF,LWP,VP,SHM}
     site::S
     environment_instant::EI
     zenith_angle::ZA
@@ -32,17 +36,19 @@ mutable struct CanopyEnergyBalanceInputs{S,EI,ZA,DHI,DFI,GR,GT,GE,GRH,CST,RF,LWP
     rainfall::RF
     leaf_water_potential::LWP
     vapour_pressure_equation::VP
+    soil_hydraulic_model::SHM
 end
 
 function CanopyEnergyBalanceInputs(model::MultilayerCanopy;
     site, environment_instant, zenith_angle, direct_horizontal_irradiance, diffuse_horizontal_irradiance,
     ground_reflectance, ground_temperature, ground_emissivity, ground_relative_humidity, canopy_source_temperature,
     rainfall=0.0u"kg/m^2", leaf_water_potential=model.leaf_parameters.leaf_water_potential,
-    vapour_pressure_equation=GoffGratch(),
+    vapour_pressure_equation=GoffGratch(), soil_hydraulic_model=nothing,
 )
     CanopyEnergyBalanceInputs(site, environment_instant, zenith_angle, direct_horizontal_irradiance,
         diffuse_horizontal_irradiance, ground_reflectance, ground_temperature, ground_emissivity,
-        ground_relative_humidity, canopy_source_temperature, rainfall, leaf_water_potential, vapour_pressure_equation)
+        ground_relative_humidity, canopy_source_temperature, rainfall, leaf_water_potential, vapour_pressure_equation,
+        soil_hydraulic_model)
 end
 
 """
@@ -110,7 +116,7 @@ roughness length (see `ground_convection_conditions`).
 function canopy_energy_balance!(buffers, model::MultilayerCanopy, boundary_layer_model, inputs::CanopyEnergyBalanceInputs)
     (; site, environment_instant, zenith_angle, direct_horizontal_irradiance, diffuse_horizontal_irradiance,
        ground_reflectance, ground_temperature, ground_emissivity, ground_relative_humidity, canopy_source_temperature,
-       rainfall, leaf_water_potential, vapour_pressure_equation) = inputs
+       rainfall, leaf_water_potential, vapour_pressure_equation, soil_hydraulic_model) = inputs
 
     leaf_temperature_buffer = buffers.leaf.leaf_temperature  # avoids shadowing the leaf_temperature(solver, ...) function
     vapour_density_buffer = buffers.air_profile.vapour_density
@@ -145,7 +151,7 @@ function canopy_energy_balance!(buffers, model::MultilayerCanopy, boundary_layer
             environment_instant.atmospheric_pressure; vapour_pressure_equation).vapour_density)
 
     ctx = (; site, environment_instant, zenith_angle, ground_temperature, ground_emissivity, ground_relative_humidity,
-        vapour_pressure_equation, leaf_water_potential,
+        vapour_pressure_equation, leaf_water_potential, soil_hydraulic_model,
         canopy_top_air_temperature=wind_result.canopy_top_air_temperature,
         canopy_top_relative_humidity=wind_result.canopy_top_relative_humidity,
         friction_velocity=wind_result.friction_velocity, obukhov_length=wind_result.obukhov_length,
@@ -182,7 +188,7 @@ Returns `(longwave_result, any_clamped, canopy_top_air_temperature)`.
 function _canopy_picard_pass!(buffers, model::MultilayerCanopy, boundary_layer_model, ctx, relaxation,
                                canopy_top_air_temperature_prev, canopy_top_relative_humidity_prev)
     (; site, environment_instant, zenith_angle, ground_temperature, ground_emissivity, ground_relative_humidity,
-       vapour_pressure_equation, leaf_water_potential) = ctx
+       vapour_pressure_equation, leaf_water_potential, soil_hydraulic_model) = ctx
 
     (; leaf_body, leaf_temperature_prev, sensible_heat_source, evaporation_mass_flow,
        potential_evaporation_mass_flow, net_balance, air_temperature_prev, relative_humidity_prev) = buffers.leaf
@@ -234,7 +240,7 @@ function _canopy_picard_pass!(buffers, model::MultilayerCanopy, boundary_layer_m
         # absorbed_shortwave/absorbed_longwave are per unit ground area;
         # leaf_heat_balance/leaf_temperature want per unit leaf_area.
         absorbed_radiation = (absorbed_shortwave[layer] + absorbed_longwave[layer]) / (2.0 * exchange_fraction)
-        dry_conductance = stomatal_conductance(model.stomatal_model, zenith_angle, leaf_water_potential)
+        dry_conductance = stomatal_conductance(model.stomatal_model, zenith_angle, leaf_water_potential, soil_hydraulic_model)
         conductance = blend_stomatal_conductance(dry_conductance, wet_canopy_fraction(model, buffers, layer))
 
         leaf_temperature_buffer[layer] = leaf_temperature(model.leaf_temperature_solver, absorbed_radiation,
@@ -265,7 +271,7 @@ function _canopy_picard_pass!(buffers, model::MultilayerCanopy, boundary_layer_m
         relative_humidity_layer = buffers.air_profile.relative_humidity[layer]
         leaf_area = 2.0 * exchange_fraction * 1.0u"m^2"
         absorbed_radiation = absorbed_radiation_buffer[layer]
-        dry_conductance = stomatal_conductance(model.stomatal_model, zenith_angle, leaf_water_potential)
+        dry_conductance = stomatal_conductance(model.stomatal_model, zenith_angle, leaf_water_potential, soil_hydraulic_model)
         conductance = blend_stomatal_conductance(dry_conductance, wet_canopy_fraction(model, buffers, layer))
 
         # Clamp to a physically sane range (same bracket RootFindLeafTemperature
@@ -289,7 +295,7 @@ function _canopy_picard_pass!(buffers, model::MultilayerCanopy, boundary_layer_m
         # soil-hydraulics demand term — not the leaf's own energy balance.
         # Conductance is recomputed at water_potential=0 too, so this stays a
         # true unstressed demand under MoistureResponsiveStomatalConductance.
-        unstressed_dry_conductance = stomatal_conductance(model.stomatal_model, zenith_angle, 0.0u"J/kg")
+        unstressed_dry_conductance = stomatal_conductance(model.stomatal_model, zenith_angle, 0.0u"J/kg", soil_hydraulic_model)
         atmos = AtmosphericConditions(relative_humidity_layer, wind_speed[layer], atmospheric_pressure)
         potential_evap = HeatExchange.evaporation(unstressed_dry_conductance, balance.conv.mass_transfer_coefficient,
             atmos, leaf_area, leaf_temperature_buffer[layer], air_temperature_layer; water_potential=0.0u"J/kg")

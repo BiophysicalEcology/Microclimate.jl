@@ -21,5 +21,5 @@ for where those variants plug in.
     )
 end
 
-stomatal_conductance(model::PrescribedStomatalConductance, zenith_angle, leaf_water_potential) =
+stomatal_conductance(model::PrescribedStomatalConductance, zenith_angle, leaf_water_potential, soil_hydraulic_model) =
     zenith_angle < 90.0u"°" ? model.conductance : model.closed_conductance

@@ -1,37 +1,35 @@
 """
-    MoistureResponsiveStomatalConductance(; conductance=LeafEvaporationParameters(...),
-                                             stomatal_closure_potential=-1500.0u"J/kg",
-                                             stomatal_stability_parameter=10.0)
+    MoistureResponsiveStomatalConductance(; conductance=LeafEvaporationParameters(...))
 
 Stomatal (abaxial/adaxial) conductance closes as leaf water potential drops,
-using the same closure curve as `CampbellSoilHydraulics` (EQ12.28): with
-`stomatal_closure_factor = (leaf_water_potential / stomatal_closure_potential)^stomatal_stability_parameter`,
-open fraction is `1 / (1 + stomatal_closure_factor)`. Cuticular conductance
-is unaffected. Shuts fully at night (`zenith_angle >= 90°`).
+using `CampbellSoilHydraulics`'s own `stomatal_closure_potential`/
+`stomatal_stability_parameter` (read from the `soil_hydraulic_model` passed
+to [`stomatal_conductance`](@ref) — not stored here, so the two models can't
+drift out of sync). Cuticular conductance is unaffected. Shuts fully at
+night (`zenith_angle >= 90°`).
 
 `leaf_water_potential` is supplied by the caller each call (e.g. from
-`CampbellSoilHydraulics`'s own solve). This is the stomatal_model to pair with
-`CampbellSoilHydraulics` on a `MultilayerCanopy` if soil-moisture stress
-should reach the leaf's transpiration/temperature — `PrescribedStomatalConductance`
-ignores `leaf_water_potential` entirely.
+`CampbellSoilHydraulics`'s own solve). This is the stomatal_model to pair
+with `CampbellSoilHydraulics` on a `MultilayerCanopy` if soil-moisture
+stress should reach the leaf's transpiration/temperature — pairing with any
+other `soil_hydraulic_model` is a `MethodError` by construction.
 
-All defaults below (conductances, `stomatal_closure_potential`,
-`stomatal_stability_parameter`) are free/tunable, uncited —
-`stomatal_closure_potential`/`stomatal_stability_parameter` are the same
-uncited values `CampbellSoilHydraulics` (`campbell.jl`) uses for its own
-closure curve.
+# References
+Campbell, G. S. 1985. “Soil Physics with Basic: Transport Models for Soil-Plant
+Systems.” Elsevier.
 """
-@kwdef struct MoistureResponsiveStomatalConductance{C,SCP,SSP} <: AbstractStomatalConductanceModel
+@kwdef struct MoistureResponsiveStomatalConductance{C} <: AbstractStomatalConductanceModel
     conductance::C = LeafEvaporationParameters(;
         abaxial_vapour_conductance=0.3u"mol/m^2/s", adaxial_vapour_conductance=0.0u"mol/m^2/s",
         cuticular_conductance=0.01u"mol/m^2/s",
     )
-    stomatal_closure_potential::SCP = -1500.0u"J/kg"
-    stomatal_stability_parameter::SSP = 10.0
 end
 
-function stomatal_conductance(model::MoistureResponsiveStomatalConductance, zenith_angle, leaf_water_potential)
-    (; conductance, stomatal_closure_potential, stomatal_stability_parameter) = model
+function stomatal_conductance(model::MoistureResponsiveStomatalConductance, zenith_angle, leaf_water_potential,
+    soil_hydraulic_model::CampbellSoilHydraulics,
+)
+    (; conductance) = model
+    (; stomatal_closure_potential, stomatal_stability_parameter) = soil_hydraulic_model
     if zenith_angle >= 90.0u"°"
         return LeafEvaporationParameters(;
             abaxial_vapour_conductance=0.0u"mol/m^2/s", adaxial_vapour_conductance=0.0u"mol/m^2/s",

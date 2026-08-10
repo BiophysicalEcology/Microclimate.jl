@@ -513,7 +513,7 @@ function solve_soil!(cache::MicroCache)
     infil_out = nothing
     canopy_source_temperature = T0[1]  # lagged canopy-atmosphere coupling boundary; bootstrap at ground equilibrium
     leaf_water_potential = 0.0u"J/kg"  # lagged Campbell-solved value; bootstrap fully hydrated
-    canopy_inputs = allocate_canopy_inputs(canopy_model; site, environment_instant, boundary_layer_model)
+    canopy_inputs = allocate_canopy_inputs(canopy_model; site, environment_instant, boundary_layer_model, soil_hydraulic_model)
     for j in 1:ndays
         iday = j
         environment_day = get_day(environment_daily, iday)
