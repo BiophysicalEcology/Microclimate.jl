@@ -18,6 +18,12 @@ obukhov_length = Inf * u"m"  # neutral: Φ_h -> 1
 zero_evaporation = zeros(typeof(0.0u"g/s"), n_layers)
 zero_source = zeros(typeof(0.0u"W/m^2"), n_layers)
 
+# same construction as KTheoryAirProfile's own allocate_air_profile
+(; layer_plant_area_index) = Microclimate.canopy_layer_geometry(plant_area_index, n_layers)
+wind_attenuation = Microclimate.wind_attenuation_profile(
+    layer_plant_area_index, canopy_height, plant_area_index, boundary_layer_model.karman_constant,
+)
+
 @testset "no forcing: uniform boundary temperatures give a uniform profile" begin
     T = 290.0u"K"
     fill!(buffers.air_temperature, T)  # seed the prev-state read at function entry, matching energy_balance!'s own pre-Picard seeding
@@ -25,7 +31,7 @@ zero_source = zeros(typeof(0.0u"W/m^2"), n_layers)
         canopy_height, displacement_height, friction_velocity,
         canopy_top_air_temperature = T, canopy_top_relative_humidity = 0.5, ground_temperature = T,
         ground_relative_humidity = 0.5, sensible_heat_source = zero_source,
-        evaporation_mass_flow = zero_evaporation, obukhov_length, atmospheric_pressure,
+        evaporation_mass_flow = zero_evaporation, obukhov_length, atmospheric_pressure, wind_attenuation,
     )
     @test all(t -> isapprox(ustrip(u"K", t), ustrip(u"K", T); atol=1e-6), result.air_temperature)
 end
@@ -39,7 +45,7 @@ end
         canopy_height, displacement_height, friction_velocity,
         canopy_top_air_temperature = T, canopy_top_relative_humidity = 0.5,
         ground_temperature = T, ground_relative_humidity = 0.5,
-        sensible_heat_source = source, evaporation_mass_flow = zero_evaporation, obukhov_length, atmospheric_pressure,
+        sensible_heat_source = source, evaporation_mass_flow = zero_evaporation, obukhov_length, atmospheric_pressure, wind_attenuation,
     )
     @test all(isfinite, ustrip.(u"K", result.air_temperature))
     peak = argmax(result.air_temperature)
@@ -61,7 +67,7 @@ end
         canopy_height, displacement_height, friction_velocity,
         canopy_top_air_temperature = T, canopy_top_relative_humidity = 0.5, ground_temperature = T,
         ground_relative_humidity = 0.5, sensible_heat_source = zero_source,
-        evaporation_mass_flow = zero_evaporation, obukhov_length, atmospheric_pressure,
+        evaporation_mass_flow = zero_evaporation, obukhov_length, atmospheric_pressure, wind_attenuation,
     )
     @test all(rh -> isapprox(rh, 0.5; atol=1e-6), result.relative_humidity)
 end
@@ -76,7 +82,7 @@ end
         canopy_height, displacement_height, friction_velocity,
         canopy_top_air_temperature = T, canopy_top_relative_humidity = 0.5,
         ground_temperature = T, ground_relative_humidity = 0.5,
-        sensible_heat_source = zero_source, evaporation_mass_flow = source, obukhov_length, atmospheric_pressure,
+        sensible_heat_source = zero_source, evaporation_mass_flow = source, obukhov_length, atmospheric_pressure, wind_attenuation,
     )
     @test all(isfinite, result.relative_humidity)
     peak = argmax(result.relative_humidity)
@@ -106,7 +112,7 @@ end
         canopy_height, displacement_height, friction_velocity,
         canopy_top_air_temperature = T, canopy_top_relative_humidity = 0.5,
         ground_temperature = 288.0u"K", ground_relative_humidity = 0.5,
-        sensible_heat_source = source, evaporation_mass_flow = evap_source, obukhov_length, atmospheric_pressure,
+        sensible_heat_source = source, evaporation_mass_flow = evap_source, obukhov_length, atmospheric_pressure, wind_attenuation,
     )
     f() # warm up
     @test (@allocated f()) < 5_000
