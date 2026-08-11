@@ -56,7 +56,7 @@ end
 @testset "no forcing: uniform boundary RH gives a uniform humidity profile" begin
     T = 290.0u"K"
     fill!(buffers.air_temperature, T)
-    fill!(buffers.vapour_density, 0.0u"kg/m^3")  # force the cold-start reseed from this call's own boundary condition
+    fill!(buffers.vapor_density, 0.0u"kg/m^3")  # force the cold-start reseed from this call's own boundary condition
     result = Microclimate.canopy_air_profile!(buffers, model, boundary_layer_model;
         canopy_height, displacement_height, friction_velocity,
         canopy_top_air_temperature = T, canopy_top_relative_humidity = 0.5, ground_temperature = T,
@@ -69,7 +69,7 @@ end
 @testset "a mid-canopy evaporative source produces a local humidity bump" begin
     T = 290.0u"K"
     fill!(buffers.air_temperature, T)
-    fill!(buffers.vapour_density, 0.0u"kg/m^3")
+    fill!(buffers.vapor_density, 0.0u"kg/m^3")
     source = zeros(typeof(0.0u"g/s"), n_layers)
     source[n_layers ÷ 2] = 1.0e-3u"g/s"
     result = Microclimate.canopy_air_profile!(buffers, model, boundary_layer_model;

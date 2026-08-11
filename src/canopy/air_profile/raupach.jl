@@ -120,8 +120,8 @@ function allocate_air_profile(model::RaupachLTheoryAirProfile, canopy_height, pl
         latent_near_field_weight = zeros(typeof(1.0u"kg/m^2/s" / 1.0u"m/s"), n_layers),
         air_temperature = zeros(typeof(0.0u"K"), n_layers),
         air_temperature_prev = zeros(typeof(0.0u"K"), n_layers),
-        vapour_density = zeros(typeof(0.0u"kg/m^3"), n_layers),
-        vapour_density_prev = zeros(typeof(0.0u"kg/m^3"), n_layers),
+        vapor_density = zeros(typeof(0.0u"kg/m^3"), n_layers),
+        vapor_density_prev = zeros(typeof(0.0u"kg/m^3"), n_layers),
         relative_humidity = zeros(n_layers),
         # Aitken state persists across Picard passes and hours -- omega
         # warm-starts hour to hour.
@@ -265,15 +265,15 @@ end
 # once from the ground-most layer.
 function _raupach_far_field!(::Val{:exact}, far_field_accum, far_field_accum_latent, _resistance_from_top, _resistance_to_ground,
     cumulative_sensible_below, cumulative_latent_below, layer_resistance,
-    ground_temperature, ground_vapour_density, air_temperature_prev, vapour_density_prev, min_ground_resistance, n)
+    ground_temperature, ground_vapor_density, air_temperature_prev, vapor_density_prev, min_ground_resistance, n)
     ground_resistance = max(layer_resistance[n], min_ground_resistance)
     ground_flux = (calc_ρ_cp(air_temperature_prev[n]) / ground_resistance) * (ground_temperature - air_temperature_prev[n])
-    ground_vapour_flux = (ground_vapour_density - vapour_density_prev[n]) / ground_resistance
+    ground_vapor_flux = (ground_vapor_density - vapor_density_prev[n]) / ground_resistance
     far_field_accum[1] = (cumulative_sensible_below[1] + ground_flux) * layer_resistance[1]
-    far_field_accum_latent[1] = (cumulative_latent_below[1] + ground_vapour_flux) * layer_resistance[1]
+    far_field_accum_latent[1] = (cumulative_latent_below[1] + ground_vapor_flux) * layer_resistance[1]
     @inbounds for i in 2:n
         far_field_accum[i] = far_field_accum[i - 1] + (cumulative_sensible_below[i] + ground_flux) * layer_resistance[i]
-        far_field_accum_latent[i] = far_field_accum_latent[i - 1] + (cumulative_latent_below[i] + ground_vapour_flux) * layer_resistance[i]
+        far_field_accum_latent[i] = far_field_accum_latent[i - 1] + (cumulative_latent_below[i] + ground_vapor_flux) * layer_resistance[i]
     end
     return nothing
 end
@@ -284,7 +284,7 @@ end
 # integral.
 function _raupach_far_field!(::Val{:bulk}, far_field_accum, far_field_accum_latent, resistance_from_top, resistance_to_ground,
     cumulative_sensible_below, cumulative_latent_below, layer_resistance,
-    ground_temperature, ground_vapour_density, air_temperature_prev, vapour_density_prev, min_ground_resistance, n)
+    ground_temperature, ground_vapor_density, air_temperature_prev, vapor_density_prev, min_ground_resistance, n)
     resistance_from_top[1] = layer_resistance[1]
     @inbounds for i in 2:n
         resistance_from_top[i] = resistance_from_top[i - 1] + layer_resistance[i]
@@ -296,9 +296,9 @@ function _raupach_far_field!(::Val{:bulk}, far_field_accum, far_field_accum_late
     @inbounds for i in 1:n
         ground_resistance = max(resistance_to_ground[i], min_ground_resistance)
         ground_flux = (calc_ρ_cp(air_temperature_prev[i]) / ground_resistance) * (ground_temperature - air_temperature_prev[i])
-        ground_vapour_flux = (ground_vapour_density - vapour_density_prev[i]) / ground_resistance
+        ground_vapor_flux = (ground_vapor_density - vapor_density_prev[i]) / ground_resistance
         far_field_accum[i] = (cumulative_sensible_below[i] + ground_flux) * resistance_from_top[i]
-        far_field_accum_latent[i] = (cumulative_latent_below[i] + ground_vapour_flux) * resistance_from_top[i]
+        far_field_accum_latent[i] = (cumulative_latent_below[i] + ground_vapor_flux) * resistance_from_top[i]
     end
     return nothing
 end
@@ -316,7 +316,7 @@ function canopy_air_profile!(buffers, model::RaupachLTheoryAirProfile, boundary_
     (; layer_heights, layer_thickness, vertical_velocity_std, inv_near_field_length, eddy_diffusivity,
        layer_resistance, far_field_accum, far_field_accum_latent, resistance_from_top, resistance_to_ground,
        cumulative_sensible_below, sensible_near_field_weight, cumulative_latent_below, latent_near_field_weight,
-       air_temperature, air_temperature_prev, vapour_density, vapour_density_prev, relative_humidity,
+       air_temperature, air_temperature_prev, vapor_density, vapor_density_prev, relative_humidity,
        aitken_omega, aitken_omega_latent, aitken_have_prev, aitken_have_prev_latent,
        aitken_residual_prev, aitken_residual_prev_latent,
        ground_heat_conductance, ground_vapor_conductance) = buffers
@@ -324,18 +324,20 @@ function canopy_air_profile!(buffers, model::RaupachLTheoryAirProfile, boundary_
     length(sensible_heat_source) == n || throw(ArgumentError("sensible_heat_source must have one entry per canopy layer"))
     length(evaporation_mass_flow) == n || throw(ArgumentError("evaporation_mass_flow must have one entry per canopy layer"))
 
+    T_top = canopy_top_air_temperature
+    ρv_top = wet_air_properties(T_top, canopy_top_relative_humidity, atmospheric_pressure; vapour_pressure_equation).vapour_density
+
     # Snapshot before overwriting: ground-flux terms below read last pass's
     # state, not the value being solved this pass (avoids self-reference).
     # Also the relaxation reference for this pass's under-relaxed update.
     air_temperature_prev .= air_temperature
     # Unlike air_temperature/relative_humidity, energy_balance! doesn't seed
-    # vapour_density (model-specific state) — seed it from the boundary
+    # vapor_density (model-specific state) — seed it from the boundary
     # condition on first use (still exactly zero, its allocate default).
-    if all(iszero, vapour_density)
-        fill!(vapour_density, wet_air_properties(canopy_top_air_temperature, canopy_top_relative_humidity,
-            atmospheric_pressure; vapour_pressure_equation).vapour_density)
+    if all(iszero, vapor_density)
+        fill!(vapor_density, ρv_top)
     end
-    vapour_density_prev .= vapour_density
+    vapor_density_prev .= vapor_density
 
     (; ground_velocity_std_factor, canopy_top_velocity_std_factor, min_ground_resistance,
        aitken_omega_min, aitken_omega_max, aitken_weight_bottom, aitken_weight_top, aitken_bottom_emphasis,
@@ -352,15 +354,15 @@ function canopy_air_profile!(buffers, model::RaupachLTheoryAirProfile, boundary_
     # obukhov_length is Inf on the stable/neutral branch; calc_Φ_h assumes unstable-only input.
     Φ_h = isfinite(obukhov_length) ? calc_Φ_h(z_eval, γ, obukhov_length) : 1.0
     a2 = Φ_h * boundary_layer_model.karman_constant * (1.0 - displacement_height / canopy_height) / a1^2
-    TL = a2 * canopy_height / friction_velocity
+    T_L = a2 * canopy_height / friction_velocity
 
     σ_w_mean = (a1 + a0) * 0.5 * friction_velocity
     σ_w_amplitude = (a1 - a0) * 0.5 * friction_velocity
     @inbounds for i in 1:n
         σ_w = σ_w_mean + σ_w_amplitude * cos(π * (1.0 - layer_heights[i] / canopy_height))
         vertical_velocity_std[i] = σ_w
-        inv_near_field_length[i] = 1.0 / (σ_w * TL)
-        eddy_diffusivity[i] = TL * σ_w^2
+        inv_near_field_length[i] = 1.0 / (σ_w * T_L)
+        eddy_diffusivity[i] = T_L * σ_w^2
         layer_resistance[i] = layer_thickness[i] / eddy_diffusivity[i]
         sensible_near_field_weight[i] = sensible_heat_source[i] / σ_w
         latent_near_field_weight[i] = (evaporation_mass_flow[i] / 1.0u"m^2") / σ_w
@@ -385,16 +387,13 @@ function canopy_air_profile!(buffers, model::RaupachLTheoryAirProfile, boundary_
         cumulative_latent_below[i] = cumulative_latent_below[i + 1] + evaporation_mass_flow[i] / 1.0u"m^2"
     end
 
-    ground_vapour_density = wet_air_properties(ground_temperature, ground_relative_humidity,
+    ρv_g = wet_air_properties(ground_temperature, ground_relative_humidity,
         atmospheric_pressure; vapour_pressure_equation).vapour_density
 
     _raupach_far_field!(model.far_field_mode, far_field_accum, far_field_accum_latent, resistance_from_top, resistance_to_ground,
         cumulative_sensible_below, cumulative_latent_below, layer_resistance,
-        ground_temperature, ground_vapour_density, air_temperature_prev, vapour_density_prev, min_ground_resistance, n)
+        ground_temperature, ρv_g, air_temperature_prev, vapor_density_prev, min_ground_resistance, n)
     near_field_scale = _raupach_near_field_scale(model.far_field_mode, n)
-
-    concentration_top_latent = wet_air_properties(canopy_top_air_temperature, canopy_top_relative_humidity,
-        atmospheric_pressure; vapour_pressure_equation).vapour_density
 
     # Near-field concentration at the canopy top, subtracted from every
     # layer's own near-field term below. Layers whose height is (numerically)
@@ -402,7 +401,7 @@ function canopy_air_profile!(buffers, model::RaupachLTheoryAirProfile, boundary_
     # other layer uses a single point-source evaluation. Heat and vapor share
     # one kernel evaluation per layer (same turbulence field).
     near_field_top = zero(eltype(far_field_accum))
-    near_field_top_latent = zero(concentration_top_latent)
+    near_field_top_latent = zero(ρv_top)
     @inbounds for i in 1:n
         kernel_weight = _raupach_top_kernel_weight(model.far_field_mode, i, canopy_height, layer_heights, layer_thickness, inv_near_field_length, near_field_subdivisions)
         near_field_top += sensible_near_field_weight[i] * kernel_weight
@@ -416,7 +415,7 @@ function canopy_air_profile!(buffers, model::RaupachLTheoryAirProfile, boundary_
         far_field_latent = far_field_accum_latent[i]
 
         near_field = zero(near_field_top)
-        near_field_latent = zero(concentration_top_latent)
+        near_field_latent = zero(ρv_top)
         for j in 1:n
             kernel_weight = _raupach_pair_kernel_weight(model.far_field_mode, i, j, layer_heights, layer_thickness, inv_near_field_length, near_field_subdivisions)
             near_field += sensible_near_field_weight[j] * kernel_weight
@@ -425,19 +424,18 @@ function canopy_air_profile!(buffers, model::RaupachLTheoryAirProfile, boundary_
         near_field *= near_field_scale
         near_field_latent *= near_field_scale
 
-        # Heat: canopy_top_air_temperature is an absolute temperature baseline,
-        # not a concentration -- ρ_cp(T) ∝ 1/T here, so converting it to ρ_cp*T
-        # and back through a *different* (local) ρ_cp cancels the baseline
-        # exactly, leaving only air_temperature_prev. Add the source-driven
-        # perturbation (already a genuine volumetric energy density) directly
-        # as a temperature increment instead.
-        air_temperature[i] = canopy_top_air_temperature +
-            (far_field + near_field - near_field_top) / calc_ρ_cp(air_temperature_prev[i])  # raw; Aitken-blended below
+        # Heat: T_top is an absolute temperature baseline, not a concentration
+        # -- ρ_cp(T) ∝ 1/T here, so converting it to ρ_cp*T and back through a
+        # *different* (local) ρ_cp cancels the baseline exactly, leaving only
+        # air_temperature_prev. Add the source-driven perturbation (already a
+        # genuine volumetric energy density) directly as a temperature
+        # increment instead.
+        ρ_cp = calc_ρ_cp(air_temperature_prev[i])
+        air_temperature[i] = T_top + (far_field + near_field - near_field_top) / ρ_cp  # raw; Aitken-blended below
 
-        # Latent: vapour density is a genuine concentration (kg/m^3), no
+        # Latent: vapor density is a genuine concentration (kg/m^3), no
         # ρ_cp-style conversion involved -- unaffected by the heat-path fix above.
-        concentration_latent = concentration_top_latent - near_field_top_latent + far_field_latent + near_field_latent
-        vapour_density[i] = concentration_latent  # raw; Aitken-blended below
+        vapor_density[i] = ρv_top - near_field_top_latent + far_field_latent + near_field_latent  # raw; Aitken-blended below
     end
 
     # Aitken needs the whole residual vector to fit omega, so this is a
@@ -445,18 +443,18 @@ function canopy_air_profile!(buffers, model::RaupachLTheoryAirProfile, boundary_
     _aitken_relax!(air_temperature, air_temperature_prev, layer_heights, canopy_height,
         aitken_omega, aitken_have_prev, aitken_residual_prev,
         aitken_omega_min, aitken_omega_max, aitken_weight_bottom, aitken_weight_top, aitken_bottom_emphasis, u"K")
-    _aitken_relax!(vapour_density, vapour_density_prev, layer_heights, canopy_height,
+    _aitken_relax!(vapor_density, vapor_density_prev, layer_heights, canopy_height,
         aitken_omega_latent, aitken_have_prev_latent, aitken_residual_prev_latent,
         aitken_omega_min, aitken_omega_max, aitken_weight_bottom, aitken_weight_top, aitken_bottom_emphasis, u"kg/m^3")
 
-    all(isfinite, ustrip.(u"K", air_temperature)) ||
+    all(isfinite, air_temperature) ||
         throw(DomainError(air_temperature, "RaupachLTheoryAirProfile produced a non-finite air temperature"))
-    all(isfinite, ustrip.(u"kg/m^3", vapour_density)) ||
-        throw(DomainError(vapour_density, "RaupachLTheoryAirProfile produced a non-finite vapor density"))
+    all(isfinite, vapor_density) ||
+        throw(DomainError(vapor_density, "RaupachLTheoryAirProfile produced a non-finite vapor density"))
 
     @inbounds for i in 1:n
         ρv_sat = wet_air_properties(air_temperature[i], 1.0, atmospheric_pressure; vapour_pressure_equation).vapour_density
-        relative_humidity[i] = clamp(ustrip(u"kg/m^3", vapour_density[i]) / ustrip(u"kg/m^3", ρv_sat), 0.0, 1.0)
+        relative_humidity[i] = clamp(vapor_density[i] / ρv_sat, 0.0, 1.0)  # same-unit quantities cancel to a bare Float64
     end
 
     return (; air_temperature, relative_humidity)

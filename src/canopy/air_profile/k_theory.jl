@@ -60,7 +60,7 @@ function allocate_air_profile(::KTheoryAirProfile, canopy_height, plant_area_ind
         layer_spacing, relative_eddy_diffusivity,
         dl, d, du, rhs, dl_v, d_v, du_v, rhs_v, heat_cache, vapor_cache,
         air_temperature = zeros(typeof(0.0u"K"), n_layers),
-        vapour_density = zeros(typeof(0.0u"kg/m^3"), n_layers),
+        vapor_density = zeros(typeof(0.0u"kg/m^3"), n_layers),
         relative_humidity = zeros(n_layers),
         ground_heat_conductance = Ref(0.0u"W/m^2/K"),
         ground_vapor_conductance = Ref(0.0u"m/s"),
@@ -96,7 +96,7 @@ function canopy_air_profile!(buffers, ::KTheoryAirProfile, boundary_layer_model;
     wind_attenuation=nothing,  # ditto -- K-theory already derives its own ground diffusivity from relative_eddy_diffusivity
 )
     (; layer_spacing, relative_eddy_diffusivity, dl, d, du, rhs,
-       dl_v, d_v, du_v, rhs_v, heat_cache, vapor_cache, air_temperature, vapour_density, relative_humidity,
+       dl_v, d_v, du_v, rhs_v, heat_cache, vapor_cache, air_temperature, vapor_density, relative_humidity,
        ground_heat_conductance, ground_vapor_conductance) = buffers
     n = length(air_temperature)
     n_free = n - 1
@@ -108,7 +108,7 @@ function canopy_air_profile!(buffers, ::KTheoryAirProfile, boundary_layer_model;
     air_temperature[1] = canopy_top_air_temperature
     ρv_top = wet_air_properties(canopy_top_air_temperature, canopy_top_relative_humidity, atmospheric_pressure;
         vapour_pressure_equation).vapour_density
-    vapour_density[1] = ρv_top
+    vapor_density[1] = ρv_top
 
     ρ_cp = calc_ρ_cp(canopy_top_air_temperature)
     eddy_diffusivity_top = boundary_layer_model.karman_constant * friction_velocity *
@@ -122,7 +122,7 @@ function canopy_air_profile!(buffers, ::KTheoryAirProfile, boundary_layer_model;
     # Finite-volume flux balance per free layer: g_prev*(T_prev - T_i) - g_next*(T_i - T_next) + S_i = 0
     # (T_prev/T_next are the known boundary values at layer 1/ground for the first/last free layers).
     T_top = ustrip(u"K", air_temperature[1])
-    T_ground = ustrip(u"K", ground_temperature)
+    T_g = ustrip(u"K", ground_temperature)
     @inbounds for i in 1:n_free
         g_prev = i == 1 ? g_top : dl[i - 1]
         g_next = i == n_free ? g_ground : dl[i]
@@ -130,7 +130,7 @@ function canopy_air_profile!(buffers, ::KTheoryAirProfile, boundary_layer_model;
         rhs[i] = -ustrip(u"W/m^2", sensible_heat_source[i + 1])
     end
     rhs[1] -= g_top * T_top
-    rhs[n_free] -= g_ground * T_ground
+    rhs[n_free] -= g_ground * T_g
 
     heat_cache.A = Tridiagonal(dl, d, du)
     heat_cache.b = rhs
@@ -143,10 +143,10 @@ function canopy_air_profile!(buffers, ::KTheoryAirProfile, boundary_layer_model;
         layer_spacing, 1.0, u"m/s")
     ground_vapor_conductance[] = g_ground_v * u"m/s"
 
-    ρv_ground = wet_air_properties(ground_temperature, ground_relative_humidity, atmospheric_pressure;
+    ρv_g = wet_air_properties(ground_temperature, ground_relative_humidity, atmospheric_pressure;
         vapour_pressure_equation).vapour_density
     ρv_top_stripped = ustrip(u"kg/m^3", ρv_top)
-    ρv_ground_stripped = ustrip(u"kg/m^3", ρv_ground)
+    ρv_g_stripped = ustrip(u"kg/m^3", ρv_g)
     @inbounds for i in 1:n_free
         g_prev = i == 1 ? g_top_v : dl_v[i - 1]
         g_next = i == n_free ? g_ground_v : dl_v[i]
@@ -154,15 +154,15 @@ function canopy_air_profile!(buffers, ::KTheoryAirProfile, boundary_layer_model;
         rhs_v[i] = -ustrip(u"kg/m^2/s", evaporation_mass_flow[i + 1] / 1.0u"m^2")
     end
     rhs_v[1] -= g_top_v * ρv_top_stripped
-    rhs_v[n_free] -= g_ground_v * ρv_ground_stripped
+    rhs_v[n_free] -= g_ground_v * ρv_g_stripped
 
     vapor_cache.A = Tridiagonal(dl_v, d_v, du_v)
     vapor_cache.b = rhs_v
-    vapour_density[2:end] .= SciMLBase.solve!(vapor_cache).u .* u"kg/m^3"
+    vapor_density[2:end] .= SciMLBase.solve!(vapor_cache).u .* u"kg/m^3"
 
     @inbounds for i in 1:n
         ρv_sat = wet_air_properties(air_temperature[i], 1.0, atmospheric_pressure; vapour_pressure_equation).vapour_density
-        relative_humidity[i] = clamp(vapour_density[i] / ρv_sat, 0.0, 1.0)  # same-unit quantities cancel to a bare Float64
+        relative_humidity[i] = clamp(vapor_density[i] / ρv_sat, 0.0, 1.0)  # same-unit quantities cancel to a bare Float64
     end
 
     return (; air_temperature, relative_humidity)

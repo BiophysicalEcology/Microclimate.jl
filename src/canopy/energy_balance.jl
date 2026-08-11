@@ -119,7 +119,7 @@ function canopy_energy_balance!(buffers, model::MultilayerCanopy, boundary_layer
        rainfall, leaf_water_potential, vapour_pressure_equation, soil_hydraulic_model) = inputs
 
     leaf_temperature_buffer = buffers.leaf.leaf_temperature  # avoids shadowing the leaf_temperature(solver, ...) function
-    vapour_density_buffer = buffers.air_profile.vapour_density
+    vapor_density_buffer = buffers.air_profile.vapor_density
     air_temperature = buffers.air_profile.air_temperature
     evaporation_mass_flow = buffers.leaf.evaporation_mass_flow
     potential_evaporation_mass_flow = buffers.leaf.potential_evaporation_mass_flow
@@ -142,11 +142,11 @@ function canopy_energy_balance!(buffers, model::MultilayerCanopy, boundary_layer
     iszero(air_temperature[1]) && fill!(air_temperature, wind_result.canopy_top_air_temperature)
     fill!(buffers.air_profile.relative_humidity, wind_result.canopy_top_relative_humidity)
     iszero(leaf_temperature_buffer[1]) && fill!(leaf_temperature_buffer, wind_result.canopy_top_air_temperature)
-    # vapour_density has no analogous "already warm" check -- it's read as
+    # vapor_density has no analogous "already warm" check -- it's read as
     # NonlinearSolveCanopyConvergence's starting guess every call, so leaving
     # it at its zero-allocation default on the first call is a degenerate
     # (zero-humidity) corner, not just a poor guess.
-    iszero(vapour_density_buffer[1]) && fill!(vapour_density_buffer,
+    iszero(vapor_density_buffer[1]) && fill!(vapor_density_buffer,
         wet_air_properties(wind_result.canopy_top_air_temperature, wind_result.canopy_top_relative_humidity,
             environment_instant.atmospheric_pressure; vapour_pressure_equation).vapour_density)
 
