@@ -1,14 +1,25 @@
 """
-    CanopyWindAttenuation()
+    CanopyWindAttenuation(; thermal_roughness_model=ScalarRoughnessRatio())
 
 Wind speed below canopy top decays from the canopy-top value via a
 structural attenuation-shape profile (Massman/Katul-style mixing-length
 argument); above and at canopy top, wind is the shared
 `AbstractBoundaryLayerModel` (e.g. `MoninObukhov`) evaluated with the
-canopy's displacement height and roughness length. No free parameters of
-its own.
+canopy's displacement height and roughness length.
+
+`thermal_roughness_model` overrides the shared `boundary_layer_model`'s own
+`thermal_roughness_model` for this canopy-top evaluation specifically (bare-
+ground/soil surface fluxes elsewhere keep using the `boundary_layer_model`'s
+own setting). Defaults to `ScalarRoughnessRatio()`, not
+`MoninObukhov`'s own `SublayerStantonRoughness()` default: canopy roughness
+lengths are metre-scale, well outside where `SublayerStantonRoughness`'s
+`Re*`-dependent correction was derived, and it produces a large excess
+resistance there (confirmed against R's microclimlearn -- see
+`ScalarRoughnessRatio`'s docstring).
 """
-struct CanopyWindAttenuation <: AbstractCanopyWindModel end
+@kwdef struct CanopyWindAttenuation{TRM} <: AbstractCanopyWindModel
+    thermal_roughness_model::TRM = ScalarRoughnessRatio()
+end
 
 """
     zero_plane_displacement(canopy_height, plant_area_index)
@@ -91,7 +102,7 @@ function wind_attenuation_profile(layer_plant_area_index, canopy_height, plant_a
     return reverse(relative_wind)
 end
 
-function allocate_wind(::CanopyWindAttenuation, canopy_height, plant_area_index, boundary_layer_model, heights, n_layers)
+function allocate_wind(model::CanopyWindAttenuation, canopy_height, plant_area_index, boundary_layer_model, heights, n_layers)
     canopy_height = max(canopy_height, 1.0e-3u"m")  # avoid 0/0 in the per-element/roughness formulas below
     (; layer_plant_area_index) = canopy_layer_geometry(plant_area_index, n_layers)
     total_plant_area_index = sum(plant_area_index)
@@ -110,18 +121,21 @@ function allocate_wind(::CanopyWindAttenuation, canopy_height, plant_area_index,
     ground_layer_height = layer_heights[n_layers]
 
     return (;
-        displacement_height, roughness_length, wind_attenuation, ground_layer_height,
+        canopy_height, displacement_height, roughness_length, wind_attenuation, ground_layer_height,
         above_canopy_profile = allocate_profile(boundary_layer_model, [canopy_height, last(heights)]),
         wind_speed = zeros(typeof(0.0u"m/s"), n_layers),
+        thermal_roughness_model = model.thermal_roughness_model,
     )
 end
 
-function canopy_wind_profile!(buffers, ::CanopyWindAttenuation, boundary_layer_model;
+function canopy_wind_profile!(buffers, model::CanopyWindAttenuation, boundary_layer_model;
     site, environment_instant, canopy_source_temperature, vapour_pressure_equation=GoffGratch(),
 )
     profile = atmospheric_surface_profile!(boundary_layer_model, buffers.above_canopy_profile;
         site, environment_instant, surface_temperature=canopy_source_temperature, vapour_pressure_equation,
         displacement_height=buffers.displacement_height, roughness_length=buffers.roughness_length,
+        thermal_roughness_model=model.thermal_roughness_model,
+        temperature_anchor_height=buffers.canopy_height,
     )
     canopy_top_wind_speed = first(profile.wind_speed)
     canopy_top_air_temperature = first(profile.air_temperature)

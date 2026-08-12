@@ -1,5 +1,6 @@
 using Microclimate
-using Microclimate: calc_Obukhov_length, calc_ψ_m, calc_ψ_h, calc_Φ_h, calc_ρ_cp, atmospheric_surface_profile!, allocate_profile
+using Microclimate: calc_Obukhov_length, calc_ψ_m, calc_ψ_h, calc_Φ_h, calc_ρ_cp, atmospheric_surface_profile!, allocate_profile,
+    dry_air_properties
 using Unitful
 using Test
 
@@ -7,13 +8,16 @@ bl = MoninObukhov()
 z0 = 0.01u"m"
 z = 10.0u"m"
 ρcpTκg = u"J*s^2/m^4"(6.003e-8u"cal*minute^2/cm^4")
+atmospheric_pressure = 101325.0u"Pa"
 
 function obukhov(dT)  # dT = reference_temp - surface_temp
     reference_temp = 293.15u"K"
     surface_temp = reference_temp - dT
     ΔT = reference_temp - surface_temp
-    ρ_cp = calc_ρ_cp((reference_temp + surface_temp) / 2)
-    return calc_Obukhov_length(reference_temp, surface_temp, 2.0u"m/s", z0, z, ρcpTκg, bl.karman_constant, ΔT, ρ_cp;
+    mean_temp = (reference_temp + surface_temp) / 2
+    ρ_cp = calc_ρ_cp(mean_temp)
+    kinematic_viscosity = dry_air_properties(mean_temp, atmospheric_pressure).kinematic_viscosity
+    return calc_Obukhov_length(reference_temp, surface_temp, 2.0u"m/s", z0, z, ρcpTκg, bl.karman_constant, ΔT, ρ_cp, kinematic_viscosity;
         γ=bl.dyer_constant, stable_beta=bl.stable_beta, turbulent_prandtl_number=bl.turbulent_prandtl_number,
         initial_obukhov_length=-0.3u"m")
 end

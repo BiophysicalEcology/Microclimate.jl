@@ -952,7 +952,7 @@ function solve_air!(cache::MicroCache)
     (; canopy_model, boundary_layer_model, vapour_pressure_equation, snow_model) = mp.model
     profile_buffers = cache.buffers.air_profile
     n_snow = n_snow_nodes(snow_model)
-    (; displacement_height, roughness_length) = canopy_profile_origin(canopy_model, cache.buffers.canopy, site)
+    (; displacement_height, roughness_length, thermal_roughness_model, temperature_anchor_height) = canopy_profile_origin(canopy_model, cache.buffers.canopy, site, boundary_layer_model)
     for i in 1:size(output.profile.air_temperature, 1)
         # PR #102: when snow is present, the boundary-layer surface is the
         # top of the snowpack (snow node 1) not the soil surface.
@@ -961,6 +961,7 @@ function solve_air!(cache::MicroCache)
             u"°C"(output.snow_temperature[i, 1]) :
             u"°C"(output.soil_temperature[i, 1])
         surface_temperature = profile_surface_temperature(canopy_model, output, i, ground_surface_temperature)
+        surface_relative_humidity = profile_surface_humidity(canopy_model, output, i)
         environment_instant = (;
             atmospheric_pressure=output.pressure[i],
             reference_temperature=output.reference_temperature[i],
@@ -968,7 +969,7 @@ function solve_air!(cache::MicroCache)
             reference_humidity=output.reference_humidity[i],
             zenith_angle=solar_radiation_out.zenith_angle[i],
         )
-        result = atmospheric_surface_profile!(boundary_layer_model, profile_buffers; site, environment_instant, surface_temperature, vapour_pressure_equation, displacement_height, roughness_length)
+        result = atmospheric_surface_profile!(boundary_layer_model, profile_buffers; site, environment_instant, surface_temperature, vapour_pressure_equation, displacement_height, roughness_length, thermal_roughness_model, temperature_anchor_height, surface_relative_humidity)
         _write_row!(output.profile.air_temperature,   i, result.air_temperature)
         _write_row!(output.profile.wind_speed,        i, result.wind_speed)
         _write_row!(output.profile.relative_humidity, i, result.relative_humidity)

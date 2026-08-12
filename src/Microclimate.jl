@@ -109,6 +109,7 @@ export Shape, Sine, Decay, Linear, DielCurve, DielForcing, ForcingSpec, Derived,
 export minmax_forcings
 export Site, AbstractSite
 export AbstractBoundaryLayerModel, MoninObukhov, atmospheric_surface_profile, atmospheric_surface_profile!
+export AbstractThermalRoughnessModel, SublayerStantonRoughness, ScalarRoughnessRatio
 export Forcing, AtmosphericProfile
 
 

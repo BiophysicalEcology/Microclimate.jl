@@ -441,7 +441,7 @@ function soil_water_balance!(buffers, soil_hydraulic_model::CampbellSoilHydrauli
                 surface_temperature, air_temperature=u"K"(ground_air_temperature), wind_speed=ground_wind_speed,
                 zenith_angle=environment_instant.zenith_angle,
                 roughness_height=site.roughness_height, reference_height=ground_reference_height,
-                obukhov_length_prev=buffers.soil_water_profile.obukhov_length_prev,
+                atmospheric_pressure, obukhov_length_prev=buffers.soil_water_profile.obukhov_length_prev,
             )
             heat_transfer_coefficient = max(abs(flux_out.convective_heat_flux / (surface_temperature - air_temperature)), 0.5u"W/m^2/K")
             wet_air_out = wet_air_properties(air_temperature, relative_humidity, atmospheric_pressure; vapour_pressure_equation)
