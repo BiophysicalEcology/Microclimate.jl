@@ -6,22 +6,21 @@
 
 Monin–Obukhov similarity theory boundary-layer formulation. Holds the
 empirical constants of the unstable (Businger-Dyer/Paulson, `dyer_constant`)
-and stable Φ relations. Previously these constants were buried as fields on
-`MicroTerrain`, where they masqueraded as terrain properties.
+and stable Φ relations.
 
-Two distinct stable-branch parameterizations, matching R's `microclimlearn`
-having two distinct functions for them (`dpsih` vs `dphih`) rather than one:
+Two distinct stable-branch parameterizations:
 - `stable_beta`/`turbulent_prandtl_number`: linear form (`ψ_m = -stable_beta·z/L`,
   `ψ_h = -(stable_beta/turbulent_prandtl_number)·z/L`, `ζ=z/L≥0`) for the
-  log-profile offsets [`calc_ψ_m`](@ref)/[`calc_ψ_h`](@ref) use, matching R's
-  `dpsim`/`dpsih` (Businger et al. 1971).
+  log-profile offsets [`calc_ψ_m`](@ref)/[`calc_ψ_h`](@ref) use (Businger et al. 1971).
 - `stable_Φ_h_coefficient`/`min_stable_Φ_h`/`max_stable_Φ_h`: saturating form
   (`Φ_h = clamp(1 + stable_Φ_h_coefficient·ζ/(1+ζ), min_stable_Φ_h,
-  max_stable_Φ_h)`) for the bulk diffusivity multiplier [`calc_Φ_h`](@ref)
-  uses, matching R's `dphih`. Saturates by construction
-  (→ `1+stable_Φ_h_coefficient` as `ζ→∞`) even before the explicit clamp,
+  max_stable_Φ_h)`) for the bulk diffusivity multiplier [`calc_Φ_h`](@ref). Saturates by
+  construction (→ `1+stable_Φ_h_coefficient` as `ζ→∞`) even before the explicit clamp,
   keeping `RaupachLTheoryAirProfile`'s `T_L` bounded under strongly stable,
   low-wind conditions.
+
+The thermal_roughness_model is a z0-to-z0h correction for the sensible heat transfer 
+coefficient. Default is SublayerStantonRoughness(); canopy uses ScalarRoughnessRatio().
 
 # References
 Businger, J. A., Wyngaard, J. C., Izumi, Y., & Bradley, E. F. (1971).
@@ -39,12 +38,7 @@ Dyer, A. J. (1974). A review of flux–profile relationships.
     stable_Φ_h_coefficient::PHC = 6.0
     min_stable_Φ_h::MINPH = 0.5
     max_stable_Φ_h::MAXPH = 1.5
-    # Floors 1/friction_velocity terms (T_L, aerodynamic resistances) at a
-    # "never fully calm" value.
-    min_friction_velocity::MINUF = 0.02u"m/s"
-    # z0-to-z0h correction for the sensible heat transfer coefficient. Default
-    # matches prior behaviour; canopy-top z0 scales should use ScalarRoughnessRatio
-    # instead (see its docstring).
+    min_friction_velocity::MINUF = 0.02u"m/s" # stability clamp
     thermal_roughness_model::TRM = SublayerStantonRoughness()
 end
 
@@ -62,11 +56,7 @@ abstract type AbstractThermalRoughnessModel end
 
 [`sublayer_stanton`](@ref)'s `Re*`-dependent correction, combined in series
 with the bulk (log-law) Stanton number via [`convective_flux`](@ref).
-Default, matching this package's prior behaviour. Confirmed (see
-`ScalarRoughnessRatio`) to produce a far larger excess resistance than
-microclimlearn's own approach once `z0` reaches canopy-top scale (~1 m);
-appropriate at the bare-ground/short-roughness scale it's more plausibly
-suited to.
+Default; appropriate at the bare-ground/short-roughness scale.
 """
 struct SublayerStantonRoughness <: AbstractThermalRoughnessModel end
 
@@ -74,11 +64,7 @@ struct SublayerStantonRoughness <: AbstractThermalRoughnessModel end
     ScalarRoughnessRatio(; ratio=0.2)
 
 Fixed scalar-to-momentum roughness ratio `z0h = ratio·z0` (`kB⁻¹ =
--log(ratio)`, constant, not `Re*`-dependent) -- matches microclimlearn's
-`canopyresistance` (`zh = 0.2·zm`) exactly. Confirmed against R's own
-`solve_wholecanopy` output for a real canopy case (`z0≈1.9 m`): recovers
-`L≈-64 m` against R's `-65 m`, versus `SublayerStantonRoughness`'s `≈-1500 m`
-for the same inputs.
+-log(ratio)`, constant, not `Re*`-dependent).
 """
 @kwdef struct ScalarRoughnessRatio{R} <: AbstractThermalRoughnessModel
     ratio::R = 0.2
@@ -163,26 +149,15 @@ in `MicroModel.heights`); `displacement_height` is subtracted internally
 wherever the log-law needs height above the displaced origin.
 
 `temperature_anchor_height`: by default (`nothing`) the temperature profile
-is anchored at `z0` using the aerodynamic (thermal-roughness-corrected)
-`roughness_height_temperature`, as before. Pass an absolute height (e.g. a
-canopy's `canopy_height`) to instead anchor directly on `surface_temperature`
-*at that height* -- for a case like canopy top, `surface_temperature` is
-already a genuine known air temperature at a real height, not a skin
-temperature needing a `z0`/`z0h` sublayer correction, so this bypasses that
-correction and does a plain two-point MOST log-law interpolation between
+is anchored at `z0` using `roughness_height_temperature`. Pass an absolute height 
+(e.g. a canopy's `canopy_height`) to anchor directly on `surface_temperature`
+*at that height* for a plain two-point MOST log-law interpolation between
 `(temperature_anchor_height, surface_temperature)` and
-`(reference_height, reference_temperature)` instead -- matching
-microclimlearn's `Tabove` (`micropoint_new2.cpp`), which anchors the
-above-canopy profile the same way, including the `ψ_h` evaluated at the
-anchor height itself (not assumed ≈0, since unlike `z0` this height need
-not be roughness-sublayer-scale).
+`(reference_height, reference_temperature)`.
 
 `surface_relative_humidity` (only used when `temperature_anchor_height` is
 given): the known relative humidity *at* `temperature_anchor_height`,
-anchoring vapour pressure the same two-point way (reusing the same log/ψ_h
-ratio computed for temperature) instead of the default assumption of
-constant vapour pressure with height -- matches microclimlearn's `RHabove`,
-which is `Tabove`'s vapour-pressure counterpart.
+anchoring vapour pressure the same two-point way.
 """
 function atmospheric_surface_profile!(bl::MoninObukhov, buffers;
     site,
@@ -214,20 +189,15 @@ function atmospheric_surface_profile!(bl::MoninObukhov, buffers;
     ref_idx = findfirst(==(ref_height), heights)
 
     if !warned_below_roughness[] && minimum(heights) - displacement_height < z0
-        @warn """Some requested heights are below the roughness length ($z0) above the displacement height ($displacement_height).
-    Monin-Obukhov similarity theory is not valid in this sublayer region -- expected
-    for below-canopy heights canopy model is running.
-    Assumptions applied:
-      • wind speed → 0 (log-law gives u = 0 at z = z0 by definition)
-      • air temperature linearly interpolated between T_surface (z = 0) and T_z0 (z = z0)
-    For a non-zero wind floor (e.g. for convection terms), clamp the result downstream."""
+        @warn """Some heights are within the roughness length ($z0) of the displaced origin 
+        ($displacement_height above ground) -- below MOST's valid range (expected when canopy is present).
+    wind → 0; air temperature interpolated linearly between T_surface and T_z0.
+    Clamp downstream for a non-zero wind floor (e.g. convection terms)."""
         warned_below_roughness[] = true
     end
     if !warned_above_reference[] && maximum(heights) > ref_height
         @warn """Some requested heights exceed the reference measurement height ($ref_height).
-    Profiles will be extrapolated above the measurement level using MOST.
-    This is physically reasonable within the surface layer but note that
-    the log-law becomes less accurate as height approaches the boundary-layer depth."""
+    Profiles will be extrapolated above the measurement level using MOST."""
         warned_above_reference[] = true
     end
 
@@ -302,10 +272,7 @@ function atmospheric_surface_profile!(bl::MoninObukhov, buffers;
             wind_log_arg = max(log_h_ratio - ψ_m1, 0.1 * log_h_ratio, 1e-6)
             wind_speed[i] = (friction_velocity / κ) * wind_log_arg
             # Temperature uses its own anchor/ratio (z_temp_anchor may differ
-            # from z0 -- see above); only floored when h is above the anchor,
-            # the guaranteed regime for actual anchor-mode callers (below-anchor
-            # heights, e.g. below canopy top in solve_air!'s full-grid profile,
-            # are unused downstream and left unfloored but finite).
+            # from z0 -- see above); only floored when h is above the anchor.
             log_temp_h_ratio = log(h / z_temp_anchor)
             temp_num = log_temp_h_ratio + ψ_h_anchor - ψ_h2
             temp_log_arg = log_temp_h_ratio >= 0 ?
@@ -349,12 +316,7 @@ function surface_fluxes(bl::MoninObukhov;
     kinematic_viscosity = dry_air_properties(mean_temp, atmospheric_pressure).kinematic_viscosity
 
     if air_temperature ≥ surface_temperature || zenith_angle ≥ 90°
-        # Stable / nocturnal: neutral log-law. Real reanalysis wind speed
-        # occasionally rounds to exactly 0 (e.g. BARRA reports in 0.25 m/s
-        # steps and does report dead calm). Without a floor, friction_velocity=0
-        # sends sublayer_stanton (∝ u*^-0.45) to Inf, blowing up
-        # convective_heat_flux and destabilising the ODE. Mirrors the
-        # existing guard in calc_Obukhov_length's unstable branch below.
+        # Stable / nocturnal: neutral log-law.
         friction_velocity = max(
             calc_friction_velocity(; reference_wind_speed=wind_speed, log_z_ratio, κ), bl.min_friction_velocity
         )
@@ -362,13 +324,10 @@ function surface_fluxes(bl::MoninObukhov;
             calc_convection(; friction_velocity, log_z_ratio, ΔT, ρ_cp, z0=roughness_height, z=reference_height, κ,
                 kinematic_viscosity, thermal_roughness_model=bl.thermal_roughness_model))
     else
-        # Unstable: iterate Obukhov length. A warm-started value from a
-        # previous hour may have converged to positive or near-zero, which
-        # would cause NaN in calc_φ_m via sqrt of a negative number — guard
-        # against that by resetting to the default unstable guess.
+        # Unstable: iterate Obukhov length. 
         ρcpTκg = 6.003e-8u"cal*minute^2/cm^4"
         L0_raw = isnothing(obukhov_length_prev) ? -0.3u"m" : obukhov_length_prev[]
-        L0 = L0_raw >= 0.0u"m" ? -0.3u"m" : L0_raw
+        L0 = L0_raw >= 0.0u"m" ? -0.3u"m" : L0_raw # Resetting to the default unstable guess?
         out = calc_Obukhov_length(air_temperature, surface_temperature, wind_speed,
             roughness_height, reference_height, ρcpTκg, κ, ΔT, ρ_cp, kinematic_viscosity;
             initial_obukhov_length=L0, min_friction_velocity=bl.min_friction_velocity,
@@ -580,11 +539,7 @@ calc_mass_transfer_coefficient(heat_transfer_coefficient, air_specific_heat, air
 
 Stanton number for the roughness sublayer immediately above the surface,
 `0.62·Re*^-0.45` with roughness Reynolds number `Re* = z0·u*/ν` (form
-resembles Owen & Thomson (1963); citation not independently verified). This
-is one way of expressing the momentum-to-scalar roughness (`z0`-to-`z0h`)
-correction; see [`ScalarRoughnessRatio`](@ref) for microclimlearn's own
-(fixed-ratio, `Re*`-independent) alternative, used instead of this at
-canopy-top roughness scales.
+resembles Owen & Thomson (1963)) Not suitable for a canopy.
 """
 @inline function sublayer_stanton(z0, friction_velocity, kinematic_viscosity)
     roughness_reynolds_number = uconvert(NoUnits, z0 * friction_velocity / kinematic_viscosity)
@@ -715,11 +670,7 @@ This is the Businger–Dyer form for scalars:
 end
 
 # Numerical floor on |obukhov_length|, sign-preserving -- avoids ζ=z/L blowing
-# up ψ/Φ/bulk_stanton near L=0 (extreme instability *or* extreme stability,
-# both of which are real, reachable states once the stable branch below is
-# allowed to iterate down toward neutral). Same z/10 magnitude as calc_φ_m's
-# own (unstable-only) floor, generalized to both signs. Not a physical
-# parameter.
+# up ψ/Φ/bulk_stanton near L=0.
 @inline function _floor_obukhov_length(z, obukhov_length)
     L_floor = z / 10.0
     return obukhov_length >= zero(obukhov_length) ? max(obukhov_length, L_floor) : min(obukhov_length, -L_floor)
@@ -798,10 +749,7 @@ end
                          γ=16.0, stable_beta=4.7, turbulent_prandtl_number=0.74,
                          max_iter=30, tol=1e-2, initial_obukhov_length=-0.3u"m")
 
-`kinematic_viscosity` feeds `sublayer_stanton`'s roughness Reynolds number;
-see that function's docstring for why it must be a real, temperature-dependent
-value rather than a fixed constant.
-
+`kinematic_viscosity` feeds `sublayer_stanton`'s roughness Reynolds number.
 Iteratively solve for the Monin–Obukhov length and convective heat flux, for
 either sign of `ΔT` -- `convective_flux`'s sign already tracks `ΔT`'s sign
 correctly either way (negative ΔT, surface warmer than reference → negative
@@ -831,10 +779,8 @@ to. Converges to `±Inf` (neutral) as `ΔT → 0`.
         count += 1
         ψ_m = calc_ψ_m(z, γ, obukhov_length, stable_beta)
         ψ_h = calc_ψ_h(z, γ, obukhov_length, stable_beta, turbulent_prandtl_number)
-        # Floor at a fraction of the neutral log term, not an absolute
-        # constant -- log(z/z0) can be O(1) for canopy geometry, where an
-        # absolute 1e-6 floor lets friction_velocity blow up ~1e6-fold.
         log_z_ratio_i = log(z / z0)
+        # Floor at a fraction of the neutral log term to avoid unstable friction_velocity
         log_ratio_corrected = max(log_z_ratio_i - ψ_m, 0.1 * log_z_ratio_i, just_above_zero)
         friction_velocity = max(κ * v_ref_height / log_ratio_corrected, min_friction_velocity)
         convective_heat_flux, roughness_height_temperature = _unstable_convective_heat_flux(thermal_roughness_model,
