@@ -5,14 +5,12 @@ Steady first-order-closure (K-theory) in-canopy air-temperature and humidity
 profile: a tridiagonal diffusion balance (finite-volume discretisation of
 `d/dz(K dT/dz) = -S`, and separately `d/dz(K dρv/dz) = -Sv`) between each
 layer's leaf-supplied source and its neighbours, re-solved once per
-convergence-loop pass. Assumes in-canopy air reaches quasi-equilibrium within an hour, unlike
-Raupach's (1989) transient Lagrangian near/far-field model.
+convergence-loop pass. Assumes in-canopy air reaches quasi-equilibrium within 
+an hour, unlike Raupach's (1989) transient Lagrangian near/far-field model.
 
-Layer 1's node sits exactly at `canopy_height` (`canopy_layer_heights`), the
-same point `canopy_top_air_temperature`/`canopy_top_relative_humidity`
-describe (extrapolated there by the above-canopy Monin-Obukhov profile) --
-so layer 1's air state is an explicit Dirichlet boundary condition, set
-directly rather than solved. Only layers `2:n_layers` are free unknowns,
+Layer 1's node sits exactly at `canopy_height` (`canopy_layer_heights`), 
+extrapolated there by the above-canopy Monin-Obukhov profile); an explicit
+Dirichlet boundary condition. Layers `2:n_layers` are free unknowns,
 diffusing from that fixed top value down to `ground_temperature`/
 `ground_relative_humidity` at the other end.
 
@@ -20,13 +18,8 @@ Conductance network mirrors `SoilHeatTransport1D`'s `thermal_conductance`
 (eddy-diffusivity instead of thermal), solved via a `LinearSolve.jl` cache
 built once per buffer allocation and reused every call (`cache.A`/`cache.b`
 reassigned, `SciMLBase.solve!` re-factorizes only when `A` actually changed)
--- near-zero allocation, since `A` is fixed within an hour (wind/diffusivity
-are hoisted out of the Picard/nonlinear-solve loop) and only `b` changes
-across passes. Unitful quantities are stripped/reattached around the solve,
-the same boundary `RootFindLeafTemperature` draws around `HeatExchange.zbrent`.
 The humidity solve reuses the same diffusivity network and buffers as the
-temperature solve, without the `ρ_cp` multiply (a vapor-density gradient is
-already a mass flux, not a heat flux).
+temperature solve.
 
 Eddy diffusivity shape follows the wind-attenuation profile
 ([`CanopyWindAttenuation`](@ref)/`wind_attenuation_profile`), scaled to the

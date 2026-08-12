@@ -10,12 +10,7 @@ canopy's displacement height and roughness length.
 `thermal_roughness_model` overrides the shared `boundary_layer_model`'s own
 `thermal_roughness_model` for this canopy-top evaluation specifically (bare-
 ground/soil surface fluxes elsewhere keep using the `boundary_layer_model`'s
-own setting). Defaults to `ScalarRoughnessRatio()`, not
-`MoninObukhov`'s own `SublayerStantonRoughness()` default: canopy roughness
-lengths are metre-scale, well outside where `SublayerStantonRoughness`'s
-`Re*`-dependent correction was derived, and it produces a large excess
-resistance there (confirmed against R's microclimlearn -- see
-`ScalarRoughnessRatio`'s docstring).
+own setting). Defaults to `ScalarRoughnessRatio()`.
 """
 @kwdef struct CanopyWindAttenuation{TRM} <: AbstractCanopyWindModel
     thermal_roughness_model::TRM = ScalarRoughnessRatio()

@@ -72,9 +72,7 @@ end
 
 @testset "AllPairsLongwaveExchange: runs and gives physically sane fluxes" begin
     # Ported from micropoint/microclimlearn for direct comparison against that
-    # reference (see module_comparison.jl); not held to the same conservation
-    # bar as the two models below since it inherits the source's own
-    # simplifications (no ground reflection, no self-view term).
+    # reference (see module_comparison.jl).
     ap_model = AllPairsLongwaveExchange()
     ap_buffers = Microclimate.allocate_longwave(ap_model, plant_area_index, n_layers, canopy_projection_ratio)
     leaf_temperature = fill(288.0u"K", n_layers)

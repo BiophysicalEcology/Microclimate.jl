@@ -190,19 +190,13 @@ initial_ground_overrides(::MultilayerCanopy) = (;
 
 canopy_leaf_area_index(model::MultilayerCanopy) = sum(model.plant_area_index) * (1 - model.woody_area_fraction)
 
-# Canopy-displaced log-profile origin for solve_air!'s output.profile --
-# matches canopy_wind_profile!'s own above-canopy evaluation (attenuation.jl)
-# so both stay consistent at the canopy_height seam. temperature_anchor_height
-# anchors the above-canopy temperature profile directly on the known
-# canopy-top air temperature (see atmospheric_surface_profile!'s docstring)
-# instead of a z0-derived aerodynamic value, matching microclimlearn's Tabove.
+# Canopy-displaced log-profile origin for solve_air!'s output.profile.
 canopy_profile_origin(::MultilayerCanopy, buffers, site, boundary_layer_model) =
     (; displacement_height = buffers.wind.displacement_height, roughness_length = buffers.wind.roughness_length,
         thermal_roughness_model = buffers.wind.thermal_roughness_model,
         temperature_anchor_height = buffers.wind.canopy_height)
 
-# Top-of-canopy air temperature for solve_air!'s output.profile above canopy
-# -- not lagged (solve_air! is a full post-solve pass).
+# Top-of-canopy air temperature for solve_air!'s output.profile above canopy.
 profile_surface_temperature(::MultilayerCanopy, output, i, ground_surface_temperature) =
     output.canopy.air_temperature[i, 1]
 
