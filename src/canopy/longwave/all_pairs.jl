@@ -130,7 +130,10 @@ function canopy_longwave!(buffers, model::AllPairsLongwaveExchange, leaf_emissiv
     end
 
     @inbounds for i in 1:n_layers
-        absorbed_longwave[i] = (1.0 - layer_transmission[i]) * (downward_longwave[i] + upward_longwave[i])
+        # Matches R's RlwLabs = 0.5*vegem*(Rlwdown+Rlwup) exactly once carried
+        # through leaf_heat_balance's per-leaf-area conversion (divides by
+        # 2*(1-layer_transmission), cancelling the (1-layer_transmission) here).
+        absorbed_longwave[i] = leaf_emissivity * (1.0 - layer_transmission[i]) * (downward_longwave[i] + upward_longwave[i])
         boundary_downward_longwave[i] = downward_longwave[i]
         boundary_upward_longwave[i] = upward_longwave[i]
     end

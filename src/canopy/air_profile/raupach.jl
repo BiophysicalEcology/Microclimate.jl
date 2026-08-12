@@ -3,7 +3,9 @@
                               min_ground_resistance=2.0u"s/m", relaxation=0.5,
                               aitken_omega_min=0.02, aitken_omega_max=0.9,
                               aitken_weight_bottom=0.05, aitken_weight_top=0.8,
-                              aitken_bottom_emphasis=10.0, near_field_subdivisions=20)
+                              aitken_bottom_emphasis=10.0, near_field_subdivisions=20,
+                              max_lagrangian_timescale=200.0u"s", max_air_temperature_deviation=40.0u"K",
+                              bulk_temperature_margin=2.0u"K")
 
 Raupach's (1989) localized near-field (LNF) Lagrangian in-canopy scalar
 transport model: each layer's temperature and humidity is the sum of a
@@ -39,6 +41,15 @@ weighted to under-relax hardest at the ground (`aitken_weight_bottom`)
 and lightest at canopy top (`aitken_weight_top`); `aitken_bottom_emphasis`
 weights ground-proximate residuals more heavily in the omega fit.
 `relaxation` seeds the first pass, before there's a residual history.
+
+`T_L` (see `canopy_air_profile!`'s own derivation) is `∝ 1/friction_velocity`
+and grows further under stability via `calc_Φ_h` -- both unbounded in
+principle, which under calm/stable conditions can push `T_L` (and the
+near-field kernel's `ζ = distance/(σ_w·T_L)` argument) toward physically
+implausible eddy-turnover-time values, far outside where Monin-Obukhov
+similarity theory or Raupach's own LNF derivation apply.
+`max_lagrangian_timescale` caps it; 200s is generous relative to the
+seconds-to-tens-of-seconds range typical conditions produce.
 
 All keyword defaults above are free/tunable, not literature-derived
 values — no citation for the specific magnitudes.
@@ -83,7 +94,7 @@ results are asserted finite rather than silently clipped.
   concentrations to source distributions in vegetation canopies. *Quarterly
   Journal of the Royal Meteorological Society*, 115(487), 609-632.
 """
-@kwdef struct RaupachLTheoryAirProfile{GVSF,CVSF,GR,RL,OMIN,OMAX,WBOT,WTOP,BETA,NS,FFM} <: AbstractCanopyAirProfileModel
+@kwdef struct RaupachLTheoryAirProfile{GVSF,CVSF,GR,RL,OMIN,OMAX,WBOT,WTOP,BETA,NS,FFM,MTL,MAD,BTM} <: AbstractCanopyAirProfileModel
     ground_velocity_std_factor::GVSF = 0.25
     canopy_top_velocity_std_factor::CVSF = 1.25
     min_ground_resistance::GR = 2.0u"s/m"
@@ -95,6 +106,18 @@ results are asserted finite rather than silently clipped.
     aitken_bottom_emphasis::BETA = 10.0
     near_field_subdivisions::NS = 20
     far_field_mode::FFM = Val(:exact)
+    max_lagrangian_timescale::MTL = 200.0u"s"
+    # air_temperature[i] itself has no other absolute bound (only T_top,
+    # canopy_top_flux_boundary's own boundary condition, does) -- leaf
+    # temperature is clamped only relative to air_temperature, so without
+    # this the two can climb together, unanchored, pass after pass.
+    # far_field_mode==:exact only -- :bulk uses bulk_temperature_margin instead.
+    max_air_temperature_deviation::MAD = 40.0u"K"
+    # far_field_mode==:bulk only, matching micropoint's LangrangianOne
+    # (tmn/tmx: ground/canopy-top/leaf-temperature envelope ±2K) exactly,
+    # for direct comparison -- not a free/tunable value the way the other
+    # defaults in this struct are.
+    bulk_temperature_margin::BTM = 2.0u"K"
 end
 
 function allocate_air_profile(model::RaupachLTheoryAirProfile, canopy_height, plant_area_index, heights, n_layers, boundary_layer_model)
@@ -264,10 +287,10 @@ end
 # total resistance across the range. Fg is a single ground flux, evaluated
 # once from the ground-most layer.
 function _raupach_far_field!(::Val{:exact}, far_field_accum, far_field_accum_latent, _resistance_from_top, _resistance_to_ground,
-    cumulative_sensible_below, cumulative_latent_below, layer_resistance,
-    ground_temperature, ground_vapor_density, air_temperature_prev, vapor_density_prev, min_ground_resistance, n)
+    cumulative_sensible_below, cumulative_latent_below, layer_resistance, _layer_thickness,
+    ground_temperature, ground_vapor_density, air_temperature_prev, vapor_density_prev, min_ground_resistance, ρ_cp, n)
     ground_resistance = max(layer_resistance[n], min_ground_resistance)
-    ground_flux = (calc_ρ_cp(air_temperature_prev[n]) / ground_resistance) * (ground_temperature - air_temperature_prev[n])
+    ground_flux = (ρ_cp / ground_resistance) * (ground_temperature - air_temperature_prev[n])
     ground_vapor_flux = (ground_vapor_density - vapor_density_prev[n]) / ground_resistance
     far_field_accum[1] = (cumulative_sensible_below[1] + ground_flux) * layer_resistance[1]
     far_field_accum_latent[1] = (cumulative_latent_below[1] + ground_vapor_flux) * layer_resistance[1]
@@ -281,10 +304,12 @@ end
 # :bulk's far-field: both the ground flux and the far-field term use the
 # flux value at the query layer times the total resistance from that layer
 # to the top/ground, recomputed per layer -- not eq. 19a's per-layer-weighted
-# integral.
+# integral. Ground flux's ρ_cp is recomputed per layer from air_temperature_prev
+# (unlike :exact's fixed ρ_cp), matching micropoint's LangrangianOne (ph/cp
+# from tair[i]) exactly, for direct comparison.
 function _raupach_far_field!(::Val{:bulk}, far_field_accum, far_field_accum_latent, resistance_from_top, resistance_to_ground,
-    cumulative_sensible_below, cumulative_latent_below, layer_resistance,
-    ground_temperature, ground_vapor_density, air_temperature_prev, vapor_density_prev, min_ground_resistance, n)
+    cumulative_sensible_below, cumulative_latent_below, layer_resistance, _layer_thickness,
+    ground_temperature, ground_vapor_density, air_temperature_prev, vapor_density_prev, min_ground_resistance, _ρ_cp, n)
     resistance_from_top[1] = layer_resistance[1]
     @inbounds for i in 2:n
         resistance_from_top[i] = resistance_from_top[i - 1] + layer_resistance[i]
@@ -308,10 +333,28 @@ end
 @inline _raupach_near_field_scale(::Val{:exact}, n) = 1.0
 @inline _raupach_near_field_scale(::Val{:bulk}, n) = 1.0 + 0.894 * exp(-0.01386 * n) + 9.82 * exp(-0.15 * n)
 
+# :exact uses one ρ_cp fixed from ambient data; :bulk recomputes per layer
+# from air_temperature_prev[i], matching micropoint's LangrangianOne.
+@inline _raupach_layer_ρ_cp(::Val{:exact}, ρ_cp, air_temperature_prev, i) = ρ_cp
+@inline _raupach_layer_ρ_cp(::Val{:bulk}, _ρ_cp, air_temperature_prev, i) = calc_ρ_cp(air_temperature_prev[i])
+
+# :exact's backstop is ±max_air_temperature_deviation around T_top/ground_temperature.
+# :bulk matches micropoint's tmn/tmx exactly: ±bulk_temperature_margin around
+# T_top/ground_temperature, widened (not margined) to cover leaf_temperature's own range.
+@inline _raupach_temperature_bounds(::Val{:exact}, T_top, ground_temperature, leaf_temperature, max_air_temperature_deviation, bulk_temperature_margin) =
+    (min(T_top, ground_temperature) - max_air_temperature_deviation, max(T_top, ground_temperature) + max_air_temperature_deviation)
+function _raupach_temperature_bounds(::Val{:bulk}, T_top, ground_temperature, leaf_temperature, max_air_temperature_deviation, bulk_temperature_margin)
+    leaf_lo, leaf_hi = extrema(leaf_temperature)
+    bound_lo = min(min(T_top, ground_temperature) - bulk_temperature_margin, leaf_lo)
+    bound_hi = max(max(T_top, ground_temperature) + bulk_temperature_margin, leaf_hi)
+    return (bound_lo, bound_hi)
+end
+
 function canopy_air_profile!(buffers, model::RaupachLTheoryAirProfile, boundary_layer_model;
     canopy_height, displacement_height, friction_velocity, wind_attenuation,
     canopy_top_air_temperature, canopy_top_relative_humidity, ground_temperature, ground_relative_humidity,
     sensible_heat_source, evaporation_mass_flow, obukhov_length, atmospheric_pressure, vapour_pressure_equation=GoffGratch(),
+    leaf_temperature=nothing,
 )
     (; layer_heights, layer_thickness, vertical_velocity_std, inv_near_field_length, eddy_diffusivity,
        layer_resistance, far_field_accum, far_field_accum_latent, resistance_from_top, resistance_to_ground,
@@ -341,9 +384,33 @@ function canopy_air_profile!(buffers, model::RaupachLTheoryAirProfile, boundary_
 
     (; ground_velocity_std_factor, canopy_top_velocity_std_factor, min_ground_resistance,
        aitken_omega_min, aitken_omega_max, aitken_weight_bottom, aitken_weight_top, aitken_bottom_emphasis,
-       near_field_subdivisions) = model
+       near_field_subdivisions, max_lagrangian_timescale, max_air_temperature_deviation) = model
     a0, a1 = ground_velocity_std_factor, canopy_top_velocity_std_factor  # Raupach's own notation, aliased for the formulas below
     γ = boundary_layer_model.dyer_constant
+
+# Eq. 18 (K_f = σ_w²·T_L) → eddy_diffusivity[i]. T_L is Raupach's Lagrangian integral timescale, computed once above this function 
+# (not shown in your snippet) as T_L = min(a2 * canopy_height / friction_velocity, max_lagrangian_timescale), where a2 is calibrated 
+# by matching the below-canopy diffusivity continuous with the above-canopy value at canopy top — this is Raupach's own closure for 
+# T_L. The paper allows T_L(z') to vary with height inside the integral; the code (and R's LangrangianOne, which does the same: 
+# const double TL = windvars.a2 * vegp.hgt / windvars.uf;) holds it constant across the whole canopy — a documented simplification,
+# not a discretization artifact. That single T_L then feeds eddy_diffusivity[i] = T_L * σ_w[i]^2 — literally K_f(z_i) from eq. 18,
+# with only σ_w varying by layer.
+# Eq. 19a's integrand 1/(σ_w²(z')T_L(z')) → layer_resistance[i]. layer_resistance[i] = layer_thickness[i] / eddy_diffusivity[i] is
+# Δz_i / K_f(z_i) — a rectangle-rule discretization of dz'/K_f(z') for layer i. This is the "local resistance" of that one layer.
+# The bracket [∫₀^z' S(z'')dz'' + F_g] → cumulative_sensible_below[i] + ground_flux. cumulative_sensible_below[i] sums 
+# sensible_heat_source[k] for every layer k from i down to the ground (layer n in this file's top-to-bottom indexing) — 
+# that's the discretized ∫₀^{z'} S(z'')dz'', cumulative source strength from the ground up to z'. ground_flux is F_g, 
+# computed once from the ground-most layer's own resistance/temperature difference, exactly matching the paper's F_g
+# being a single fixed input to the integral, not itself a function of z' — which is why it's added identically at every 
+# i rather than recomputed.
+# The outer integral ∫_z^{z_R}{...}dz' → the prefix-sum recursion. far_field_accum[1] = (...)*layer_resistance[1] starts 
+# at layer 1 = canopy top = z_R (the reference height where the boundary condition C_f(z_R) is known), and 
+# far_field_accum[i] = far_field_accum[i-1] + (...)*layer_resistance[i] walks the integral downward layer by layer
+# — a running Riemann sum of the integrand from z_R down to z. So far_field_accum[i] is C_f(z_i) − C_f(z_R), the 
+# left-hand side of eq. 19a, directly.
+# C_f(z_R) itself is T_top (expressed as a temperature rather than a concentration — the ρ_cp conversion happens where
+# air_temperature[i] = T_top + far_field + ... is assembled, outside this function) — so the caller recovers
+#  C_f(z) = C_f(z_R) + (C_f(z) − C_f(z_R)) exactly as eq. 19a's rearranged form.
 
     # T_L is held constant through the canopy (a2·h/u*), not a function of z:
     # a2 is set by requiring eddy diffusivity to be continuous at the canopy
@@ -351,10 +418,12 @@ function canopy_air_profile!(buffers, model::RaupachLTheoryAirProfile, boundary_
     # above-canopy value, using σ_w(h) = a1·u*. Φ_h multiplies the neutral
     # value (Ogée et al. 2003 eq. 8), not divides.
     z_eval = max(canopy_height - displacement_height, 1.0e-3u"m")  # numerical floor, not a physical parameter
-    # obukhov_length is Inf on the stable/neutral branch; calc_Φ_h assumes unstable-only input.
-    Φ_h = isfinite(obukhov_length) ? calc_Φ_h(z_eval, γ, obukhov_length) : 1.0
+    # obukhov_length is Inf only on the true neutral fallback now (calc_Φ_h handles both signs).
+    Φ_h = isfinite(obukhov_length) ?
+        calc_Φ_h(z_eval, γ, obukhov_length, boundary_layer_model.stable_Φ_h_coefficient,
+            boundary_layer_model.min_stable_Φ_h, boundary_layer_model.max_stable_Φ_h) : 1.0
     a2 = Φ_h * boundary_layer_model.karman_constant * (1.0 - displacement_height / canopy_height) / a1^2
-    T_L = a2 * canopy_height / friction_velocity
+    T_L = min(a2 * canopy_height / friction_velocity, max_lagrangian_timescale)
 
     σ_w_mean = (a1 + a0) * 0.5 * friction_velocity
     σ_w_amplitude = (a1 - a0) * 0.5 * friction_velocity
@@ -362,7 +431,7 @@ function canopy_air_profile!(buffers, model::RaupachLTheoryAirProfile, boundary_
         σ_w = σ_w_mean + σ_w_amplitude * cos(π * (1.0 - layer_heights[i] / canopy_height))
         vertical_velocity_std[i] = σ_w
         inv_near_field_length[i] = 1.0 / (σ_w * T_L)
-        eddy_diffusivity[i] = T_L * σ_w^2
+        eddy_diffusivity[i] = T_L * σ_w^2 # Raupach 1989 eq. 11b
         layer_resistance[i] = layer_thickness[i] / eddy_diffusivity[i]
         sensible_near_field_weight[i] = sensible_heat_source[i] / σ_w
         latent_near_field_weight[i] = (evaporation_mass_flow[i] / 1.0u"m^2") / σ_w
@@ -377,7 +446,13 @@ function canopy_air_profile!(buffers, model::RaupachLTheoryAirProfile, boundary_
     eddy_diffusivity_top_wind = boundary_layer_model.karman_constant * friction_velocity * z_eval
     eddy_diffusivity_ground = eddy_diffusivity_top_wind * wind_attenuation[n]
     ground_resistance = max(layer_thickness[n] / eddy_diffusivity_ground, min_ground_resistance)
-    ground_heat_conductance[] = calc_ρ_cp(air_temperature_prev[n]) / ground_resistance
+    # ρ_cp fixed from T_top/ground_temperature, not from the (possibly still
+    # drifting) air_temperature_prev iterate: calc_ρ_cp ∝ 1/T, so tying it to
+    # each layer's own previous pass makes warming self-amplifying (ΔT ∝
+    # flux·T_prev) -- same failure mode as canopy_top_flux_boundary's ρ_cp,
+    # here spread across every layer/pass instead of one fixed-point loop.
+    ρ_cp = calc_ρ_cp((T_top + ground_temperature) / 2)
+    ground_heat_conductance[] = ρ_cp / ground_resistance
     ground_vapor_conductance[] = 1.0 / ground_resistance
 
     cumulative_sensible_below[n] = sensible_heat_source[n]
@@ -391,8 +466,8 @@ function canopy_air_profile!(buffers, model::RaupachLTheoryAirProfile, boundary_
         atmospheric_pressure; vapour_pressure_equation).vapour_density
 
     _raupach_far_field!(model.far_field_mode, far_field_accum, far_field_accum_latent, resistance_from_top, resistance_to_ground,
-        cumulative_sensible_below, cumulative_latent_below, layer_resistance,
-        ground_temperature, ρv_g, air_temperature_prev, vapor_density_prev, min_ground_resistance, n)
+        cumulative_sensible_below, cumulative_latent_below, layer_resistance, layer_thickness,
+        ground_temperature, ρv_g, air_temperature_prev, vapor_density_prev, min_ground_resistance, ρ_cp, n)
     near_field_scale = _raupach_near_field_scale(model.far_field_mode, n)
 
     # Near-field concentration at the canopy top, subtracted from every
@@ -424,14 +499,11 @@ function canopy_air_profile!(buffers, model::RaupachLTheoryAirProfile, boundary_
         near_field *= near_field_scale
         near_field_latent *= near_field_scale
 
-        # Heat: T_top is an absolute temperature baseline, not a concentration
-        # -- ρ_cp(T) ∝ 1/T here, so converting it to ρ_cp*T and back through a
-        # *different* (local) ρ_cp cancels the baseline exactly, leaving only
-        # air_temperature_prev. Add the source-driven perturbation (already a
-        # genuine volumetric energy density) directly as a temperature
-        # increment instead.
-        ρ_cp = calc_ρ_cp(air_temperature_prev[i])
-        air_temperature[i] = T_top + (far_field + near_field - near_field_top) / ρ_cp  # raw; Aitken-blended below
+        # Heat: T_top is an absolute temperature baseline, not a concentration;
+        # ρ_cp converts the source-driven perturbation (a genuine volumetric
+        # energy density) into a temperature increment added on top of it.
+        ρ_cp_i = _raupach_layer_ρ_cp(model.far_field_mode, ρ_cp, air_temperature_prev, i)
+        air_temperature[i] = T_top + (far_field + near_field - near_field_top) / ρ_cp_i  # raw; Aitken-blended below
 
         # Latent: vapor density is a genuine concentration (kg/m^3), no
         # ρ_cp-style conversion involved -- unaffected by the heat-path fix above.
@@ -446,6 +518,15 @@ function canopy_air_profile!(buffers, model::RaupachLTheoryAirProfile, boundary_
     _aitken_relax!(vapor_density, vapor_density_prev, layer_heights, canopy_height,
         aitken_omega_latent, aitken_have_prev_latent, aitken_residual_prev_latent,
         aitken_omega_min, aitken_omega_max, aitken_weight_bottom, aitken_weight_top, aitken_bottom_emphasis, u"kg/m^3")
+
+    # Absolute backstop anchored to T_top/ground_temperature -- leaf
+    # temperature is clamped only relative to this array, so without an
+    # absolute bound here the two can climb together, unanchored.
+    air_bound_lo, air_bound_hi = _raupach_temperature_bounds(model.far_field_mode, T_top, ground_temperature,
+        leaf_temperature, max_air_temperature_deviation, model.bulk_temperature_margin)
+    @inbounds for i in 1:n
+        air_temperature[i] = clamp(air_temperature[i], air_bound_lo, air_bound_hi)
+    end
 
     all(isfinite, air_temperature) ||
         throw(DomainError(air_temperature, "RaupachLTheoryAirProfile produced a non-finite air temperature"))

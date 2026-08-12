@@ -94,6 +94,7 @@ function canopy_air_profile!(buffers, ::KTheoryAirProfile, boundary_layer_model;
     sensible_heat_source, evaporation_mass_flow, atmospheric_pressure, vapour_pressure_equation=GoffGratch(),
     obukhov_length=nothing,  # shared dispatch surface with RaupachLTheoryAirProfile; K-theory's steady closure doesn't need it
     wind_attenuation=nothing,  # ditto -- K-theory already derives its own ground diffusivity from relative_eddy_diffusivity
+    leaf_temperature=nothing,  # ditto -- only RaupachLTheoryAirProfile's :bulk mode uses it
 )
     (; layer_spacing, relative_eddy_diffusivity, dl, d, du, rhs,
        dl_v, d_v, du_v, rhs_v, heat_cache, vapor_cache, air_temperature, vapor_density, relative_humidity,

@@ -21,7 +21,7 @@ end
 Per-layer and per-hour canopy diagnostics. Zero-column/all-zero for
 `NoCanopy` (mirrors `snow_temperature` being `(nsteps, 0)` for `NoSnow`).
 """
-struct CanopyOutput{LT,AT,WS,RH,GAS,GAL,LAS,LAL,GTF,IT,DSW,USW,DLW,ULW,AR,NB,CSH,CLH}
+struct CanopyOutput{LT,AT,WS,RH,GAS,GAL,LAS,LAL,GTF,IT,DSW,USW,DLW,ULW,AR,NB,CSH,CLH,FV,OL,DH,CTAT,CTRH}
     leaf_temperature::LT              # nsteps × n_canopy_layers Matrix
     air_temperature::AT               # nsteps × n_canopy_layers Matrix (in-canopy, distinct from profile.air_temperature)
     wind_speed::WS                    # nsteps × n_canopy_layers Matrix (in-canopy)
@@ -40,6 +40,11 @@ struct CanopyOutput{LT,AT,WS,RH,GAS,GAL,LAS,LAL,GTF,IT,DSW,USW,DLW,ULW,AR,NB,CSH
     net_balance::NB                   # nsteps × n_canopy_layers Matrix, W, leaf_heat_balance's residual at the converged temperature
     canopy_sensible_heat_flux::CSH    # nsteps Vector, W/m^2 ground area, layers summed
     canopy_latent_heat_flux::CLH      # nsteps Vector, W/m^2 ground area, layers summed
+    friction_velocity::FV             # nsteps Vector, above-canopy boundary state canopy_air_profile! was driven with
+    obukhov_length::OL                # nsteps Vector, ditto (Inf = neutral/stable)
+    displacement_height::DH           # nsteps Vector, ditto
+    canopy_top_air_temperature::CTAT  # nsteps Vector, ditto
+    canopy_top_relative_humidity::CTRH # nsteps Vector, ditto
 end
 function CanopyOutput(nsteps::Int, n_canopy_layers::Int)
     n_boundaries = n_canopy_layers == 0 ? 0 : n_canopy_layers + 1
@@ -62,6 +67,11 @@ function CanopyOutput(nsteps::Int, n_canopy_layers::Int)
         zeros(typeof(1.0u"W"), nsteps, n_canopy_layers),
         zeros(typeof(1.0u"W/m^2"), nsteps),
         zeros(typeof(1.0u"W/m^2"), nsteps),
+        zeros(typeof(1.0u"m/s"), nsteps),
+        zeros(typeof(1.0u"m"), nsteps),
+        zeros(typeof(1.0u"m"), nsteps),
+        zeros(typeof(1.0u"K"), nsteps),
+        zeros(Float64, nsteps),
     )
 end
 

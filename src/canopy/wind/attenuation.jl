@@ -140,7 +140,8 @@ end
     canopy_top_flux_boundary(boundary_layer_model, canopy_height, displacement_height, roughness_length,
                               reference_height, friction_velocity, obukhov_length,
                               total_sensible_flux, total_latent_flux, ground_temperature, ground_vapour_density,
-                              reference_temperature, reference_vapour_density; max_iter=10, tol=0.01u"K")
+                              reference_temperature, reference_vapour_density; max_iter=10, tol=0.01u"K",
+                              relax=0.5, max_resistance=2000.0u"s/m")
 
 Canopy-top boundary temperature/vapour density: resistance-weighted from the
 whole canopy's own aggregated source flux (`total_sensible_flux`/
@@ -152,32 +153,41 @@ resistance uses a bulk top-of-canopy eddy diffusivity (same form as
 `air_profile_model`'s own layered resistance -- this boundary is shared by
 every `air_profile_model`. Small fixed point (the ground flux depends on the
 boundary temperature); converges in a handful of passes.
+
+`top_resistance`/`ground_resistance` grow as `1/friction_velocity`, unbounded
+under calm/stable conditions; `top_resistance` directly multiplies
+`total_sensible_flux`, so that alone can push `top_temperature` to the `±40K`
+clamp. `max_resistance` caps both at a literature-typical ceiling (Thom 1975;
+Monteith & Unsworth 2013).
 """
 function canopy_top_flux_boundary(boundary_layer_model, canopy_height, displacement_height, roughness_length,
     reference_height, friction_velocity, obukhov_length,
     total_sensible_flux, total_latent_flux, ground_temperature, ground_vapour_density,
-    reference_temperature, reference_vapour_density; max_iter=10, tol=0.01u"K", relax=0.5,
+    reference_temperature, reference_vapour_density; max_iter=10, tol=0.01u"K", relax=0.5, max_resistance=2000.0u"s/m",
 )
     κ = boundary_layer_model.karman_constant
     γ = boundary_layer_model.dyer_constant
     z_top = max(canopy_height - displacement_height, 1.0e-3u"m")
     z_ref = max(reference_height - displacement_height, 1.0e-3u"m")
 
-    ground_resistance = canopy_height / (κ * friction_velocity * z_top)
+    ground_resistance = min(canopy_height / (κ * friction_velocity * z_top), max_resistance)
 
     log_ratio = log(z_ref / roughness_length)
-    stable = !isfinite(obukhov_length) || obukhov_length >= 0.0u"m"
-    ψ_h = stable ? 0.0 : calc_ψ_h(calc_φ_m(z_ref, γ, obukhov_length))
-    top_resistance = max(log_ratio - ψ_h, 0.1 * log_ratio, 1.0e-6) / (κ * friction_velocity)
+    ψ_h = isfinite(obukhov_length) ?
+        calc_ψ_h(z_ref, γ, obukhov_length, boundary_layer_model.stable_beta, boundary_layer_model.turbulent_prandtl_number) : 0.0
+    top_resistance = min(max(log_ratio - ψ_h, 0.1 * log_ratio, 1.0e-6) / (κ * friction_velocity), max_resistance)
 
     # Self-referential (ground_flux depends on top_temperature) fixed point --
     # top_resistance/ground_resistance can both grow large under near-zero
     # wind, so an unrelaxed step can overshoot badly; damp every step, not
     # just check tolerance on the raw one.
+    # ρ_cp fixed from ambient data, not the iterate: calc_ρ_cp ∝ 1/T, so
+    # recomputing it from top_temperature each pass lets one oversized step
+    # near T=0 blow it up or flip its sign, diverging regardless of `relax`.
+    ρ_cp = calc_ρ_cp((reference_temperature + ground_temperature) / 2)
     top_temperature = reference_temperature
     top_vapour_density = reference_vapour_density
     for _ in 1:max_iter
-        ρ_cp = calc_ρ_cp(top_temperature)
         ground_flux = (ρ_cp / ground_resistance) * (ground_temperature - top_temperature)
         ground_vapour_flux = (ground_vapour_density - top_vapour_density) / ground_resistance
         raw_temperature = reference_temperature + (total_sensible_flux + ground_flux) * top_resistance / ρ_cp
@@ -193,7 +203,15 @@ function canopy_top_flux_boundary(boundary_layer_model, canopy_height, displacem
     # as leaf_temperature's own clamp in _canopy_picard_pass!.
     bound_lo = min(ground_temperature, reference_temperature) - 40.0u"K"
     bound_hi = max(ground_temperature, reference_temperature) + 40.0u"K"
+    # Separate _id per direction -- otherwise one direction's Picard-pass
+    # cascade (many warnings within a single hour) exhausts maxlog before
+    # the other direction ever gets logged.
+    if top_temperature < bound_lo
+        @warn "canopy_top_flux_boundary: hit the ±40K clamp (cold)" top_temperature friction_velocity top_resistance ground_resistance total_sensible_flux total_latent_flux ground_temperature reference_temperature maxlog=40 _id=:canopy_top_clamp_cold
+    elseif top_temperature > bound_hi
+        @warn "canopy_top_flux_boundary: hit the ±40K clamp (hot)" top_temperature friction_velocity top_resistance ground_resistance total_sensible_flux total_latent_flux ground_temperature reference_temperature maxlog=40 _id=:canopy_top_clamp_hot
+    end
     top_temperature = clamp(top_temperature, bound_lo, bound_hi)
     top_vapour_density = max(top_vapour_density, zero(top_vapour_density))
-    return (; top_temperature, top_vapour_density)
+    return (; top_temperature, top_vapour_density, bound_lo, bound_hi)
 end

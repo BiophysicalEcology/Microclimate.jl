@@ -49,9 +49,15 @@ leaf's own emission separately) and returns `(; ground_absorbed_longwave,
 net_absorbed_longwave)`.
 
 Absorbs at `1-τ` (full interception, not `leaf_emissivity*(1-τ)`) while
-emitting at `leaf_emissivity*σT^4`: small energy gap is dropped rather than
-double-counted. [`LayeredRadiosityExchange`](@ref), adds reflection properly 
-and stays exact.
+emitting at `leaf_emissivity*σT^4`: the transmission recursion above treats
+100% of intercepted flux as consumed and replaced by local emission (no
+reflection term), so absorption bookkeeping must match that same `1-τ` or
+leak energy, per this file's own exact conservation test. (
+[`AllPairsLongwaveExchange`](@ref) uses the `leaf_emissivity*(1-τ)` form
+instead, matching R's `longwavebelow`'s `RlwLabs = 0.5*vegem*(Rlwdown+Rlwup)`;
+its purpose is R-comparison fidelity rather than closed-system conservation.)
+[`LayeredRadiosityExchange`](@ref) adds reflection properly and stays exact
+at any `leaf_emissivity`.
 """
 function canopy_longwave!(buffers, model::LayeredLongwaveExchange, leaf_emissivity;
     leaf_temperature, ground_temperature, ground_emissivity,

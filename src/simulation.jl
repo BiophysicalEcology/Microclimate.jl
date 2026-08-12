@@ -1129,6 +1129,11 @@ function write_canopy_output!(::MultilayerCanopy, output, canopy_buffers, canopy
     output.canopy.net_absorbed_longwave[step] = canopy_result.net_absorbed_longwave
     output.canopy.ground_throughfall[step] = canopy_result.ground_throughfall
     output.canopy.iterations[step] = canopy_result.iterations
+    output.canopy.friction_velocity[step] = canopy_result.friction_velocity
+    output.canopy.obukhov_length[step] = canopy_result.obukhov_length
+    output.canopy.displacement_height[step] = canopy_result.displacement_height
+    output.canopy.canopy_top_air_temperature[step] = canopy_result.canopy_top_air_temperature
+    output.canopy.canopy_top_relative_humidity[step] = canopy_result.canopy_top_relative_humidity
     _write_row!(output.canopy.leaf_temperature, step, canopy_buffers.leaf.leaf_temperature)
     _write_row!(output.canopy.air_temperature, step, canopy_buffers.air_profile.air_temperature)
     _write_row!(output.canopy.wind_speed, step, canopy_buffers.wind.wind_speed)
