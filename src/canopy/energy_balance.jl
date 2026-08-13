@@ -322,6 +322,15 @@ function _canopy_picard_pass!(buffers, model::MultilayerCanopy, boundary_layer_m
     total_latent_flux = sum(evaporation_mass_flow) / 1.0u"m^2"
     reference_height = buffers.wind.above_canopy_profile.heights[2]
     reference_temperature = environment_instant.reference_temperature
+    # Open issue (kept as a warning, not fixed): this aggregate can reach
+    # extreme values because :bulk-mode RaupachLTheoryAirProfile jumps 5-6K
+    # between layer 1 (pinned to canopy_top_flux_boundary's T_top) and layer
+    # 2, instead of transitioning smoothly like R's LangrangianOne does --
+    # see canopy_top_flux_boundary's own comment (wind/attenuation.jl).
+    if ustrip(u"W/m^2", total_sensible_flux) < -500.0
+        fmt(v, unit) = join(round.(ustrip.(unit, v); digits=1), ", ")
+        @warn "extreme total_sensible_flux (cold) -- per-layer trace" total_sensible_flux ground_temperature reference_temperature sensible_heat_source=fmt(sensible_heat_source, u"W/m^2") leaf_temperature=fmt(leaf_temperature_buffer, u"°C") air_temperature=fmt(buffers.air_profile.air_temperature, u"°C") maxlog=5
+    end
     reference_vapour_density = wet_air_properties(reference_temperature, environment_instant.reference_humidity,
         atmospheric_pressure; vapour_pressure_equation).vapour_density
     ground_vapour_density = wet_air_properties(ground_temperature, ground_relative_humidity,

@@ -186,35 +186,47 @@ function canopy_top_flux_boundary(boundary_layer_model, canopy_height, displacem
         calc_ψ_h(z_ref, γ, obukhov_length, boundary_layer_model.stable_beta, boundary_layer_model.turbulent_prandtl_number) : 0.0
     top_resistance = min(max(log_ratio - ψ_h, 0.1 * log_ratio, 1.0e-6) / (κ * friction_velocity), max_resistance)
 
-    # Self-referential (ground_flux depends on top_temperature) fixed point --
-    # top_resistance/ground_resistance can both grow large under near-zero
-    # wind, so an unrelaxed step can overshoot badly; damp every step, not
-    # just check tolerance on the raw one.
     # ρ_cp fixed from ambient data, not the iterate: calc_ρ_cp ∝ 1/T, so
     # recomputing it from top_temperature each pass lets one oversized step
-    # near T=0 blow it up or flip its sign, diverging regardless of `relax`.
+    # near T=0 blow it up or flip its sign, diverging regardless of ω.
     ρ_cp = calc_ρ_cp((reference_temperature + ground_temperature) / 2)
     top_temperature = reference_temperature
     top_vapour_density = reference_vapour_density
-    for _ in 1:max_iter
+    # Aitken Δ² acceleration: ω adapts each pass from the residual history,
+    # damping the self-referential ground_flux/top_temperature loop under
+    # low-wind (high-resistance) overshoot.
+    ω_temp, ω_vapour = relax, relax
+    residual_temp_prev = zero(top_temperature)
+    residual_vapour_prev = zero(top_vapour_density)
+    step_temp = zero(top_temperature)
+    for iter in 1:max_iter
         ground_flux = (ρ_cp / ground_resistance) * (ground_temperature - top_temperature)
         ground_vapour_flux = (ground_vapour_density - top_vapour_density) / ground_resistance
-        raw_temperature = reference_temperature + (total_sensible_flux + ground_flux) * top_resistance / ρ_cp
-        raw_vapour_density = reference_vapour_density + (total_latent_flux + ground_vapour_flux) * top_resistance
-        new_temperature = top_temperature + relax * (raw_temperature - top_temperature)
-        new_vapour_density = top_vapour_density + relax * (raw_vapour_density - top_vapour_density)
-        converged = abs(new_temperature - top_temperature) < tol
-        top_temperature = new_temperature
-        top_vapour_density = new_vapour_density
-        converged && break
+        residual_temp = reference_temperature + (total_sensible_flux + ground_flux) * top_resistance / ρ_cp - top_temperature
+        residual_vapour = reference_vapour_density + (total_latent_flux + ground_vapour_flux) * top_resistance - top_vapour_density
+        if iter > 1
+            Δr_temp = residual_temp - residual_temp_prev
+            Δr_vapour = residual_vapour - residual_vapour_prev
+            iszero(Δr_temp) || (ω_temp = clamp(-ω_temp * (residual_temp_prev / Δr_temp), 0.02, 0.9))
+            iszero(Δr_vapour) || (ω_vapour = clamp(-ω_vapour * (residual_vapour_prev / Δr_vapour), 0.02, 0.9))
+        end
+        step_temp = ω_temp * residual_temp
+        top_temperature += step_temp
+        top_vapour_density += ω_vapour * residual_vapour
+        residual_temp_prev = residual_temp
+        residual_vapour_prev = residual_vapour
+        abs(step_temp) < tol && break
     end
     # Hard backstop against a runaway fixed point, same bracket-clamp spirit
     # as leaf_temperature's own clamp in _canopy_picard_pass!.
+    # Open issue (kept as a warning, not fixed): under low friction_velocity,
+    # :bulk-mode RaupachLTheoryAirProfile pins layer 1 (canopy top) exactly
+    # to T_top but jumps 5-6K to layer 2 instead of transitioning smoothly
+    # (unlike R's LangrangianOne, whose CfTh-CnTh+CnT near-field kernel
+    # guarantees continuity there) -- that artificial layer-1/2 ΔT drives an
+    # extreme total_sensible_flux, which feeds back into this clamp.
     bound_lo = min(ground_temperature, reference_temperature) - 40.0u"K"
     bound_hi = max(ground_temperature, reference_temperature) + 40.0u"K"
-    # Separate _id per direction -- otherwise one direction's Picard-pass
-    # cascade (many warnings within a single hour) exhausts maxlog before
-    # the other direction ever gets logged.
     if top_temperature < bound_lo
         @warn "canopy_top_flux_boundary: hit the ±40K clamp (cold)" top_temperature friction_velocity top_resistance ground_resistance total_sensible_flux total_latent_flux ground_temperature reference_temperature maxlog=40 _id=:canopy_top_clamp_cold
     elseif top_temperature > bound_hi

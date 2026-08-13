@@ -15,79 +15,51 @@ since K-theory's gradient-diffusion assumption breaks down close to a
 source in a canopy). Unlike `KTheoryAirProfile`, transport is not local —
 every layer's concentration depends on every other layer's source directly.
 
-`ground_velocity_std_factor`/`canopy_top_velocity_std_factor` (Raupach's own
+`ground_velocity_std_factor`/`canopy_top_velocity_std_factor` (Raupach's
 `a0`/`a1`) set the vertical velocity standard deviation profile: `σ_w(z) =
 (a1+a0)/2·u* + (a1-a0)/2·u*·cos(π(1 - z/h))`, minimum at the ground
 (`a0·u*`), maximum at canopy top (`a1·u*`). `min_ground_resistance` floors the
 ground-most layer's own aerodynamic resistance, used once to evaluate the
 ground flux Fg (avoids a runaway Fg for a very open canopy).
 
-The near-field kernel is singular at zero distance, so a layer's contribution
-to a point within (or coincident with) itself can't be evaluated as a single
-point source the way every other (i,j) pair is. Instead that self term is
+The near-field kernel is singular at zero distanceso its self term is
 resolved by subdividing the source layer's own thickness into
-`near_field_subdivisions` sub-points and averaging the kernel over them — a
-plain midpoint quadrature of the (integrable) singularity, not a fitted
-correction. Raising `near_field_subdivisions` trades runtime for accuracy;
-the O(n²) near-field double sum only needs it for the O(n) diagonal terms; the
-off-diagonal terms use a single point-source evaluation each.
+`near_field_subdivisions` sub-points and averaging the kernel over them.
+Raising `near_field_subdivisions` trades runtime for accuracy.
 
-Fg (ground flux) depends on the same air_temperature it helps solve,
-coupled through up to the whole canopy's resistance — gain through that
-loop can exceed 1 for a tall/dense canopy, which no fixed relaxation
-factor stabilizes. Adaptive Aitken Δ²-acceleration handles this: `omega` is relearned each pass from the
-residual history, clamped to `[aitken_omega_min, aitken_omega_max]`, and
-weighted to under-relax hardest at the ground (`aitken_weight_bottom`)
-and lightest at canopy top (`aitken_weight_top`); `aitken_bottom_emphasis`
-weights ground-proximate residuals more heavily in the omega fit.
-`relaxation` seeds the first pass, before there's a residual history.
+The recursive dependence of Fg (ground flux) on the air_temperature it helps 
+solve and the potential runaway that causes for a tall/dense canopy is handled
+with adaptive Aitken Δ²-acceleration: `omega` s relearned each pass from
+the residual history, clamped to `[aitken_omega_min, aitken_omega_max]`, and 
+weighted to under-relax hardest at the ground (`aitken_weight_bottom`) and 
+lightest at canopy top (`aitken_weight_top`); `aitken_bottom_emphasis` weights 
+ground-proximate residuals more heavily in the omega fit. `relaxation` seeds 
+the first pass, before there's a residual history.
 
 `T_L` (see `canopy_air_profile!`'s own derivation) is `∝ 1/friction_velocity`
-and grows further under stability via `calc_Φ_h` -- both unbounded in
-principle, which under calm/stable conditions can push `T_L` (and the
-near-field kernel's `ζ = distance/(σ_w·T_L)` argument) toward physically
-implausible eddy-turnover-time values, far outside where Monin-Obukhov
-similarity theory or Raupach's own LNF derivation apply.
-`max_lagrangian_timescale` caps it; 200s is generous relative to the
-seconds-to-tens-of-seconds range typical conditions produce.
+and grows further under instability via `calc_Φ_h`, which can push `T_L`
+(and the near-field kernel's `ζ = distance/(σ_w·T_L)` argument) toward
+physically implausible eddy-turnover-time values under calm/unstable
+conditions. `max_lagrangian_timescale` caps it; 200s is generous
+relative to the seconds-to-tens-of-seconds range typical conditions produce.
 
-All keyword defaults above are free/tunable, not literature-derived
-values — no citation for the specific magnitudes.
-
-Humidity is transported as vapor density (kg/m³), not vapor pressure: a
-density gradient is directly a mass flux (Fick's law), the same scalar
-`KTheoryAirProfile`'s own vapor solve uses, with no scale factor analogous
-to heat's `ρ_cp` needed. A mixing-ratio-style concentration (`e·ρ_air·L/P`)
-would need a standard 0.622 factor that isn't easily verified against a
-closed form; vapor density sidesteps that conversion entirely. Boundary
-conditions and the relative-humidity readout go through
-`wet_air_properties`'s vapor-pressure/vapor-density primitives, the same
-ones `monin_obukhov.jl` uses.
+The keyword defaults are free/tunable, not literature-derived values
+— other than ground_velocity_std_factor, canopy_top_velocity_std_factor
+which come from Raupach (1989).
 
 `far_field_mode` selects between two self-consistent formulations of both
-the far-field and near-field terms. `Val(:exact)` (default) is
-literature-faithful: far-field is eq. 19a's genuine integral (each layer's
-own local flux over its own local resistance, summed as an O(n) prefix sum,
-with a single ground flux evaluated once from the ground-most layer), and
-near-field is eq. 37's separately-signed kernel evaluation with a coincident
-self term resolved by subdivision quadrature. `Val(:bulk)` is an alternate
-formulation cross-checked against another independent implementation of
-this model: far-field is the flux *at* the query layer times the total
+the far-field and near-field terms. `Val(:exact)` (default) follows Raupach 
+(1989) exactly, using eq. 19a's integral, and near-field is eq. 37's 
+separately-signed kernel evaluation with a coincident self term resolved
+by subdivision quadrature. `Val(:bulk)` is an alternate formulation used in 
+the micropoint model: far-field is the flux *at* the query layer times the total
 resistance from that layer to the top (or to the ground, for the ground
 flux), recomputed per layer, not the per-layer integral; near-field
 evaluates the kernel once (at the direct distance) and multiplies by the
 raw signed sum of direct+reflected normalized distances, and drops any self
 term outright rather than resolving it; both terms also pick up a
 near-field small-sample-size correction (`mu`, a function of layer count
-alone) that :exact omits. Neither is strictly "more correct": :exact is the
-literature-faithful form, :bulk trades that for matching the other
-implementation's output, useful when comparing against data or trading
-speed for realism (:bulk is a bit cheaper too: no subdivision quadrature,
-and one prefix sum instead of the prefix-and-suffix pair :exact's far-field
-needs). The near-field double sum
-stays O(n²) regardless of mode — its kernel is nonlinear in both indices —
-but heat and vapor share one kernel evaluation per (i,j) pair. Out-of-range
-results are asserted finite rather than silently clipped.
+alone) that :exact omits.
 
 # References
 - Raupach, M. R. (1989). A practical Lagrangian method for relating scalar
@@ -107,16 +79,7 @@ results are asserted finite rather than silently clipped.
     near_field_subdivisions::NS = 20
     far_field_mode::FFM = Val(:exact)
     max_lagrangian_timescale::MTL = 200.0u"s"
-    # air_temperature[i] itself has no other absolute bound (only T_top,
-    # canopy_top_flux_boundary's own boundary condition, does) -- leaf
-    # temperature is clamped only relative to air_temperature, so without
-    # this the two can climb together, unanchored, pass after pass.
-    # far_field_mode==:exact only -- :bulk uses bulk_temperature_margin instead.
     max_air_temperature_deviation::MAD = 40.0u"K"
-    # far_field_mode==:bulk only, matching micropoint's LangrangianOne
-    # (tmn/tmx: ground/canopy-top/leaf-temperature envelope ±2K) exactly,
-    # for direct comparison -- not a free/tunable value the way the other
-    # defaults in this struct are.
     bulk_temperature_margin::BTM = 2.0u"K"
 end
 
@@ -167,7 +130,7 @@ const _RAUPACH_KERNEL_C2 = 0.5 - π^2 / (6 * sqrt(2π))
 
 @inline function _raupach_kernel(ζ)
     e = exp(-ζ)
-    return _RAUPACH_KERNEL_C1 * log(1.0 - e) + _RAUPACH_KERNEL_C2 * e
+    return _RAUPACH_KERNEL_C1 * log(1.0 - e) + _RAUPACH_KERNEL_C2 * e # eq. 34 Raupach 1989
 end
 
 # kn is odd (kn(-ζ) = -kn(ζ); eq. 34 gives it for ζ>0 only).
@@ -288,8 +251,8 @@ end
 # once from the ground-most layer.
 function _raupach_far_field!(::Val{:exact}, far_field_accum, far_field_accum_latent, _resistance_from_top, _resistance_to_ground,
     cumulative_sensible_below, cumulative_latent_below, layer_resistance, _layer_thickness,
-    ground_temperature, ground_vapor_density, air_temperature_prev, vapor_density_prev, min_ground_resistance, ρ_cp, n)
-    ground_resistance = max(layer_resistance[n], min_ground_resistance)
+    ground_temperature, ground_vapor_density, air_temperature_prev, vapor_density_prev, ground_resistance, ρ_cp, n)
+    # Same value as ground_heat_conductance/ground_vapor_conductance -- keeps soil/canopy flux consistent.
     ground_flux = (ρ_cp / ground_resistance) * (ground_temperature - air_temperature_prev[n])
     ground_vapor_flux = (ground_vapor_density - vapor_density_prev[n]) / ground_resistance
     far_field_accum[1] = (cumulative_sensible_below[1] + ground_flux) * layer_resistance[1]
@@ -306,22 +269,25 @@ end
 # to the top/ground, recomputed per layer -- not eq. 19a's per-layer-weighted
 # integral. Ground flux's ρ_cp is recomputed per layer from air_temperature_prev
 # (unlike :exact's fixed ρ_cp), matching micropoint's LangrangianOne (ph/cp
-# from tair[i]) exactly, for direct comparison.
+# from tair[i]) exactly -- tried the fixed-ρ_cp form here too (removing the
+# ρ_cp∝1/T self-reference), but it strengthens ground-temperature coupling
+# into the outer canopy-top energy-balance loop and destabilizes it in
+# practice, so this stays matched to R's own (empirically stable) form.
 function _raupach_far_field!(::Val{:bulk}, far_field_accum, far_field_accum_latent, resistance_from_top, resistance_to_ground,
     cumulative_sensible_below, cumulative_latent_below, layer_resistance, _layer_thickness,
-    ground_temperature, ground_vapor_density, air_temperature_prev, vapor_density_prev, min_ground_resistance, _ρ_cp, n)
+    ground_temperature, ground_vapor_density, air_temperature_prev, vapor_density_prev, ground_resistance, _ρ_cp, n)
     resistance_from_top[1] = layer_resistance[1]
     @inbounds for i in 2:n
         resistance_from_top[i] = resistance_from_top[i - 1] + layer_resistance[i]
     end
-    resistance_to_ground[n] = layer_resistance[n]
+    # resistance_to_ground[i<n] adds on top of this, so already ≥ ground_resistance -- no extra floor needed.
+    resistance_to_ground[n] = ground_resistance
     @inbounds for i in (n - 1):-1:1
         resistance_to_ground[i] = resistance_to_ground[i + 1] + layer_resistance[i]
     end
     @inbounds for i in 1:n
-        ground_resistance = max(resistance_to_ground[i], min_ground_resistance)
-        ground_flux = (calc_ρ_cp(air_temperature_prev[i]) / ground_resistance) * (ground_temperature - air_temperature_prev[i])
-        ground_vapor_flux = (ground_vapor_density - vapor_density_prev[i]) / ground_resistance
+        ground_flux = (calc_ρ_cp(air_temperature_prev[i]) / resistance_to_ground[i]) * (ground_temperature - air_temperature_prev[i])
+        ground_vapor_flux = (ground_vapor_density - vapor_density_prev[i]) / resistance_to_ground[i]
         far_field_accum[i] = (cumulative_sensible_below[i] + ground_flux) * resistance_from_top[i]
         far_field_accum_latent[i] = (cumulative_latent_below[i] + ground_vapor_flux) * resistance_from_top[i]
     end
@@ -334,8 +300,9 @@ end
 @inline _raupach_near_field_scale(::Val{:bulk}, n) = 1.0 + 0.894 * exp(-0.01386 * n) + 9.82 * exp(-0.15 * n)
 
 # :exact uses one ρ_cp fixed from ambient data; :bulk recomputes per layer
-# from air_temperature_prev[i], matching micropoint's LangrangianOne.
-@inline _raupach_layer_ρ_cp(::Val{:exact}, ρ_cp, air_temperature_prev, i) = ρ_cp
+# from air_temperature_prev[i], matching micropoint's LangrangianOne (see
+# _raupach_far_field!'s own comment on why :bulk keeps this).
+@inline _raupach_layer_ρ_cp(::Val{:exact}, ρ_cp, _air_temperature_prev, _i) = ρ_cp
 @inline _raupach_layer_ρ_cp(::Val{:bulk}, _ρ_cp, air_temperature_prev, i) = calc_ρ_cp(air_temperature_prev[i])
 
 # :exact's backstop is ±max_air_temperature_deviation around T_top/ground_temperature.
@@ -412,23 +379,21 @@ function canopy_air_profile!(buffers, model::RaupachLTheoryAirProfile, boundary_
 # air_temperature[i] = T_top + far_field + ... is assembled, outside this function) — so the caller recovers
 #  C_f(z) = C_f(z_R) + (C_f(z) − C_f(z_R)) exactly as eq. 19a's rearranged form.
 
-    # T_L is held constant through the canopy (a2·h/u*), not a function of z:
-    # a2 is set by requiring eddy diffusivity to be continuous at the canopy
-    # top, matching the below-canopy L-theory value σ_w(h)²·T_L against the
-    # above-canopy value, using σ_w(h) = a1·u*. Φ_h multiplies the neutral
-    # value (Ogée et al. 2003 eq. 8), not divides.
+    # T_L held constant through the canopy (a2·h/u*): a2 matches the
+    # below-canopy value σ_w(h)²·T_L to the above-canopy MOST value
+    # κu*(h-d)/Φ_h.
     z_eval = max(canopy_height - displacement_height, 1.0e-3u"m")  # numerical floor, not a physical parameter
     # obukhov_length is Inf only on the true neutral fallback now (calc_Φ_h handles both signs).
     Φ_h = isfinite(obukhov_length) ?
         calc_Φ_h(z_eval, γ, obukhov_length, boundary_layer_model.stable_Φ_h_coefficient,
             boundary_layer_model.min_stable_Φ_h, boundary_layer_model.max_stable_Φ_h) : 1.0
-    a2 = Φ_h * boundary_layer_model.karman_constant * (1.0 - displacement_height / canopy_height) / a1^2
+    a2 = boundary_layer_model.karman_constant * (1.0 - displacement_height / canopy_height) / (a1^2 * Φ_h)
     T_L = min(a2 * canopy_height / friction_velocity, max_lagrangian_timescale)
 
     σ_w_mean = (a1 + a0) * 0.5 * friction_velocity
     σ_w_amplitude = (a1 - a0) * 0.5 * friction_velocity
     @inbounds for i in 1:n
-        σ_w = σ_w_mean + σ_w_amplitude * cos(π * (1.0 - layer_heights[i] / canopy_height))
+        σ_w = σ_w_mean + σ_w_amplitude * cos(π * (1.0 - layer_heights[i] / canopy_height)) # Raupach 1989 eq. 48
         vertical_velocity_std[i] = σ_w
         inv_near_field_length[i] = 1.0 / (σ_w * T_L)
         eddy_diffusivity[i] = T_L * σ_w^2 # Raupach 1989 eq. 11b
@@ -437,12 +402,8 @@ function canopy_air_profile!(buffers, model::RaupachLTheoryAirProfile, boundary_
         latent_near_field_weight[i] = (evaporation_mass_flow[i] / 1.0u"m^2") / σ_w
     end
 
-    # Ground-to-lowest-layer resistance for the soil's own surface exchange
-    # (see ground_convection_conditions) -- uses the actual
-    # wind_attenuation_profile shape (what the modeled wind speed itself
-    # follows), not layer_resistance[n]'s cosine sigma_w(z) profile: testing
-    # whether that mismatch (near-ground diffusivity from two disagreeing
-    # profiles) explains excess soil-coupled amplification under Raupach.
+    # Shared by ground_heat_conductance/ground_vapor_conductance and _raupach_far_field!'s
+    # ground flux -- uses wind_attenuation_profile's shape, not layer_resistance[n]'s σ_w profile.
     eddy_diffusivity_top_wind = boundary_layer_model.karman_constant * friction_velocity * z_eval
     eddy_diffusivity_ground = eddy_diffusivity_top_wind * wind_attenuation[n]
     ground_resistance = max(layer_thickness[n] / eddy_diffusivity_ground, min_ground_resistance)
@@ -467,7 +428,7 @@ function canopy_air_profile!(buffers, model::RaupachLTheoryAirProfile, boundary_
 
     _raupach_far_field!(model.far_field_mode, far_field_accum, far_field_accum_latent, resistance_from_top, resistance_to_ground,
         cumulative_sensible_below, cumulative_latent_below, layer_resistance, layer_thickness,
-        ground_temperature, ρv_g, air_temperature_prev, vapor_density_prev, min_ground_resistance, ρ_cp, n)
+        ground_temperature, ρv_g, air_temperature_prev, vapor_density_prev, ground_resistance, ρ_cp, n)
     near_field_scale = _raupach_near_field_scale(model.far_field_mode, n)
 
     # Near-field concentration at the canopy top, subtracted from every
