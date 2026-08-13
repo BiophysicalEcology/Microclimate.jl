@@ -51,7 +51,7 @@ end
     peak = argmax(result.air_temperature)
     @test result.air_temperature[peak] > T
     @test abs(peak - n_layers ÷ 2) <= 1
-    # a genuine local bump: every other layer is cooler than the peak. Not
+    # a local bump: every other layer is cooler than the peak. Not
     # asserting strict monotonic decay either side, unlike K-theory's
     # symmetric diffusion — Raupach's σ_w(z) profile is asymmetric (increasing
     # toward canopy top), so the near-field kernel doesn't guarantee unimodal

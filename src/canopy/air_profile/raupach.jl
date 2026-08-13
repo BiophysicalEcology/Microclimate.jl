@@ -461,12 +461,12 @@ function canopy_air_profile!(buffers, model::RaupachLTheoryAirProfile, boundary_
         near_field_latent *= near_field_scale
 
         # Heat: T_top is an absolute temperature baseline, not a concentration;
-        # ρ_cp converts the source-driven perturbation (a genuine volumetric
+        # ρ_cp converts the source-driven perturbation (a volumetric
         # energy density) into a temperature increment added on top of it.
         ρ_cp_i = _raupach_layer_ρ_cp(model.far_field_mode, ρ_cp, air_temperature_prev, i)
         air_temperature[i] = T_top + (far_field + near_field - near_field_top) / ρ_cp_i  # raw; Aitken-blended below
 
-        # Latent: vapor density is a genuine concentration (kg/m^3), no
+        # Latent: vapor density is a concentration (kg/m^3), no
         # ρ_cp-style conversion involved -- unaffected by the heat-path fix above.
         vapor_density[i] = ρv_top - near_field_top_latent + far_field_latent + near_field_latent  # raw; Aitken-blended below
     end
