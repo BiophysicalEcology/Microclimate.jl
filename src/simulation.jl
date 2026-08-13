@@ -311,7 +311,7 @@ function interpolate_minmax!(output, environment_minmax, environment_daily, envi
     # the forcings filled before them.
     buffer_for(vk) = _is_output_quantity(vk) ? getproperty(output, _name(vk)) :
                                                getproperty(interpolation_scratch, _name(vk))
-    populate_quantities!(buffer_for, environment_minmax.forcings, solar_radiation_out)
+    populate_quantities!(buffer_for, environment_minmax.forcings, solar_radiation_out, consecutive_days(environment_minmax))
 
     # Clamp humidity and cloud cover to [_, 1.0] without allocating a mask Vector.
     @inbounds for i in eachindex(output.reference_humidity)
