@@ -433,7 +433,7 @@ function solve_soil!(cache::MicroCache)
     ode_integrator = cache.ode_integrator
     forcing = cache.forcing
 
-    (; convergence, rainfall_schedule, max_surface_pool, canopy_soil_convergence) = config
+    (; convergence, rainfall_schedule, max_surface_pool, canopy_soil_convergence, canopy_soil_relaxation) = config
     time_mode = mp.time_mode
     moisture_mode = config.soil_moisture_strategy
     (; campbell_b_parameter, air_entry_water_potential) = soil_profile.hydraulics
@@ -704,6 +704,7 @@ function solve_soil!(cache::MicroCache)
                 rainfall = rainfall_step, leaf_water_potential,
                 direct_horizontal_irradiance = output.global_radiation[step] * (1.0 - output.diffuse_fraction[step]),
                 diffuse_horizontal_irradiance = output.global_radiation[step] * output.diffuse_fraction[step],
+                relaxation = canopy_soil_relaxation,
             )
             (; ground_shortwave_transmission, ground_incoming_longwave, canopy_source_temperature, canopy_result,
                 ground_wind_speed, ground_air_temperature, ground_air_relative_humidity, ground_reference_height,
@@ -839,6 +840,7 @@ function solve_soil!(cache::MicroCache)
                         rainfall = rainfall_next, leaf_water_potential,
                         direct_horizontal_irradiance = output.global_radiation[next_step] * (1.0 - output.diffuse_fraction[next_step]),
                         diffuse_horizontal_irradiance = output.global_radiation[next_step] * output.diffuse_fraction[next_step],
+                        relaxation = canopy_soil_relaxation,
                     )
                     (; ground_shortwave_transmission, ground_incoming_longwave, canopy_source_temperature, canopy_result,
                         ground_wind_speed, ground_air_temperature, ground_air_relative_humidity, ground_reference_height,
@@ -1037,11 +1039,14 @@ end
 # temperature seeds the next pass. `csc` at `FixedIterationConvergence(1)`
 # (the default) runs the body once, so canopy sees the same ground
 # temperature it would under a plain single-pass coupling.
+# `relaxation` (see `MicroConfig.canopy_soil_relaxation`) damps
+# ground_temperature between passes; convergence checks the raw residual.
 function converge_canopy_soil_hour!(ode_integrator, hour_index, hour_T0_ode, csc,
     canopy_model, canopy_buffers, canopy_inputs, snow_model;
     snow_present, ground_temperature0, canopy_source_temperature, ode_depths, soil_wetness, longwave_sky, albedo, Q_freeze, snow_state,
     boundary_layer_model, site, environment_instant, ground_emissivity, ground_relative_humidity,
     rainfall, leaf_water_potential, direct_horizontal_irradiance, diffuse_horizontal_irradiance,
+    relaxation=1.0,
 )
     niter = max_iterations(csc)
     ground_temperature = ground_temperature0
@@ -1066,7 +1071,7 @@ function converge_canopy_soil_hour!(ode_integrator, hour_index, hour_T0_ode, csc
         T_snow, T0 = split_ode_state(snow_model, T_result)
         new_ground_temperature = snow_present ? T_snow[1] : T0[1]
         converged = is_converged(csc, iter, niter, SVector(new_ground_temperature), SVector(ground_temperature))
-        ground_temperature = new_ground_temperature
+        ground_temperature = relaxation * new_ground_temperature + (1 - relaxation) * ground_temperature
         converged && break
     end
     return (; overrides, T0, T_snow)

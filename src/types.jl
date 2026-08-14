@@ -71,13 +71,17 @@ strictly the "how we iterate and how data is delivered" side of the model.
   and the soil-heat ODE, `FixedIterationConvergence(1)` by default (single
   pass, canopy uses the previous hour's soil temperature). Raise to iterate
   the two to a jointly self-consistent state within the hour.
+- `canopy_soil_relaxation`: under-relaxation on each `canopy_soil_convergence`
+  pass's `ground_temperature` update (`x_new = relaxation*x_solved +
+  (1-relaxation)*x_prev`), `1.0` (no relaxation) by default.
 """
-@kwdef struct MicroConfig{CV,RFS,SMM,MSP,CSC}
+@kwdef struct MicroConfig{CV,RFS,SMM,MSP,CSC,CSR}
     convergence::CV = FixedIterationConvergence(3)
     rainfall_schedule::RFS = DailyRainfall()
     soil_moisture_strategy::SMM = PrescribedSoilMoisture()
     max_surface_pool::MSP = 1.0e4u"kg/m^2"
     canopy_soil_convergence::CSC = FixedIterationConvergence(1)
+    canopy_soil_relaxation::CSR = 1.0
 end
 
 """
