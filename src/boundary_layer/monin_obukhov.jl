@@ -760,8 +760,8 @@ to. Converges to `±Inf` (neutral) as `ΔT → 0`.
 """
 @inline function calc_Obukhov_length(
     reference_temp, surface_temp, v_ref_height, z0, z, ρcpTκg, κ, ΔT, ρ_cp, kinematic_viscosity;
-    γ=16.0, stable_beta=4.7, turbulent_prandtl_number=0.74, max_iter=30, tol=1e-2, initial_obukhov_length=-0.3u"m",
-    min_friction_velocity=0.02u"m/s", thermal_roughness_model=SublayerStantonRoughness(),
+    γ=16.0, stable_beta=4.7, turbulent_prandtl_number=0.74, max_iter=50, tol=1e-2, initial_obukhov_length=-0.3u"m",
+    min_friction_velocity=0.02u"m/s", thermal_roughness_model=SublayerStantonRoughness(), relax=0.5,
 )
     obukhov_length = initial_obukhov_length
 
@@ -788,7 +788,7 @@ to. Converges to `±Inf` (neutral) as `ΔT → 0`.
             reference_temp, surface_temp)
         obukhov_length_new = ρcpTκg * friction_velocity^3 / convective_heat_flux
         relative_error = abs((obukhov_length_new - obukhov_length) / obukhov_length)
-        obukhov_length = obukhov_length_new
+        obukhov_length = relax * obukhov_length_new + (1.0 - relax) * obukhov_length
     end
 
     return (;
