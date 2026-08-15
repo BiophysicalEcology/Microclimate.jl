@@ -227,12 +227,8 @@ function canopy_top_flux_boundary(boundary_layer_model, canopy_height, displacem
     # extreme total_sensible_flux, which feeds back into this clamp.
     bound_lo = min(ground_temperature, reference_temperature) - 40.0u"K"
     bound_hi = max(ground_temperature, reference_temperature) + 40.0u"K"
-    if top_temperature < bound_lo
-        @warn "canopy_top_flux_boundary: hit the ±40K clamp (cold)" top_temperature friction_velocity top_resistance ground_resistance total_sensible_flux total_latent_flux ground_temperature reference_temperature maxlog=40 _id=:canopy_top_clamp_cold
-    elseif top_temperature > bound_hi
-        @warn "canopy_top_flux_boundary: hit the ±40K clamp (hot)" top_temperature friction_velocity top_resistance ground_resistance total_sensible_flux total_latent_flux ground_temperature reference_temperature maxlog=40 _id=:canopy_top_clamp_hot
-    end
+    clamped = top_temperature < bound_lo ? :cold : top_temperature > bound_hi ? :hot : :none
     top_temperature = clamp(top_temperature, bound_lo, bound_hi)
     top_vapour_density = max(top_vapour_density, zero(top_vapour_density))
-    return (; top_temperature, top_vapour_density, bound_lo, bound_hi)
+    return (; top_temperature, top_vapour_density, bound_lo, bound_hi, clamped)
 end

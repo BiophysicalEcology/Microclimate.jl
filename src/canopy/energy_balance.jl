@@ -378,7 +378,7 @@ function _canopy_picard_pass!(buffers, model::MultilayerCanopy, boundary_layer_m
 
     _relax_air_profile!(buffers, model.air_profile_model, relaxation, air_temperature_prev, relative_humidity_prev)
 
-    return longwave_result, any_clamped, canopy_top_air_temperature, canopy_top_relative_humidity, friction_velocity, obukhov_length
+    return longwave_result, any_clamped, canopy_top_air_temperature, canopy_top_relative_humidity, friction_velocity, obukhov_length, boundary.clamped
 end
 
 # Under-relax the air profile: it feeds back into next pass's leaf
@@ -421,14 +421,14 @@ function converge_canopy!(buffers, model::MultilayerCanopy, boundary_layer_model
     leaf_temperature_buffer = buffers.leaf.leaf_temperature
     leaf_temperature_prev = buffers.leaf.leaf_temperature_prev
     niter = max_iterations(cm.convergence)
-    local longwave_result, friction_velocity, obukhov_length
+    local longwave_result, friction_velocity, obukhov_length, boundary_clamped
     canopy_top_air_temperature_prev = ctx.canopy_top_air_temperature
     canopy_top_relative_humidity_prev = ctx.canopy_top_relative_humidity
     iter = 0
     for i in 1:niter
         iter = i
         leaf_temperature_prev .= leaf_temperature_buffer
-        longwave_result, any_clamped, canopy_top_air_temperature, canopy_top_relative_humidity, friction_velocity, obukhov_length =
+        longwave_result, any_clamped, canopy_top_air_temperature, canopy_top_relative_humidity, friction_velocity, obukhov_length, boundary_clamped =
             _canopy_picard_pass!(buffers, model, boundary_layer_model, ctx, cm.relaxation,
                                   canopy_top_air_temperature_prev, canopy_top_relative_humidity_prev)
         boundary_converged = _canopy_top_converged(cm.convergence, canopy_top_air_temperature, canopy_top_air_temperature_prev)
@@ -437,5 +437,7 @@ function converge_canopy!(buffers, model::MultilayerCanopy, boundary_layer_model
         !any_clamped && boundary_converged &&
             is_converged(cm.convergence, iter, niter, leaf_temperature_buffer, leaf_temperature_prev) && break
     end
+    # Only the *final* pass's clamp matters
+    boundary_clamped === :none || @warn "converge_canopy!: canopy-top boundary still hit the ±40K clamp ($boundary_clamped) after $iter iterations" canopy_top_air_temperature=canopy_top_air_temperature_prev maxlog=40 _id=Symbol(:canopy_top_clamp_, boundary_clamped)
     return longwave_result, iter, canopy_top_air_temperature_prev, canopy_top_relative_humidity_prev, friction_velocity, obukhov_length
 end
