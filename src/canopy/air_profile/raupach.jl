@@ -1,7 +1,7 @@
 """
     RaupachLTheoryAirProfile(; ground_velocity_std_factor=0.25, canopy_top_velocity_std_factor=1.25,
-                              min_ground_resistance=2.0u"s/m", relaxation=0.5,
-                              aitken_omega_min=0.02, aitken_omega_max=0.9,
+                              min_ground_resistance=10.0u"s/m", relaxation=0.7,
+                              aitken_omega_min=0.02, aitken_omega_max=0.8,
                               aitken_weight_bottom=0.05, aitken_weight_top=0.8,
                               aitken_bottom_emphasis=10.0, near_field_subdivisions=20,
                               max_lagrangian_timescale=200.0u"s", max_air_temperature_deviation=40.0u"K",
@@ -69,10 +69,10 @@ alone) that :exact omits.
 @kwdef struct RaupachLTheoryAirProfile{GVSF,CVSF,GR,RL,OMIN,OMAX,WBOT,WTOP,BETA,NS,FFM,MTL,MAD,BTM} <: AbstractCanopyAirProfileModel
     ground_velocity_std_factor::GVSF = 0.25
     canopy_top_velocity_std_factor::CVSF = 1.25
-    min_ground_resistance::GR = 2.0u"s/m"
-    relaxation::RL = 0.5
+    min_ground_resistance::GR = 10.0u"s/m"
+    relaxation::RL = 0.7
     aitken_omega_min::OMIN = 0.02
-    aitken_omega_max::OMAX = 0.9
+    aitken_omega_max::OMAX = 0.8
     aitken_weight_bottom::WBOT = 0.05
     aitken_weight_top::WTOP = 0.8
     aitken_bottom_emphasis::BETA = 10.0

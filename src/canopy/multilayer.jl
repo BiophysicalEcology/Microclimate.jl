@@ -1,9 +1,9 @@
 """
     MultilayerCanopy(; canopy_height, plant_area_index, woody_area_fraction=0.0,
                        shortwave_model=TwoStreamRadiation(),
-                       longwave_model=LayeredLongwaveExchange(),
+                       longwave_model=LayeredRadiosityExchange(),
                        wind_model=ExponentialCanopyWindAttenuation(),
-                       air_profile_model=KTheoryAirProfile(),
+                       air_profile_model=RaupachLTheoryAirProfile(),
                        interception_model=NoInterception(),
                        leaf_parameters=LeafParameters(),
                        stomatal_model=PrescribedStomatalConductance(),
@@ -30,11 +30,13 @@ Composes swappable sub-models the same way `MicroModel` composes
 - `shortwave_model::AbstractCanopyShortwaveModel` — layer-resolved shortwave
   radiative transfer (default [`TwoStreamRadiation`](@ref), Dickinson/Sellers)
 - `longwave_model::AbstractCanopyLongwaveModel` — layer-resolved longwave
-  exchange (default [`LayeredLongwaveExchange`](@ref))
+  exchange (default [`LayeredRadiosityExchange`](@ref); see also
+  [`LayeredLongwaveExchange`](@ref))
 - `wind_model::AbstractCanopyWindModel` — in-canopy wind attenuation (default
   [`ExponentialCanopyWindAttenuation`](@ref); see also [`MixingLengthCanopyWindAttenuation`](@ref))
 - `air_profile_model::AbstractCanopyAirProfileModel` — in-canopy air-
-  temperature profile (default [`KTheoryAirProfile`](@ref))
+  temperature profile (default [`RaupachLTheoryAirProfile`](@ref); see also
+  [`KTheoryAirProfile`](@ref))
 - `interception_model::AbstractCanopyInterceptionModel` — rain interception
   (default [`NoInterception`](@ref): off)
 - `leaf_parameters::LeafParameters` — per-leaf structural/physiological data
@@ -63,9 +65,9 @@ other radiation models read albedo from their caller.
     plant_area_index::PAI
     woody_area_fraction::WAF = 0.0
     shortwave_model::RM = TwoStreamRadiation()
-    longwave_model::LWM = LayeredLongwaveExchange()
+    longwave_model::LWM = LayeredRadiosityExchange()
     wind_model::WM = ExponentialCanopyWindAttenuation()
-    air_profile_model::APM = KTheoryAirProfile()
+    air_profile_model::APM = RaupachLTheoryAirProfile()
     interception_model::IM = NoInterception()
     leaf_parameters::LP = LeafParameters()
     stomatal_model::SM = PrescribedStomatalConductance()
@@ -79,9 +81,9 @@ function example_multilayer_canopy(;
     plant_area_index = 3.0,
     woody_area_fraction = 0.0,
     shortwave_model = TwoStreamRadiation(; leaf_reflectance = 0.1),
-    longwave_model = LayeredLongwaveExchange(),
+    longwave_model = LayeredRadiosityExchange(),
     wind_model = ExponentialCanopyWindAttenuation(),
-    air_profile_model = KTheoryAirProfile(),
+    air_profile_model = RaupachLTheoryAirProfile(),
     interception_model = NoInterception(),
     leaf_parameters = LeafParameters(),
     stomatal_model = PrescribedStomatalConductance(),

@@ -1,5 +1,5 @@
 """
-    ExponentialCanopyWindAttenuation(; thermal_roughness_model=ScalarRoughnessRatio(),
+    ExponentialCanopyWindAttenuation(; thermal_roughness_model=ScalarRoughnessRatio(; ratio=0.5),
                                        max_attenuation_coefficient=2.879)
 
 In-canopy wind decays exponentially with cumulative plant area index from
@@ -17,7 +17,7 @@ docstring).
   atmosphere. I: Model description. *Environmental Pollution*, 124(2), 231-246.
 """
 @kwdef struct ExponentialCanopyWindAttenuation{TRM,MAC} <: AbstractCanopyWindModel
-    thermal_roughness_model::TRM = ScalarRoughnessRatio()
+    thermal_roughness_model::TRM = ScalarRoughnessRatio(; ratio=0.5)
     max_attenuation_coefficient::MAC = 2.879
 end
 

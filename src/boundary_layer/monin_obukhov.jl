@@ -1,7 +1,7 @@
 """
     MoninObukhov(; karman_constant=0.4, dyer_constant=16.0, stable_beta=4.7,
                    turbulent_prandtl_number=0.74, stable_Φ_h_coefficient=6.0,
-                   min_stable_Φ_h=0.5, max_stable_Φ_h=1.5, min_friction_velocity=0.02u"m/s",
+                   min_stable_Φ_h=0.5, max_stable_Φ_h=1.5, min_friction_velocity=0.1u"m/s",
                    thermal_roughness_model=SublayerStantonRoughness())
 
 Monin–Obukhov similarity theory boundary-layer formulation. Holds the
@@ -38,7 +38,7 @@ Dyer, A. J. (1974). A review of flux–profile relationships.
     stable_Φ_h_coefficient::PHC = 6.0
     min_stable_Φ_h::MINPH = 0.5
     max_stable_Φ_h::MAXPH = 1.5
-    min_friction_velocity::MINUF = 0.02u"m/s" # stability clamp
+    min_friction_velocity::MINUF = 0.1u"m/s" # stability clamp
     thermal_roughness_model::TRM = SublayerStantonRoughness()
 end
 

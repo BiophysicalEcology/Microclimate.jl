@@ -1,6 +1,6 @@
 """
-    PicardCanopyConvergence(; convergence=IterationToleranceConvergence(; tolerance=0.1u"K", max_iterations_per_day=20),
-                               relaxation=0.05)
+    PicardCanopyConvergence(; convergence=IterationToleranceConvergence(; tolerance=0.05u"K", max_iterations_per_day=80),
+                               relaxation=0.8)
 
 Hand-rolled, under-relaxed Picard fixed-point iteration for the canopy
 leaf/air-temperature solve -- the sole [`AbstractCanopyConvergenceModel`](@ref).
@@ -14,6 +14,6 @@ leaf/air-temperature solve -- the sole [`AbstractCanopyConvergenceModel`](@ref).
   principled step-size control of its own.
 """
 @kwdef struct PicardCanopyConvergence{CV,RL} <: AbstractCanopyConvergenceModel
-    convergence::CV = IterationToleranceConvergence(; tolerance=0.1u"K", max_iterations_per_day=20)
-    relaxation::RL = 0.05
+    convergence::CV = IterationToleranceConvergence(; tolerance=0.05u"K", max_iterations_per_day=80)
+    relaxation::RL = 0.8
 end
