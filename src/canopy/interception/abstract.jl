@@ -7,7 +7,9 @@ and how a wetted leaf surface enhances evaporation. Held on
 
 - [`NoInterception`](@ref) (default): rain passes straight through,
   matching `NoCanopy`/`NoSnow`'s off-by-default convention.
-- [`LayeredRainInterception`](@ref): per-layer extinction/storage/drip.
+- [`LayeredRainInterception`](@ref): per-layer extinction/storage/drip,
+  wind-driven rain angle.
+- [`VerticalRainInterception`](@ref): same bookkeeping, fixed rain angle.
 """
 abstract type AbstractCanopyInterceptionModel end
 
@@ -79,6 +81,24 @@ Restore leaf-surface water from the last [`snapshot_interception!`](@ref).
 No-op for `NoInterception`.
 """
 function restore_interception! end
+
+# Shared single-layer intercept/storage/drip step, given that layer's own
+# rain_zenith_angle -- wind-driven for LayeredRainInterception, fixed for
+# VerticalRainInterception. Mass-conservative: intercepted stays in storage
+# or drips to throughfall[i+1], nothing vanishes.
+@inline function _layer_rain_intercept!(leaf_surface_water, throughfall, i, rain_zenith_angle,
+    canopy_projection_ratio, layer_pai, capacity,
+)
+    extinction_coefficient = ellipsoidal_extinction_coefficient(rain_zenith_angle, canopy_projection_ratio)
+    transmission = exp(-extinction_coefficient * layer_pai)
+    intercepted = (1.0 - transmission) * throughfall[i]
+    layer_capacity = capacity * layer_pai
+    new_storage = leaf_surface_water[i] + intercepted
+    drip = max(new_storage - layer_capacity, 0.0u"kg/m^2")
+    leaf_surface_water[i] = new_storage - drip
+    throughfall[i + 1] = (throughfall[i] - intercepted) + drip
+    return nothing
+end
 
 """
     WET_SURFACE_CONDUCTANCE

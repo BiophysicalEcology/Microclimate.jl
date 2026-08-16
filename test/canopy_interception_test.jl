@@ -35,6 +35,23 @@ end
     @test all(>=(0.0u"kg/m^2"), buffers.leaf_surface_water)
 end
 
+@testset "VerticalRainInterception: mass conservation, wind-independent" begin
+    model = VerticalRainInterception(; leaf_water_storage_capacity = 0.1u"kg/m^2")
+    buffers = Microclimate.allocate_interception(model, canopy_height, plant_area_index, heights, 10, boundary_layer_model)
+    rainfall = 0.5u"kg/m^2"
+    storage_before = sum(buffers.leaf_surface_water)
+
+    result_calm = Microclimate.canopy_interception!(buffers, model, 1.0; rainfall, wind_speed = fill(0.0u"m/s", 10))
+    storage_after = sum(buffers.leaf_surface_water)
+    @test ustrip(u"kg/m^2", result_calm.ground_throughfall + (storage_after - storage_before)) ≈
+          ustrip(u"kg/m^2", rainfall) atol=1e-10
+    @test all(>=(0.0u"kg/m^2"), buffers.leaf_surface_water)
+
+    fill!(buffers.leaf_surface_water, 0.0u"kg/m^2")
+    result_windy = Microclimate.canopy_interception!(buffers, model, 1.0; rainfall, wind_speed = fill(5.0u"m/s", 10))
+    @test result_calm.ground_throughfall == result_windy.ground_throughfall
+end
+
 @testset "LayeredRainInterception: heavy rain saturates storage and drips through" begin
     model = LayeredRainInterception(; leaf_water_storage_capacity = 0.01u"kg/m^2")
     buffers = Microclimate.allocate_interception(model, canopy_height, plant_area_index, heights, 10, boundary_layer_model)

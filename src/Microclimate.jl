@@ -46,7 +46,7 @@ export AbstractCanopyShortwaveModel, TwoStreamRadiation
 export AbstractCanopyLongwaveModel, LayeredLongwaveExchange, AllPairsLongwaveExchange, LayeredRadiosityExchange
 export AbstractCanopyWindModel, MixingLengthCanopyWindAttenuation, ExponentialCanopyWindAttenuation
 export AbstractCanopyAirProfileModel, KTheoryAirProfile, RaupachLTheoryAirProfile
-export AbstractCanopyInterceptionModel, NoInterception, LayeredRainInterception
+export AbstractCanopyInterceptionModel, NoInterception, LayeredRainInterception, VerticalRainInterception
 export LeafParameters
 export AbstractStomatalConductanceModel, PrescribedStomatalConductance,
     MoistureResponsiveStomatalConductance
@@ -238,6 +238,7 @@ include("canopy/air_profile/raupach.jl")
 include("canopy/interception/abstract.jl")
 include("canopy/interception/no_interception.jl")
 include("canopy/interception/layered.jl")
+include("canopy/interception/vertical.jl")
 
 include("canopy/stomatal_conductance/abstract.jl")
 include("canopy/stomatal_conductance/prescribed.jl")
