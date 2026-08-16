@@ -23,6 +23,7 @@ function allocate_interception(::LayeredRainInterception, canopy_height, plant_a
     return (;
         layer_plant_area_index,
         leaf_surface_water = zeros(typeof(0.0u"kg/m^2"), n_layers),
+        leaf_surface_water_day_start = zeros(typeof(0.0u"kg/m^2"), n_layers),
         throughfall = zeros(typeof(0.0u"kg/m^2"), n_layers + 1),
     )
 end
@@ -69,6 +70,16 @@ available_canopy_water(::LayeredRainInterception, buffers, layer) = buffers.leaf
 
 function deplete_canopy_water!(::LayeredRainInterception, buffers, layer, evaporated_mass)
     buffers.leaf_surface_water[layer] = max(buffers.leaf_surface_water[layer] - evaporated_mass, 0.0u"kg/m^2")
+    return nothing
+end
+
+function snapshot_interception!(::LayeredRainInterception, buffers)
+    buffers.leaf_surface_water_day_start .= buffers.leaf_surface_water
+    return nothing
+end
+
+function restore_interception!(::LayeredRainInterception, buffers)
+    buffers.leaf_surface_water .= buffers.leaf_surface_water_day_start
     return nothing
 end
 

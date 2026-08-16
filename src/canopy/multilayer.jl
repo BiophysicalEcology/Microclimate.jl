@@ -169,6 +169,12 @@ available_canopy_water(model::MultilayerCanopy, buffers, layer) =
 deplete_canopy_water!(model::MultilayerCanopy, buffers, layer, evaporated_mass) =
     deplete_canopy_water!(model.interception_model, buffers.interception, layer, evaporated_mass)
 
+snapshot_canopy_water!(model::MultilayerCanopy, buffers) =
+    snapshot_interception!(model.interception_model, buffers.interception)
+
+restore_canopy_water!(model::MultilayerCanopy, buffers) =
+    restore_interception!(model.interception_model, buffers.interception)
+
 function reset_canopy_scratch!(model::MultilayerCanopy, buffers)
     reset_interception!(model.interception_model, buffers.interception)
     # Leaf-temperature Aitken state: same reasoning as reset_air_profile_scratch! --

@@ -12,6 +12,10 @@ allocate_canopy(::NoCanopy, heights, boundary_layer_model) = nothing
 
 reset_canopy_scratch!(::NoCanopy, buffers) = nothing
 
+snapshot_canopy_water!(::NoCanopy, buffers) = nothing
+
+restore_canopy_water!(::NoCanopy, buffers) = nothing
+
 allocate_canopy_inputs(::NoCanopy; kw...) = nothing
 
 initial_ground_overrides(::NoCanopy) = (;

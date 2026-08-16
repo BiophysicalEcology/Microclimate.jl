@@ -65,6 +65,22 @@ for `NoInterception`.
 function available_canopy_water end
 
 """
+    snapshot_interception!(model, buffers)
+
+Save day-start leaf-surface water into `buffers`' own scratch copy. No-op
+for `NoInterception`.
+"""
+function snapshot_interception! end
+
+"""
+    restore_interception!(model, buffers)
+
+Restore leaf-surface water from the last [`snapshot_interception!`](@ref).
+No-op for `NoInterception`.
+"""
+function restore_interception! end
+
+"""
     WET_SURFACE_CONDUCTANCE
 
 A stomatal/cuticular conductance large enough that `HeatExchange.evaporation`'s

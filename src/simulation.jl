@@ -589,6 +589,7 @@ function solve_soil!(cache::MicroCache)
         T_snow_day_start = T_snow
         canopy_source_temperature_day_start = canopy_source_temperature
         leaf_water_potential_day_start = leaf_water_potential
+        snapshot_canopy_water!(canopy_model, buffers.canopy)
         # Snapshot day-start ∑phase into pre-allocated buffer (no copy alloc).
         @inbounds for i in eachindex(∑phase)
             ∑phase_day_start[i] = ∑phase[i]
@@ -606,6 +607,7 @@ function solve_soil!(cache::MicroCache)
                 T_snow = T_snow_day_start
                 canopy_source_temperature = canopy_source_temperature_day_start
                 leaf_water_potential = leaf_water_potential_day_start
+                restore_canopy_water!(canopy_model, buffers.canopy)
             end
             ∑phase .= ∑phase_day_start  # restore carry-over (zeros under reset_phase_per_iter)
             # PR #102: also reset snow sum_phase at start of each iter when the
