@@ -169,3 +169,26 @@ end
     result = Microclimate.canopy_energy_balance!(fixed_buffers, fixed_model, boundary_layer_model, inputs)
     @test result.iterations == 3
 end
+
+@testset "reset_canopy_scratch! clears Aitken warm-start state, keeps omega" begin
+    m = Microclimate.example_multilayer_canopy(; canopy_height, plant_area_index)
+    b = Microclimate.allocate_canopy(m, heights, boundary_layer_model)
+    inputs = Microclimate.CanopyEnergyBalanceInputs(m;
+        site, environment_instant = make_environment_instant(; zenith_angle = 30.0u"°"), zenith_angle = 30.0u"°",
+        direct_horizontal_irradiance = 500.0u"W/m^2", diffuse_horizontal_irradiance = 100.0u"W/m^2",
+        ground_reflectance = 0.15, ground_temperature = 290.0u"K", ground_emissivity = 0.95,
+        ground_relative_humidity = 0.5, canopy_source_temperature = 293.0u"K",
+    )
+    Microclimate.canopy_energy_balance!(b, m, boundary_layer_model, inputs)
+    @test b.leaf.aitken_have_prev[]
+    @test b.air_profile.aitken_have_prev[]
+
+    leaf_omega_before, air_omega_before = b.leaf.aitken_omega[], b.air_profile.aitken_omega[]
+    Microclimate.reset_canopy_scratch!(m, b)
+
+    @test !b.leaf.aitken_have_prev[]
+    @test !b.air_profile.aitken_have_prev[]
+    @test !b.air_profile.aitken_have_prev_latent[]
+    @test b.leaf.aitken_omega[] == leaf_omega_before
+    @test b.air_profile.aitken_omega[] == air_omega_before
+end

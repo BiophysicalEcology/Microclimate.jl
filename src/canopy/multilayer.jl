@@ -169,8 +169,14 @@ available_canopy_water(model::MultilayerCanopy, buffers, layer) =
 deplete_canopy_water!(model::MultilayerCanopy, buffers, layer, evaporated_mass) =
     deplete_canopy_water!(model.interception_model, buffers.interception, layer, evaporated_mass)
 
-reset_canopy_scratch!(model::MultilayerCanopy, buffers) =
+function reset_canopy_scratch!(model::MultilayerCanopy, buffers)
     reset_interception!(model.interception_model, buffers.interception)
+    # Leaf-temperature Aitken state: same reasoning as reset_air_profile_scratch! --
+    # drop the residual history, keep omega as a learned-good starting guess.
+    buffers.leaf.aitken_have_prev[] = false
+    reset_air_profile_scratch!(model.air_profile_model, buffers.air_profile)
+    return nothing
+end
 
 # Bootstrap values only — refreshed before first real use by apply_canopy_overrides.
 function allocate_canopy_inputs(model::MultilayerCanopy; site, environment_instant, boundary_layer_model, soil_hydraulic_model=nothing)

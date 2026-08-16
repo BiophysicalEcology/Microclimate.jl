@@ -442,6 +442,15 @@ function _raupach_temperature_bounds(::Val{:bulk}, T_top, ground_temperature, le
     return (bound_lo, bound_hi)
 end
 
+# Drops the Aitken residual history, not omega -- omega is a learned-good
+# relaxation rate, worth keeping as next day's starting guess; the residual
+# itself is meaningless carried from an unrelated previous day.
+function reset_air_profile_scratch!(::RaupachLTheoryAirProfile, buffers)
+    buffers.aitken_have_prev[] = false
+    buffers.aitken_have_prev_latent[] = false
+    return nothing
+end
+
 function canopy_air_profile!(buffers, model::RaupachLTheoryAirProfile, boundary_layer_model;
     canopy_height, displacement_height, friction_velocity, wind_attenuation,
     canopy_top_air_temperature, canopy_top_relative_humidity, ground_temperature, ground_relative_humidity,

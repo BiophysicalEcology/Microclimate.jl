@@ -25,3 +25,13 @@ Solve the in-canopy air-temperature profile for this Picard pass; writes
 into `buffers`, returns `(; air_temperature)`.
 """
 function canopy_air_profile! end
+
+"""
+    reset_air_profile_scratch!(model, buffers)
+
+Clear any warm-start/relaxation state that shouldn't carry across a
+day-boundary reset (see `reset_canopy_scratch!`) — e.g. Aitken Δ²
+residual history, which would otherwise seed the new day's first Picard
+pass from an unrelated previous day. No-op by default.
+"""
+reset_air_profile_scratch!(::AbstractCanopyAirProfileModel, buffers) = nothing

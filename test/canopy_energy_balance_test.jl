@@ -76,3 +76,17 @@ end
         @test abs(out.net) < tol
     end
 end
+
+@testset "clamped temperature: net residual reroutes to sensible, balance still closes" begin
+    # Mimics _canopy_picard_pass!'s clamp: evaluate away from the true
+    # equilibrium, so out.net is a real nonzero residual, not solver noise.
+    Rabs = 300.0u"W/m^2"
+    Tclamped = air_temperature + 40.0u"K"
+    out = Microclimate.leaf_heat_balance(Tclamped, Rabs, air_temperature, relative_humidity,
+        wind_speed, atmospheric_pressure, leaf_emissivity, stomatal_conductance, leaf_water_potential, body, 1.0u"m^2")
+    @test abs(out.net) > 1.0u"W"  # confirms this scenario actually has a residual to reroute
+
+    reallocated_sensible = out.conv.convection_flow + out.net
+    closed_balance = reallocated_sensible + out.evap.evaporation_heat_flow + out.emitted_longwave
+    @test ustrip(u"W", closed_balance) ≈ ustrip(u"W", Rabs * 1.0u"m^2") atol=1e-9
+end

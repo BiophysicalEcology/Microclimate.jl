@@ -317,7 +317,10 @@ function _canopy_picard_pass!(buffers, model::MultilayerCanopy, boundary_layer_m
         balance = leaf_heat_balance(leaf_temperature_buffer[layer], absorbed_radiation, air_temperature_layer,
             relative_humidity_layer, wind_speed[layer], atmospheric_pressure, leaf_emissivity,
             conductance, leaf_water_potential, leaf_body, leaf_area, model.leaf_convection_model)
-        sensible_heat_source[layer] = balance.conv.convection_flow / 1.0u"m^2"
+        # balance.net is nonzero whenever the clamp above actually bound --
+        # net_balance keeps that as a diagnostic, but the fluxes fed onward
+        # absorb it as sensible heat so they stay exactly conservative.
+        sensible_heat_source[layer] = (balance.conv.convection_flow + balance.net) / 1.0u"m^2"
         evaporation_mass_flow[layer] = balance.evap.transpiration_mass_flow
         net_balance[layer] = balance.net
 
