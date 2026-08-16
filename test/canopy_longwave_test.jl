@@ -86,6 +86,33 @@ end
     @test result.ground_absorbed_longwave > 0.0u"W/m^2"
 end
 
+@testset "AllPairsLongwaveExchange: net_absorbed_longwave uses true canopy top, not layer 1" begin
+    total_pai = 2.5
+    ground_temperature = 285.0u"K"
+    ground_emissivity = 0.95
+
+    # emissivity 0: pure sky<->ground exchange through one attenuating layer,
+    # closed-form-checkable independent of the pairwise weighting scheme.
+    single_model = AllPairsLongwaveExchange()
+    single_buffers = Microclimate.allocate_longwave(single_model, total_pai, 1, canopy_projection_ratio)
+    result = Microclimate.canopy_longwave!(single_buffers, single_model, 0.0;
+        leaf_temperature=[288.0u"K"], ground_temperature, ground_emissivity, site, environment_instant)
+
+    sky = Microclimate.precompute_longwave_sky(single_model.atmospheric_radiation_model;
+        site, environment_instant, shade=0.0)
+    ground_emission = ground_emissivity * Microclimate.σ * u"K"(ground_temperature)^4
+    expected = sky.incoming_longwave - ground_emission * exp(-total_pai)
+    @test ustrip(u"W/m^2", result.net_absorbed_longwave) ≈ ustrip(u"W/m^2", expected) atol=1e-9
+
+    # Multi-layer, nonzero leaf emission: the old (layer-1-position) formula
+    # must now disagree with the fixed (true-top) one.
+    ap_buffers = Microclimate.allocate_longwave(AllPairsLongwaveExchange(), plant_area_index, n_layers, canopy_projection_ratio)
+    result2 = Microclimate.canopy_longwave!(ap_buffers, AllPairsLongwaveExchange(), leaf_emissivity;
+        leaf_temperature=fill(288.0u"K", n_layers), ground_temperature, ground_emissivity, site, environment_instant)
+    old_style = ap_buffers.boundary_downward_longwave[1] - ap_buffers.boundary_upward_longwave[1]
+    @test !isapprox(ustrip(u"W/m^2", result2.net_absorbed_longwave), ustrip(u"W/m^2", old_style); atol=1e-3)
+end
+
 @testset "LayeredRadiosityExchange" begin
     lr_model = LayeredRadiosityExchange()
     lr_buffers = Microclimate.allocate_longwave(lr_model, plant_area_index, n_layers, canopy_projection_ratio)

@@ -251,8 +251,10 @@ function infiltration_step!(buffers, soil_hydraulic_model::CampbellSoilHydraulic
     water_potential[1] = water_potential[2]
     hydraulic_conductivity[1] = 0.0u"kg*s/m^3"
 
-    # Evapotranspiration
-    evaporation_potential = exp(-0.82 * ustrip(lai)) * evapotranspiration # partition potential evaporation from potential evapotranspiration, EQ12.30
+    # Beer's-law soil/plant PET split (EQ12.30) -- skip under a resolved
+    # canopy, where evapotranspiration is already the shaded ground-level PET.
+    evaporation_potential = isnothing(canopy_transpiration_potential) ?
+        exp(-0.82 * ustrip(lai)) * evapotranspiration : evapotranspiration
     transpiration_potential = isnothing(canopy_transpiration_potential) ?
         evapotranspiration - evaporation_potential : canopy_transpiration_potential
 
@@ -448,11 +450,13 @@ function soil_water_balance!(buffers, soil_hydraulic_model::CampbellSoilHydrauli
             mass_transfer_coefficient = calc_mass_transfer_coefficient(heat_transfer_coefficient, wet_air_out.specific_heat, wet_air_out.density)
         else
             # Canopy's own resolved ground-to-lowest-layer conductances --
-            # same fix as heat_transport_1d.jl's ground_heat_vapor_flux,
             # avoids surface_fluxes's invalid-geometry log-law inversion
-            # entirely rather than working around it.
+            # entirely rather than working around it. ground_vapor_conductance
+            # shares its resistance with ground_heat_conductance (implicit
+            # Pr=Sc=1), unlike the other two branches' calc_mass_transfer_coefficient
+            # -- apply the same Lewis-relation factor here for consistency.
             heat_transfer_coefficient = max(abs(ground_heat_conductance), 0.5u"W/m^2/K")
-            mass_transfer_coefficient = ground_vapor_conductance
+            mass_transfer_coefficient = ground_vapor_conductance * LEWIS_HEAT_TO_MASS_RATIO
         end
     end
     Q_evaporation, evaporation_mass_flux = evaporation(evaporation_model;

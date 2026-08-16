@@ -68,6 +68,11 @@ function allocate_longwave(::AllPairsLongwaveExchange, plant_area_index, n_layer
     # single extra receiver point at the ground surface itself (pai_above = pai_total)
     ground_view_weights, ground_sky_transmission, ground_ground_transmission =
         _view_factor_weights([pai_total], layer_pai_above, layer_plant_area_index, pai_total, false)
+    # mirror receiver point at true canopy top (pai_above = 0), for net_absorbed_longwave --
+    # sky_transmission[1]/downward_longwave[1] sit at layer 1's own (already-attenuated)
+    # position, not the true top, unlike LayeredLongwaveExchange/LayeredRadiosityExchange.
+    top_view_weights, _, top_ground_transmission =
+        _view_factor_weights([0.0], layer_pai_above, layer_plant_area_index, pai_total, false)
 
     layer_transmission = exp.(-layer_plant_area_index)
 
@@ -75,6 +80,7 @@ function allocate_longwave(::AllPairsLongwaveExchange, plant_area_index, n_layer
         view_weights, sky_transmission, ground_transmission,
         ground_view_weights=vec(ground_view_weights), ground_sky_transmission=ground_sky_transmission[1],
         ground_ground_transmission=ground_ground_transmission[1],
+        top_view_weights=vec(top_view_weights), top_ground_transmission=top_ground_transmission[1],
         layer_transmission,
         downward_longwave = zeros(typeof(0.0u"W/m^2"), n_layers),
         upward_longwave = zeros(typeof(0.0u"W/m^2"), n_layers),
@@ -104,6 +110,7 @@ function canopy_longwave!(buffers, model::AllPairsLongwaveExchange, leaf_emissiv
 )
     (; view_weights, sky_transmission, ground_transmission,
        ground_view_weights, ground_sky_transmission, ground_ground_transmission,
+       top_view_weights, top_ground_transmission,
        layer_transmission, downward_longwave, upward_longwave,
        boundary_downward_longwave, boundary_upward_longwave, absorbed_longwave, leaf_emission) = buffers
     n_layers = length(layer_transmission)
@@ -148,7 +155,15 @@ function canopy_longwave!(buffers, model::AllPairsLongwaveExchange, leaf_emissiv
     boundary_upward_longwave[n_layers + 1] = ground_emission * ground_ground_transmission
 
     ground_absorbed_longwave = ground_emissivity * boundary_downward_longwave[n_layers + 1]
-    net_absorbed_longwave = boundary_downward_longwave[1] - boundary_upward_longwave[1]
+
+    # True canopy-top escaping flux (mirrors ground_downward above, at the
+    # opposite receiver point) -- boundary_upward_longwave[1] sits at layer
+    # 1's own position, not the top, so it understates what actually escapes.
+    top_upward = ground_emission * top_ground_transmission
+    @inbounds for j in 1:n_layers
+        top_upward += top_view_weights[j] * leaf_emission[j]
+    end
+    net_absorbed_longwave = incoming_longwave - top_upward
 
     return (; ground_absorbed_longwave, net_absorbed_longwave)
 end

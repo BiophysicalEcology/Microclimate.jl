@@ -526,13 +526,20 @@ calc_heat_transfer_coefficient(convective_heat_flux, ΔT) =
     iszero(ΔT) ? 0.5u"W/m^2/K" : max(abs(convective_heat_flux / ΔT), 0.5u"W/m^2/K")
 
 """
+    LEWIS_HEAT_TO_MASS_RATIO
+
+(Pr/Sc)^0.666 = (0.71/0.60)^0.666, the Lewis-relation factor converting a
+heat transfer coefficient to a mass (vapor) transfer coefficient.
+"""
+const LEWIS_HEAT_TO_MASS_RATIO = (0.71 / 0.60)^0.666
+
+"""
     calc_mass_transfer_coefficient(heat_transfer_coefficient, air_specific_heat, air_density)
 
 Mass transfer coefficient from heat transfer coefficient via the Lewis relation.
-The (Pr/Sc)^0.666 = (0.71/0.60)^0.666 factor converts from heat to mass transfer.
 """
 calc_mass_transfer_coefficient(heat_transfer_coefficient, air_specific_heat, air_density) =
-    (heat_transfer_coefficient / (air_specific_heat * air_density)) * (0.71 / 0.60)^0.666
+    (heat_transfer_coefficient / (air_specific_heat * air_density)) * LEWIS_HEAT_TO_MASS_RATIO
 
 """
     sublayer_stanton(z0, friction_velocity, kinematic_viscosity)
