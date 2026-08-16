@@ -54,6 +54,17 @@ for `NoInterception`.
 function wet_canopy_fraction end
 
 """
+    available_canopy_water(model, buffers, layer) -> kg/m^2 (ground area)
+
+Leaf-surface water currently stored in layer `layer`, the hard ceiling on
+how much [`deplete_canopy_water!`](@ref) can remove this hour. Used to cap
+the wet-surface evaporation flux so it can't claim more water than is
+physically stored (see `canopy_energy_balance!`'s depletion loop). Always 0
+for `NoInterception`.
+"""
+function available_canopy_water end
+
+"""
     WET_SURFACE_CONDUCTANCE
 
 A stomatal/cuticular conductance large enough that `HeatExchange.evaporation`'s

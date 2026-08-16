@@ -13,6 +13,8 @@ canopy_interception!(buffers, ::NoInterception, canopy_projection_ratio; rainfal
 
 wet_canopy_fraction(::NoInterception, buffers, layer) = 0.0
 
+available_canopy_water(::NoInterception, buffers, layer) = 0.0u"kg/m^2"
+
 reset_interception!(::NoInterception, buffers) = nothing
 
 deplete_canopy_water!(::NoInterception, buffers, layer, evaporated_mass) = nothing

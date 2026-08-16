@@ -65,6 +65,8 @@ function wet_canopy_fraction(model::LayeredRainInterception, buffers, layer)
     return clamp(buffers.leaf_surface_water[layer] / layer_capacity, 0.0, 1.0)
 end
 
+available_canopy_water(::LayeredRainInterception, buffers, layer) = buffers.leaf_surface_water[layer]
+
 function deplete_canopy_water!(::LayeredRainInterception, buffers, layer, evaporated_mass)
     buffers.leaf_surface_water[layer] = max(buffers.leaf_surface_water[layer] - evaporated_mass, 0.0u"kg/m^2")
     return nothing

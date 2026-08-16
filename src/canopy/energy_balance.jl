@@ -80,6 +80,19 @@ function update_canopy_energy_balance_inputs!(inputs::CanopyEnergyBalanceInputs;
     return inputs
 end
 
+# Caps the wet-surface share of evaporation_mass_flow at available_mass;
+# reroutes any unmet latent heat to sensible so mass/energy stay exact.
+function _cap_wet_surface_evaporation(evaporation_mass_flow, sensible_heat_flow, wet_fraction, available_mass, air_temperature)
+    demanded_mass = uconvert(u"kg", evaporation_mass_flow * wet_fraction * CANOPY_TIMESTEP) / 1.0u"m^2"
+    actual_mass = min(demanded_mass, available_mass)
+    shortfall_mass = demanded_mass - actual_mass
+    shortfall_mass <= zero(shortfall_mass) && return (evaporation_mass_flow, sensible_heat_flow, actual_mass)
+
+    shortfall_flow = uconvert(unit(evaporation_mass_flow), shortfall_mass * 1.0u"m^2" / CANOPY_TIMESTEP)
+    shortfall_power = uconvert(unit(sensible_heat_flow), shortfall_flow * enthalpy_of_vaporisation(air_temperature) / 1.0u"m^2")
+    return (evaporation_mass_flow - shortfall_flow, sensible_heat_flow + shortfall_power, actual_mass)
+end
+
 """
     canopy_energy_balance!(buffers, model::MultilayerCanopy, boundary_layer_model, inputs::CanopyEnergyBalanceInputs)
 
@@ -93,7 +106,9 @@ by [`converge_canopy!`](@ref), dispatching on `model.convergence_model`
 A wetted leaf surface ([`wet_canopy_fraction`](@ref)) blends stomatal
 conductance toward [`WET_SURFACE_CONDUCTANCE`](@ref)
 ([`blend_stomatal_conductance`](@ref)); storage depletion from that
-evaporation is applied once, after convergence.
+evaporation is applied once, after convergence, capped at
+[`available_canopy_water`](@ref) with any unmet latent heat rerouted to
+sensible.
 
 `inputs.ground_temperature`/`canopy_source_temperature` are lagged
 (previous-hour) boundary conditions; only canopy-internal state is iterated.
@@ -126,6 +141,7 @@ function canopy_energy_balance!(buffers, model::MultilayerCanopy, boundary_layer
     vapor_density_buffer = buffers.air_profile.vapor_density
     air_temperature = buffers.air_profile.air_temperature
     evaporation_mass_flow = buffers.leaf.evaporation_mass_flow
+    sensible_heat_source = buffers.leaf.sensible_heat_source
     potential_evaporation_mass_flow = buffers.leaf.potential_evaporation_mass_flow
     (; wind_speed) = buffers.wind
     n_layers = length(leaf_temperature_buffer)
@@ -168,8 +184,10 @@ function canopy_energy_balance!(buffers, model::MultilayerCanopy, boundary_layer
         # evaporation; only the wet fraction should draw down intercepted
         # rain — transpiration draws from soil/plant water instead.
         wet_fraction = wet_canopy_fraction(model, buffers, layer)
-        evaporated_mass = uconvert(u"kg", evaporation_mass_flow[layer] * wet_fraction * CANOPY_TIMESTEP) / 1.0u"m^2"
-        deplete_canopy_water!(model, buffers, layer, evaporated_mass)
+        available_mass = available_canopy_water(model, buffers, layer)
+        evaporation_mass_flow[layer], sensible_heat_source[layer], actual_mass = _cap_wet_surface_evaporation(
+            evaporation_mass_flow[layer], sensible_heat_source[layer], wet_fraction, available_mass, air_temperature[layer])
+        deplete_canopy_water!(model, buffers, layer, actual_mass)
     end
 
     canopy_potential_transpiration = sum(potential_evaporation_mass_flow) / 1.0u"m^2"
