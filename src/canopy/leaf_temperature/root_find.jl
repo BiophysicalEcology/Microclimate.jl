@@ -1,9 +1,11 @@
 """
     RootFindLeafTemperature()
 
-Exact root-find (`HeatExchange.zbrent`) of `leaf_heat_balance` each call.
-More expensive than [`LinearizedLeafTemperature`](@ref), but doesn't depend
-on the quality of a supplied guess.
+Root-find (`HeatExchange.zbrent`) of `leaf_heat_balance` each call. More
+expensive than [`LinearizedLeafTemperature`](@ref), but doesn't depend on
+the quality of a supplied guess. "Root" means a root of the (evaporation-
+clamped) balance within `bracket`, not necessarily unique or the true
+physical equilibrium if that lies outside `bracket`.
 """
 struct RootFindLeafTemperature <: AbstractLeafTemperatureSolver end
 
@@ -22,14 +24,17 @@ function leaf_temperature(::RootFindLeafTemperature, absorbed_radiation, air_tem
     # zbrent doesn't validate its own bracket (nor throw for a bad one) and
     # NaN comparisons never throw, so a mis-bracketed or NaN residual would
     # otherwise pass through silently instead of falling back to the guess.
-    solved = if isfinite(q_lo) && isfinite(q_hi) && q_lo * q_hi <= 0.0
+    bracketed = isfinite(q_lo) && isfinite(q_hi) && (q_lo == 0.0 || q_hi == 0.0 || signbit(q_lo) != signbit(q_hi))
+    solved = if bracketed
         try
             zbrent(residual, lo, hi, 1e-3)
         catch e
             e isa DomainError || rethrow()
+            @warn "RootFindLeafTemperature: leaf_heat_balance raised $(typeof(e)) during root-find, falling back to leaf_temperature_guess" maxlog=40
             ustrip(u"K", leaf_temperature_guess)
         end
     else
+        @warn "RootFindLeafTemperature: [$lo, $hi] K doesn't bracket a root (q_lo=$q_lo W, q_hi=$q_hi W), falling back to leaf_temperature_guess" maxlog=40
         ustrip(u"K", leaf_temperature_guess)
     end
     return solved * u"K"

@@ -1,10 +1,13 @@
 """
     LinearizedLeafTemperature()
 
-One linearised step of `leaf_heat_balance` around `leaf_temperature_guess`
-(longwave via the exact `4σT³` slope; convection/evaporation via their own
-coefficients, already locally linear in `ΔT`). Cheap, no bracket — intended
-to be called from an outer loop supplying an improving guess each time.
+One frozen-coefficient quasi-Newton step of `leaf_heat_balance` around
+`leaf_temperature_guess`: longwave uses the exact `4σT³` slope, but
+convection/evaporation use their coefficients as evaluated at the guess,
+not re-differentiated (so their own T-dependence, e.g. free-convection h(T),
+is omitted from the slope). Cheap, no bracket — intended to be called from
+an outer loop supplying an improving guess each time; convergence to the
+true root doesn't depend on this slope being exact, only its sign.
 """
 struct LinearizedLeafTemperature <: AbstractLeafTemperatureSolver end
 
