@@ -110,8 +110,10 @@ evaporation is applied once, after convergence, capped at
 [`available_canopy_water`](@ref) with any unmet latent heat rerouted to
 sensible.
 
-`inputs.ground_temperature`/`canopy_source_temperature` are lagged
-(previous-hour) boundary conditions; only canopy-internal state is iterated.
+`inputs.ground_temperature`/`canopy_source_temperature`/`leaf_water_potential`
+are lagged (previous-hour) boundary conditions; only canopy-internal state is
+iterated. The `leaf_water_potential` lag is bounded by how fast it itself
+moves (a soil-moisture function, day-timescale) and self-corrects next hour.
 
 Per-layer relative humidity is resolved by `model.air_profile_model` from
 each layer's own evaporation source, the same way per-layer air temperature
