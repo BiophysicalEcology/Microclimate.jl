@@ -2,8 +2,8 @@
     LayeredRainInterception(; leaf_water_storage_capacity=0.1u"kg/m^2")
 
 Per-layer rain interception: extinction at a rain-fall angle
-(`atan(wind_speed / raindrop_fall_velocity)`, drop velocity from
-Best 1950's `3.78 * rainfall^0.067`, matching micropoint's `rainintercept`
+(`atan(wind_speed / raindrop_fall_velocity)`, drop velocity from uncited eq.
+`3.78 * rainfall^0.067`, matching micropoint's `rainintercept`
 exactly) using the same leaf-angle machinery as direct-beam shortwave
 ([`ellipsoidal_extinction_coefficient`](@ref)); `wind_speed` is supplied by
 the caller, not read from a model here. Storage capacity scales with each
@@ -14,10 +14,6 @@ incident rain, not a distinct (larger, near-vertical) drop stream. Wetness
 
 Rain-fall angle assumes drops track local wind instantaneously -- a
 trajectory approximation, not a physical drop model.
-
-# References
-- Best, A. C. (1950). The size distribution of raindrops. *Quarterly
-  Journal of the Royal Meteorological Society*, 76(327), 16-36.
 """
 @kwdef struct LayeredRainInterception{C} <: AbstractCanopyInterceptionModel
     leaf_water_storage_capacity::C = 0.1u"kg/m^2"
