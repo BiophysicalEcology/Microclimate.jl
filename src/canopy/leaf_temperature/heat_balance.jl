@@ -73,6 +73,20 @@ leaf_convection(convection_model, body, leaf_area, air_temperature, leaf_tempera
         wind_speed, atmospheric_pressure, fluid=Air(), characteristic_dimension_formula=LEAF_CHARACTERISTIC_DIMENSION,
         correlation=_convection_correlation(convection_model))
 
+# HeatExchange.evaporation, flux-clamped. Shared by leaf_heat_balance and
+# LinearizedLeafTemperature's perturbation -- both must clamp identically.
+function _clamped_leaf_evaporation(stomatal_conductance, mass_transfer_coefficient, atmos, leaf_area,
+    leaf_temperature, air_temperature, leaf_water_potential,
+)
+    evap = HeatExchange.evaporation(stomatal_conductance, mass_transfer_coefficient, atmos, leaf_area,
+        leaf_temperature, air_temperature; water_potential=leaf_water_potential)
+    latent_heat_vaporisation = enthalpy_of_vaporisation(air_temperature)
+    max_transpiration_mass_flow = uconvert(u"g/s", 500.0u"W/m^2" * leaf_area / latent_heat_vaporisation)
+    transpiration_mass_flow = clamp(evap.transpiration_mass_flow, -max_transpiration_mass_flow, max_transpiration_mass_flow)
+    evaporation_heat_flow = uconvert(u"W", transpiration_mass_flow * latent_heat_vaporisation)
+    return (; evap..., transpiration_mass_flow, evaporation_heat_flow)
+end
+
 """
     leaf_heat_balance(leaf_temperature, absorbed_radiation, air_temperature, relative_humidity,
                        wind_speed, atmospheric_pressure, leaf_emissivity, stomatal_conductance,
@@ -87,8 +101,9 @@ function leaf_heat_balance(leaf_temperature, absorbed_radiation, air_temperature
 )
     conv = leaf_convection(convection_model, body, leaf_area, air_temperature, leaf_temperature, wind_speed, atmospheric_pressure)
     atmos = AtmosphericConditions(relative_humidity, wind_speed, atmospheric_pressure)
-    evap = HeatExchange.evaporation(stomatal_conductance, conv.mass_transfer_coefficient, atmos, leaf_area,
-        leaf_temperature, air_temperature; water_potential=leaf_water_potential)
+    evap = _clamped_leaf_evaporation(stomatal_conductance, conv.mass_transfer_coefficient, atmos, leaf_area,
+        leaf_temperature, air_temperature, leaf_water_potential)
+
     emitted_longwave = leaf_emissivity * σ * leaf_temperature^4 * leaf_area
     net = absorbed_radiation * leaf_area - emitted_longwave - conv.convection_flow - evap.evaporation_heat_flow
     return (; net, conv, evap, emitted_longwave)

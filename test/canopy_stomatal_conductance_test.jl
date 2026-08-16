@@ -40,7 +40,7 @@ end
         stomatal_model = MoistureResponsiveStomatalConductance(),
     )
     @test model.shortwave_model isa TwoStreamRadiation
-    @test model.wind_model isa CanopyWindAttenuation
+    @test model.wind_model isa ExponentialCanopyWindAttenuation
     @test model.stomatal_model isa MoistureResponsiveStomatalConductance
     @test model.leaf_temperature_solver isa LinearizedLeafTemperature
 

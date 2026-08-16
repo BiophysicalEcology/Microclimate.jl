@@ -315,7 +315,7 @@ function _canopy_picard_pass!(buffers, model::MultilayerCanopy, boundary_layer_m
     end
 
     # Whole-canopy aggregated-flux boundary (canopy_top_flux_boundary,
-    # wind/attenuation.jl) -- not a bare-ground MOST surface with a single
+    # wind/mixinglength.jl) -- not a bare-ground MOST surface with a single
     # leaf's temperature standing in for the whole canopy's own boundary
     # condition. Relaxed across passes same as before.
     total_sensible_flux = sum(sensible_heat_source)
@@ -326,7 +326,7 @@ function _canopy_picard_pass!(buffers, model::MultilayerCanopy, boundary_layer_m
     # extreme values because :bulk-mode RaupachLTheoryAirProfile jumps 5-6K
     # between layer 1 (pinned to canopy_top_flux_boundary's T_top) and layer
     # 2, instead of transitioning smoothly like R's LangrangianOne does --
-    # see canopy_top_flux_boundary's own comment (wind/attenuation.jl).
+    # see canopy_top_flux_boundary's own comment (wind/mixinglength.jl).
     if ustrip(u"W/m^2", total_sensible_flux) < -500.0
         fmt(v, unit) = join(round.(ustrip.(unit, v); digits=1), ", ")
         @warn "extreme total_sensible_flux (cold) -- per-layer trace" total_sensible_flux ground_temperature reference_temperature sensible_heat_source=fmt(sensible_heat_source, u"W/m^2") leaf_temperature=fmt(leaf_temperature_buffer, u"°C") air_temperature=fmt(buffers.air_profile.air_temperature, u"°C") maxlog=5

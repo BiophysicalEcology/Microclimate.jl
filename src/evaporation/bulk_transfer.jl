@@ -36,6 +36,11 @@ function evaporation(::BulkTransferEvaporation;
     # Latent heat of vaporization (J/kg)
     latent_heat_vaporisation = enthalpy_of_vaporisation(clamped_surface_temperature)
 
+    # Backstop against unphysical fluxes (e.g. noisy rainfall input); clamped
+    # in mass-flux terms to keep Q_evaporation/evaporation_mass_flux consistent.
+    max_water_flux = 500.0u"W/m^2" / latent_heat_vaporisation
+    water_flux = clamp(water_flux, -max_water_flux, max_water_flux)
+
     # Energy flux due to evaporation (W/m²). uconvert keeps the return type
     # stable as W/m² so callers can mix it with other W/m² fluxes without
     # triggering Unitful's runtime unit-promotion heap allocation.

@@ -154,7 +154,7 @@ plot!(l_output.canopy.relative_humidity[step, :], ustrip.(u"m", layer_heights);
     label="L-theory (Raupach)", marker=:square) |> display
 
 # Wind speed doesn't depend on air_profile_model directly (the shared
-# wind_model, CanopyWindAttenuation, doesn't read it) but differs anyway:
+# wind_model doesn't read it) but differs anyway:
 # different air/leaf temperatures feed back into ground/soil state each hour,
 # which shifts the next hour's stability correction on the wind profile.
 plot(ustrip.(u"m/s", k_output.canopy.wind_speed[step, :]), ustrip.(u"m", layer_heights);

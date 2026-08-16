@@ -2,7 +2,7 @@
     MultilayerCanopy(; canopy_height, plant_area_index, woody_area_fraction=0.0,
                        shortwave_model=TwoStreamRadiation(),
                        longwave_model=LayeredLongwaveExchange(),
-                       wind_model=CanopyWindAttenuation(),
+                       wind_model=ExponentialCanopyWindAttenuation(),
                        air_profile_model=KTheoryAirProfile(),
                        interception_model=NoInterception(),
                        leaf_parameters=LeafParameters(),
@@ -32,7 +32,7 @@ Composes swappable sub-models the same way `MicroModel` composes
 - `longwave_model::AbstractCanopyLongwaveModel` — layer-resolved longwave
   exchange (default [`LayeredLongwaveExchange`](@ref))
 - `wind_model::AbstractCanopyWindModel` — in-canopy wind attenuation (default
-  [`CanopyWindAttenuation`](@ref))
+  [`ExponentialCanopyWindAttenuation`](@ref); see also [`MixingLengthCanopyWindAttenuation`](@ref))
 - `air_profile_model::AbstractCanopyAirProfileModel` — in-canopy air-
   temperature profile (default [`KTheoryAirProfile`](@ref))
 - `interception_model::AbstractCanopyInterceptionModel` — rain interception
@@ -64,7 +64,7 @@ other radiation models read albedo from their caller.
     woody_area_fraction::WAF = 0.0
     shortwave_model::RM = TwoStreamRadiation()
     longwave_model::LWM = LayeredLongwaveExchange()
-    wind_model::WM = CanopyWindAttenuation()
+    wind_model::WM = ExponentialCanopyWindAttenuation()
     air_profile_model::APM = KTheoryAirProfile()
     interception_model::IM = NoInterception()
     leaf_parameters::LP = LeafParameters()
@@ -80,7 +80,7 @@ function example_multilayer_canopy(;
     woody_area_fraction = 0.0,
     shortwave_model = TwoStreamRadiation(; leaf_reflectance = 0.1),
     longwave_model = LayeredLongwaveExchange(),
-    wind_model = CanopyWindAttenuation(),
+    wind_model = ExponentialCanopyWindAttenuation(),
     air_profile_model = KTheoryAirProfile(),
     interception_model = NoInterception(),
     leaf_parameters = LeafParameters(),

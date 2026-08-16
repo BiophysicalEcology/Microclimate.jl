@@ -22,7 +22,7 @@ The humidity solve reuses the same diffusivity network and buffers as the
 temperature solve.
 
 Eddy diffusivity shape follows the wind-attenuation profile
-([`CanopyWindAttenuation`](@ref)/`wind_attenuation_profile`), scaled to the
+([`MixingLengthCanopyWindAttenuation`](@ref)/`wind_attenuation_profile`), scaled to the
 canopy-top value `κ u* (canopy_height - displacement_height)`.
 
 # References

@@ -7,7 +7,8 @@ How a canopy resolves the in-canopy wind-speed profile below canopy top
 roughness length).
 
 Concrete variants implement [`allocate_wind`](@ref) and
-[`canopy_wind_profile!`](@ref). Currently: [`CanopyWindAttenuation`](@ref).
+[`canopy_wind_profile!`](@ref). Currently: [`ExponentialCanopyWindAttenuation`](@ref)
+(default), [`MixingLengthCanopyWindAttenuation`](@ref).
 """
 abstract type AbstractCanopyWindModel end
 

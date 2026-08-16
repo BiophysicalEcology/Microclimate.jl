@@ -44,7 +44,7 @@ export AbstractCanopyModel, NoCanopy, MultilayerCanopy, plant_area_index_from_de
 export example_multilayer_canopy
 export AbstractCanopyShortwaveModel, TwoStreamRadiation
 export AbstractCanopyLongwaveModel, LayeredLongwaveExchange, AllPairsLongwaveExchange, LayeredRadiosityExchange
-export AbstractCanopyWindModel, CanopyWindAttenuation
+export AbstractCanopyWindModel, MixingLengthCanopyWindAttenuation, ExponentialCanopyWindAttenuation
 export AbstractCanopyAirProfileModel, KTheoryAirProfile, RaupachLTheoryAirProfile
 export AbstractCanopyInterceptionModel, NoInterception, LayeredRainInterception
 export LeafParameters
@@ -228,7 +228,8 @@ include("canopy/longwave/all_pairs.jl")
 include("canopy/longwave/radiosity.jl")
 
 include("canopy/wind/abstract.jl")
-include("canopy/wind/attenuation.jl")
+include("canopy/wind/mixinglength.jl")
+include("canopy/wind/exponential.jl")
 
 include("canopy/air_profile/abstract.jl")
 include("canopy/air_profile/k_theory.jl")

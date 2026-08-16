@@ -1,5 +1,7 @@
 """
-    CanopyWindAttenuation(; thermal_roughness_model=ScalarRoughnessRatio())
+    MixingLengthCanopyWindAttenuation(; thermal_roughness_model=ScalarRoughnessRatio(),
+                            shelter_floor=0.003, shelter_pai_coefficient=0.1,
+                            mixing_length_coefficient=2.0, mixing_length_pai_coefficient=0.25)
 
 Wind speed below canopy top decays from the canopy-top value via a
 structural attenuation-shape profile (Massman/Katul-style mixing-length
@@ -11,9 +13,18 @@ canopy's displacement height and roughness length.
 `thermal_roughness_model` for this canopy-top evaluation specifically (bare-
 ground/soil surface fluxes elsewhere keep using the `boundary_layer_model`'s
 own setting). Defaults to `ScalarRoughnessRatio()`.
+
+`shelter_floor`/`shelter_pai_coefficient`/`mixing_length_coefficient`/
+`mixing_length_pai_coefficient` are the empirical shelter-factor/mixing-
+length constants in [`_element_attenuation`](@ref)/[`canopy_roughness_length`](@ref).
+Can over-attenuate wind at low total PAI -- tune per site if so.
 """
-@kwdef struct CanopyWindAttenuation{TRM} <: AbstractCanopyWindModel
+@kwdef struct MixingLengthCanopyWindAttenuation{TRM,SF,SPC,MLC,MLPC} <: AbstractCanopyWindModel
     thermal_roughness_model::TRM = ScalarRoughnessRatio()
+    shelter_floor::SF = 0.003
+    shelter_pai_coefficient::SPC = 0.1
+    mixing_length_coefficient::MLC = 2.0
+    mixing_length_pai_coefficient::MLPC = 0.25
 end
 
 """
@@ -33,14 +44,17 @@ function zero_plane_displacement(canopy_height, plant_area_index)
 end
 
 """
-    canopy_roughness_length(canopy_height, plant_area_index, displacement_height, karman_constant)
+    canopy_roughness_length(canopy_height, plant_area_index, displacement_height, karman_constant;
+                             shelter_floor=0.003, shelter_pai_coefficient=0.1)
 
 Neutral roughness length from canopy structure. Atmospheric stability is
 applied separately by `atmospheric_surface_profile!`'s own Monin-Obukhov
 machinery, not folded in here.
 """
-function canopy_roughness_length(canopy_height, plant_area_index, displacement_height, karman_constant)
-    canopy_element_shelter = sqrt(0.003 + 0.1 * plant_area_index)  # shelter-factor form, empirical, source unconfirmed
+function canopy_roughness_length(canopy_height, plant_area_index, displacement_height, karman_constant;
+    shelter_floor=0.003, shelter_pai_coefficient=0.1,
+)
+    canopy_element_shelter = sqrt(shelter_floor + shelter_pai_coefficient * plant_area_index)
     canopy_depth = canopy_height - displacement_height
     roughness = canopy_depth * exp(-karman_constant / canopy_element_shelter)
     return clamp(roughness, 0.0005u"m", 0.9 * canopy_depth)  # free/tunable floor and ceiling, uncited
@@ -48,17 +62,20 @@ end
 
 # Attenuation coefficient for one plant-area-index element (structural
 # mixing-length argument): larger local plant area density -> more
-# attenuation per unit height. 0.003/0.1 shelter-factor and 2.0/0.25
-# mixing-length constants are empirical, source unconfirmed.
-function _element_attenuation(element_plant_area_index, canopy_height)
-    element_shelter = sqrt(0.003 + 0.1 * element_plant_area_index)
+# attenuation per unit height.
+function _element_attenuation(element_plant_area_index, canopy_height,
+    shelter_floor, shelter_pai_coefficient, mixing_length_coefficient, mixing_length_pai_coefficient,
+)
+    element_shelter = sqrt(shelter_floor + shelter_pai_coefficient * element_plant_area_index)
     area_density = element_plant_area_index / canopy_height
-    mixing_length = 2.0 * element_shelter^3 / (0.25 * area_density)
+    mixing_length = mixing_length_coefficient * element_shelter^3 / (mixing_length_pai_coefficient * area_density)
     return element_shelter * canopy_height / mixing_length
 end
 
 """
-    wind_attenuation_profile(layer_plant_area_index, canopy_height, plant_area_index_total, karman_constant)
+    wind_attenuation_profile(layer_plant_area_index, canopy_height, plant_area_index_total, karman_constant;
+                              shelter_floor=0.003, shelter_pai_coefficient=0.1,
+                              mixing_length_coefficient=2.0, mixing_length_pai_coefficient=0.25)
 
 Shape function giving each layer's wind speed as a fraction of the
 canopy-top wind speed (structural, computed once). `layer_plant_area_index`
@@ -67,13 +84,18 @@ layer convention. Requires at least 10 layers; the bottom tenth uses a
 local log-law rather than the shelter recurrence, to avoid the wind speed
 collapsing to zero.
 """
-function wind_attenuation_profile(layer_plant_area_index, canopy_height, plant_area_index_total, karman_constant)
+function wind_attenuation_profile(layer_plant_area_index, canopy_height, plant_area_index_total, karman_constant;
+    shelter_floor=0.003, shelter_pai_coefficient=0.1, mixing_length_coefficient=2.0, mixing_length_pai_coefficient=0.25,
+)
     n = length(layer_plant_area_index)
     n >= 10 || throw(ArgumentError("wind_attenuation_profile requires at least 10 canopy layers"))
 
     # internally bottom-to-top (index n = canopy top = unattenuated)
-    whole_canopy_attenuation = _element_attenuation(plant_area_index_total, canopy_height)
-    layer_attenuation = [_element_attenuation(pai, canopy_height) for pai in Iterators.reverse(layer_plant_area_index)]
+    whole_canopy_attenuation = _element_attenuation(plant_area_index_total, canopy_height,
+        shelter_floor, shelter_pai_coefficient, mixing_length_coefficient, mixing_length_pai_coefficient)
+    layer_attenuation = [_element_attenuation(pai, canopy_height,
+        shelter_floor, shelter_pai_coefficient, mixing_length_coefficient, mixing_length_pai_coefficient)
+        for pai in Iterators.reverse(layer_plant_area_index)]
     layer_attenuation_sum = sum(layer_attenuation)
     # zero total PAI (leafless canopy): every element is already 0, no attenuation to rescale
     if !iszero(layer_attenuation_sum)
@@ -85,7 +107,16 @@ function wind_attenuation_profile(layer_plant_area_index, canopy_height, plant_a
     for i in n:-1:(n_ground_layers + 1)
         relative_wind[i - 1] = relative_wind[i] * (1.0 - layer_attenuation[i - 1])
     end
+    _apply_near_ground_loglaw!(relative_wind, canopy_height, karman_constant, n_ground_layers)
+    return reverse(relative_wind)
+end
 
+# Replaces the bottom n_ground_layers of a bottom-to-top relative-wind array
+# (index n = canopy top) with a local log-law, calibrated to match whatever
+# shape produced relative_wind[n_ground_layers] -- avoids wind staying
+# unrealistically high right at the ground (a plain decay-with-height/PAI
+# shape need not reach zero there, especially for a sparse canopy).
+function _apply_near_ground_loglaw!(relative_wind, canopy_height, karman_constant, n_ground_layers)
     # 10.0 here is the same "bottom tenth" ratio as n_ground_layers = n÷10;
     # 20.0 sets ground_roughness ~ half the bottom layer's own thickness.
     ground_roughness = canopy_height / (20.0 * n_ground_layers)
@@ -94,20 +125,24 @@ function wind_attenuation_profile(layer_plant_area_index, canopy_height, plant_a
         z = i * canopy_height / (10.0 * n_ground_layers)
         relative_wind[i] = (friction_scale / karman_constant) * log(z / ground_roughness)
     end
-    return reverse(relative_wind)
+    return relative_wind
 end
 
-function allocate_wind(model::CanopyWindAttenuation, canopy_height, plant_area_index, boundary_layer_model, heights, n_layers)
+function allocate_wind(model::MixingLengthCanopyWindAttenuation, canopy_height, plant_area_index, boundary_layer_model, heights, n_layers)
     canopy_height = max(canopy_height, 1.0e-3u"m")  # avoid 0/0 in the per-element/roughness formulas below
     (; layer_plant_area_index) = canopy_layer_geometry(plant_area_index, n_layers)
     total_plant_area_index = sum(plant_area_index)
 
+    (; shelter_floor, shelter_pai_coefficient, mixing_length_coefficient, mixing_length_pai_coefficient) = model
+
     displacement_height = zero_plane_displacement(canopy_height, total_plant_area_index)
     roughness_length = canopy_roughness_length(
-        canopy_height, total_plant_area_index, displacement_height, boundary_layer_model.karman_constant,
+        canopy_height, total_plant_area_index, displacement_height, boundary_layer_model.karman_constant;
+        shelter_floor, shelter_pai_coefficient,
     )
     wind_attenuation = wind_attenuation_profile(
-        layer_plant_area_index, canopy_height, total_plant_area_index, boundary_layer_model.karman_constant,
+        layer_plant_area_index, canopy_height, total_plant_area_index, boundary_layer_model.karman_constant;
+        shelter_floor, shelter_pai_coefficient, mixing_length_coefficient, mixing_length_pai_coefficient,
     )
     # Ground-most layer's height above the soil surface — not every
     # air_profile_model buffer stores this (KTheoryAirProfile doesn't), so
@@ -123,13 +158,19 @@ function allocate_wind(model::CanopyWindAttenuation, canopy_height, plant_area_i
     )
 end
 
-function canopy_wind_profile!(buffers, model::CanopyWindAttenuation, boundary_layer_model;
+canopy_wind_profile!(buffers, ::MixingLengthCanopyWindAttenuation, boundary_layer_model; kw...) =
+    _shape_based_canopy_wind_profile!(buffers, boundary_layer_model; kw...)
+
+# Shared by every AbstractCanopyWindModel whose allocate_wind produces a
+# precomputed wind_attenuation shape array (MixingLengthCanopyWindAttenuation,
+# ExponentialCanopyWindAttenuation) -- only the shape differs between them.
+function _shape_based_canopy_wind_profile!(buffers, boundary_layer_model;
     site, environment_instant, canopy_source_temperature, vapour_pressure_equation=GoffGratch(),
 )
     profile = atmospheric_surface_profile!(boundary_layer_model, buffers.above_canopy_profile;
         site, environment_instant, surface_temperature=canopy_source_temperature, vapour_pressure_equation,
         displacement_height=buffers.displacement_height, roughness_length=buffers.roughness_length,
-        thermal_roughness_model=model.thermal_roughness_model,
+        thermal_roughness_model=buffers.thermal_roughness_model,
         temperature_anchor_height=buffers.canopy_height,
     )
     canopy_top_wind_speed = first(profile.wind_speed)
