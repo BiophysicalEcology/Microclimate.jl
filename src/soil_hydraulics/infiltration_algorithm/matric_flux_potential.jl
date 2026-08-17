@@ -49,14 +49,14 @@ end
 function assemble_tridiagonal_system!(::MatricFluxPotentialAlgorithm, buffers, i, dt, campbell_b)
     (; matric_flux_potential, hydraulic_conductivity, water_content_new, water_content, depth,
        layer_water_mass, campbell_flux_exponent,
-       vapor_flux, root_water_uptake,
+       vapor_flux, rainfall_flux, root_water_uptake,
        flux_sub_diagonal, flux_diagonal, flux_super_diagonal, mass_balance_residual) = buffers
     b3 = campbell_flux_exponent[i]
     hydraulic_capacitance = layer_water_mass[i] * water_content_new[i] / ((campbell_b[i] + 3.0) * matric_flux_potential[i] * dt)
     flux_sub_diagonal[i] = -1.0 / (depth[i] - depth[i-1]) - Unitful.gn * b3 * hydraulic_conductivity[i-1] / matric_flux_potential[i-1]
     flux_super_diagonal[i] = -1.0 / (depth[i+1] - depth[i])
     flux_diagonal[i] = 1.0 / (depth[i] - depth[i-1]) + 1.0 / (depth[i+1] - depth[i]) + hydraulic_capacitance + Unitful.gn * b3 * hydraulic_conductivity[i] / matric_flux_potential[i]
-    mass_balance_residual[i] = (matric_flux_potential[i] - matric_flux_potential[i-1]) / (depth[i] - depth[i-1]) - (matric_flux_potential[i+1] - matric_flux_potential[i]) / (depth[i+1] - depth[i]) + layer_water_mass[i] * (water_content_new[i] - water_content[i]) / dt - Unitful.gn * (hydraulic_conductivity[i-1] - hydraulic_conductivity[i]) + vapor_flux[i-1] - vapor_flux[i] + root_water_uptake[i]
+    mass_balance_residual[i] = (matric_flux_potential[i] - matric_flux_potential[i-1]) / (depth[i] - depth[i-1]) - (matric_flux_potential[i+1] - matric_flux_potential[i]) / (depth[i+1] - depth[i]) + layer_water_mass[i] * (water_content_new[i] - water_content[i]) / dt - Unitful.gn * (hydraulic_conductivity[i-1] - hydraulic_conductivity[i]) + vapor_flux[i-1] - vapor_flux[i] + rainfall_flux[i-1] - rainfall_flux[i] + root_water_uptake[i]
     return nothing
 end
 
