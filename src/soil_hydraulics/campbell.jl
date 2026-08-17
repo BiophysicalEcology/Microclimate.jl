@@ -477,10 +477,10 @@ function soil_water_balance!(buffers, soil_hydraulic_model::CampbellSoilHydrauli
         evaporation_potential = 1e-7u"kg/m^2/s"
     end
 
-    # half_thickness matches Fortran OSUB.f's (dep(2)-dep(1))/2; depths here
-    # is the fine 19-node grid, so depths[3] is the first real node below 0.
+    # Node 1's own midpoint-boundary control-volume thickness, matching
+    # infiltration_step!'s layer_water_mass[2] convention.
     sat = 1 - bulk_density[1] / mineral_density[1]
-    half_thickness = (depths[3] - depths[1]) / 2
+    half_thickness = (depths[2] - depths[1]) / 2
     pool = _wet_surface_node!(soil_moisture, pool, sat, half_thickness)
 
     # run infiltration algorithm
