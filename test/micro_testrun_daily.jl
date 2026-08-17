@@ -142,7 +142,7 @@ soil_moisture_strategy = _runmoist ?
     PrescribedSoilMoisture()
 
 config = MicroConfig(;
-    convergence = FixedSoilTemperatureIterations(Int(microinput[:ndmax])),
+    convergence = FixedIterationConvergence(Int(microinput[:ndmax])),
     rainfall_schedule = Bool(Int(microinput[:rainhourly])) ? HourlyRainfall() : DailyRainfall(),
     soil_moisture_strategy,
     max_surface_pool = microinput[:maxpool] * 1000.0u"kg/m^2",
@@ -213,6 +213,7 @@ coarse_indices = [1, 3, 5, 7, 9, 11, 13, 15, 17, 19] # indices of original 10 co
     @test wind_matrix[:, 2] ≈ vel2m_nmr[1:hours2do] rtol=1e-5 
     @test u"K".(air_temperature_matrix[:, 1]) ≈ ta1cm_nmr[1:hours2do] rtol=1e-2
     @test u"K".(air_temperature_matrix[:, 2]) ≈ ta2m_nmr[1:hours2do] rtol=1e-5
+    @test micro_out.sky_temperature ≈ u"K".(tskyC_nmr) rtol=2e-3
 end
 
 # Visual comparisons — run manually (not in CI)

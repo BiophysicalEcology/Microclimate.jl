@@ -68,9 +68,9 @@ end
 
 function example_soil_hydraulic_model(;
     root_resistance = 2.5e+10u"m^3/kg/s",     # resistance per unit length of root
-    stomatal_closure_potential = -1500.0u"J/kg", # critical leaf water potential for stomatal closure
+    stomatal_closure_potential = -1500.0u"J/kg", # critical leaf water potential for stomatal closure, Campbell (1985) (MoistureResponsiveStomatalConductance reads this directly)
     leaf_resistance = 2.0e6u"m^4/kg/s",       # resistance per unit length of leaf
-    stomatal_stability_parameter = 10.0,      # stability parameter, -
+    stomatal_stability_parameter = 10.0,      # stability parameter, -, Campbell (1985) (MoistureResponsiveStomatalConductance reads this directly)
     root_radius = 0.001u"m",                  # root radius, m
     infiltration_algorithm = MatricPotentialAlgorithm(),
 )
@@ -139,6 +139,7 @@ function infiltration_step!(buffers, soil_hydraulic_model::CampbellSoilHydraulic
     moisture_tolerance,
     moisture_max_iterations,
     vapour_pressure_equation=GoffGratch(),
+    canopy_transpiration_potential=nothing,
 )
     # Local variable names
     θ_soil = soil_moisture
@@ -250,9 +251,12 @@ function infiltration_step!(buffers, soil_hydraulic_model::CampbellSoilHydraulic
     water_potential[1] = water_potential[2]
     hydraulic_conductivity[1] = 0.0u"kg*s/m^3"
 
-    # Evapotranspiration
-    evaporation_potential = exp(-0.82 * ustrip(lai)) * evapotranspiration # partition potential evaporation from potential evapotranspiration, EQ12.30
-    transpiration_potential = evapotranspiration - evaporation_potential # now get potential transpiration
+    # Beer's-law soil/plant PET split (EQ12.30) -- skip under a resolved
+    # canopy, where evapotranspiration is already the shaded ground-level PET.
+    evaporation_potential = isnothing(canopy_transpiration_potential) ?
+        exp(-0.82 * ustrip(lai)) * evapotranspiration : evapotranspiration
+    transpiration_potential = isnothing(canopy_transpiration_potential) ?
+        evapotranspiration - evaporation_potential : canopy_transpiration_potential
 
     # Plant water uptake
     potential_sum = 0.0u"J*s/m^4"  # numerator of first term on left of EQ11.18, J * s / m⁴
@@ -393,34 +397,68 @@ function soil_water_balance!(buffers, soil_hydraulic_model::CampbellSoilHydrauli
     evaporation_model::AbstractEvaporationModel=BulkTransferEvaporation(),
     vapour_pressure_equation=GoffGratch(),
     snow_present=false,
+    canopy_transpiration_potential=nothing,
+    canopy_leaf_area_index=nothing,
+    ground_wind_speed=nothing, ground_air_temperature=nothing,
+    ground_air_relative_humidity=nothing, ground_reference_height=nothing,
+    ground_heat_conductance=nothing, ground_vapor_conductance=nothing,
 )
-    air_temperature = environment_instant.reference_temperature
     atmospheric_pressure = environment_instant.atmospheric_pressure
-    relative_humidity = environment_instant.reference_humidity
-    leaf_area_index = environment_instant.leaf_area_index
+    leaf_area_index = isnothing(canopy_leaf_area_index) ? environment_instant.leaf_area_index : canopy_leaf_area_index
 
     (; bulk_density, mineral_density) = soil_profile
 
     θ_soil = soil_moisture
     surface_temperature = T0[1]
 
-    # compute scalar profiles
-    profile_out = atmospheric_surface_profile!(boundary_layer_model, buffers.soil_water_profile;
-        site, environment_instant, surface_temperature, vapour_pressure_equation,
-    )
-
-    # convection
-    convective_heat_flux = profile_out.convective_heat_flux
-
-    # evaporation
-    wet_air_out_ref = wet_air_properties(u"K"(last(profile_out.air_temperature)), last(profile_out.relative_humidity), atmospheric_pressure; vapour_pressure_equation)
-    wet_air_out_loc = wet_air_properties(u"K"(profile_out.air_temperature[1]), 1.0, atmospheric_pressure; vapour_pressure_equation)
-    local_relative_humidity = clamp(wet_air_out_ref.vapour_pressure / wet_air_out_loc.vapour_pressure, 0.0, 0.99)
-    heat_transfer_coefficient = max(abs(convective_heat_flux / (surface_temperature - air_temperature)), 0.5u"W/m^2/K")
-    wet_air_out = wet_air_properties(air_temperature, relative_humidity, atmospheric_pressure; vapour_pressure_equation)
-    air_heat_capacity = wet_air_out.specific_heat
-    air_density = wet_air_out.density
-    mass_transfer_coefficient = (heat_transfer_coefficient / (air_heat_capacity * air_density)) * (0.71 / 0.60)^0.666
+    if isnothing(ground_air_relative_humidity)
+        # NoCanopy: full MOST profile from the free-atmosphere reference down
+        # to the soil surface, as before.
+        air_temperature = environment_instant.reference_temperature
+        relative_humidity = environment_instant.reference_humidity
+        profile_out = atmospheric_surface_profile!(boundary_layer_model, buffers.soil_water_profile;
+            site, environment_instant, surface_temperature, vapour_pressure_equation,
+        )
+        heat_transfer_coefficient = max(abs(profile_out.convective_heat_flux / (surface_temperature - air_temperature)), 0.5u"W/m^2/K")
+        wet_air_out = wet_air_properties(air_temperature, relative_humidity, atmospheric_pressure; vapour_pressure_equation)
+        mass_transfer_coefficient = calc_mass_transfer_coefficient(heat_transfer_coefficient, wet_air_out.specific_heat, wet_air_out.density)
+        wet_air_out_ref = wet_air_properties(u"K"(last(profile_out.air_temperature)), last(profile_out.relative_humidity), atmospheric_pressure; vapour_pressure_equation)
+        wet_air_out_loc = wet_air_properties(u"K"(profile_out.air_temperature[1]), 1.0, atmospheric_pressure; vapour_pressure_equation)
+        local_relative_humidity = clamp(wet_air_out_ref.vapour_pressure / wet_air_out_loc.vapour_pressure, 0.0, 0.99)
+    else
+        # Canopy present: MOST is only valid above canopy top (already used
+        # there, in canopy_wind_profile!) -- within the canopy, transport is
+        # the canopy's own resolved profile. The canopy's resolved ground-
+        # layer humidity is already the near-surface value directly, no MOST
+        # profile approximation needed.
+        air_temperature = ground_air_temperature
+        relative_humidity = ground_air_relative_humidity
+        local_relative_humidity = clamp(ground_air_relative_humidity, 0.0, 0.99)
+        if isnothing(ground_heat_conductance)
+            # Fallback (canopy supplied ground_air_* but not its own
+            # conductances): surface_fluxes's Monin-Obukhov log-law
+            # inversion, invalid at the canopy's ground-most layer height
+            # (too close to roughness_height -- see _MIN_LOGLAW_RATIO).
+            flux_out = surface_fluxes(boundary_layer_model;
+                surface_temperature, air_temperature=u"K"(ground_air_temperature), wind_speed=ground_wind_speed,
+                zenith_angle=environment_instant.zenith_angle,
+                roughness_height=site.roughness_height, reference_height=ground_reference_height,
+                atmospheric_pressure, obukhov_length_prev=buffers.soil_water_profile.obukhov_length_prev,
+            )
+            heat_transfer_coefficient = max(abs(flux_out.convective_heat_flux / (surface_temperature - air_temperature)), 0.5u"W/m^2/K")
+            wet_air_out = wet_air_properties(air_temperature, relative_humidity, atmospheric_pressure; vapour_pressure_equation)
+            mass_transfer_coefficient = calc_mass_transfer_coefficient(heat_transfer_coefficient, wet_air_out.specific_heat, wet_air_out.density)
+        else
+            # Canopy's own resolved ground-to-lowest-layer conductances --
+            # avoids surface_fluxes's invalid-geometry log-law inversion
+            # entirely rather than working around it. ground_vapor_conductance
+            # shares its resistance with ground_heat_conductance (implicit
+            # Pr=Sc=1), unlike the other two branches' calc_mass_transfer_coefficient
+            # -- apply the same Lewis-relation factor here for consistency.
+            heat_transfer_coefficient = max(abs(ground_heat_conductance), 0.5u"W/m^2/K")
+            mass_transfer_coefficient = ground_vapor_conductance * LEWIS_HEAT_TO_MASS_RATIO
+        end
+    end
     Q_evaporation, evaporation_mass_flux = evaporation(evaporation_model;
         surface_temperature,
         air_temperature,
@@ -439,10 +477,10 @@ function soil_water_balance!(buffers, soil_hydraulic_model::CampbellSoilHydrauli
         evaporation_potential = 1e-7u"kg/m^2/s"
     end
 
-    # half_thickness matches Fortran OSUB.f's (dep(2)-dep(1))/2; depths here
-    # is the fine 19-node grid, so depths[3] is the first real node below 0.
+    # Node 1's own midpoint-boundary control-volume thickness, matching
+    # infiltration_step!'s layer_water_mass[2] convention.
     sat = 1 - bulk_density[1] / mineral_density[1]
-    half_thickness = (depths[3] - depths[1]) / 2
+    half_thickness = (depths[2] - depths[1]) / 2
     pool = _wet_surface_node!(soil_moisture, pool, sat, half_thickness)
 
     # run infiltration algorithm
@@ -456,7 +494,7 @@ function soil_water_balance!(buffers, soil_hydraulic_model::CampbellSoilHydrauli
         evapotranspiration=evaporation_potential,
         input_soil_temperature=T0,
         moisture_timestep, moisture_tolerance, moisture_max_iterations,
-        vapour_pressure_equation,
+        vapour_pressure_equation, canopy_transpiration_potential,
     )
     soil_moisture = infil_out.soil_moisture
     surf_evap = max(0.0u"kg/m^2", infil_out.evaporation)
@@ -474,7 +512,7 @@ function soil_water_balance!(buffers, soil_hydraulic_model::CampbellSoilHydrauli
             evapotranspiration=evaporation_potential,
             input_soil_temperature=T0,
             moisture_timestep, moisture_tolerance, moisture_max_iterations,
-            vapour_pressure_equation,
+            vapour_pressure_equation, canopy_transpiration_potential,
         )
         soil_moisture = infil_out.soil_moisture
         surf_evap = max(0.0u"kg/m^2", infil_out.evaporation)

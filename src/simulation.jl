@@ -80,6 +80,62 @@ end
     return (; albedo, effective_wetness, longwave_sky)
 end
 
+# Canopy ground-boundary overrides for the hour: the shortwave/longwave terms
+# soil_energy_balance substitutes for its shade-based defaults, plus the
+# updated canopy_source_temperature and (for diagnostics) the full canopy
+# result. NoCanopy passes everything through unchanged/nothing.
+@inline function apply_canopy_overrides(::NoCanopy, buffers, canopy_inputs;
+    boundary_layer_model, site, environment_instant, ground_temperature, ground_emissivity, ground_relative_humidity,
+    canopy_source_temperature, rainfall, direct_horizontal_irradiance, diffuse_horizontal_irradiance, ground_reflectance,
+    leaf_water_potential,
+)
+    return (;
+        ground_shortwave_transmission = nothing,
+        ground_incoming_longwave = nothing,
+        canopy_source_temperature,
+        canopy_result = nothing,
+        ground_wind_speed = nothing, ground_air_temperature = nothing,
+        ground_air_relative_humidity = nothing, ground_reference_height = nothing,
+        ground_heat_conductance = nothing, ground_vapor_conductance = nothing,
+    )
+end
+
+@inline function apply_canopy_overrides(model::MultilayerCanopy, buffers, canopy_inputs;
+    boundary_layer_model, site, environment_instant, ground_temperature, ground_emissivity, ground_relative_humidity,
+    canopy_source_temperature, rainfall, direct_horizontal_irradiance, diffuse_horizontal_irradiance, ground_reflectance,
+    leaf_water_potential,
+)
+    update_canopy_energy_balance_inputs!(canopy_inputs;
+        environment_instant, zenith_angle = environment_instant.zenith_angle,
+        direct_horizontal_irradiance, diffuse_horizontal_irradiance, ground_reflectance,
+        ground_temperature, ground_emissivity, ground_relative_humidity, canopy_source_temperature, rainfall, leaf_water_potential,
+    )
+    canopy_result = canopy_energy_balance!(buffers, model, boundary_layer_model, canopy_inputs)
+    global_horizontal_irradiance = direct_horizontal_irradiance + diffuse_horizontal_irradiance
+    absorptivity = 1.0 - ground_reflectance
+    ground_shortwave_transmission = global_horizontal_irradiance > 0.0u"W/m^2" ?
+        canopy_result.ground_absorbed_shortwave / (absorptivity * global_horizontal_irradiance) : 1.0
+    ground_incoming_longwave = canopy_result.ground_absorbed_longwave / ground_emissivity
+    new_canopy_source_temperature = buffers.leaf.leaf_temperature[1]
+    # Sub-canopy boundary condition for soil convection/evaporation: the
+    # canopy's own resolved ground-most-layer wind/air temperature/humidity,
+    # in place of the free-atmosphere reference used by soil_energy_balance's
+    # NoCanopy default.
+    ground_wind_speed = buffers.wind.wind_speed[end]
+    ground_air_temperature = buffers.air_profile.air_temperature[end]
+    ground_air_relative_humidity = buffers.air_profile.relative_humidity[end]
+    ground_reference_height = buffers.wind.ground_layer_height
+    # ground_reference_height is often too close to site.roughness_height for
+    # a log-law inversion (surface_fluxes) to be valid -- pass the air-profile
+    # model's own ground-to-lowest-layer conductances so the soil model can
+    # use those directly instead (see ground_convection_conditions).
+    (; ground_heat_conductance, ground_vapor_conductance) = canopy_result
+    return (; ground_shortwave_transmission, ground_incoming_longwave,
+        canopy_source_temperature = new_canopy_source_temperature, canopy_result,
+        ground_wind_speed, ground_air_temperature, ground_air_relative_humidity, ground_reference_height,
+        ground_heat_conductance, ground_vapor_conductance)
+end
+
 # Resolve the non-snow baseline albedo: a populated `environment_daily.albedo`
 # (surfaced here as `environment_instant.albedo`) wins; otherwise fall back
 # to the `Site.albedo` scalar. The inner helper has two methods dispatched
@@ -143,7 +199,7 @@ function CommonSolve.init(mp::MicroProblem)
        soil_properties_model, soil_hydraulic_model, snow_model,
        vapour_pressure_equation, boundary_layer_model,
        radiation, evaporation_model, soil_energy_model,
-       config) = mp.model
+       canopy_model, config) = mp.model
     days = mp.days
     longwave_model = radiation.longwave_model
     (; site, soil_profile, environment_minmax, environment_daily, environment_hourly,
@@ -162,7 +218,7 @@ function CommonSolve.init(mp::MicroProblem)
     solve_solar!(solar_radiation_out, solar_buffers, mp)
 
     # Output arrays (always soil-node sized)
-    output = MicroResult(nsteps, num_soil_nodes, length(heights), solar_radiation_out, n_snow)
+    output = MicroResult(nsteps, num_soil_nodes, length(heights), solar_radiation_out, n_snow, n_canopy_layers(canopy_model, heights))
 
     # Snow state and scratch
     snow_state = initial_snow_state(snow_model, initial_snow_depth, initial_snow_density)
@@ -189,6 +245,7 @@ function CommonSolve.init(mp::MicroProblem)
         allocate_soil_water_balance(soil_hydraulic_model, num_soil_nodes),
         snow_scratch,
         allocate_interpolation_scratch(environment_minmax),
+        allocate_canopy(canopy_model, heights, boundary_layer_model),
     )
 
     # ODE integrator — sized for the combined (snow + soil) vector
@@ -234,6 +291,7 @@ function CommonSolve.init(mp::MicroProblem)
         longwave_sky, albedo=site.albedo,
         soil_moisture,
         snow_model, snow_state=initial_snow_state(snow_model),
+        initial_ground_overrides(canopy_model)...,
     )
     ode_integrator = allocate_ode_integrator(soil_energy_model, T0_ode, inputs_proto)
 
@@ -311,7 +369,7 @@ function interpolate_minmax!(output, environment_minmax, environment_daily, envi
     # the forcings filled before them.
     buffer_for(vk) = _is_output_quantity(vk) ? getproperty(output, _name(vk)) :
                                                getproperty(interpolation_scratch, _name(vk))
-    populate_quantities!(buffer_for, environment_minmax.forcings, solar_radiation_out)
+    populate_quantities!(buffer_for, environment_minmax.forcings, solar_radiation_out, consecutive_days(environment_minmax))
 
     # Clamp humidity and cloud cover to [_, 1.0] without allocating a mask Vector.
     @inbounds for i in eachindex(output.reference_humidity)
@@ -358,7 +416,7 @@ function solve_soil!(cache::MicroCache)
        soil_properties_model, soil_hydraulic_model, snow_model,
        vapour_pressure_equation, boundary_layer_model,
        radiation, evaporation_model, soil_energy_model,
-       config) = mp.model
+       canopy_model, config) = mp.model
     days = mp.days
     longwave_model = radiation.longwave_model
     soil_freezing_model = soil_energy_model.freezing_model
@@ -375,7 +433,7 @@ function solve_soil!(cache::MicroCache)
     ode_integrator = cache.ode_integrator
     forcing = cache.forcing
 
-    (; convergence, rainfall_schedule, max_surface_pool) = config
+    (; convergence, rainfall_schedule, max_surface_pool, canopy_soil_convergence, canopy_soil_relaxation) = config
     time_mode = mp.time_mode
     moisture_mode = config.soil_moisture_strategy
     (; campbell_b_parameter, air_entry_water_potential) = soil_profile.hydraulics
@@ -412,6 +470,7 @@ function solve_soil!(cache::MicroCache)
     soil_moisture .= initial_soil_moisture
     snow_state = initial_snow_state(snow_model, initial_snow_depth, initial_snow_density)
     reset_snow_scratch!(snow_model, buffers.snow)
+    reset_canopy_scratch!(canopy_model, buffers.canopy)
 
     soil_prop_view = if n_snow > 0
         (; bulk_thermal_conductivity = view(buffers.soil_properties.bulk_thermal_conductivity, n_snow+1:n_snow+num_soil_nodes),
@@ -439,6 +498,7 @@ function solve_soil!(cache::MicroCache)
     end
     _write_row!(output.soil_temperature, 1, T0)
     _write_row!(output.soil_moisture, 1, soil_moisture)
+    _ground_heat_flux!(output, 1, depths)
 
     initialise_soil_humidity!(moisture_mode, output,
         view(output.soil_water_potential, 1, :), T0)
@@ -451,6 +511,9 @@ function solve_soil!(cache::MicroCache)
     pool = 0.0u"kg/m^2" # TODO make this an initialisation option
     Q_freeze = 0.0u"W/m^2"  # Fortran COMMON/melt/QFREZE: persists across hours
     infil_out = nothing
+    canopy_source_temperature = T0[1]  # lagged canopy-atmosphere coupling boundary; bootstrap at ground equilibrium
+    leaf_water_potential = 0.0u"J/kg"  # lagged Campbell-solved value; bootstrap fully hydrated
+    canopy_inputs = allocate_canopy_inputs(canopy_model; site, environment_instant, boundary_layer_model, soil_hydraulic_model)
     for j in 1:ndays
         iday = j
         environment_day = get_day(environment_daily, iday)
@@ -488,6 +551,7 @@ function solve_soil!(cache::MicroCache)
         end
         if reset_moisture_per_day(time_mode)
             reset_day_soil_moisture!(moisture_mode, soil_moisture, initial_soil_moisture, j)
+            reset_canopy_scratch!(canopy_model, buffers.canopy)
         end
         if reset_snow_per_day(time_mode)
             snow_state = initial_snow_state(snow_model)
@@ -523,6 +587,9 @@ function solve_soil!(cache::MicroCache)
         # values after every SFODE call. Save initial conditions for reset.
         T0_day_start    = T0
         T_snow_day_start = T_snow
+        canopy_source_temperature_day_start = canopy_source_temperature
+        leaf_water_potential_day_start = leaf_water_potential
+        snapshot_canopy_water!(canopy_model, buffers.canopy)
         # Snapshot day-start ∑phase into pre-allocated buffer (no copy alloc).
         @inbounds for i in eachindex(∑phase)
             ∑phase_day_start[i] = ∑phase[i]
@@ -538,6 +605,9 @@ function solve_soil!(cache::MicroCache)
             if iter_resets_T(time_mode)
                 T0 = T0_day_start
                 T_snow = T_snow_day_start
+                canopy_source_temperature = canopy_source_temperature_day_start
+                leaf_water_potential = leaf_water_potential_day_start
+                restore_canopy_water!(canopy_model, buffers.canopy)
             end
             ∑phase .= ∑phase_day_start  # restore carry-over (zeros under reset_phase_per_iter)
             # PR #102: also reset snow sum_phase at start of each iter when the
@@ -585,6 +655,7 @@ function solve_soil!(cache::MicroCache)
                     atmospheric_pressure=output.pressure[day_init_step],
                     step=day_init_step, vapour_pressure_equation,
                 )
+                _ground_heat_flux!(output, day_init_step, depths)
                 # PR #102: snow is now recorded at `step` (the hour-loop index)
                 # not at `day_init_step`. Matches Fortran OSUB convention where
                 # snow is computed and output at the same TIME point it is
@@ -599,6 +670,9 @@ function solve_soil!(cache::MicroCache)
                 snow_model, snow_state, buffers.snow, step, site, moisture_mode, environment_instant,
                 longwave_model, vapour_pressure_equation;
                 is_last_iter)
+            snow_present_step = n_snow > 0 && buffers.snow.snow_depth_hourly[step] > 0.0u"cm"
+            ground_temperature = snow_present_step ? T_snow[1] : T0[1]
+            rainfall_step = current_rainfall(rainfall_schedule; environment_instant, environment_hourly, step, i=1, midnight_i)
             if n_snow > 0
                 # PR #102: on non-final iters (spinup) Fortran still maintains
                 # `snowhr(methour)` and `snode` via the SNOWLAYER call inside
@@ -616,30 +690,52 @@ function solve_soil!(cache::MicroCache)
             else
                 ode_depths = depths
             end
+            T0_hour_start = T0
+            T_snow_hour_start = T_snow
             T0_ode = combine_ode_state(T_snow, T0, n_snow)
-            update_soil_energy_inputs!(ode_integrator.p;
-                depths=ode_depths, environment_instant,
-                soil_wetness=effective_wetness, longwave_sky, albedo,
-                Q_freeze, snow_state,
+            (; overrides, T0, T_snow) = converge_canopy_soil_hour!(ode_integrator, 1, T0_ode, canopy_soil_convergence,
+                canopy_model, buffers.canopy, canopy_inputs, snow_model;
+                snow_present=snow_present_step, ground_temperature0=ground_temperature, canopy_source_temperature, ode_depths,
+                soil_wetness=effective_wetness, longwave_sky, albedo, Q_freeze, snow_state,
+                boundary_layer_model, site, environment_instant,
+                ground_emissivity = environment_instant.surface_emissivity,
+                # Lagged soil-surface humidity (mirrors ground_temperature's T0[1]
+                # lag); falls back to reference RH before any DynamicSoilMoisture
+                # update has run (PrescribedSoilMoisture never populates infil_out).
+                ground_relative_humidity = isnothing(infil_out) ? environment_instant.reference_humidity : infil_out.soil_humidity[1],
+                rainfall = rainfall_step, leaf_water_potential,
+                direct_horizontal_irradiance = output.global_radiation[step] * (1.0 - output.diffuse_fraction[step]),
+                diffuse_horizontal_irradiance = output.global_radiation[step] * output.diffuse_fraction[step],
+                relaxation = canopy_soil_relaxation,
             )
-
-            # Reset the integrator for a fresh day-pass (0-1440 min), matching
-            # Fortran SFODE. The default `reinit!` allocates ~528 B per call:
-            # ~440 B from `initialize!` rebuilding the Tsit5 stage cache
-            # `Memory{SVector}` and ~88 B from the `tstops`/`saveat` push paths.
-            # We do the minimal subset of `reinit!`'s work in place — the Tsit5
-            # `ConstantCache` stage values are recomputed every step anyway, so
-            # skipping the cache reinit is safe.
-            _maybe_reinit_integrator!(ode_integrator, T0_ode)
+            (; ground_shortwave_transmission, ground_incoming_longwave, canopy_source_temperature, canopy_result,
+                ground_wind_speed, ground_air_temperature, ground_air_relative_humidity, ground_reference_height,
+                ground_heat_conductance, ground_vapor_conductance) = overrides
+            # day_init_step == step here (both (j-1)*length(hours)+1) — the NMR
+            # "state at minute 0" row is this hour's canopy result.
+            if is_last_iter
+                write_canopy_output!(canopy_model, output, buffers.canopy, canopy_result, day_init_step)
+            end
 
             for i in 1:length(hours)
                 step = (j - 1) * length(hours) + i
-                T0_before = T0
-                T_snow_before = T_snow
+                T0_before = T0_hour_start
+                T_snow_before = T_snow_hour_start
+                # canopy_result and the ground_* canopy overrides hold this
+                # hour's values here; the lookahead block below overwrites
+                # them with hour i+1's. Snapshot first so rain/transpiration/
+                # soil-moisture below stay on hour i.
+                current_hour_canopy_result = canopy_result
+                current_hour_ground_wind_speed = ground_wind_speed
+                current_hour_ground_air_temperature = ground_air_temperature
+                current_hour_ground_air_relative_humidity = ground_air_relative_humidity
+                current_hour_ground_reference_height = ground_reference_height
+                current_hour_ground_heat_conductance = ground_heat_conductance
+                current_hour_ground_vapor_conductance = ground_vapor_conductance
 
-                # ── Step integrator to this hour boundary ──
-                T_result = step_to_hour!(ode_integrator, i)
-                T_snow, T0 = split_ode_state(snow_model, T_result)
+                # T0/T_snow already hold this hour's converged end-of-hour state
+                # (computed by the day-init block or the previous iteration's
+                # lookahead, via converge_canopy_soil_hour!).
 
                 # ── Phase transition (final iteration only) ── # TODO this should happen every time but at present it doesn't in Fortran version so keeping the same for now
                 if is_last_iter
@@ -717,6 +813,9 @@ function solve_soil!(cache::MicroCache)
                         snow_model, snow_state, buffers.snow, next_step, site, moisture_mode, environment_instant,
                         longwave_model, vapour_pressure_equation;
                         is_last_iter)
+                    snow_present_next = n_snow > 0 && buffers.snow.snow_depth_hourly[next_step] > 0.0u"cm"
+                    ground_temperature = snow_present_next ? T_snow[1] : T0[1]
+                    rainfall_next = current_rainfall(rainfall_schedule; environment_instant, environment_hourly, step=next_step, i=i + 1, midnight_i)
                     if n_snow > 0
                         if !is_last_iter
                             buffers.snow.snow_depth_hourly[next_step] = snow_state.current_depth
@@ -727,11 +826,27 @@ function solve_soil!(cache::MicroCache)
                     else
                         ode_depths = depths
                     end
-                    update_soil_energy_inputs!(ode_integrator.p;
-                        depths=ode_depths, environment_instant,
-                        soil_wetness=effective_wetness, longwave_sky, albedo,
-                        Q_freeze, snow_state,
+                    T0_hour_start = T0
+                    T_snow_hour_start = T_snow
+                    T0_ode = combine_ode_state(T_snow, T0, n_snow)
+                    (; overrides, T0, T_snow) = converge_canopy_soil_hour!(ode_integrator, i + 1, T0_ode, canopy_soil_convergence,
+                        canopy_model, buffers.canopy, canopy_inputs, snow_model;
+                        snow_present=snow_present_next, ground_temperature0=ground_temperature, canopy_source_temperature, ode_depths,
+                        soil_wetness=effective_wetness, longwave_sky, albedo, Q_freeze, snow_state,
+                        boundary_layer_model, site, environment_instant,
+                        ground_emissivity = environment_instant.surface_emissivity,
+                        # Lagged soil-surface humidity (mirrors ground_temperature's T0[1]
+                        # lag); falls back to reference RH before any DynamicSoilMoisture
+                        # update has run (PrescribedSoilMoisture never populates infil_out).
+                        ground_relative_humidity = isnothing(infil_out) ? environment_instant.reference_humidity : infil_out.soil_humidity[1],
+                        rainfall = rainfall_next, leaf_water_potential,
+                        direct_horizontal_irradiance = output.global_radiation[next_step] * (1.0 - output.diffuse_fraction[next_step]),
+                        diffuse_horizontal_irradiance = output.global_radiation[next_step] * output.diffuse_fraction[next_step],
+                        relaxation = canopy_soil_relaxation,
                     )
+                    (; ground_shortwave_transmission, ground_incoming_longwave, canopy_source_temperature, canopy_result,
+                        ground_wind_speed, ground_air_temperature, ground_air_relative_humidity, ground_reference_height,
+                        ground_heat_conductance, ground_vapor_conductance) = overrides
                 end
                 T0_ode = combine_ode_state(T_snow, T0, n_snow)
                 # Direct field write bypasses any custom setproperty! interposing
@@ -743,10 +858,11 @@ function solve_soil!(cache::MicroCache)
                 init_surface_fluxes!(boundary_layer_model, buffers, forcing, site, heights, T0, i)
                 # Fortran OSUB.f: soil moisture runs only on final iteration (after line 353 guard)
                 if is_last_iter
-                    rain = current_rainfall(rainfall_schedule;
+                    # Rain reaching the ground is post-canopy-interception throughfall, not raw rainfall.
+                    rain = isnothing(current_hour_canopy_result) ? current_rainfall(rainfall_schedule;
                         environment_instant, environment_hourly=environment_hourly,
                         step, i, midnight_i,
-                    )
+                    ) : current_hour_canopy_result.ground_throughfall
                     # Fortran OSUB.f: apply rainmult to rainfall entering condep
                     if n_snow > 0
                         rain = rain * snow_model.rain_multiplier
@@ -770,10 +886,21 @@ function solve_soil!(cache::MicroCache)
                         pool = clamp(pool + rain + rain_melt_water + melted_water, 0.0u"kg/m^2", max_surface_pool)
                     end
                     # Soil moisture physics; output write happens below at output_step
+                    canopy_transpiration_potential = isnothing(current_hour_canopy_result) ? nothing : current_hour_canopy_result.canopy_potential_transpiration
                     (; pool, soil_moisture, infil_out) = step_soil_moisture!(moisture_mode, buffers, soil_hydraulic_model;
                         soil_profile, depths, site, boundary_layer_model, environment_instant, T0, pool, soil_moisture,
-                        max_surface_pool, evaporation_model, vapour_pressure_equation, snow_present,
+                        max_surface_pool, evaporation_model, vapour_pressure_equation, snow_present, canopy_transpiration_potential,
+                        canopy_leaf_area_index = canopy_leaf_area_index(canopy_model),
+                        ground_wind_speed = current_hour_ground_wind_speed,
+                        ground_air_temperature = current_hour_ground_air_temperature,
+                        ground_air_relative_humidity = current_hour_ground_air_relative_humidity,
+                        ground_reference_height = current_hour_ground_reference_height,
+                        ground_heat_conductance = current_hour_ground_heat_conductance,
+                        ground_vapor_conductance = current_hour_ground_vapor_conductance,
                     )
+                    if !isnothing(infil_out)
+                        leaf_water_potential = infil_out.leaf_water_potential
+                    end
                 end
                 # Write hour i's result to step + 1 (NMR convention: state at minute i*60
                 # belongs in row (j-1)*nhours + i + 1 = start of hour i+1). Skip when
@@ -788,6 +915,7 @@ function solve_soil!(cache::MicroCache)
                     output.surface_water[output_step] = pool
                     _write_row!(output.soil_temperature, output_step, T0_output)
                     output.sky_temperature[output_step] = longwave_sky.sky_temperature
+                    write_canopy_output!(canopy_model, output, buffers.canopy, canopy_result, output_step)
                     update_soil_water!(output, soil_moisture, infil_out, output_step)
                     environment_instant = get_instant(environment_day, environment_hourly, output, soil_moisture, output_step)
                     update_soil_properties!(output, soil_prop_view, soil_properties_model;
@@ -795,6 +923,7 @@ function solve_soil!(cache::MicroCache)
                         mineral_conductivity, mineral_heat_capacity,
                         atmospheric_pressure=environment_instant.atmospheric_pressure, step=output_step, vapour_pressure_equation
                     )
+                    _ground_heat_flux!(output, output_step, depths)
                 end
                 # PR #102: snow output writes at `step` (not `step+1`), matching
                 # Fortran OSUB convention where snow is computed and recorded at
@@ -824,16 +953,19 @@ function solve_air!(cache::MicroCache)
     output = cache.output
     solar_radiation_out = cache.buffers.solar_out
     site = mp.inputs.site
-    (; boundary_layer_model, vapour_pressure_equation, snow_model) = mp.model
+    (; canopy_model, boundary_layer_model, vapour_pressure_equation, snow_model) = mp.model
     profile_buffers = cache.buffers.air_profile
     n_snow = n_snow_nodes(snow_model)
+    (; displacement_height, roughness_length, thermal_roughness_model, temperature_anchor_height) = canopy_profile_origin(canopy_model, cache.buffers.canopy, site, boundary_layer_model)
     for i in 1:size(output.profile.air_temperature, 1)
         # PR #102: when snow is present, the boundary-layer surface is the
         # top of the snowpack (snow node 1) not the soil surface.
         has_snow = n_snow > 0 && output.snow_depth[i] > 0.0u"cm"
-        surface_temperature = has_snow ?
+        ground_surface_temperature = has_snow ?
             u"°C"(output.snow_temperature[i, 1]) :
             u"°C"(output.soil_temperature[i, 1])
+        surface_temperature = profile_surface_temperature(canopy_model, output, i, ground_surface_temperature)
+        surface_relative_humidity = profile_surface_humidity(canopy_model, output, i)
         environment_instant = (;
             atmospheric_pressure=output.pressure[i],
             reference_temperature=output.reference_temperature[i],
@@ -841,7 +973,7 @@ function solve_air!(cache::MicroCache)
             reference_humidity=output.reference_humidity[i],
             zenith_angle=solar_radiation_out.zenith_angle[i],
         )
-        result = atmospheric_surface_profile!(boundary_layer_model, profile_buffers; site, environment_instant, surface_temperature, vapour_pressure_equation)
+        result = atmospheric_surface_profile!(boundary_layer_model, profile_buffers; site, environment_instant, surface_temperature, vapour_pressure_equation, displacement_height, roughness_length, thermal_roughness_model, temperature_anchor_height, surface_relative_humidity)
         _write_row!(output.profile.air_temperature,   i, result.air_temperature)
         _write_row!(output.profile.wind_speed,        i, result.wind_speed)
         _write_row!(output.profile.relative_humidity, i, result.relative_humidity)
@@ -865,14 +997,14 @@ end
 # recompute their stage cache every step anyway, so we skip `reinit_cache`
 # and avoid the ~440 B/call allocation. `integrator.alg` has a concrete
 # type at the call site, so the compiler constant-folds the branch.
-@inline function _maybe_reinit_integrator!(integrator, u_new)
+@inline function _maybe_reinit_integrator!(integrator, u_new, t0=zero(integrator.t); reset_dt=true)
     if ismultistep(integrator.alg)
         SciMLBase.reinit!(integrator, u_new;
-            t0=zero(integrator.t), erase_sol=false, reset_dt=true,
+            t0, erase_sol=false, reset_dt,
         )
     else
         SciMLBase.reinit!(integrator, u_new;
-            t0=zero(integrator.t), erase_sol=false, reset_dt=true,
+            t0, erase_sol=false, reset_dt,
             reinit_cache=false,
         )
     end
@@ -900,6 +1032,51 @@ function step_to_hour!(integrator, hour_index)
         end
     end
     return integrator.u
+end
+
+# Iterates canopy_energy_balance! and the soil-heat ODE to a jointly
+# self-consistent state for one hour. Each pass solves canopy from the
+# current ground_temperature guess, resets the integrator to the hour's
+# start state, and re-integrates through the hour; the resulting surface
+# temperature seeds the next pass. `csc` at `FixedIterationConvergence(1)`
+# (the default) runs the body once, so canopy sees the same ground
+# temperature it would under a plain single-pass coupling.
+# `relaxation` (see `MicroConfig.canopy_soil_relaxation`) damps
+# ground_temperature between passes; convergence checks the raw residual.
+function converge_canopy_soil_hour!(ode_integrator, hour_index, hour_T0_ode, csc,
+    canopy_model, canopy_buffers, canopy_inputs, snow_model;
+    snow_present, ground_temperature0, canopy_source_temperature, ode_depths, soil_wetness, longwave_sky, albedo, Q_freeze, snow_state,
+    boundary_layer_model, site, environment_instant, ground_emissivity, ground_relative_humidity,
+    rainfall, leaf_water_potential, direct_horizontal_irradiance, diffuse_horizontal_irradiance,
+    relaxation=1.0,
+)
+    niter = max_iterations(csc)
+    ground_temperature = ground_temperature0
+    local overrides, T0, T_snow
+    for iter in 1:niter
+        overrides = apply_canopy_overrides(canopy_model, canopy_buffers, canopy_inputs;
+            boundary_layer_model, site, environment_instant, ground_temperature,
+            ground_emissivity, ground_relative_humidity, canopy_source_temperature,
+            rainfall, direct_horizontal_irradiance, diffuse_horizontal_irradiance,
+            ground_reflectance=albedo, leaf_water_potential)
+        update_soil_energy_inputs!(ode_integrator.p;
+            depths=ode_depths, environment_instant, soil_wetness, longwave_sky, albedo, Q_freeze, snow_state,
+            ground_shortwave_transmission=overrides.ground_shortwave_transmission,
+            ground_incoming_longwave=overrides.ground_incoming_longwave,
+            ground_wind_speed=overrides.ground_wind_speed, ground_air_temperature=overrides.ground_air_temperature,
+            ground_air_relative_humidity=overrides.ground_air_relative_humidity,
+            ground_reference_height=overrides.ground_reference_height,
+            ground_heat_conductance=overrides.ground_heat_conductance, ground_vapor_conductance=overrides.ground_vapor_conductance,
+        )
+        _maybe_reinit_integrator!(ode_integrator, hour_T0_ode, (hour_index - 1) * 60.0u"minute"; reset_dt=false)
+        T_result = step_to_hour!(ode_integrator, hour_index)
+        T_snow, T0 = split_ode_state(snow_model, T_result)
+        new_ground_temperature = snow_present ? T_snow[1] : T0[1]
+        converged = is_converged(csc, iter, niter, SVector(new_ground_temperature), SVector(ground_temperature))
+        ground_temperature = relaxation * new_ground_temperature + (1 - relaxation) * ground_temperature
+        converged && break
+    end
+    return (; overrides, T0, T_snow)
 end
 
 function update_soil_properties!(output, soil_properties_buffers, soil_properties_model; step, kw...)
@@ -930,6 +1107,56 @@ end
     return dst
 end
 
+# Fourier's law between the top two soil nodes, downward-positive (matches
+# flux-tower Fg convention). Call once soil_temperature/soil_thermal_conductivity
+# are both written for `step`.
+_ground_heat_flux!(output, step, depths) = output.ground_heat_flux[step] =
+    output.soil_thermal_conductivity[step, 1] *
+    (output.soil_temperature[step, 1] - output.soil_temperature[step, 2]) /
+    (depths[2] - depths[1])
+
+write_canopy_output!(::NoCanopy, output, canopy_buffers, canopy_result, step) = nothing
+
+# Total canopy sensible/latent heat flux (W/m^2 ground area), summed over
+# layers -- latent evaluated at each layer's own leaf temperature.
+function _sum_canopy_fluxes(leaf)
+    (; sensible_heat_source, evaporation_mass_flow, leaf_temperature) = leaf
+    sensible = zero(typeof(1.0u"W/m^2"))
+    latent = zero(typeof(1.0u"W/m^2"))
+    @inbounds for i in eachindex(sensible_heat_source)
+        sensible += sensible_heat_source[i]
+        latent += uconvert(u"W/m^2", evaporation_mass_flow[i] * enthalpy_of_vaporisation(leaf_temperature[i]) / 1.0u"m^2")
+    end
+    return sensible, latent
+end
+
+function write_canopy_output!(::MultilayerCanopy, output, canopy_buffers, canopy_result, step)
+    output.canopy.ground_absorbed_shortwave[step] = canopy_result.ground_absorbed_shortwave
+    output.canopy.ground_absorbed_longwave[step] = canopy_result.ground_absorbed_longwave
+    output.canopy.net_absorbed_shortwave[step] = canopy_result.net_absorbed_shortwave
+    output.canopy.net_absorbed_longwave[step] = canopy_result.net_absorbed_longwave
+    output.canopy.ground_throughfall[step] = canopy_result.ground_throughfall
+    output.canopy.iterations[step] = canopy_result.iterations
+    output.canopy.friction_velocity[step] = canopy_result.friction_velocity
+    output.canopy.obukhov_length[step] = canopy_result.obukhov_length
+    output.canopy.displacement_height[step] = canopy_result.displacement_height
+    output.canopy.canopy_top_air_temperature[step] = canopy_result.canopy_top_air_temperature
+    output.canopy.canopy_top_relative_humidity[step] = canopy_result.canopy_top_relative_humidity
+    _write_row!(output.canopy.leaf_temperature, step, canopy_buffers.leaf.leaf_temperature)
+    _write_row!(output.canopy.air_temperature, step, canopy_buffers.air_profile.air_temperature)
+    _write_row!(output.canopy.wind_speed, step, canopy_buffers.wind.wind_speed)
+    _write_row!(output.canopy.relative_humidity, step, canopy_buffers.air_profile.relative_humidity)
+    _write_row!(output.canopy.boundary_downward_shortwave, step, canopy_buffers.shortwave.boundary_downward_shortwave)
+    _write_row!(output.canopy.boundary_upward_shortwave, step, canopy_buffers.shortwave.boundary_upward_shortwave)
+    _write_row!(output.canopy.boundary_downward_longwave, step, canopy_buffers.longwave.boundary_downward_longwave)
+    _write_row!(output.canopy.boundary_upward_longwave, step, canopy_buffers.longwave.boundary_upward_longwave)
+    _write_row!(output.canopy.absorbed_radiation, step, canopy_buffers.leaf.absorbed_radiation)
+    _write_row!(output.canopy.net_balance, step, canopy_buffers.leaf.net_balance)
+    output.canopy.canopy_sensible_heat_flux[step], output.canopy.canopy_latent_heat_flux[step] =
+        _sum_canopy_fluxes(canopy_buffers.leaf)
+    return nothing
+end
+
 function update_soil_water!(output, soil_moisture, infil_out, step)
     _write_row!(output.soil_moisture, step, soil_moisture)
     if !isnothing(infil_out)
@@ -944,6 +1171,10 @@ end
 function step_soil_moisture!(mode::DynamicSoilMoisture, buffers, soil_hydraulic_model;
     soil_profile, depths, site, boundary_layer_model, environment_instant, T0, pool, soil_moisture,
     max_surface_pool, evaporation_model, vapour_pressure_equation, snow_present=false,
+    canopy_transpiration_potential=nothing, canopy_leaf_area_index=nothing,
+    ground_wind_speed=nothing, ground_air_temperature=nothing,
+    ground_air_relative_humidity=nothing, ground_reference_height=nothing,
+    ground_heat_conductance=nothing, ground_vapor_conductance=nothing,
 )
     (; moisture_tolerance, moisture_max_iterations, moisture_timestep) = mode
     niter_moist = ustrip(u"s^-1", 3600 / moisture_timestep)
@@ -951,7 +1182,9 @@ function step_soil_moisture!(mode::DynamicSoilMoisture, buffers, soil_hydraulic_
         soil_profile, depths, site, boundary_layer_model, environment_instant, T0, niter_moist, pool,
         soil_wetness=mode.soil_wetness, soil_moisture,
         moisture_timestep, moisture_tolerance, moisture_max_iterations, max_surface_pool,
-        evaporation_model, vapour_pressure_equation, snow_present,
+        evaporation_model, vapour_pressure_equation, snow_present, canopy_transpiration_potential, canopy_leaf_area_index,
+        ground_wind_speed, ground_air_temperature, ground_air_relative_humidity, ground_reference_height,
+        ground_heat_conductance, ground_vapor_conductance,
     )
     mode.soil_wetness = soil_wetness
     return (; pool, soil_moisture, infil_out)
