@@ -190,8 +190,8 @@ end
     canopy_top_flux_boundary(boundary_layer_model, canopy_height, displacement_height, roughness_length,
                               reference_height, friction_velocity, obukhov_length,
                               total_sensible_flux, total_latent_flux, ground_temperature, ground_vapour_density,
-                              reference_temperature, reference_vapour_density; max_iter=10, tol=0.01u"K",
-                              relax=0.5, max_resistance=2000.0u"s/m")
+                              reference_temperature, reference_vapour_density, previous_top_temperature,
+                              previous_top_vapour_density; max_resistance=2000.0u"s/m")
 
 Canopy-top boundary temperature/vapour density: resistance-weighted from the
 whole canopy's own aggregated source flux (`total_sensible_flux`/
@@ -201,19 +201,28 @@ via the canopy-top-to-reference aerodynamic resistance. Ground-to-canopy-top
 resistance uses a bulk top-of-canopy eddy diffusivity (same form as
 `_canopy_direct_conductances`'s `eddy_diffusivity_top`), not a specific
 `air_profile_model`'s own layered resistance -- this boundary is shared by
-every `air_profile_model`. Small fixed point (the ground flux depends on the
-boundary temperature); converges in a handful of passes.
+every `air_profile_model`. With `ρ_cp` and both resistances fixed (not
+themselves iterated), the balance is linear in `top_temperature`/
+`top_vapour_density`, so it's solved directly rather than iteratively.
 
 `top_resistance`/`ground_resistance` grow as `1/friction_velocity`, unbounded
 under calm/stable conditions; `top_resistance` directly multiplies
 `total_sensible_flux`, so that alone can push `top_temperature` to the `±40K`
 clamp. `max_resistance` caps both at a literature-typical ceiling (Thom 1975;
 Monteith & Unsworth 2013).
+
+Even at that cap, `top_resistance` can imply a residence time
+(`z_top·top_resistance`) longer than `CANOPY_TIMESTEP` -- under calm, dense
+canopy conditions the algebraic steady state can then land well within the
+±40K bound but still be physically unreachable in an hour. Damped
+exponentially toward `previous_top_temperature`/`previous_top_vapour_density`
+by that residence time before the bound is applied.
 """
 function canopy_top_flux_boundary(boundary_layer_model, canopy_height, displacement_height, roughness_length,
     reference_height, friction_velocity, obukhov_length,
     total_sensible_flux, total_latent_flux, ground_temperature, ground_vapour_density,
-    reference_temperature, reference_vapour_density; max_iter=10, tol=0.01u"K", relax=0.5, max_resistance=2000.0u"s/m",
+    reference_temperature, reference_vapour_density, previous_top_temperature, previous_top_vapour_density;
+    max_resistance=2000.0u"s/m",
 )
     κ = boundary_layer_model.karman_constant
     γ = boundary_layer_model.dyer_constant
@@ -227,49 +236,38 @@ function canopy_top_flux_boundary(boundary_layer_model, canopy_height, displacem
         calc_ψ_h(z_ref, γ, obukhov_length, boundary_layer_model.stable_beta, boundary_layer_model.turbulent_prandtl_number) : 0.0
     top_resistance = min(max(log_ratio - ψ_h, 0.1 * log_ratio, 1.0e-6) / (κ * friction_velocity), max_resistance)
 
-    # ρ_cp fixed from ambient data, not the iterate: calc_ρ_cp ∝ 1/T, so
-    # recomputing it from top_temperature each pass lets one oversized step
-    # near T=0 blow it up or flip its sign, diverging regardless of ω.
+    # ρ_cp fixed from ambient data, not the solved top_temperature: calc_ρ_cp
+    # ∝ 1/T, so tying it to the unknown would make the balance nonlinear again.
     ρ_cp = calc_ρ_cp((reference_temperature + ground_temperature) / 2)
-    top_temperature = reference_temperature
-    top_vapour_density = reference_vapour_density
-    # Aitken Δ² acceleration: ω adapts each pass from the residual history,
-    # damping the self-referential ground_flux/top_temperature loop under
-    # low-wind (high-resistance) overshoot.
-    ω_temp, ω_vapour = relax, relax
-    residual_temp_prev = zero(top_temperature)
-    residual_vapour_prev = zero(top_vapour_density)
-    step_temp = zero(top_temperature)
-    for iter in 1:max_iter
-        ground_flux = (ρ_cp / ground_resistance) * (ground_temperature - top_temperature)
-        ground_vapour_flux = (ground_vapour_density - top_vapour_density) / ground_resistance
-        residual_temp = reference_temperature + (total_sensible_flux + ground_flux) * top_resistance / ρ_cp - top_temperature
-        residual_vapour = reference_vapour_density + (total_latent_flux + ground_vapour_flux) * top_resistance - top_vapour_density
-        if iter > 1
-            Δr_temp = residual_temp - residual_temp_prev
-            Δr_vapour = residual_vapour - residual_vapour_prev
-            iszero(Δr_temp) || (ω_temp = clamp(-ω_temp * (residual_temp_prev / Δr_temp), 0.02, 0.9))
-            iszero(Δr_vapour) || (ω_vapour = clamp(-ω_vapour * (residual_vapour_prev / Δr_vapour), 0.02, 0.9))
-        end
-        step_temp = ω_temp * residual_temp
-        top_temperature += step_temp
-        top_vapour_density += ω_vapour * residual_vapour
-        residual_temp_prev = residual_temp
-        residual_vapour_prev = residual_vapour
-        abs(step_temp) < tol && break
-    end
-    # Hard backstop against a runaway fixed point, same bracket-clamp spirit
-    # as leaf_temperature's own clamp in _canopy_picard_pass!.
-    # Open issue (kept as a warning, not fixed): under low friction_velocity,
-    # :bulk-mode RaupachLTheoryAirProfile pins layer 1 (canopy top) exactly
-    # to T_top but jumps 5-6K to layer 2 instead of transitioning smoothly
-    # (unlike R's LangrangianOne, whose CfTh-CnTh+CnT near-field kernel
-    # guarantees continuity there) -- that artificial layer-1/2 ΔT drives an
-    # extreme total_sensible_flux, which feeds back into this clamp.
+
+    # Bracket, same spirit as leaf_temperature's own clamp.
+    # Open issue: :bulk-mode RaupachLTheoryAirProfile can jump 5-6K between
+    # layer 1 and layer 2 under low friction_velocity, driving an extreme
+    # total_sensible_flux that feeds back into this clamp.
     bound_lo = min(ground_temperature, reference_temperature) - 40.0u"K"
     bound_hi = max(ground_temperature, reference_temperature) + 40.0u"K"
+
+    # Closed-form solution of the linear balance:
+    #   Tt = Tr + (H + (ρcp/Rg)(Tg-Tt)) Rt/ρcp   =>   Tt(1+Rt/Rg) = Tr + H·Rt/ρcp + (Rt/Rg)Tg
+    # and the analogous vapour-density equation.
+    Rtg = top_resistance / ground_resistance
+    undamped_top_temperature = (reference_temperature + total_sensible_flux * top_resistance / ρ_cp + Rtg * ground_temperature) / (1.0 + Rtg)
+    undamped_top_vapour_density = (reference_vapour_density + total_latent_flux * top_resistance + Rtg * ground_vapour_density) / (1.0 + Rtg)
+    top_temperature = undamped_top_temperature
+    top_vapour_density = undamped_top_vapour_density
+
+    # Residence time of a z_top-deep column via top_resistance; can exceed an
+    # hour under calm conditions (see docstring).
+    τ = z_top * top_resistance
+    physical_weight = 1.0 - exp(-ustrip(u"s", CANOPY_TIMESTEP) / ustrip(u"s", τ))
+    top_temperature = previous_top_temperature + (top_temperature - previous_top_temperature) * physical_weight
+    top_vapour_density = previous_top_vapour_density + (top_vapour_density - previous_top_vapour_density) * physical_weight
+
+    # Final backstop: the damping step above can walk back outside the
+    # bracket if previous_top_temperature itself sits near/at the edge.
     clamped = top_temperature < bound_lo ? :cold : top_temperature > bound_hi ? :hot : :none
     top_temperature = clamp(top_temperature, bound_lo, bound_hi)
     top_vapour_density = max(top_vapour_density, zero(top_vapour_density))
-    return (; top_temperature, top_vapour_density, bound_lo, bound_hi, clamped)
+    return (; top_temperature, top_vapour_density, bound_lo, bound_hi, clamped,
+        undamped_top_temperature, previous_top_temperature, physical_weight, τ, top_resistance, ground_resistance)
 end

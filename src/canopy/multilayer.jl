@@ -166,6 +166,9 @@ wet_canopy_fraction(model::MultilayerCanopy, buffers, layer) =
 available_canopy_water(model::MultilayerCanopy, buffers, layer) =
     available_canopy_water(model.interception_model, buffers.interception, layer)
 
+canopy_water_capacity(model::MultilayerCanopy, buffers, layer) =
+    canopy_water_capacity(model.interception_model, buffers.interception, layer)
+
 deplete_canopy_water!(model::MultilayerCanopy, buffers, layer, evaporated_mass) =
     deplete_canopy_water!(model.interception_model, buffers.interception, layer, evaporated_mass)
 

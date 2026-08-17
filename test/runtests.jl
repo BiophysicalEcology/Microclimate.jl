@@ -16,6 +16,7 @@ using Microclimate, Test, SafeTestsets
 @safetestset "canopy energy balance" begin include("canopy_energy_balance_test.jl") end
 @safetestset "canopy stomatal conductance" begin include("canopy_stomatal_conductance_test.jl") end
 @safetestset "canopy air profile" begin include("canopy_air_profile_test.jl") end
+@safetestset "canopy wind boundary" begin include("canopy_wind_boundary_test.jl") end
 @safetestset "canopy interception" begin include("canopy_interception_test.jl") end
 @safetestset "canopy energy balance picard loop" begin include("canopy_energy_balance_picard_test.jl") end
 @safetestset "infiltration algorithm comparison" begin include("infiltration_algorithm_comparison.jl") end

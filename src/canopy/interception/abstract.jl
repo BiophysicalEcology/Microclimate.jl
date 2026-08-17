@@ -67,6 +67,15 @@ for `NoInterception`.
 function available_canopy_water end
 
 """
+    canopy_water_capacity(model, buffers, layer) -> kg/m^2 (ground area)
+
+Layer `layer`'s total leaf-surface water storage capacity -- the ceiling
+[`available_canopy_water`](@ref) can rise to (e.g. via condensation). Always
+0 for `NoInterception`.
+"""
+function canopy_water_capacity end
+
+"""
     snapshot_interception!(model, buffers)
 
 Save day-start leaf-surface water into `buffers`' own scratch copy. No-op

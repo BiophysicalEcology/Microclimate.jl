@@ -90,7 +90,7 @@ end
     sensible = 50.0u"W/m^2"
 
     @testset "ample storage: passes through unchanged" begin
-        flux2, sensible2, actual = Microclimate._cap_wet_surface_evaporation(flux, sensible, 1.0, 1.0u"kg/m^2", air_T)
+        flux2, sensible2, actual = Microclimate._cap_wet_surface_evaporation(flux, sensible, 1.0, 1.0u"kg/m^2", 2.0u"kg/m^2", air_T)
         @test flux2 == flux
         @test sensible2 == sensible
         @test ustrip(u"kg/m^2", actual) ≈
@@ -99,7 +99,7 @@ end
 
     @testset "scarce storage: withdrawal capped, shortfall moved to sensible" begin
         available = 0.05u"kg/m^2"
-        flux2, sensible2, actual = Microclimate._cap_wet_surface_evaporation(flux, sensible, 1.0, available, air_T)
+        flux2, sensible2, actual = Microclimate._cap_wet_surface_evaporation(flux, sensible, 1.0, available, 0.1u"kg/m^2", air_T)
         @test actual == available
         @test flux2 < flux
         latent_removed = uconvert(u"W", (flux - flux2) * Microclimate.enthalpy_of_vaporisation(air_T))
@@ -111,9 +111,29 @@ end
 
     @testset "no storage: wet-surface share fully rerouted, dry (transpiration) share untouched" begin
         wet_fraction = 0.5
-        flux2, sensible2, actual = Microclimate._cap_wet_surface_evaporation(flux, sensible, wet_fraction, 0.0u"kg/m^2", air_T)
+        flux2, sensible2, actual = Microclimate._cap_wet_surface_evaporation(flux, sensible, wet_fraction, 0.0u"kg/m^2", 0.1u"kg/m^2", air_T)
         @test actual == 0.0u"kg/m^2"
         @test ustrip(u"kg/s", flux2) ≈ ustrip(u"kg/s", flux * (1.0 - wet_fraction)) rtol=1e-10
+    end
+
+    @testset "condensation overflow: storage capped at capacity, shortfall moved to sensible" begin
+        condensing_flux = -1.0e-4u"kg/s"
+        available = 0.09u"kg/m^2"
+        capacity = 0.1u"kg/m^2"
+        flux2, sensible2, actual = Microclimate._cap_wet_surface_evaporation(condensing_flux, sensible, 1.0, available, capacity, air_T)
+        @test actual == available - capacity  # capped at remaining headroom, not unbounded
+        @test flux2 > condensing_flux  # less condensation "happened" than the uncapped flux implied
+        latent_delta = uconvert(u"W", (condensing_flux - flux2) * Microclimate.enthalpy_of_vaporisation(air_T))
+        sensible_delta = (sensible2 - sensible) * 1.0u"m^2"
+        @test ustrip(u"W", latent_delta) ≈ ustrip(u"W", sensible_delta) rtol=1e-10
+    end
+
+    @testset "condensation within headroom: passes through unchanged" begin
+        condensing_flux = -1.0e-6u"kg/s"  # small dew, well within headroom
+        flux2, sensible2, actual = Microclimate._cap_wet_surface_evaporation(condensing_flux, sensible, 1.0, 0.05u"kg/m^2", 0.1u"kg/m^2", air_T)
+        @test flux2 == condensing_flux
+        @test sensible2 == sensible
+        @test actual < 0.0u"kg/m^2"  # storage gains water
     end
 end
 

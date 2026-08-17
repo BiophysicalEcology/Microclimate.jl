@@ -13,20 +13,20 @@ struct LinearizedLeafTemperature <: AbstractLeafTemperatureSolver end
 
 function leaf_temperature(::LinearizedLeafTemperature, absorbed_radiation, air_temperature, relative_humidity,
     wind_speed, atmospheric_pressure, leaf_emissivity, stomatal_conductance, leaf_water_potential, body;
-    leaf_area=1.0u"m^2", leaf_temperature_guess=air_temperature,
+    leaf_area=1.0u"m^2", aerodynamic_area=leaf_area, leaf_temperature_guess=air_temperature,
     convection_model=ElaborateLeafConvection(),
 )
     out = leaf_heat_balance(leaf_temperature_guess, absorbed_radiation, air_temperature, relative_humidity,
         wind_speed, atmospheric_pressure, leaf_emissivity, stomatal_conductance, leaf_water_potential, body, leaf_area,
-        convection_model)
+        convection_model; aerodynamic_area)
 
     radiative_heat_transfer_coefficient = 4.0 * out.emitted_longwave / leaf_temperature_guess
-    convective_heat_transfer_coefficient = out.conv.heat_transfer_coefficient.combined * leaf_area
+    convective_heat_transfer_coefficient = out.conv.heat_transfer_coefficient.combined * aerodynamic_area
 
     δ = 0.1u"K"  # finite-difference step, free/tunable, uncited
     atmos = AtmosphericConditions(relative_humidity, wind_speed, atmospheric_pressure)
     evap_perturbed = _clamped_leaf_evaporation(stomatal_conductance, out.conv.mass_transfer_coefficient, atmos,
-        leaf_area, leaf_temperature_guess + δ, air_temperature, leaf_water_potential)
+        aerodynamic_area, leaf_temperature_guess + δ, air_temperature, leaf_water_potential)
     evaporative_heat_transfer_coefficient = (evap_perturbed.evaporation_heat_flow - out.evap.evaporation_heat_flow) / δ
 
     return leaf_temperature_guess + out.net / (

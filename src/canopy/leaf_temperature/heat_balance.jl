@@ -90,18 +90,24 @@ end
 """
     leaf_heat_balance(leaf_temperature, absorbed_radiation, air_temperature, relative_humidity,
                        wind_speed, atmospheric_pressure, leaf_emissivity, stomatal_conductance,
-                       leaf_water_potential, body, leaf_area, convection_model)
+                       leaf_water_potential, body, leaf_area, convection_model; aerodynamic_area=leaf_area)
 
 Net leaf energy balance (W, positive = leaf gaining energy): absorbed
-radiation minus emitted longwave, convection, and transpiration.
+radiation minus emitted longwave, convection, and transpiration. `leaf_area`
+scales absorbed radiation/emission (radiative, matching whatever area
+`absorbed_radiation` and the canopy's own longwave exchange were normalized
+to); `aerodynamic_area` scales convection/evaporation (the leaf's actual
+exchange surface). They differ for a canopy layer, where radiative exchange
+saturates with self-shading `(1-e^{-K·PAI})` but aerodynamic exchange keeps
+scaling with actual leaf area (`PAI`); default matches for a standalone leaf.
 """
 function leaf_heat_balance(leaf_temperature, absorbed_radiation, air_temperature, relative_humidity,
     wind_speed, atmospheric_pressure, leaf_emissivity, stomatal_conductance, leaf_water_potential,
-    body, leaf_area, convection_model=ElaborateLeafConvection(),
+    body, leaf_area, convection_model=ElaborateLeafConvection(); aerodynamic_area=leaf_area,
 )
-    conv = leaf_convection(convection_model, body, leaf_area, air_temperature, leaf_temperature, wind_speed, atmospheric_pressure)
+    conv = leaf_convection(convection_model, body, aerodynamic_area, air_temperature, leaf_temperature, wind_speed, atmospheric_pressure)
     atmos = AtmosphericConditions(relative_humidity, wind_speed, atmospheric_pressure)
-    evap = _clamped_leaf_evaporation(stomatal_conductance, conv.mass_transfer_coefficient, atmos, leaf_area,
+    evap = _clamped_leaf_evaporation(stomatal_conductance, conv.mass_transfer_coefficient, atmos, aerodynamic_area,
         leaf_temperature, air_temperature, leaf_water_potential)
 
     emitted_longwave = leaf_emissivity * σ * leaf_temperature^4 * leaf_area

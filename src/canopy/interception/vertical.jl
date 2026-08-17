@@ -55,6 +55,9 @@ end
 
 available_canopy_water(::_StorageBasedInterception, buffers, layer) = buffers.leaf_surface_water[layer]
 
+canopy_water_capacity(model::_StorageBasedInterception, buffers, layer) =
+    model.leaf_water_storage_capacity * buffers.layer_plant_area_index[layer]
+
 function deplete_canopy_water!(::_StorageBasedInterception, buffers, layer, evaporated_mass)
     buffers.leaf_surface_water[layer] = max(buffers.leaf_surface_water[layer] - evaporated_mass, 0.0u"kg/m^2")
     return nothing

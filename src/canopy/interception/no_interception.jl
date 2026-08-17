@@ -15,6 +15,8 @@ wet_canopy_fraction(::NoInterception, buffers, layer) = 0.0
 
 available_canopy_water(::NoInterception, buffers, layer) = 0.0u"kg/m^2"
 
+canopy_water_capacity(::NoInterception, buffers, layer) = 0.0u"kg/m^2"
+
 snapshot_interception!(::NoInterception, buffers) = nothing
 
 restore_interception!(::NoInterception, buffers) = nothing
