@@ -433,7 +433,7 @@ function solve_soil!(cache::MicroCache)
     ode_integrator = cache.ode_integrator
     forcing = cache.forcing
 
-    (; convergence, rainfall_schedule, max_surface_pool, canopy_soil_convergence, canopy_soil_relaxation) = config
+    (; convergence, rainfall_schedule, max_surface_pool, max_pond_depth, canopy_soil_convergence, canopy_soil_relaxation) = config
     time_mode = mp.time_mode
     moisture_mode = config.soil_moisture_strategy
     (; campbell_b_parameter, air_entry_water_potential) = soil_profile.hydraulics
@@ -509,6 +509,7 @@ function solve_soil!(cache::MicroCache)
 
     # simulate all days
     pool = 0.0u"kg/m^2" # TODO make this an initialisation option
+    runoff = 0.0u"kg/m^2" # cumulative; standing water above max_pond_depth, never reset per-day
     Q_freeze = 0.0u"W/m^2"  # Fortran COMMON/melt/QFREZE: persists across hours
     infil_out = nothing
     canopy_source_temperature = T0[1]  # lagged canopy-atmosphere coupling boundary; bootstrap at ground equilibrium
@@ -631,6 +632,7 @@ function solve_soil!(cache::MicroCache)
                 # at OUT(4) = T(1) at TIME=0 of the output pass.
                 _write_row!(output.soil_temperature, day_init_step, T0)
                 output.surface_water[day_init_step] = pool
+                output.runoff[day_init_step] = runoff
                 _write_row!(output.soil_moisture, day_init_step, soil_moisture)
                 @inbounds for i in eachindex(soil_moisture)
                     output.soil_water_potential[day_init_step, i] =
@@ -885,6 +887,8 @@ function solve_soil!(cache::MicroCache)
                         # Warm snow or no snow: rain + rain_melt water + thermal melt enter pool
                         pool = clamp(pool + rain + rain_melt_water + melted_water, 0.0u"kg/m^2", max_surface_pool)
                     end
+                    pool, runoff_increment = _pond_and_runoff(pool, max_pond_depth)
+                    runoff += runoff_increment
                     # Soil moisture physics; output write happens below at output_step
                     canopy_transpiration_potential = isnothing(current_hour_canopy_result) ? nothing : current_hour_canopy_result.canopy_potential_transpiration
                     (; pool, soil_moisture, infil_out) = step_soil_moisture!(moisture_mode, buffers, soil_hydraulic_model;
@@ -913,6 +917,7 @@ function solve_soil!(cache::MicroCache)
                 write_output = is_last_iter && in_bounds && !next_day_resets
                 if write_output
                     output.surface_water[output_step] = pool
+                    output.runoff[output_step] = runoff
                     _write_row!(output.soil_temperature, output_step, T0_output)
                     output.sky_temperature[output_step] = longwave_sky.sky_temperature
                     write_canopy_output!(canopy_model, output, buffers.canopy, canopy_result, output_step)

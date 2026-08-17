@@ -75,7 +75,7 @@ function CanopyOutput(nsteps::Int, n_canopy_layers::Int)
     )
 end
 
-@kwdef struct MicroResult{P,AT,WS,RH,CC,GS,DF,SkT,SoT,SM,SWP,SH,STC,SPH,SBD,SW,SR,Pr,SF,SD,SDN,SNT,GHF,CB}
+@kwdef struct MicroResult{P,AT,WS,RH,CC,GS,DF,SkT,SoT,SM,SWP,SH,STC,SPH,SBD,SW,RO,SR,Pr,SF,SD,SDN,SNT,GHF,CB}
     pressure::P
     reference_temperature::AT
     reference_wind_speed::WS
@@ -92,6 +92,7 @@ end
     soil_heat_capacity::SPH
     soil_bulk_density::SBD
     surface_water::SW
+    runoff::RO  # cumulative; standing water above max_pond_depth, lost from the modeled column
     solar_radiation::SR
     profile::Pr
     snow_fall::SF
@@ -119,6 +120,7 @@ function MicroResult(nsteps::Int, num_nodes::Int, nheights::Int, solar_radiation
         soil_heat_capacity = Array{typeof(1.0u"J/kg/K")}(undef, nsteps, num_nodes),
         soil_bulk_density = Array{typeof(1.0u"kg/m^3")}(undef, nsteps, num_nodes),
         surface_water = Array{typeof(1.0u"kg/m^2")}(undef, nsteps),
+        runoff = Array{typeof(1.0u"kg/m^2")}(undef, nsteps),
         solar_radiation = solar_radiation,
         profile = AtmosphericProfile(nsteps, nheights),
         snow_fall = zeros(typeof(1.0u"cm/hr"), nsteps),
