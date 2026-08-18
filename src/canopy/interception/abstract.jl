@@ -76,6 +76,37 @@ Layer `layer`'s total leaf-surface water storage capacity -- the ceiling
 function canopy_water_capacity end
 
 """
+    leaf_standing_dew(model, buffers, layer) -> kg/m^2 (ground area)
+    leaf_standing_frost(model, buffers, layer) -> kg/m^2 (ground area)
+
+Current standing (formed-minus-lost) dew/frost balance for layer `layer`.
+`leaf_standing_dew` is a sub-ledger of [`available_canopy_water`](@ref) (dew
+is liquid, mixed into the same store as rain); `leaf_standing_frost` is
+independent (frost is ice, not in that store). Always 0 for `NoInterception`.
+"""
+function leaf_standing_dew end
+function leaf_standing_frost end
+
+"""
+    add_leaf_standing_dew!(model, buffers, layer, Δ)
+    add_leaf_standing_frost!(model, buffers, layer, Δ)
+
+Add `Δ` (kg/m², may be negative) to layer `layer`'s standing dew/frost
+balance, clamped at zero. No-op for `NoInterception`.
+"""
+function add_leaf_standing_dew! end
+function add_leaf_standing_frost! end
+
+"""
+    clamp_leaf_standing_dew!(model, buffers, layer, ceiling)
+
+Cap layer `layer`'s standing dew balance at `ceiling` (kg/m²) -- a floor
+against double-counting when [`available_canopy_water`](@ref) drops for
+reasons other than dew evaporating (e.g. drip). No-op for `NoInterception`.
+"""
+function clamp_leaf_standing_dew! end
+
+"""
     snapshot_interception!(model, buffers)
 
 Save day-start leaf-surface water into `buffers`' own scratch copy. No-op

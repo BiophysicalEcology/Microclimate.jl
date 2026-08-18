@@ -183,7 +183,8 @@ function _shape_based_canopy_wind_profile!(buffers, boundary_layer_model;
     end
 
     return (; canopy_top_wind_speed, canopy_top_air_temperature, canopy_top_relative_humidity,
-        friction_velocity=profile.friction_velocity, obukhov_length=profile.obukhov_length)
+        friction_velocity=profile.friction_velocity, friction_velocity_raw=profile.friction_velocity_raw,
+        obukhov_length=profile.obukhov_length)
 end
 
 """

@@ -415,7 +415,7 @@ function solve_soil!(cache::MicroCache)
     (; hours, depths, heights,
        soil_properties_model, soil_hydraulic_model, snow_model,
        vapour_pressure_equation, boundary_layer_model,
-       radiation, evaporation_model, soil_energy_model,
+       radiation, evaporation_model, condensation_model, soil_energy_model,
        canopy_model, config) = mp.model
     days = mp.days
     longwave_model = radiation.longwave_model
@@ -509,6 +509,8 @@ function solve_soil!(cache::MicroCache)
 
     # simulate all days
     pool = 0.0u"kg/m^2" # TODO make this an initialisation option
+    standing_dew = 0.0u"kg/m^2"    # standing (formed-minus-lost) dew on the ground, ⊆ pool
+    standing_frost = 0.0u"kg/m^2"  # standing (formed-minus-lost) frost on the ground, ice, not in pool
     runoff = 0.0u"kg/m^2" # cumulative; standing water above max_pond_depth, never reset per-day
     Q_freeze = 0.0u"W/m^2"  # Fortran COMMON/melt/QFREZE: persists across hours
     infil_out = nothing
@@ -631,7 +633,9 @@ function solve_soil!(cache::MicroCache)
                 # it's the post-prior-spinup-pass state, which is what Fortran writes
                 # at OUT(4) = T(1) at TIME=0 of the output pass.
                 _write_row!(output.soil_temperature, day_init_step, T0)
-                output.surface_water[day_init_step] = pool
+                output.ground_surface_water[day_init_step] = pool
+                output.ground_standing_dew[day_init_step] = standing_dew
+                output.ground_standing_frost[day_init_step] = standing_frost
                 output.runoff[day_init_step] = runoff
                 _write_row!(output.soil_moisture, day_init_step, soil_moisture)
                 @inbounds for i in eachindex(soil_moisture)
@@ -889,12 +893,23 @@ function solve_soil!(cache::MicroCache)
                     end
                     pool, runoff_increment = _pond_and_runoff(pool, max_pond_depth)
                     runoff += runoff_increment
-                    # Soil moisture physics; output write happens below at output_step
-                    canopy_transpiration_potential = isnothing(current_hour_canopy_result) ? nothing : current_hour_canopy_result.canopy_potential_transpiration
-                    (; pool, soil_moisture, infil_out) = step_soil_moisture!(moisture_mode, buffers, soil_hydraulic_model;
-                        soil_profile, depths, site, boundary_layer_model, environment_instant, T0, pool, soil_moisture,
-                        max_surface_pool, evaporation_model, vapour_pressure_equation, snow_present, canopy_transpiration_potential,
-                        canopy_leaf_area_index = canopy_leaf_area_index(canopy_model),
+                    # Ground-absorbed solar for GarrattSegalCondensation's R_N term.
+                    # min guards the final hour of the final day, where step+1 has no
+                    # row (that transition's output is discarded anyway, see in_bounds below).
+                    absorbed_solar_radiation = isnothing(current_hour_canopy_result) ?
+                        (1.0 - albedo) * (1.0 - environment_instant.shade) * output.global_radiation[min(step + 1, length(output.global_radiation))] :
+                        current_hour_canopy_result.ground_absorbed_shortwave
+                    # Ground dew/frost: moisture-strategy-independent, so both
+                    # DynamicSoilMoisture and PrescribedSoilMoisture see it.
+                    # T0_output, not T0: the lookahead block below advances T0 one
+                    # hour past environment_instant; T0_output stays aligned with it.
+                    (; pool, standing_dew, standing_frost, dew_formed, frost_formed, evaporation_potential, local_relative_humidity) =
+                        ground_condensation_step!(buffers, boundary_layer_model;
+                        site, environment_instant, T0=T0_output, pool, standing_dew, standing_frost,
+                        condensation_model, evaporation_model, vapour_pressure_equation, snow_present,
+                        actual_soil_wetness = effective_wetness,
+                        sky_temperature = longwave_sky.sky_temperature, absorbed_solar_radiation,
+                        reference_height = last(heights),
                         ground_wind_speed = current_hour_ground_wind_speed,
                         ground_air_temperature = current_hour_ground_air_temperature,
                         ground_air_relative_humidity = current_hour_ground_air_relative_humidity,
@@ -902,6 +917,17 @@ function solve_soil!(cache::MicroCache)
                         ground_heat_conductance = current_hour_ground_heat_conductance,
                         ground_vapor_conductance = current_hour_ground_vapor_conductance,
                     )
+                    # Soil moisture physics; output write happens below at output_step
+                    canopy_transpiration_potential = isnothing(current_hour_canopy_result) ? nothing : current_hour_canopy_result.canopy_potential_transpiration
+                    (; pool, soil_moisture, infil_out) = step_soil_moisture!(moisture_mode, buffers, soil_hydraulic_model;
+                        soil_profile, depths, environment_instant, T0, pool,
+                        evaporation_potential, local_relative_humidity, soil_moisture,
+                        max_surface_pool, canopy_transpiration_potential, vapour_pressure_equation,
+                        canopy_leaf_area_index = canopy_leaf_area_index(canopy_model),
+                    )
+                    # Floor rather than exact molecular attribution: infiltration/runoff may
+                    # have removed pool water that was standing dew without tracking which.
+                    standing_dew = min(standing_dew, pool)
                     if !isnothing(infil_out)
                         leaf_water_potential = infil_out.leaf_water_potential
                     end
@@ -916,7 +942,11 @@ function solve_soil!(cache::MicroCache)
                 next_day_resets = crosses_day && j < ndays && is_reset_day(time_mode, j + 1)
                 write_output = is_last_iter && in_bounds && !next_day_resets
                 if write_output
-                    output.surface_water[output_step] = pool
+                    output.ground_surface_water[output_step] = pool
+                    output.ground_dew[output_step] = dew_formed
+                    output.ground_frost[output_step] = frost_formed
+                    output.ground_standing_dew[output_step] = standing_dew
+                    output.ground_standing_frost[output_step] = standing_frost
                     output.runoff[output_step] = runoff
                     _write_row!(output.soil_temperature, output_step, T0_output)
                     output.sky_temperature[output_step] = longwave_sky.sky_temperature
@@ -1159,6 +1189,13 @@ function write_canopy_output!(::MultilayerCanopy, output, canopy_buffers, canopy
     _write_row!(output.canopy.net_balance, step, canopy_buffers.leaf.net_balance)
     output.canopy.canopy_sensible_heat_flux[step], output.canopy.canopy_latent_heat_flux[step] =
         _sum_canopy_fluxes(canopy_buffers.leaf)
+    _write_row!(output.canopy.leaf_dew, step, canopy_buffers.leaf.leaf_dew_formed)
+    _write_row!(output.canopy.leaf_frost, step, canopy_buffers.leaf.leaf_frost_formed)
+    if !isnothing(canopy_buffers.interception)
+        _write_row!(output.canopy.leaf_surface_water, step, canopy_buffers.interception.leaf_surface_water)
+        _write_row!(output.canopy.leaf_standing_dew, step, canopy_buffers.interception.leaf_standing_dew)
+        _write_row!(output.canopy.leaf_standing_frost, step, canopy_buffers.interception.leaf_standing_frost)
+    end
     return nothing
 end
 
@@ -1174,28 +1211,24 @@ end
 # ── Soil moisture stepping dispatch ───────────────────────────────────────
 
 function step_soil_moisture!(mode::DynamicSoilMoisture, buffers, soil_hydraulic_model;
-    soil_profile, depths, site, boundary_layer_model, environment_instant, T0, pool, soil_moisture,
-    max_surface_pool, evaporation_model, vapour_pressure_equation, snow_present=false,
-    canopy_transpiration_potential=nothing, canopy_leaf_area_index=nothing,
-    ground_wind_speed=nothing, ground_air_temperature=nothing,
-    ground_air_relative_humidity=nothing, ground_reference_height=nothing,
-    ground_heat_conductance=nothing, ground_vapor_conductance=nothing,
+    soil_profile, depths, environment_instant, T0, pool,
+    evaporation_potential, local_relative_humidity, soil_moisture,
+    max_surface_pool, canopy_transpiration_potential=nothing, canopy_leaf_area_index=nothing,
+    vapour_pressure_equation=GoffGratch(),
 )
     (; moisture_tolerance, moisture_max_iterations, moisture_timestep) = mode
     niter_moist = ustrip(u"s^-1", 3600 / moisture_timestep)
     (; infil_out, soil_wetness, pool, soil_moisture) = soil_water_balance!(buffers, soil_hydraulic_model;
-        soil_profile, depths, site, boundary_layer_model, environment_instant, T0, niter_moist, pool,
-        soil_wetness=mode.soil_wetness, soil_moisture,
-        moisture_timestep, moisture_tolerance, moisture_max_iterations, max_surface_pool,
-        evaporation_model, vapour_pressure_equation, snow_present, canopy_transpiration_potential, canopy_leaf_area_index,
-        ground_wind_speed, ground_air_temperature, ground_air_relative_humidity, ground_reference_height,
-        ground_heat_conductance, ground_vapor_conductance,
+        soil_profile, depths, pool, evaporation_potential, local_relative_humidity, niter_moist, soil_moisture,
+        moisture_timestep, moisture_tolerance, moisture_max_iterations, max_surface_pool, T0,
+        vapour_pressure_equation, canopy_transpiration_potential, canopy_leaf_area_index, environment_instant,
     )
     mode.soil_wetness = soil_wetness
     return (; pool, soil_moisture, infil_out)
 end
 
-step_soil_moisture!(::PrescribedSoilMoisture, args...; pool, soil_moisture, kw...) = (; pool, soil_moisture, infil_out=nothing)
+step_soil_moisture!(::PrescribedSoilMoisture, args...; pool, soil_moisture, kw...) =
+    (; pool, soil_moisture, infil_out=nothing)
 
 """
 Build a single `Forcing` whose 8 `ScaledInterpolation`s wrap freshly-allocated

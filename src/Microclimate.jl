@@ -95,6 +95,9 @@ export AbstractShortwaveModel, AngstromMaxwellShortwave
 # Surface evaporation models
 export AbstractEvaporationModel, BulkTransferEvaporation
 
+# Dew/frost condensation models
+export AbstractCondensationModel, NoCondensation, BulkTransferCondensation, GarrattSegalCondensation, MonteithLeafCondensation
+
 # Soil energy balance models
 export SoilHeatTransportModel, SoilHeatTransport1D
 
@@ -136,6 +139,12 @@ include("soil_moisture/dynamic.jl")
 # Surface evaporation
 include("evaporation/abstract.jl")
 include("evaporation/bulk_transfer.jl")
+
+# Ground dew/frost condensation
+include("condensation/abstract.jl")
+include("condensation/no_condensation.jl")
+include("condensation/bulk_transfer.jl")
+include("condensation/garratt_segal.jl")
 
 # Soil hydraulics
 include("soil_hydraulics/infiltration_algorithm/abstract.jl")
@@ -244,6 +253,8 @@ include("canopy/interception/abstract.jl")
 include("canopy/interception/no_interception.jl")
 include("canopy/interception/layered.jl")
 include("canopy/interception/vertical.jl")
+
+include("canopy/condensation/monteith.jl")
 
 include("canopy/stomatal_conductance/abstract.jl")
 include("canopy/stomatal_conductance/prescribed.jl")

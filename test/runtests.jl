@@ -11,6 +11,7 @@ using Microclimate, Test, SafeTestsets
 # Tests
 @safetestset "example constructors" begin include("example_constructors.jl") end
 @safetestset "Monin-Obukhov stability" begin include("monin_obukhov_test.jl") end
+@safetestset "evaporation (dew/frost condensation clamp)" begin include("evaporation_test.jl") end
 @safetestset "canopy shortwave" begin include("canopy_shortwave_test.jl") end
 @safetestset "canopy longwave" begin include("canopy_longwave_test.jl") end
 @safetestset "canopy energy balance" begin include("canopy_energy_balance_test.jl") end

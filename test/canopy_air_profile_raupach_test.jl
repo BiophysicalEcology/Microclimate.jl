@@ -17,12 +17,8 @@ atmospheric_pressure = 101325.0u"Pa"
 obukhov_length = Inf * u"m"  # neutral: Φ_h -> 1
 zero_evaporation = zeros(typeof(0.0u"g/s"), n_layers)
 zero_source = zeros(typeof(0.0u"W/m^2"), n_layers)
-
-# same construction as KTheoryAirProfile's own allocate_air_profile
-(; layer_plant_area_index) = Microclimate.canopy_layer_geometry(plant_area_index, n_layers)
-wind_attenuation = Microclimate.wind_attenuation_profile(
-    layer_plant_area_index, canopy_height, plant_area_index, boundary_layer_model.karman_constant,
-)
+wind_speed = fill(1.0u"m/s", n_layers)
+ground_roughness_height = 0.004u"m"
 
 @testset "no forcing: uniform boundary temperatures give a uniform profile" begin
     T = 290.0u"K"
@@ -31,7 +27,7 @@ wind_attenuation = Microclimate.wind_attenuation_profile(
         canopy_height, displacement_height, friction_velocity,
         canopy_top_air_temperature = T, canopy_top_relative_humidity = 0.5, ground_temperature = T,
         ground_relative_humidity = 0.5, sensible_heat_source = zero_source,
-        evaporation_mass_flow = zero_evaporation, obukhov_length, atmospheric_pressure, wind_attenuation,
+        evaporation_mass_flow = zero_evaporation, obukhov_length, atmospheric_pressure, wind_speed, ground_roughness_height,
     )
     @test all(t -> isapprox(ustrip(u"K", t), ustrip(u"K", T); atol=1e-6), result.air_temperature)
 end
@@ -45,7 +41,7 @@ end
         canopy_height, displacement_height, friction_velocity,
         canopy_top_air_temperature = T, canopy_top_relative_humidity = 0.5,
         ground_temperature = T, ground_relative_humidity = 0.5,
-        sensible_heat_source = source, evaporation_mass_flow = zero_evaporation, obukhov_length, atmospheric_pressure, wind_attenuation,
+        sensible_heat_source = source, evaporation_mass_flow = zero_evaporation, obukhov_length, atmospheric_pressure, wind_speed, ground_roughness_height,
     )
     @test all(isfinite, ustrip.(u"K", result.air_temperature))
     peak = argmax(result.air_temperature)
@@ -67,7 +63,7 @@ end
         canopy_height, displacement_height, friction_velocity,
         canopy_top_air_temperature = T, canopy_top_relative_humidity = 0.5, ground_temperature = T,
         ground_relative_humidity = 0.5, sensible_heat_source = zero_source,
-        evaporation_mass_flow = zero_evaporation, obukhov_length, atmospheric_pressure, wind_attenuation,
+        evaporation_mass_flow = zero_evaporation, obukhov_length, atmospheric_pressure, wind_speed, ground_roughness_height,
     )
     @test all(rh -> isapprox(rh, 0.5; atol=1e-6), result.relative_humidity)
 end
@@ -82,7 +78,7 @@ end
         canopy_height, displacement_height, friction_velocity,
         canopy_top_air_temperature = T, canopy_top_relative_humidity = 0.5,
         ground_temperature = T, ground_relative_humidity = 0.5,
-        sensible_heat_source = zero_source, evaporation_mass_flow = source, obukhov_length, atmospheric_pressure, wind_attenuation,
+        sensible_heat_source = zero_source, evaporation_mass_flow = source, obukhov_length, atmospheric_pressure, wind_speed, ground_roughness_height,
     )
     @test all(isfinite, result.relative_humidity)
     peak = argmax(result.relative_humidity)
@@ -112,8 +108,35 @@ end
         canopy_height, displacement_height, friction_velocity,
         canopy_top_air_temperature = T, canopy_top_relative_humidity = 0.5,
         ground_temperature = 288.0u"K", ground_relative_humidity = 0.5,
-        sensible_heat_source = source, evaporation_mass_flow = evap_source, obukhov_length, atmospheric_pressure, wind_attenuation,
+        sensible_heat_source = source, evaporation_mass_flow = evap_source, obukhov_length, atmospheric_pressure, wind_speed, ground_roughness_height,
     )
     f() # warm up
     @test (@allocated f()) < 5_000
+end
+
+@testset "ground conductances match turbulent + sublayer resistance in series" begin
+    T = 290.0u"K"
+    Tg = 288.0u"K"
+    fill!(buffers.air_temperature, T)
+    Microclimate.canopy_air_profile!(buffers, model, boundary_layer_model;
+        canopy_height, displacement_height, friction_velocity,
+        canopy_top_air_temperature = T, canopy_top_relative_humidity = 0.5,
+        ground_temperature = Tg, ground_relative_humidity = 0.5,
+        sensible_heat_source = zero_source, evaporation_mass_flow = zero_evaporation,
+        obukhov_length, atmospheric_pressure, wind_speed, ground_roughness_height,
+    )
+    κ = boundary_layer_model.karman_constant
+    z0 = ground_roughness_height
+    z_n = buffers.layer_heights[end]
+    log_ratio = max(log(z_n / z0), 0.1 * log(z_n / z0), 1.0e-6)
+    u★_ground = κ * wind_speed[end] / log_ratio
+    kinematic_viscosity = Microclimate.dry_air_properties((T + Tg) / 2, atmospheric_pressure).kinematic_viscosity
+    St_h = Microclimate.sublayer_stanton(z0, u★_ground, kinematic_viscosity)
+    R_sublayer_heat = 1.0 / (u★_ground * St_h)
+    R_sublayer_vapor = R_sublayer_heat / Microclimate.LEWIS_HEAT_TO_MASS_RATIO
+    Rg_heat = max(buffers.layer_resistance[end] + R_sublayer_heat, model.min_ground_resistance)
+    Rg_vapor = max(buffers.layer_resistance[end] + R_sublayer_vapor, model.min_ground_resistance)
+    ρcp = Microclimate.calc_ρ_cp((T + Tg) / 2)
+    @test buffers.ground_vapor_conductance[] ≈ 1.0 / Rg_vapor
+    @test buffers.ground_heat_conductance[] ≈ ρcp / Rg_heat
 end

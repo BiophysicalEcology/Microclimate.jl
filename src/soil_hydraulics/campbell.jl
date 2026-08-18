@@ -406,47 +406,60 @@ end
     return pool - excess, excess
 end
 
-function soil_water_balance!(buffers, soil_hydraulic_model::CampbellSoilHydraulics;
-    soil_profile,
-    depths,
-    site,
-    boundary_layer_model,
-    environment_instant,
-    T0,
-    pool,
-    niter_moist,
-    soil_wetness,
-    soil_moisture,
-    moisture_timestep,    # solver tuning, lives on MicroConfig
-    moisture_tolerance,
-    moisture_max_iterations,
-    max_surface_pool,
+"""
+    ground_condensation_step!(buffers, boundary_layer_model;
+        site, environment_instant, T0, pool, standing_dew, standing_frost,
+        condensation_model=GarrattSegalCondensation(), evaporation_model=BulkTransferEvaporation(),
+        vapour_pressure_equation=GoffGratch(), snow_present=false, actual_soil_wetness,
+        sky_temperature, absorbed_solar_radiation, reference_height,
+        ground_wind_speed=nothing, ground_air_temperature=nothing,
+        ground_air_relative_humidity=nothing, ground_reference_height=nothing,
+        ground_heat_conductance=nothing, ground_vapor_conductance=nothing)
+
+One-hour ground-surface dew/frost step, independent of soil moisture
+strategy (runs once per hour regardless of moisture-solver sub-stepping).
+Frost is its own reservoir shielding the returned `evaporation_potential`;
+dew merges into `pool` with its standing balance tracked in parallel; frost
+melts into dew above 0°C.
+
+`condensation_model` decides *whether and how much* dew/frost forms (see
+[`GarrattSegalCondensation`](@ref), default, and [`BulkTransferCondensation`](@ref));
+the model's own bulk-transfer flux still separately drives
+`evaporation_potential` for the LOSS branch regardless of that choice.
+"""
+
+# Temporary diagnostic: set to a threshold (e.g. 0.08u"kg/m^2") to @info the
+# ground-level conditions behind any single-hour dew event exceeding it.
+# Remove once the canopy over-prediction investigation concludes.
+const _DEBUG_DEW_THRESHOLD = Ref{Any}(nothing)
+function ground_condensation_step!(buffers, boundary_layer_model;
+    site, environment_instant, T0, pool, standing_dew, standing_frost,
+    condensation_model::AbstractCondensationModel=GarrattSegalCondensation(),
     evaporation_model::AbstractEvaporationModel=BulkTransferEvaporation(),
     vapour_pressure_equation=GoffGratch(),
     snow_present=false,
-    canopy_transpiration_potential=nothing,
-    canopy_leaf_area_index=nothing,
+    actual_soil_wetness,
+    sky_temperature, absorbed_solar_radiation, reference_height,
     ground_wind_speed=nothing, ground_air_temperature=nothing,
     ground_air_relative_humidity=nothing, ground_reference_height=nothing,
     ground_heat_conductance=nothing, ground_vapor_conductance=nothing,
 )
     atmospheric_pressure = environment_instant.atmospheric_pressure
-    leaf_area_index = isnothing(canopy_leaf_area_index) ? environment_instant.leaf_area_index : canopy_leaf_area_index
-
-    (; bulk_density, mineral_density) = soil_profile
-
-    θ_soil = soil_moisture
     surface_temperature = T0[1]
+    surface_emissivity = environment_instant.surface_emissivity
 
     if isnothing(ground_air_relative_humidity)
         # NoCanopy: full MOST profile from the free-atmosphere reference down
         # to the soil surface, as before.
         air_temperature = environment_instant.reference_temperature
         relative_humidity = environment_instant.reference_humidity
+        wind_speed = environment_instant.reference_wind_speed
+        z_reference = reference_height
         profile_out = atmospheric_surface_profile!(boundary_layer_model, buffers.soil_water_profile;
             site, environment_instant, surface_temperature, vapour_pressure_equation,
         )
-        heat_transfer_coefficient = max(abs(profile_out.convective_heat_flux / (surface_temperature - air_temperature)), 0.5u"W/m^2/K")
+        convective_heat_flux = profile_out.convective_heat_flux
+        heat_transfer_coefficient = max(abs(convective_heat_flux / (surface_temperature - air_temperature)), 0.5u"W/m^2/K")
         wet_air_out = wet_air_properties(air_temperature, relative_humidity, atmospheric_pressure; vapour_pressure_equation)
         mass_transfer_coefficient = calc_mass_transfer_coefficient(heat_transfer_coefficient, wet_air_out.specific_heat, wet_air_out.density)
         wet_air_out_ref = wet_air_properties(u"K"(last(profile_out.air_temperature)), last(profile_out.relative_humidity), atmospheric_pressure; vapour_pressure_equation)
@@ -460,6 +473,8 @@ function soil_water_balance!(buffers, soil_hydraulic_model::CampbellSoilHydrauli
         # profile approximation needed.
         air_temperature = ground_air_temperature
         relative_humidity = ground_air_relative_humidity
+        wind_speed = ground_wind_speed
+        z_reference = ground_reference_height
         local_relative_humidity = clamp(ground_air_relative_humidity, 0.0, 0.99)
         if isnothing(ground_heat_conductance)
             # Fallback (canopy supplied ground_air_* but not its own
@@ -472,7 +487,8 @@ function soil_water_balance!(buffers, soil_hydraulic_model::CampbellSoilHydrauli
                 roughness_height=site.roughness_height, reference_height=ground_reference_height,
                 atmospheric_pressure, obukhov_length_prev=buffers.soil_water_profile.obukhov_length_prev,
             )
-            heat_transfer_coefficient = max(abs(flux_out.convective_heat_flux / (surface_temperature - air_temperature)), 0.5u"W/m^2/K")
+            convective_heat_flux = flux_out.convective_heat_flux
+            heat_transfer_coefficient = max(abs(convective_heat_flux / (surface_temperature - air_temperature)), 0.5u"W/m^2/K")
             wet_air_out = wet_air_properties(air_temperature, relative_humidity, atmospheric_pressure; vapour_pressure_equation)
             mass_transfer_coefficient = calc_mass_transfer_coefficient(heat_transfer_coefficient, wet_air_out.specific_heat, wet_air_out.density)
         else
@@ -482,27 +498,110 @@ function soil_water_balance!(buffers, soil_hydraulic_model::CampbellSoilHydrauli
             # shares its resistance with ground_heat_conductance (implicit
             # Pr=Sc=1), unlike the other two branches' calc_mass_transfer_coefficient
             # -- apply the same Lewis-relation factor here for consistency.
-            heat_transfer_coefficient = max(abs(ground_heat_conductance), 0.5u"W/m^2/K")
+            convective_heat_flux = ground_heat_conductance * (air_temperature - surface_temperature)
             mass_transfer_coefficient = ground_vapor_conductance * LEWIS_HEAT_TO_MASS_RATIO
         end
     end
-    Q_evaporation, evaporation_mass_flux = evaporation(evaporation_model;
-        surface_temperature,
-        air_temperature,
-        relative_humidity,
-        surface_relative_humidity=1.0,
-        mass_transfer_coefficient,
-        atmospheric_pressure,
-        soil_wetness,
-        saturated=true,
-        vapour_pressure_equation,
+
+    # Drives evaporation_potential below, independent of condensation_model.
+    # soil_wetness=1.0 is inert here (saturated=true overrides it).
+    Q_evaporation, _ = evaporation(evaporation_model;
+        surface_temperature, air_temperature, relative_humidity,
+        surface_relative_humidity=1.0, mass_transfer_coefficient, atmospheric_pressure,
+        soil_wetness=1.0, saturated=true, vapour_pressure_equation,
     )
     latent_heat_vaporisation = enthalpy_of_vaporisation(surface_temperature)
-    evaporation_potential = max(1e-7u"kg/m^2/s", Q_evaporation / latent_heat_vaporisation)
+    raw_flux = Q_evaporation / latent_heat_vaporisation  # +ve = loss, -ve = condensation
+
+    # condensation_model decides whether/how much dew or frost forms.
+    dew_frost_energy_flux = condensation_energy_flux(condensation_model;
+        evaporation_model, surface_temperature, air_temperature, relative_humidity, atmospheric_pressure,
+        convective_heat_flux, mass_transfer_coefficient, actual_soil_wetness,
+        wind_speed, reference_height=z_reference, roughness_height=site.roughness_height,
+        karman_constant=boundary_layer_model.karman_constant,
+        sky_temperature, surface_emissivity, absorbed_solar_radiation,
+        vapour_pressure_equation,
+    )
+    raw_flux_condensation = dew_frost_energy_flux / latent_heat_vaporisation
+    Δt = 1.0u"hr"  # once per hour, independent of the moisture solver's own sub-stepping
+    # An implausibly large single-hour amount is a numerical artifact, not
+    # real condensation -- matches the model author's own validated bound.
+    max_plausible_formed = 1.0u"kg/m^2"
+
+    dew_formed = 0.0u"kg/m^2"
+    frost_formed = 0.0u"kg/m^2"
+    # Frost melts into standing dew (and the pool) the moment the surface warms above 0°C
+    if standing_frost > 0.0u"kg/m^2" && surface_temperature > u"K"(0.0u"°C")
+        standing_dew += standing_frost
+        pool += standing_frost
+        standing_frost = 0.0u"kg/m^2"
+    end
     # Fortran OSUB.f lines 1188-1196: suppress soil evaporation when snow covers the ground
     if snow_present
         evaporation_potential = 1e-7u"kg/m^2/s"
+    elseif raw_flux_condensation < 0.0u"kg/m^2/s" && surface_temperature <= u"K"(0.0u"°C")
+        candidate = -raw_flux_condensation * Δt
+        if candidate <= max_plausible_formed
+            frost_formed = candidate
+            standing_frost += frost_formed
+        end
+        evaporation_potential = 1e-7u"kg/m^2/s"
+    elseif raw_flux_condensation < 0.0u"kg/m^2/s"
+        candidate = -raw_flux_condensation * Δt
+        if candidate <= max_plausible_formed
+            dew_formed = candidate
+            standing_dew += dew_formed
+            pool += dew_formed
+        end
+        # Temporary diagnostic: flag ground-level conditions behind
+        # implausibly large single-hour dew events (canopy over-prediction
+        # investigation). Remove once resolved.
+        if _DEBUG_DEW_THRESHOLD[] !== nothing && candidate > _DEBUG_DEW_THRESHOLD[]
+            @info "large dew event" candidate=uconvert(u"kg/m^2", candidate) surface_temperature air_temperature relative_humidity wind_speed convective_heat_flux mass_transfer_coefficient absorbed_solar_radiation sky_temperature dew_frost_energy_flux canopy_ground = !isnothing(ground_air_temperature)
+        end
+        evaporation_potential = 1e-7u"kg/m^2/s"
+    else
+        # Loss demand: sublimate standing frost, then evaporate standing dew, before
+        # drawing on soil moisture via the residual evaporation_potential
+        # (DynamicSoilMoisture's own infiltration_step! demand).
+        demand = raw_flux * Δt
+        frost_sublimated = min(demand, standing_frost)
+        standing_frost -= frost_sublimated
+        demand -= frost_sublimated
+        dew_evaporated = min(demand, standing_dew)
+        standing_dew -= dew_evaporated
+        pool -= dew_evaporated
+        demand -= dew_evaporated
+        evaporation_potential = max(1e-7u"kg/m^2/s", demand / Δt)
     end
+
+    return (; pool, standing_dew, standing_frost, dew_formed, frost_formed, evaporation_potential, local_relative_humidity)
+end
+
+function soil_water_balance!(buffers, soil_hydraulic_model::CampbellSoilHydraulics;
+    soil_profile,
+    depths,
+    pool,
+    evaporation_potential,
+    local_relative_humidity,
+    niter_moist,
+    soil_moisture,
+    moisture_timestep,    # solver tuning, lives on MicroConfig
+    moisture_tolerance,
+    moisture_max_iterations,
+    max_surface_pool,
+    T0,
+    vapour_pressure_equation=GoffGratch(),
+    canopy_transpiration_potential=nothing,
+    canopy_leaf_area_index=nothing,
+    environment_instant,
+)
+    atmospheric_pressure = environment_instant.atmospheric_pressure
+    leaf_area_index = isnothing(canopy_leaf_area_index) ? environment_instant.leaf_area_index : canopy_leaf_area_index
+
+    (; bulk_density, mineral_density) = soil_profile
+
+    θ_soil = soil_moisture
 
     # Node 1's own midpoint-boundary control-volume thickness, matching
     # infiltration_step!'s layer_water_mass[2] convention.
