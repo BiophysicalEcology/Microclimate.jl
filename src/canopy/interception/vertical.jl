@@ -63,17 +63,41 @@ function deplete_canopy_water!(::_StorageBasedInterception, buffers, layer, evap
     return nothing
 end
 
+leaf_standing_dew(::_StorageBasedInterception, buffers, layer) = buffers.leaf_standing_dew[layer]
+leaf_standing_frost(::_StorageBasedInterception, buffers, layer) = buffers.leaf_standing_frost[layer]
+
+function add_leaf_standing_dew!(::_StorageBasedInterception, buffers, layer, Δ)
+    buffers.leaf_standing_dew[layer] = max(buffers.leaf_standing_dew[layer] + Δ, 0.0u"kg/m^2")
+    return nothing
+end
+
+function add_leaf_standing_frost!(::_StorageBasedInterception, buffers, layer, Δ)
+    buffers.leaf_standing_frost[layer] = max(buffers.leaf_standing_frost[layer] + Δ, 0.0u"kg/m^2")
+    return nothing
+end
+
+function clamp_leaf_standing_dew!(::_StorageBasedInterception, buffers, layer, ceiling)
+    buffers.leaf_standing_dew[layer] = min(buffers.leaf_standing_dew[layer], ceiling)
+    return nothing
+end
+
 function snapshot_interception!(::_StorageBasedInterception, buffers)
     buffers.leaf_surface_water_day_start .= buffers.leaf_surface_water
+    buffers.leaf_standing_dew_day_start .= buffers.leaf_standing_dew
+    buffers.leaf_standing_frost_day_start .= buffers.leaf_standing_frost
     return nothing
 end
 
 function restore_interception!(::_StorageBasedInterception, buffers)
     buffers.leaf_surface_water .= buffers.leaf_surface_water_day_start
+    buffers.leaf_standing_dew .= buffers.leaf_standing_dew_day_start
+    buffers.leaf_standing_frost .= buffers.leaf_standing_frost_day_start
     return nothing
 end
 
 function reset_interception!(::_StorageBasedInterception, buffers)
     fill!(buffers.leaf_surface_water, 0.0u"kg/m^2")
+    fill!(buffers.leaf_standing_dew, 0.0u"kg/m^2")
+    fill!(buffers.leaf_standing_frost, 0.0u"kg/m^2")
     return nothing
 end

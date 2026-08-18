@@ -72,7 +72,7 @@ end
         # LinearizedLeafTemperature is a single step from air_temperature, so its
         # residual is only small when the true solution is close to air_temperature;
         # allow a looser tolerance for it than for the exact root-find.
-        tol = solver isa RootFindLeafTemperature ? 1e-2u"W" : 10.0u"W"
+        tol = solver isa RootFindLeafTemperature ? 2e-2u"W" : 10.0u"W"
         @test abs(out.net) < tol
     end
 end

@@ -98,6 +98,7 @@ end
                  vapour_pressure_equation=GoffGratch(),
                  boundary_layer_model=MoninObukhov(),
                  evaporation_model=BulkTransferEvaporation(),
+                 condensation_model=GarrattSegalCondensation(),
                  soil_energy_model=SoilHeatTransport1D(),
                  config=MicroConfig())
 
@@ -113,6 +114,9 @@ Constant-across-runs scientific description of the simulation:
     - `vapour_pressure_equation` — cross-cutting (`GoffGratch()` / `Teten()` / `Huang()`)
     - `boundary_layer_model` — cross-cutting (`MoninObukhov()`)
     - `evaporation_model` — surface latent flux
+    - `condensation_model::AbstractCondensationModel` — ground dew/frost
+      formation (`GarrattSegalCondensation()` default, `BulkTransferCondensation()`,
+      or `NoCondensation()` to switch it off)
     - `soil_energy_model::SoilHeatTransportModel` — soil column energy ODE
       (carries the phase-transition `freezing_model` and ODE solver settings)
     - `canopy_model::AbstractCanopyModel` — `NoCanopy()` (default, today's
@@ -122,7 +126,7 @@ Constant-across-runs scientific description of the simulation:
 
 Combine with a `MicroInputs` via `MicroProblem(model, inputs; days)` to run.
 """
-@kwdef struct MicroModel{H,Dep,Ht,SPM,SHM,RAD,SNM,VPE,BLM,EVM,SEM,CAN,C}
+@kwdef struct MicroModel{H,Dep,Ht,SPM,SHM,RAD,SNM,VPE,BLM,EVM,CDM,SEM,CAN,C}
     hours::H = DEFAULT_HOURS # hour of day for solar_radiation
     depths::Dep = DEFAULT_DEPTHS # soil nodes - keep spacing close near the surface
     heights::Ht = [0.01, 2]u"m" # air nodes for temperature, wind speed and humidity profile, last height is reference height for weather data
@@ -133,6 +137,7 @@ Combine with a `MicroInputs` via `MicroProblem(model, inputs; days)` to run.
     vapour_pressure_equation::VPE = GoffGratch()
     boundary_layer_model::BLM = MoninObukhov()
     evaporation_model::EVM = BulkTransferEvaporation()
+    condensation_model::CDM = GarrattSegalCondensation()
     soil_energy_model::SEM = SoilHeatTransport1D()
     canopy_model::CAN = NoCanopy()
     config::C = MicroConfig()

@@ -24,3 +24,13 @@ restore_interception!(::NoInterception, buffers) = nothing
 reset_interception!(::NoInterception, buffers) = nothing
 
 deplete_canopy_water!(::NoInterception, buffers, layer, evaporated_mass) = nothing
+
+leaf_standing_dew(::NoInterception, buffers, layer) = 0.0u"kg/m^2"
+
+leaf_standing_frost(::NoInterception, buffers, layer) = 0.0u"kg/m^2"
+
+add_leaf_standing_dew!(::NoInterception, buffers, layer, Δ) = nothing
+
+add_leaf_standing_frost!(::NoInterception, buffers, layer, Δ) = nothing
+
+clamp_leaf_standing_dew!(::NoInterception, buffers, layer, ceiling) = nothing

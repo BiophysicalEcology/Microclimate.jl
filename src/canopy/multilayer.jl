@@ -5,6 +5,7 @@
                        wind_model=ExponentialCanopyWindAttenuation(),
                        air_profile_model=RaupachLTheoryAirProfile(),
                        interception_model=NoInterception(),
+                       condensation_model=MonteithLeafCondensation(),
                        leaf_parameters=LeafParameters(),
                        stomatal_model=PrescribedStomatalConductance(),
                        leaf_temperature_solver=LinearizedLeafTemperature(),
@@ -39,6 +40,9 @@ Composes swappable sub-models the same way `MicroModel` composes
   [`KTheoryAirProfile`](@ref))
 - `interception_model::AbstractCanopyInterceptionModel` — rain interception
   (default [`NoInterception`](@ref): off)
+- `condensation_model::AbstractCondensationModel` — leaf dew/frost formation
+  (default [`MonteithLeafCondensation`](@ref); [`NoCondensation`](@ref) to
+  switch it off). Independent of `MicroModel.condensation_model` (ground).
 - `leaf_parameters::LeafParameters` — per-leaf structural/physiological data
 - `stomatal_model::AbstractStomatalConductanceModel` — stomatal response
   (default [`PrescribedStomatalConductance`](@ref): day/night gating only,
@@ -60,7 +64,7 @@ Ground reflectance is not stored here — supplied to
 [`canopy_shortwave!`](@ref) by the caller (e.g. `Site.albedo`), matching how
 other radiation models read albedo from their caller.
 """
-@kwdef struct MultilayerCanopy{H,PAI,WAF,RM,LWM,WM,APM,IM,LP,SM,LTS,LCM,CVM} <: AbstractCanopyModel
+@kwdef struct MultilayerCanopy{H,PAI,WAF,RM,LWM,WM,APM,IM,CDM,LP,SM,LTS,LCM,CVM} <: AbstractCanopyModel
     canopy_height::H
     plant_area_index::PAI
     woody_area_fraction::WAF = 0.0
@@ -69,6 +73,7 @@ other radiation models read albedo from their caller.
     wind_model::WM = ExponentialCanopyWindAttenuation()
     air_profile_model::APM = RaupachLTheoryAirProfile()
     interception_model::IM = NoInterception()
+    condensation_model::CDM = MonteithLeafCondensation()
     leaf_parameters::LP = LeafParameters()
     stomatal_model::SM = PrescribedStomatalConductance()
     leaf_temperature_solver::LTS = LinearizedLeafTemperature()
@@ -85,6 +90,7 @@ function example_multilayer_canopy(;
     wind_model = ExponentialCanopyWindAttenuation(),
     air_profile_model = RaupachLTheoryAirProfile(),
     interception_model = NoInterception(),
+    condensation_model = MonteithLeafCondensation(),
     leaf_parameters = LeafParameters(),
     stomatal_model = PrescribedStomatalConductance(),
     leaf_temperature_solver = LinearizedLeafTemperature(),
@@ -93,7 +99,7 @@ function example_multilayer_canopy(;
 )
     MultilayerCanopy(;
         canopy_height, plant_area_index, woody_area_fraction, shortwave_model, longwave_model, wind_model,
-        air_profile_model, interception_model, leaf_parameters, stomatal_model, leaf_temperature_solver,
+        air_profile_model, interception_model, condensation_model, leaf_parameters, stomatal_model, leaf_temperature_solver,
         leaf_convection_model, convergence_model,
     )
 end
@@ -129,6 +135,8 @@ function allocate_canopy(model::MultilayerCanopy, heights, boundary_layer_model)
             sensible_heat_source = zeros(typeof(0.0u"W/m^2"), n_layers),
             evaporation_mass_flow = zeros(typeof(0.0u"g/s"), n_layers),
             potential_evaporation_mass_flow = zeros(typeof(0.0u"g/s"), n_layers),
+            leaf_dew_formed = zeros(typeof(0.0u"kg/m^2"), n_layers),
+            leaf_frost_formed = zeros(typeof(0.0u"kg/m^2"), n_layers),
             absorbed_radiation = zeros(typeof(0.0u"W/m^2"), n_layers),
             net_balance = zeros(typeof(0.0u"W"), n_layers),
             air_temperature_prev = zeros(typeof(0.0u"K"), n_layers),
@@ -171,6 +179,21 @@ canopy_water_capacity(model::MultilayerCanopy, buffers, layer) =
 
 deplete_canopy_water!(model::MultilayerCanopy, buffers, layer, evaporated_mass) =
     deplete_canopy_water!(model.interception_model, buffers.interception, layer, evaporated_mass)
+
+leaf_standing_dew(model::MultilayerCanopy, buffers, layer) =
+    leaf_standing_dew(model.interception_model, buffers.interception, layer)
+
+leaf_standing_frost(model::MultilayerCanopy, buffers, layer) =
+    leaf_standing_frost(model.interception_model, buffers.interception, layer)
+
+add_leaf_standing_dew!(model::MultilayerCanopy, buffers, layer, Δ) =
+    add_leaf_standing_dew!(model.interception_model, buffers.interception, layer, Δ)
+
+add_leaf_standing_frost!(model::MultilayerCanopy, buffers, layer, Δ) =
+    add_leaf_standing_frost!(model.interception_model, buffers.interception, layer, Δ)
+
+clamp_leaf_standing_dew!(model::MultilayerCanopy, buffers, layer, ceiling) =
+    clamp_leaf_standing_dew!(model.interception_model, buffers.interception, layer, ceiling)
 
 snapshot_canopy_water!(model::MultilayerCanopy, buffers) =
     snapshot_interception!(model.interception_model, buffers.interception)

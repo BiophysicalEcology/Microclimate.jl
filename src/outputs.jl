@@ -21,7 +21,7 @@ end
 Per-layer and per-hour canopy diagnostics. Zero-column/all-zero for
 `NoCanopy` (mirrors `snow_temperature` being `(nsteps, 0)` for `NoSnow`).
 """
-struct CanopyOutput{LT,AT,WS,RH,GAS,GAL,LAS,LAL,GTF,IT,DSW,USW,DLW,ULW,AR,NB,CSH,CLH,FV,OL,DH,CTAT,CTRH}
+struct CanopyOutput{LT,AT,WS,RH,GAS,GAL,LAS,LAL,GTF,IT,DSW,USW,DLW,ULW,AR,NB,CSH,CLH,FV,OL,DH,CTAT,CTRH,LSW,LDW,LFR,LSD,LSF}
     leaf_temperature::LT              # nsteps × n_canopy_layers Matrix
     air_temperature::AT               # nsteps × n_canopy_layers Matrix (in-canopy, distinct from profile.air_temperature)
     wind_speed::WS                    # nsteps × n_canopy_layers Matrix (in-canopy)
@@ -45,6 +45,11 @@ struct CanopyOutput{LT,AT,WS,RH,GAS,GAL,LAS,LAL,GTF,IT,DSW,USW,DLW,ULW,AR,NB,CSH
     displacement_height::DH           # nsteps Vector, ditto
     canopy_top_air_temperature::CTAT  # nsteps Vector, ditto
     canopy_top_relative_humidity::CTRH # nsteps Vector, ditto
+    leaf_surface_water::LSW           # nsteps × n_canopy_layers Matrix, kg/m^2 ground area (rain + dew, intercepted)
+    leaf_dew::LDW                     # nsteps × n_canopy_layers Matrix, kg/m^2, dew formed this step
+    leaf_frost::LFR                   # nsteps × n_canopy_layers Matrix, kg/m^2, frost formed this step
+    leaf_standing_dew::LSD            # nsteps × n_canopy_layers Matrix, kg/m^2, standing balance (⊆ leaf_surface_water)
+    leaf_standing_frost::LSF          # nsteps × n_canopy_layers Matrix, kg/m^2, standing balance (ice, not in leaf_surface_water)
 end
 function CanopyOutput(nsteps::Int, n_canopy_layers::Int)
     n_boundaries = n_canopy_layers == 0 ? 0 : n_canopy_layers + 1
@@ -72,10 +77,15 @@ function CanopyOutput(nsteps::Int, n_canopy_layers::Int)
         zeros(typeof(1.0u"m"), nsteps),
         zeros(typeof(1.0u"K"), nsteps),
         zeros(Float64, nsteps),
+        zeros(typeof(1.0u"kg/m^2"), nsteps, n_canopy_layers),
+        zeros(typeof(1.0u"kg/m^2"), nsteps, n_canopy_layers),
+        zeros(typeof(1.0u"kg/m^2"), nsteps, n_canopy_layers),
+        zeros(typeof(1.0u"kg/m^2"), nsteps, n_canopy_layers),
+        zeros(typeof(1.0u"kg/m^2"), nsteps, n_canopy_layers),
     )
 end
 
-@kwdef struct MicroResult{P,AT,WS,RH,CC,GS,DF,SkT,SoT,SM,SWP,SH,STC,SPH,SBD,SW,RO,SR,Pr,SF,SD,SDN,SNT,GHF,CB}
+@kwdef struct MicroResult{P,AT,WS,RH,CC,GS,DF,SkT,SoT,SM,SWP,SH,STC,SPH,SBD,SW,RO,SR,Pr,SF,SD,SDN,SNT,GHF,CB,GDW,GFR,GSD,GSF}
     pressure::P
     reference_temperature::AT
     reference_wind_speed::WS
@@ -91,7 +101,7 @@ end
     soil_thermal_conductivity::STC
     soil_heat_capacity::SPH
     soil_bulk_density::SBD
-    surface_water::SW
+    ground_surface_water::SW
     runoff::RO  # cumulative; standing water above max_pond_depth, lost from the modeled column
     solar_radiation::SR
     profile::Pr
@@ -101,6 +111,10 @@ end
     snow_temperature::SNT  # nsteps × n_snow matrix; size (nsteps, 0) when NoSnow
     ground_heat_flux::GHF  # nsteps Vector, W/m^2, Fourier's law between the top two soil nodes, downward-positive
     canopy::CB
+    ground_dew::GDW            # nsteps Vector, kg/m^2, dew formed this step (⊆ ground_surface_water)
+    ground_frost::GFR          # nsteps Vector, kg/m^2, frost formed this step
+    ground_standing_dew::GSD   # nsteps Vector, kg/m^2, standing balance (⊆ ground_surface_water)
+    ground_standing_frost::GSF # nsteps Vector, kg/m^2, standing balance (ice, not in ground_surface_water)
 end
 function MicroResult(nsteps::Int, num_nodes::Int, nheights::Int, solar_radiation::NamedTuple, n_snow::Int=0, n_canopy_layers::Int=0)
     return MicroResult(;
@@ -119,7 +133,7 @@ function MicroResult(nsteps::Int, num_nodes::Int, nheights::Int, solar_radiation
         soil_thermal_conductivity = Array{typeof(1.0u"W/m/K")}(undef, nsteps, num_nodes),
         soil_heat_capacity = Array{typeof(1.0u"J/kg/K")}(undef, nsteps, num_nodes),
         soil_bulk_density = Array{typeof(1.0u"kg/m^3")}(undef, nsteps, num_nodes),
-        surface_water = Array{typeof(1.0u"kg/m^2")}(undef, nsteps),
+        ground_surface_water = Array{typeof(1.0u"kg/m^2")}(undef, nsteps),
         runoff = Array{typeof(1.0u"kg/m^2")}(undef, nsteps),
         solar_radiation = solar_radiation,
         profile = AtmosphericProfile(nsteps, nheights),
@@ -129,6 +143,10 @@ function MicroResult(nsteps::Int, num_nodes::Int, nheights::Int, solar_radiation
         snow_temperature = zeros(typeof(1.0u"K"), nsteps, n_snow),
         ground_heat_flux = zeros(typeof(1.0u"W/m^2"), nsteps),
         canopy = CanopyOutput(nsteps, n_canopy_layers),
+        ground_dew = zeros(typeof(1.0u"kg/m^2"), nsteps),
+        ground_frost = zeros(typeof(1.0u"kg/m^2"), nsteps),
+        ground_standing_dew = zeros(typeof(1.0u"kg/m^2"), nsteps),
+        ground_standing_frost = zeros(typeof(1.0u"kg/m^2"), nsteps),
     )
 end
 

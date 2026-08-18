@@ -49,8 +49,9 @@ function evaporation(::BulkTransferEvaporation;
     # Mass flux (g/s/m²)
     evaporation_mass_flux = u"g/s/m^2"(water_flux)
 
-    # No water loss if surface temperature ≤ 0°C (e.g., melting snow only)
-    if surface_temperature <= u"K"(0.0u"°C")
+    # No water loss (but condensation -- dew/frost -- still allowed) if
+    # surface temperature ≤ 0°C (e.g., melting snow only)
+    if surface_temperature <= u"K"(0.0u"°C") && water_flux > 0.0u"kg/m^2/s"
         evaporation_mass_flux = 0.0u"g/s/m^2"
     end
 

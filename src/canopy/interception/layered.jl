@@ -25,6 +25,10 @@ function allocate_interception(::LayeredRainInterception, canopy_height, plant_a
         layer_plant_area_index,
         leaf_surface_water = zeros(typeof(0.0u"kg/m^2"), n_layers),
         leaf_surface_water_day_start = zeros(typeof(0.0u"kg/m^2"), n_layers),
+        leaf_standing_dew = zeros(typeof(0.0u"kg/m^2"), n_layers),
+        leaf_standing_dew_day_start = zeros(typeof(0.0u"kg/m^2"), n_layers),
+        leaf_standing_frost = zeros(typeof(0.0u"kg/m^2"), n_layers),
+        leaf_standing_frost_day_start = zeros(typeof(0.0u"kg/m^2"), n_layers),
         throughfall = zeros(typeof(0.0u"kg/m^2"), n_layers + 1),
     )
 end
