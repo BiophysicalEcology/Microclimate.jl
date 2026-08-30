@@ -139,11 +139,22 @@ initial conditions.
 - `initial_*` — initial conditions (`initial_soil_temperature=nothing` falls back to
   the day-mean reference air temperature)
 - `initial_snow_density=nothing` → use `model.snow_model.snow_density`
+- `lateral_inflow=nothing` — optional per-output-step surface water (`kg/m^2`)
+  arriving laterally from upslope cells, added to the surface pool each hour.
+  A vector of length `nsteps = ndays * nhours` (one entry per output row,
+  aligned with `output.surface_water`), or `nothing` for no lateral coupling.
+  Set by a spatial driver that routes water along a topographic flow graph;
+  the inner solver stays column-local and just consumes it as a forcing.
+- `max_surface_pool=nothing` — optional per-site override of
+  `config.max_surface_pool` (`kg/m^2`). A spatial driver sets this very large
+  for endorheic sink cells so routed inflow accumulates and is removed only by
+  evaporation/infiltration (an emergent lake) rather than being shed. `nothing`
+  uses the model-level `config.max_surface_pool`.
 
 Pass a fresh `MicroInputs` to `reinit!(cache, inputs)` to re-solve the same
 model on different data without rebuilding the cache.
 """
-@kwdef struct MicroInputs{S,SP<:SoilProfile,EMM,EH,ED,IST,ISM,ISD,ISNT,ISND}
+@kwdef struct MicroInputs{S,SP<:SoilProfile,EMM,EH,ED,IST,ISM,ISD,ISNT,ISND,LI,MSP}
     site::S
     soil_profile::SP
     environment_minmax::EMM
@@ -154,6 +165,8 @@ model on different data without rebuilding the cache.
     initial_snow_depth::ISD = 0.0u"cm"
     initial_snow_temperature::ISNT = u"K"(0.0u"°C")
     initial_snow_density::ISND = nothing
+    lateral_inflow::LI = nothing
+    max_surface_pool::MSP = nothing
 end
 
 """
