@@ -14,3 +14,6 @@ struct DailyMinMaxEnvironment{NT<:NamedTuple} <: AbstractEnvironment
     forcings::NT
 end
 DailyMinMaxEnvironment(; forcings) = DailyMinMaxEnvironment(forcings)
+function consecutive_days(::DailyMinMaxEnvironment)
+    return true
+end

@@ -324,29 +324,35 @@ end
 end
 
 """
-    evaluate!(out, forcing, solar) -> out
+    evaluate!(out, forcing, solar, consecutive_days) -> out
 
 Fill `out` (length `24 * n_days`) with the variable's hourly curve, evaluating
 each shape over its covered span and handing seam heights off from the abutting
-shape.
+shape. `consecutive_days` (see [`consecutive_days`](@ref)): whether day `i+1`'s
+values are real and usable for a midnight-spanning shape's far endpoint.
 """
-function evaluate!(out, f::DielForcing, solar)
+function evaluate!(out, f::DielForcing, solar, consecutive_days::Bool)
     # Sample in the output buffer's unit so the shape arithmetic stays in one
     # (non-affine) unit — mixing °C inputs with K differences is an affine error.
-    for iday in 1:n_days(f)
+    ndays_f = n_days(f)
+    for iday in 1:ndays_f
         day = solar_day(solar, iday)
         vals = map(s -> convert(eltype(out), s[iday]), f.values)
+        prev_iday = consecutive_days ? max(iday - 1, 1) : iday
+        next_iday = consecutive_days ? min(iday + 1, ndays_f) : iday
+        prev_vals = prev_iday == iday ? vals : map(s -> convert(eltype(out), s[prev_iday]), f.values)
+        next_vals = next_iday == iday ? vals : map(s -> convert(eltype(out), s[next_iday]), f.values)
         base = (iday - 1) * 24
         for h in 0:23
-            out[base + h + 1] = sample(f.curve, Float64(h), day, vals)
+            out[base + h + 1] = sample(f.curve, Float64(h), day, prev_vals, vals, next_vals)
         end
     end
     return out
 end
 
 # Curve value at clock hour `h`: the covering shape, evaluated.
-sample(curve::DielCurve, h, day, vals) =
-    sample_shape(covering_shape(curve, h, day), h, day, curve, vals)
+sample(curve::DielCurve, h, day, prev_vals, vals, next_vals) =
+    sample_shape(covering_shape(curve, h, day), h, day, curve, prev_vals, vals, next_vals)
 
 # The shape covering hour `h`: a bounded shape whose span holds it, else the filler.
 function covering_shape(curve::DielCurve, h, day)
@@ -370,22 +376,33 @@ end
 end
 
 # Evaluate one shape at `h`, resolving each endpoint's height (input or seam).
-function sample_shape(shape, h, day, curve, vals)
+# A wrapping shape (`tb <= ta`) covers both a late stretch of today and an
+# early stretch of tomorrow; which endpoint lands on a neighbouring day
+# depends on `h`, not just the wrap direction: h < ta means `a` belongs to
+# yesterday, h >= ta (wrapping) means `b` belongs to tomorrow. Seam recursion
+# re-centres the (prev, vals, next) window by one day to match.
+function sample_shape(shape, h, day, curve, prev_vals, vals, next_vals)
     a, b = endpoints(shape)
     ta = resolve_time(a, day)
     tb = resolve_time(b, day)
-    va = endpoint_height(a, ta, day, curve, vals)
-    vb = endpoint_height(b, tb, day, curve, vals)
+    wraps = tb <= ta
+    early = wraps && h < ta
+    va = early ?
+        endpoint_height(a, ta, day, curve, prev_vals, prev_vals, vals) :
+        endpoint_height(a, ta, day, curve, prev_vals, vals, next_vals)
+    vb = (wraps && !early) ?
+        endpoint_height(b, tb, day, curve, vals, next_vals, next_vals) :
+        endpoint_height(b, tb, day, curve, prev_vals, vals, next_vals)
     return shape_value(shape, h, ta, va, tb, vb)
 end
 
 # Height at an endpoint: its input value, or — for a seam — handed off from the
 # shape covering the instant just before it.
-function endpoint_height(t, th, day, curve, vals)
+function endpoint_height(t, th, day, curve, prev_vals, vals, next_vals)
     i = input_index(curve.inputs, t)
     i === nothing || return vals[i]
     prev = covering_shape(curve, mod(th - 1e-6, 24.0), day)
-    return sample_shape(prev, th, day, curve, vals)
+    return sample_shape(prev, th, day, curve, prev_vals, vals, next_vals)
 end
 
 @inline function input_index(inputs::Tuple, t)
@@ -408,7 +425,7 @@ end
 end
 
 """
-    populate_quantities!(buffer_for, forcings, solar)
+    populate_quantities!(buffer_for, forcings, solar, consecutive_days)
 
 Fill every quantity's hourly buffer from `forcings` (a `NamedTuple` of
 `DielForcing`/`Derived`). `buffer_for(::Val{name})` returns the buffer for a
@@ -416,11 +433,11 @@ quantity. Interpolated forcings are filled first, then derived quantities — so
 `Derived` reads its inputs after they exist. (A derived quantity that depends on
 another derived quantity must be declared after it.)
 """
-function populate_quantities!(buffer_for, forcings::NamedTuple{K}, solar) where {K}
+function populate_quantities!(buffer_for, forcings::NamedTuple{K}, solar, consecutive_days::Bool) where {K}
     keyvals = map(Val, K)
     map(keyvals) do vk
         q = getproperty(forcings, _name(vk))
-        q isa DielForcing && evaluate!(buffer_for(vk), q, solar)
+        q isa DielForcing && evaluate!(buffer_for(vk), q, solar, consecutive_days)
         nothing
     end
     map(keyvals) do vk
