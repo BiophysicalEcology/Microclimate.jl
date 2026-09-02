@@ -16,7 +16,7 @@ own setting). Defaults to `ScalarRoughnessRatio()`.
 
 `shelter_floor`/`shelter_pai_coefficient`/`mixing_length_coefficient`/
 `mixing_length_pai_coefficient` are the empirical shelter-factor/mixing-
-length constants in [`_element_attenuation`](@ref)/[`canopy_roughness_length`](@ref).
+length constants in `_element_attenuation`/[`canopy_roughness_length`](@ref).
 Can over-attenuate wind at low total PAI -- tune per site if so.
 """
 @kwdef struct MixingLengthCanopyWindAttenuation{TRM,SF,SPC,MLC,MLPC} <: AbstractCanopyWindModel

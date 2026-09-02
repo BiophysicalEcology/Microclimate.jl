@@ -106,7 +106,7 @@ above-canopy wind/temperature profile, and rain interception are computed
 once per call (none depends on leaf temperature). Longwave, the in-canopy
 air profile, and per-layer leaf temperature are then driven to a fixed point
 by [`converge_canopy!`](@ref), dispatching on `model.convergence_model`
-([`PicardCanopyConvergence`](@ref)/[`NonlinearSolveCanopyConvergence`](@ref)).
+([`PicardCanopyConvergence`](@ref)).
 
 A wetted leaf surface ([`wet_canopy_fraction`](@ref)) blends stomatal
 conductance toward [`WET_SURFACE_CONDUCTANCE`](@ref)

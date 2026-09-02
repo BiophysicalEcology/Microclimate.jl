@@ -427,11 +427,6 @@ melts into dew above 0°C.
 the model's own bulk-transfer flux still separately drives
 `evaporation_potential` for the LOSS branch regardless of that choice.
 """
-
-# Temporary diagnostic: set to a threshold (e.g. 0.08u"kg/m^2") to @info the
-# ground-level conditions behind any single-hour dew event exceeding it.
-# Remove once the canopy over-prediction investigation concludes.
-const _DEBUG_DEW_THRESHOLD = Ref{Any}(nothing)
 function ground_condensation_step!(buffers, boundary_layer_model;
     site, environment_instant, T0, pool, standing_dew, standing_frost,
     condensation_model::AbstractCondensationModel=GarrattSegalCondensation(),
@@ -552,12 +547,6 @@ function ground_condensation_step!(buffers, boundary_layer_model;
             dew_formed = candidate
             standing_dew += dew_formed
             pool += dew_formed
-        end
-        # Temporary diagnostic: flag ground-level conditions behind
-        # implausibly large single-hour dew events (canopy over-prediction
-        # investigation). Remove once resolved.
-        if _DEBUG_DEW_THRESHOLD[] !== nothing && candidate > _DEBUG_DEW_THRESHOLD[]
-            @info "large dew event" candidate=uconvert(u"kg/m^2", candidate) surface_temperature air_temperature relative_humidity wind_speed convective_heat_flux mass_transfer_coefficient absorbed_solar_radiation sky_temperature dew_frost_energy_flux canopy_ground = !isnothing(ground_air_temperature)
         end
         evaporation_potential = 1e-7u"kg/m^2/s"
     else
