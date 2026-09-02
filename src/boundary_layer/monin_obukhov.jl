@@ -614,10 +614,15 @@ end
 
 """
     calc_Φ_h(z, γ, obukhov_length)
+    calc_Φ_h(z, γ, obukhov_length, stable_Φ_h_coefficient, min_stable_Φ_h, max_stable_Φ_h)
 
 True Businger–Dyer stability correction function for heat, Φ_h = x⁻², the
 reciprocal square of `calc_φ_m`'s Paulson x-substitution (unlike `calc_φ_m`
-itself, which returns `x`, not the momentum φₘ = x⁻¹).
+itself, which returns `x`, not the momentum φₘ = x⁻¹). 3-arg form: raw
+unstable expression. 6-arg form: general stable+unstable bulk heat
+stability multiplier, `Φ_h = clamp(1 + stable_Φ_h_coefficient·ζ/(1+ζ),
+min_stable_Φ_h, max_stable_Φ_h)` in the stable branch (`_floor_obukhov_length`
+bounds `ζ` but not `Φ_h` itself).
 
 # References
 - Businger, J. A., Wyngaard, J. C., Izumi, Y., & Bradley, E. F. (1971).
@@ -631,19 +636,17 @@ end
 
 """
     calc_ψ_m(x)
+    calc_ψ_m(z, γ, obukhov_length, stable_beta)
 
-Stability correction function ψₘ for momentum under unstable atmospheric stratification,
-used in Monin–Obukhov similarity theory.
-
-# Arguments
-- `x`: Dimensionless argument, typically `(1 - γ z / L)^(1/4)`.
-
-# Returns
-- Correction factor ψₘ (dimensionless).
-
-This is the Businger–Dyer form for momentum:
-
-ψₘ(x) = 2 ln((1 + x) / 2) + ln((1 + x²) / 2) - 2 atan(x) + π/2
+Stability correction ψₘ for momentum, Businger–Dyer form. 1-arg form: raw
+unstable expression, `ψₘ(x) = 2 ln((1+x)/2) + ln((1+x²)/2) - 2 atan(x) + π/2`,
+`x` typically `(1 - γ z / L)^(1/4)`. 4-arg form: general stable+unstable
+(unstable via [`calc_φ_m`](@ref)/`calc_ψ_m(x)`; stable Dyer (1974) linear
+form `ψ_m = -stable_beta·z/L`) -- the two meet continuously at
+`obukhov_length → ±Inf` (neutral), so this is safe to call unconditionally
+without pre-classifying the regime. Clamped to `[-4, 3]` in the stable
+branch (same numerical bound Businger–Dyer's own unstable form is only
+valid within, |ζ| ≲ 10).
 
 # References
 - Businger et al. (1971).
@@ -656,19 +659,14 @@ end
 
 """
     calc_ψ_h(x)
+    calc_ψ_h(z, γ, obukhov_length, stable_beta, turbulent_prandtl_number)
 
-Stability correction function ψ_h for heat and moisture under unstable conditions,
-used in Monin–Obukhov similarity theory.
-
-# Arguments
-- `x`: Dimensionless argument, typically `(1 - γ z / L)^(1/4)`.
-
-# Returns
-- Correction factor ψ_h (dimensionless).
-
-This is the Businger–Dyer form for scalars:
-
-ψ_h(x) = 2 ln((1 + x²) / 2)
+Stability correction ψ_h for heat/moisture, Businger–Dyer form. 1-arg form:
+raw unstable expression, `ψ_h(x) = 2 ln((1+x²)/2)`, `x` typically
+`(1 - γ z / L)^(1/4)`. 5-arg form: general stable+unstable -- see
+`calc_ψ_m`. Stable form
+`ψ_h = -(stable_beta/turbulent_prandtl_number)·z/L` (Businger et al. 1971's
+turbulent Prandtl number relates the heat and momentum coefficients).
 
 # References
 - Businger et al. (1971).
@@ -685,25 +683,6 @@ end
     return obukhov_length >= zero(obukhov_length) ? max(obukhov_length, L_floor) : min(obukhov_length, -L_floor)
 end
 
-"""
-    calc_ψ_m(z, γ, obukhov_length, stable_beta)
-
-General momentum stability correction ψ_m, valid for both unstable
-(`obukhov_length < 0`, Businger–Dyer/Paulson form via [`calc_φ_m`](@ref)/
-`calc_ψ_m(x)`) and stable (`obukhov_length ≥ 0`, Dyer (1974) linear form
-`ψ_m = -stable_beta·z/L`) conditions -- the two meet continuously at
-`obukhov_length → ±Inf` (neutral), so this is safe to call unconditionally
-without pre-classifying the regime. Clamped to `[-4, 3]` in the stable
-branch (same numerical bound Businger–Dyer's own unstable form is only
-valid within, |ζ| ≲ 10).
-
-# References
-- Businger, J. A., Wyngaard, J. C., Izumi, Y., & Bradley, E. F. (1971).
-  Flux–profile relationships in the atmospheric surface layer.
-  *Journal of the Atmospheric Sciences*, 28(2), 181–189.
-- Dyer, A. J. (1974). A review of flux–profile relationships.
-  *Boundary-Layer Meteorology*, 7(3), 363–372.
-"""
 @inline function calc_ψ_m(z, γ, obukhov_length, stable_beta)
     if obukhov_length < zero(obukhov_length)
         return calc_ψ_m(calc_φ_m(z, γ, obukhov_length))
@@ -713,14 +692,6 @@ valid within, |ζ| ≲ 10).
     end
 end
 
-"""
-    calc_ψ_h(z, γ, obukhov_length, stable_beta, turbulent_prandtl_number)
-
-General heat/scalar stability correction ψ_h, stable+unstable -- see
-[`calc_ψ_m`](@ref). Stable form
-`ψ_h = -(stable_beta/turbulent_prandtl_number)·z/L` (Businger et al. 1971's
-turbulent Prandtl number relates the heat and momentum coefficients).
-"""
 @inline function calc_ψ_h(z, γ, obukhov_length, stable_beta, turbulent_prandtl_number)
     if obukhov_length < zero(obukhov_length)
         return calc_ψ_h(calc_φ_m(z, γ, obukhov_length))
@@ -730,19 +701,6 @@ turbulent Prandtl number relates the heat and momentum coefficients).
     end
 end
 
-"""
-    calc_Φ_h(z, γ, obukhov_length, stable_Φ_h_coefficient, min_stable_Φ_h, max_stable_Φ_h)
-
-General bulk heat stability multiplier Φ_h (eddy-diffusivity scaling in
-[`KTheoryAirProfile`](@ref)/[`RaupachLTheoryAirProfile`](@ref)), stable+unstable
--- see [`calc_ψ_m`](@ref) for the (unrelated) log-profile analog. Stable form
-`Φ_h = clamp(1 + stable_Φ_h_coefficient·ζ/(1+ζ), min_stable_Φ_h, max_stable_Φ_h)`,
-matching R's `dphih` exactly -- a saturating rational form, not `calc_ψ_h`'s
-linear one, since this feeds a multiplicative diffusivity scale rather than
-an additive log-profile offset: unclamped linear growth here let very stable,
-low-wind hours inflate `RaupachLTheoryAirProfile`'s `T_L` by orders of
-magnitude (`_floor_obukhov_length` bounds `ζ` but not `Φ_h` itself).
-"""
 @inline function calc_Φ_h(z, γ, obukhov_length, stable_Φ_h_coefficient, min_stable_Φ_h, max_stable_Φ_h)
     if obukhov_length < zero(obukhov_length)
         return calc_Φ_h(z, γ, obukhov_length)
