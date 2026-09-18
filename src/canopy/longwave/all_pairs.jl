@@ -14,7 +14,7 @@ matrix is precomputed once in [`allocate_longwave`](@ref).
 `boundary_downward_longwave`/`boundary_upward_longwave` (for
 [`LayeredLongwaveExchange`](@ref)-style output/diagnostics) are `[1:n_layers]
 == downward_longwave/upward_longwave` exactly — same layer positions, not a
-separate boundary grid — with only `[n_layers+1]` a genuinely distinct
+separate boundary grid — with only `[n_layers+1]` a distinct
 point (the ground surface itself).
 
 # References

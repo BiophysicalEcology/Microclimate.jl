@@ -8,7 +8,7 @@ function allocate_interpolation_scratch(env)
     return NamedTuple{names}(map(k -> _quantity_buffer(getproperty(fs, k)), names))
 end
 
-# Quantity names the solver writes directly into its result buffers.
+# Quantity names that the solver writes directly into its result buffers.
 @inline _is_output_quantity(::Val) = false
 @inline _is_output_quantity(::Val{:reference_temperature}) = true
 @inline _is_output_quantity(::Val{:reference_humidity}) = true
