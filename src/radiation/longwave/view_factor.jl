@@ -13,14 +13,22 @@ The `atmospheric_radiation_model` lives on the longwave model rather than on
     atmospheric_radiation_model::ARM = CampbellNormanAtmosphericRadiation()
 end
 
+precompute_longwave_sky(model::ViewFactorLongwave; kw...) =
+    precompute_longwave_sky(model.atmospheric_radiation_model; kw...)
+
 """
-    precompute_longwave_sky(model::ViewFactorLongwave; site, environment_instant,
+    precompute_longwave_sky(atmospheric_radiation_model; site, environment_instant,
                              vapour_pressure_equation, surface_emissivity, shade)
+
+Clear-sky + cloud + hillshade downwelling longwave, keyed directly on the
+`AbstractAtmosphericRadiationModel` rather than a full [`ViewFactorLongwave`](@ref)
+— lets other longwave schemes (e.g. the canopy's per-layer exchange) reuse
+this exact sky calculation without needing a `ViewFactorLongwave` wrapper.
 
 If `environment_instant.longwave_radiation` is set, uses it directly as the
 sky term instead of deriving one from `cloud_cover`.
 """
-function precompute_longwave_sky(model::ViewFactorLongwave;
+function precompute_longwave_sky(atmospheric_radiation_model::AbstractAtmosphericRadiationModel;
     site,
     environment_instant,
     vapour_pressure_equation=GoffGratch(),
@@ -40,7 +48,7 @@ function precompute_longwave_sky(model::ViewFactorLongwave;
         longwave_radiation_sky = supplied_longwave * (1.0 - shade)
     else
         wet_air_out = wet_air_properties(u"K"(reference_temperature), reference_humidity, atmospheric_pressure; vapour_pressure_equation)
-        atmospheric_longwave = atmospheric_radiation(model.atmospheric_radiation_model, wet_air_out.vapour_pressure, reference_temperature)
+        atmospheric_longwave = atmospheric_radiation(atmospheric_radiation_model, wet_air_out.vapour_pressure, reference_temperature)
         clear_sky_fraction = 1.0 - cloud_cover
         clear_component = atmospheric_longwave * clear_sky_fraction
         cloudy_component = cloud_radiation * cloud_cover

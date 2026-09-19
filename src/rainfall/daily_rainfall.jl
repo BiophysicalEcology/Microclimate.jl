@@ -1,13 +1,15 @@
 """
-    DailyRainfall()
+    DailyRainfall(; spread_hours=1)
 
-The day's total rainfall is read from `environment_daily.rainfall` and
-applied at the solar-midnight hour. The hourly forcing's `rainfall` array
-is ignored.
+The day's total rainfall (`environment_daily.rainfall`) is split evenly
+across `spread_hours` hours starting at solar midnight (24-hour day);
+`spread_hours=1` is the original single-hour dump. Ignores hourly `rainfall`.
 """
-struct DailyRainfall <: AbstractRainfallSchedule end
+@kwdef struct DailyRainfall{SH} <: AbstractRainfallSchedule
+    spread_hours::SH = 1
+end
 
 is_hourly(::DailyRainfall) = false
 
-current_rainfall(::DailyRainfall; environment_instant, environment_hourly, step, i, midnight_i) =
-    i == midnight_i ? environment_instant.rainfall : 0.0u"kg/m^2"
+current_rainfall(schedule::DailyRainfall; environment_instant, environment_hourly, step, i, midnight_i) =
+    mod(i - midnight_i, 24) < schedule.spread_hours ? environment_instant.rainfall / schedule.spread_hours : 0.0u"kg/m^2"
