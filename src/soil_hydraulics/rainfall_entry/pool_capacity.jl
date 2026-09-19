@@ -10,8 +10,8 @@ struct PoolCapacityRainfall <: AbstractRainfallEntryMode end
 
 rainfall_flux_for_step(::PoolCapacityRainfall, pool, moisture_timestep, niter_moist) = 0.0u"kg/m^2/s"
 
-apply_rainfall_entry!(::PoolCapacityRainfall, soil_moisture, pool, sat, half_thickness, rainfall_flux, moisture_timestep; kw...) =
-    _wet_surface_node!(soil_moisture, pool, sat, half_thickness)
+apply_rainfall_entry!(::PoolCapacityRainfall, soil_moisture, pool, sat, half_thickness, rainfall_flux, moisture_timestep; frozen_water_content, kw...) =
+    _wet_surface_node!(soil_moisture, pool, sat, half_thickness, frozen_water_content[1])
 
 post_infiltration_pool_update(::PoolCapacityRainfall, pool, rainfall_flux, moisture_timestep, water_flux, surf_evap, max_surface_pool) =
     clamp(pool - water_flux - surf_evap, 0.0u"kg/m^2", max_surface_pool)

@@ -12,12 +12,14 @@ function rainfall_flux_for_step end
 
 """
     apply_rainfall_entry!(mode, soil_moisture, pool, sat, half_thickness,
-                           rainfall_flux, moisture_timestep; depths, soil_profile)
+                           rainfall_flux, moisture_timestep; depths, soil_profile,
+                           frozen_water_content)
 
 Deliver `pool` into `soil_moisture` before `infiltration_step!` runs, by
 whatever mechanism `mode` implements (may mutate `soil_moisture` in place).
 Returns the remaining `pool`. A no-op on `soil_moisture` for a mode that
-instead enters water via [`rainfall_flux_for_step`](@ref).
+instead enters water via [`rainfall_flux_for_step`](@ref). `frozen_water_content`
+throttles delivery via [`ice_impeded_conductivity`](@ref).
 """
 function apply_rainfall_entry! end
 
