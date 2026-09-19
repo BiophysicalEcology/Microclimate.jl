@@ -1,12 +1,12 @@
 using Microclimate
 using Unitful
 using Test
-using Microclimate: allocate_soil_water_balance, infiltration_step!
+using Microclimate: allocate_soil_water_balance, infiltration_step!, NoIce
 
 # infiltration_step!/allocate_soil_water_balance are internal — white-box tested here since
 # there's no external (e.g. NicheMapR) reference for MatricFluxPotentialAlgorithm.
 
-function run_infiltration(algorithm; initial_moisture, evapotranspiration, nsteps)
+function run_infiltration(algorithm; initial_moisture, evapotranspiration, nsteps, frozen_water_content=NoIce())
     # example_soil_profile()'s defaults have bulk_density == mineral_density (zero porosity);
     # override with realistic values.
     profile = example_soil_profile(; bulk_density=1.3u"Mg/m^3", mineral_density=2.65u"Mg/m^3")
@@ -30,6 +30,7 @@ function run_infiltration(algorithm; initial_moisture, evapotranspiration, nstep
             moisture_timestep=360.0u"s",
             moisture_tolerance=1e-6u"kg/m^2/s",
             moisture_max_iterations=200,
+            frozen_water_content,
         )
         soil_moisture = out.soil_moisture
     end

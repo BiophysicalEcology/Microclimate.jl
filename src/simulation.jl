@@ -749,6 +749,7 @@ function solve_soil!(cache::MicroCache)
                     # `accumulated_latent_heat`) in place and returns the new T.
                     T0 = apply_phase_transition(snow_model, soil_freezing_model, T0, T0_before, buffers.phase_transition, ∑phase, soil_moisture, depths)
                     T0_output = T0
+                    frozen_water_content!(soil_freezing_model, buffers.phase_transition, ∑phase, soil_moisture)
                 end
 
                 # ── Snow post-ODE: mass balance, clamping, node activation ──
@@ -924,6 +925,7 @@ function solve_soil!(cache::MicroCache)
                         evaporation_potential, local_relative_humidity, soil_moisture,
                         max_surface_pool, canopy_transpiration_potential, vapour_pressure_equation,
                         canopy_leaf_area_index = canopy_leaf_area_index(canopy_model),
+                        frozen_water_content = buffers.phase_transition.frozen_water_content,
                     )
                     # Floor rather than exact molecular attribution: infiltration/runoff may
                     # have removed pool water that was standing dew without tracking which.
@@ -1214,13 +1216,13 @@ function step_soil_moisture!(mode::DynamicSoilMoisture, buffers, soil_hydraulic_
     soil_profile, depths, environment_instant, T0, pool,
     evaporation_potential, local_relative_humidity, soil_moisture,
     max_surface_pool, canopy_transpiration_potential=nothing, canopy_leaf_area_index=nothing,
-    vapour_pressure_equation=GoffGratch(),
+    vapour_pressure_equation=GoffGratch(), frozen_water_content=NoIce(),
 )
     (; moisture_tolerance, moisture_max_iterations, moisture_timestep) = mode
     niter_moist = ustrip(u"s^-1", 3600 / moisture_timestep)
     (; infil_out, soil_wetness, pool, soil_moisture) = soil_water_balance!(buffers, soil_hydraulic_model;
         soil_profile, depths, pool, evaporation_potential, local_relative_humidity, niter_moist, soil_moisture,
-        moisture_timestep, moisture_tolerance, moisture_max_iterations, max_surface_pool, T0,
+        moisture_timestep, moisture_tolerance, moisture_max_iterations, max_surface_pool, T0, frozen_water_content,
         vapour_pressure_equation, canopy_transpiration_potential, canopy_leaf_area_index, environment_instant,
     )
     mode.soil_wetness = soil_wetness

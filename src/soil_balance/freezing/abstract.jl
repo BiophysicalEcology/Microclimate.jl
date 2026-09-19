@@ -17,3 +17,11 @@ function phase_transition! end
 Allocate per-layer scratch buffers for the freezing model.
 """
 function allocate_phase_transition end
+
+"""
+    frozen_water_content!(model, buffers, accumulated_latent_heat, soil_moisture)
+
+Per-layer frozen water content (m³/m³): `accumulated_latent_heat / (mass × L_fusion)`
+times `soil_moisture`. Mutates and returns `buffers`' own scratch vector.
+"""
+function frozen_water_content! end
