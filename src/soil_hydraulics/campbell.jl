@@ -463,7 +463,7 @@ function ground_condensation_step!(buffers, boundary_layer_model;
         relative_humidity = environment_instant.reference_humidity
         wind_speed = environment_instant.reference_wind_speed
         z_reference = reference_height
-        profile_out = atmospheric_surface_profile!(boundary_layer_model, buffers.soil_water_profile;
+        profile_out = atmospheric_surface_profile!(boundary_layer_model, buffers.condensation_profile;
             site, environment_instant, surface_temperature, vapour_pressure_equation,
         )
         convective_heat_flux = profile_out.convective_heat_flux
@@ -493,7 +493,7 @@ function ground_condensation_step!(buffers, boundary_layer_model;
                 surface_temperature, air_temperature=u"K"(ground_air_temperature), wind_speed=ground_wind_speed,
                 zenith_angle=environment_instant.zenith_angle,
                 roughness_height=site.roughness_height, reference_height=ground_reference_height,
-                atmospheric_pressure, obukhov_length_prev=buffers.soil_water_profile.obukhov_length_prev,
+                atmospheric_pressure, obukhov_length_prev=buffers.condensation_profile.obukhov_length_prev,
             )
             convective_heat_flux = flux_out.convective_heat_flux
             heat_transfer_coefficient = max(abs(convective_heat_flux / (surface_temperature - air_temperature)), 0.5u"W/m^2/K")
