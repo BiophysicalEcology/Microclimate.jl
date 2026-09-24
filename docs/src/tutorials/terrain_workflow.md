@@ -27,7 +27,7 @@ function run_at(site)
         environment_minmax = example_monthly_weather(),
         environment_daily = example_daily_environment(),
         environment_hourly = example_hourly_environment(),
-        initial_soil_temperature = fill(u"K"(7.74u"°C"), length(depths)),
+        initial_soil_temperature = nothing,  # each representative day resets to its own mean air temperature
         initial_soil_moisture = fill(0.105, length(depths)),
     )
     solve(MicroProblem(model, inputs))
@@ -91,9 +91,11 @@ axislegend(ax)
 fig2
 ```
 
-The gully's reduced sky view raises its nighttime minimum without much changing the
-daytime maximum — less longwave loss to a cold sky, since more of the surroundings
-seen by the surface are at air temperature rather than sky temperature.
+Most of the day the gully floor is shaded and stays well below the open-ground
+temperature, but around solar noon the sun briefly aligns with the narrow north-south
+opening and direct beam pours in — a sharp, short-lived spike rather than a gradual
+warming, since the sun crosses from fully blocked to fully visible within about an
+hour at this resolution.
 
 ## Next steps
 

@@ -25,7 +25,7 @@ inputs = MicroInputs(;
     environment_minmax = example_monthly_weather(),
     environment_daily = example_daily_environment(),
     environment_hourly = example_hourly_environment(),
-    initial_soil_temperature = fill(u"K"(7.74u"°C"), length(depths)),
+    initial_soil_temperature = nothing,  # each representative day resets to its own mean air temperature
     initial_soil_moisture = fill(0.42 * 0.25, length(depths)),
 )
 problem = MicroProblem(model, inputs)
@@ -78,7 +78,7 @@ rock_inputs = MicroInputs(;
     environment_minmax = example_monthly_weather(),
     environment_daily = example_daily_environment(),
     environment_hourly = example_hourly_environment(),
-    initial_soil_temperature = fill(u"K"(7.74u"°C"), length(depths)),
+    initial_soil_temperature = nothing,
     initial_soil_moisture = fill(0.01, length(depths)),
 )
 rock_out = solve(MicroProblem(model, rock_inputs))

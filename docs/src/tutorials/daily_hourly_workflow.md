@@ -18,7 +18,7 @@ record by hand — a simple diel cycle for each variable — to stand in for obs
 data:
 
 ```@example daily_hourly
-using Microclimate, Unitful, FluidProperties
+using Microclimate, Unitful, FluidProperties, CairoMakie
 
 site = example_site()
 depths = Microclimate.DEFAULT_DEPTHS
@@ -34,6 +34,19 @@ reference_humidity = [1.0 - 0.5 * max(0.0, sin((h - 6) / 12 * π)) for h in hour
 reference_wind_speed = fill(2.0, length(hours))u"m/s"
 observed_cloud_cover = fill(0.3, length(hours))   # the real cloud cover, if it were known
 nothing # hide
+```
+
+Two back-to-back daily cycles for each variable feeding the run:
+
+```@example daily_hourly
+fig0 = Figure(size = (700, 500))
+ax0a = Axis(fig0[1, 1]; ylabel = "Air temperature (°C)")
+lines!(ax0a, ustrip.(u"°C", reference_temperature))
+ax0b = Axis(fig0[2, 1]; ylabel = "Relative humidity")
+lines!(ax0b, reference_humidity)
+ax0c = Axis(fig0[3, 1]; xlabel = "Hour (two days)", ylabel = "Wind speed (m/s)")
+lines!(ax0c, ustrip.(u"m/s", reference_wind_speed))
+fig0
 ```
 
 ## Estimating cloud cover from solar radiation
@@ -69,6 +82,19 @@ estimated_cloud_cover = clamp.(1 .- observed_radiation ./ max.(clear_sky_radiati
 nothing # hide
 ```
 
+```@example daily_hourly
+fig1 = Figure(size = (700, 350))
+ax1a = Axis(fig1[1, 1]; ylabel = "Radiation (W/m²)")
+lines!(ax1a, ustrip.(u"W/m^2", clear_sky_radiation); label = "clear-sky")
+lines!(ax1a, ustrip.(u"W/m^2", observed_radiation); label = "observed")
+axislegend(ax1a)
+ax1b = Axis(fig1[2, 1]; xlabel = "Hour (two days)", ylabel = "Cloud cover")
+lines!(ax1b, estimated_cloud_cover; label = "estimated")
+lines!(ax1b, observed_cloud_cover; label = "true")
+axislegend(ax1b)
+fig1
+```
+
 ## Driving the model from hourly data
 
 With cloud cover (real, or estimated as above) in hand, build the real
@@ -94,6 +120,21 @@ problem = MicroProblem(
 out = solve(problem)
 size(out.soil_temperature)
 ```
+
+```@example daily_hourly
+fig2 = Figure()
+ax2 = Axis(fig2[1, 1]; xlabel = "Hour (two days)", ylabel = "Temperature (°C)")
+lines!(ax2, ustrip.(u"°C", reference_temperature); label = "air (reference height)")
+lines!(ax2, ustrip.(u"°C", out.soil_temperature[:, 1]); label = "soil surface")
+lines!(ax2, ustrip.(u"°C", out.soil_temperature[:, end - 1]); label = "150 cm depth")
+axislegend(ax2)
+fig2
+```
+
+The surface node tracks the air's diel cycle closely, damped and lagged; the 150 cm
+node barely moves across just two days — consistent with [Soil thermal
+properties](../manual/soil_thermal_properties.md)'s point that deep nodes respond on a
+much longer timescale than a single day/night cycle.
 
 [`ConsecutiveDayMode`](@ref) is the right [time mode](../manual/diel_time_handling.md#Time-modes)
 for a real, continuous hourly record — each day's initial soil profile carries over

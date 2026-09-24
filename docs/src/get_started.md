@@ -66,7 +66,7 @@ by default):
 depths = model.depths
 inputs = MicroInputs(;
     site, soil_profile, environment_minmax, environment_daily, environment_hourly,
-    initial_soil_temperature = fill(u"K"(7.74u"°C"), length(depths)),
+    initial_soil_temperature = nothing,  # each representative day resets to its own mean air temperature
     initial_soil_moisture = fill(0.105, length(depths)),
 )
 problem = MicroProblem(model, inputs)
@@ -107,13 +107,18 @@ cache = init(problem)
 out1 = solve!(cache)
 inputs = MicroInputs(;
     site, soil_profile, environment_minmax, environment_daily, environment_hourly,
-    initial_soil_temperature = fill(u"K"(10.0u"°C"), length(depths)),
+    initial_soil_temperature = nothing,  # must match the type used to build `problem`/`cache`
     initial_soil_moisture = fill(0.2, length(depths)),
 )
 reinit!(cache, inputs)
 out2 = solve!(cache)
 nothing # hide
 ```
+
+`reinit!` reuses the cache's existing memory, so the new `MicroInputs` must have the same
+field types as the one `cache` was built from — switching `initial_soil_temperature`
+between `nothing` and an explicit vector between calls isn't allowed; `initial_soil_moisture`
+can vary freely here since its type didn't change.
 
 ## Next steps
 

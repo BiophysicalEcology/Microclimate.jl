@@ -30,11 +30,10 @@ last_month = (12 - 1) * 24 + 1:12 * 24
 maximum(abs.(wet_start.soil_moisture[last_month, :] .- dry_start.soil_moisture[last_month, :]))
 ```
 
-That last value is (numerically) zero: whatever `DynamicSoilMoisture` did to moisture
-in January is discarded before February's spin-up even starts. If the goal is a
-realistic wet-up/dry-down trajectory across a season, monthly mode with
-`DynamicSoilMoisture` cannot show it — soil moisture's memory is weeks to months long,
-much longer than the handful of spin-up iterations a representative day gets.
+That last value is (numerically) zero: January's moisture never survives to February's
+spin-up. Monthly mode with `DynamicSoilMoisture` can't show a realistic wet-up/dry-down
+trajectory — soil moisture's memory is weeks to months long, far longer than a
+representative day's handful of spin-up iterations.
 
 ## Burn-in iterations within a single representative day
 
@@ -55,16 +54,45 @@ end
 
 fig = Figure()
 ax = Axis(fig[1, 1]; xlabel = "Hour", ylabel = "150 cm node temperature (°C)")
-for iterations_per_day in (1, 3, 10)
+for iterations_per_day in (1, 3, 10, 30)
     lines!(ax, ustrip.(u"°C", deep_temperature_trace(iterations_per_day)); label = "$iterations_per_day iterations")
 end
 axislegend(ax)
 fig
 ```
 
-A single iteration hasn't relaxed away from the reset value; by 3 (the default) the
-deep node is close to converged, and 10 changes little further — diminishing returns,
-which is why 3 is the default.
+At 150 cm, 1 and 3 iterations are indistinguishable — the signal hasn't arrived yet. By
+30, the per-iteration change is still *growing*, not shrinking: nowhere near converged.
+`iterations_per_day = 3` (the default) isn't enough this deep, whatever the starting guess.
+
+## The starting guess matters as much as the iteration count
+
+Leaving `initial_soil_temperature` unset (`nothing`) resets each day to *its own* mean
+air temperature instead of one fixed value for all twelve — much closer for shallow/mid
+depths, where a single fixed value can be many degrees off for any given month:
+
+```@example burnin
+function temperature_trace(col, initial_soil_temperature)
+    problem = example_microclimate_problem(; initial_soil_temperature)
+    out = solve(MicroProblem(problem.model, problem.inputs; problem.days))  # default iterations_per_day = 3
+    out.soil_temperature[1:24, col]
+end
+
+fig3 = Figure(size = (700, 500))
+ax3a = Axis(fig3[1, 1]; ylabel = "Surface temperature (°C)", title = "0 cm")
+ax3b = Axis(fig3[2, 1]; xlabel = "Hour", ylabel = "150 cm temperature (°C)", title = "150 cm")
+for (init, label) in ((fill(u"K"(7.74u"°C"), n), "uniform annual mean"), (nothing, "day's own mean"))
+    lines!(ax3a, ustrip.(u"°C", temperature_trace(1, init)); label)
+    lines!(ax3b, ustrip.(u"°C", temperature_trace(n - 1, init)); label)
+end
+axislegend(ax3a)
+fig3
+```
+
+`nothing` converges faster at the surface; the annual mean wins at 150 cm, since deep
+soil tracks the annual cycle rather than any one day's mean. No uniform value suits
+every depth — that needs a profile blending day's-mean-at-surface to annual-mean-at-depth,
+which the package doesn't build automatically.
 
 ## Running daily instead, to let soil moisture actually evolve
 
@@ -115,9 +143,8 @@ lines!(ax2, daily_out.soil_moisture[1:24:end, 1])
 fig2
 ```
 
-Unlike the monthly comparison above, this trajectory actually depends on its starting
-value, and on the rainfall/evapotranspiration history the run has been through — not
-just on the current day's forcing.
+Unlike the monthly comparison above, this trajectory depends on its starting value and
+the rainfall/evapotranspiration history, not just the current day's forcing.
 
 ## Next steps
 
