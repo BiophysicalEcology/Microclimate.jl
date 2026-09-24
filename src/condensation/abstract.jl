@@ -1,3 +1,9 @@
+"""
+    AbstractCondensationModel
+
+Supertype for ground dew/frost formation models: [`GarrattSegalCondensation`](@ref),
+[`BulkTransferCondensation`](@ref), or [`NoCondensation`](@ref) to switch it off.
+"""
 abstract type AbstractCondensationModel end
 
 """

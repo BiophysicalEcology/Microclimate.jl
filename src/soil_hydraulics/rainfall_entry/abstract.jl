@@ -1,3 +1,9 @@
+"""
+    AbstractRainfallEntryMode
+
+Supertype for how rain reaches the soil column: [`PoolCapacityRainfall`](@ref),
+[`ImplicitFluxRainfall`](@ref), or [`RateLimitedFrontRainfall`](@ref).
+"""
 abstract type AbstractRainfallEntryMode end
 
 """
