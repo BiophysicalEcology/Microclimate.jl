@@ -320,7 +320,7 @@ function soil_energy_balance(model::SoilHeatTransport1D,
     wet_air_out = wet_air_properties(u"K"(air_temperature), relative_humidity, atmospheric_pressure; vapour_pressure_equation)
     atmospheric_longwave = atmospheric_radiation(p.atmospheric_radiation_model, wet_air_out.vapour_pressure, air_temperature)
     cloud_radiation = σ * cloud_emissivity * (u"K"(air_temperature) - 2.0u"K")^4
-    hillshade_radiation = σ * cloud_emissivity * (u"K"(air_temperature))^4
+    hillshade_radiation = σ * (u"K"(air_temperature))^4 # TODO this is assuming unit emissivity, but should have a vegetation emissivity term
     clear_sky_fraction = 1.0 - cloud_cover
     longwave_radiation_sky = (atmospheric_longwave * clear_sky_fraction + cloud_radiation * cloud_cover) * (1.0 - shade)
     longwave_radiation_vegetation = shade * hillshade_radiation

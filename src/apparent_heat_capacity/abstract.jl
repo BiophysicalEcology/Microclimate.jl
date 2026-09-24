@@ -1,3 +1,10 @@
+"""
+    AbstractApparentHeatCapacity
+
+Supertype for latent-heat-of-fusion smoothing near 0°C, used by the soil freezing
+correction and snow. See [`BonacinaStep`](@ref), [`TanhSmoothed`](@ref),
+[`Gaussian`](@ref), [`WestermannSigmoid`](@ref).
+"""
 abstract type AbstractApparentHeatCapacity end
 
 """

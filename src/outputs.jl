@@ -85,6 +85,28 @@ function CanopyOutput(nsteps::Int, n_canopy_layers::Int)
     )
 end
 
+"""
+    MicroResult
+
+Hourly output of `solve`/`solve!`, one row per `(day, hour)` step. Key fields:
+
+- `reference_temperature`, `reference_humidity`, `reference_wind_speed`,
+  `global_radiation`, `cloud_cover` — above-ground weather at the reference
+  height, as used to drive the run
+- `sky_temperature` — effective longwave sky temperature
+- `soil_temperature`, `soil_moisture`, `soil_water_potential`, `soil_humidity`,
+  `soil_thermal_conductivity`, `soil_heat_capacity`, `soil_bulk_density` —
+  per-depth soil state, matrices of `(nsteps, length(depths))`
+- `ground_surface_water`, `runoff`, `ground_dew`, `ground_frost` — surface
+  water balance
+- `snow_depth`, `snow_density`, `snow_temperature`, `snow_fall` — snow state
+  (`snow_temperature` is `(nsteps, 0)` when `snow_model = NoSnow()`)
+- `profile::AtmosphericProfile` — air temperature/wind/humidity at each of
+  `MicroModel.heights`
+- `canopy::CanopyOutput` — per-layer canopy diagnostics (zero-column when
+  `canopy_model = NoCanopy()`)
+- `solar_radiation` — the underlying `SolarRadiation.jl` output `NamedTuple`
+"""
 @kwdef struct MicroResult{P,AT,WS,RH,CC,GS,DF,SkT,SoT,SM,SWP,SH,STC,SPH,SBD,SW,RO,SR,Pr,SF,SD,SDN,SNT,GHF,CB,GDW,GFR,GSD,GSF}
     pressure::P
     reference_temperature::AT

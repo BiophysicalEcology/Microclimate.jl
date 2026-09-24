@@ -1,3 +1,10 @@
+"""
+    AbstractDiffuseFractionModel
+
+Supertype for clearness-index-to-diffuse-fraction models used by
+[`AngstromMaxwellShortwave`](@ref). [`ErbsDiffuseFraction`](@ref) is the only
+implementation.
+"""
 abstract type AbstractDiffuseFractionModel end
 
 """

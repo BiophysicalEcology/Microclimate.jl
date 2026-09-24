@@ -1,3 +1,8 @@
+"""
+    AbstractSnowModel
+
+Supertype for the snow scheme: [`NoSnow`](@ref) (off) or [`SnowModel`](@ref).
+"""
 abstract type AbstractSnowModel end
 
 """

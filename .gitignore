@@ -4,6 +4,7 @@ tests/R/.Rhistory
 Manifest.toml
 /docs/build
 /docs/node_modules
+docs/package-lock.json
 docs/Manifest.toml
 .claude/settings.local.json
 .claude/settings.json
