@@ -1,3 +1,9 @@
+"""
+    AbstractTimeMode
+
+Supertype for how days are iterated: [`NonConsecutiveDayMode`](@ref) (independent
+representative days) or [`ConsecutiveDayMode`](@ref) (state carries day-to-day).
+"""
 abstract type AbstractTimeMode end
 
 """

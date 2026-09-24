@@ -194,6 +194,14 @@ end
     return T_snow, T_soil
 end
 
+"""
+    init(problem::MicroProblem) -> MicroCache
+
+Allocate a [`MicroCache`](@ref) for `problem`: every buffer the solve loop
+touches, sized for `problem.model`. Call [`solve!`](@ref) to run it, or
+[`reinit!`](@ref) first to swap in different [`MicroInputs`](@ref) without
+reallocating.
+"""
 function CommonSolve.init(mp::MicroProblem)
     (; hours, depths, heights,
        soil_properties_model, soil_hydraulic_model, snow_model,
@@ -300,6 +308,14 @@ function CommonSolve.init(mp::MicroProblem)
     return MicroCache(mp, output, state, buffers, forcing, ode_integrator, Val(num_soil_nodes))
 end
 
+"""
+    solve!(cache::MicroCache) -> MicroResult
+
+Run `cache.problem` in place, reusing `cache`'s pre-allocated buffers, and
+return the [`MicroResult`](@ref) (also `cache.output`, updated in place).
+Call [`reinit!`](@ref) first to solve different [`MicroInputs`](@ref) on the
+same cache.
+"""
 function CommonSolve.solve!(cache::MicroCache)
     mp = cache.problem
     output = cache.output
@@ -317,6 +333,13 @@ function CommonSolve.solve!(cache::MicroCache)
     return output
 end
 
+"""
+    solve(problem::MicroProblem) -> MicroResult
+
+Allocate and solve `problem` in one call (`solve!(init(problem))`). For
+repeated runs on the same model with different inputs, call [`init`](@ref)
+once and reuse the cache with [`reinit!`](@ref)/[`solve!`](@ref) instead.
+"""
 function CommonSolve.solve(mp::MicroProblem)
     return solve!(init(mp))
 end

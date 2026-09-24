@@ -1,3 +1,9 @@
+"""
+    AbstractRainfallSchedule
+
+Supertype for how rainfall input is timed within a day: [`DailyRainfall`](@ref) (all
+at once) or [`HourlyRainfall`](@ref) (per-hour data).
+"""
 abstract type AbstractRainfallSchedule end
 
 """
