@@ -62,17 +62,32 @@ Solver/iteration/data-delivery strategy. Lives on `MicroModel.config`.
 Physical-process models live directly on `MicroModel`; this struct is
 strictly the "how we iterate and how data is delivered" side of the model.
 
-- `convergence`: `FixedSoilTemperatureIterations(3)` or `SoilTemperatureConvergenceTolerance(; tolerance, max_iterations_per_day)`
+- `convergence`: `FixedIterationConvergence(3)` or `IterationToleranceConvergence(; tolerance, max_iterations_per_day)`
 - `rainfall_schedule`: `DailyRainfall()` (default) or `HourlyRainfall()`
 - `soil_moisture_strategy`: `PrescribedSoilMoisture()` or `DynamicSoilMoisture(; ...)`
 - `max_surface_pool`: numerical clamp on the surface-pool state variable
   (not a physical limit — keeps the pool integration from running away)
+- `max_pond_depth`: physical surface-ponding limit; standing water above this
+  depth is tracked as `runoff` rather than left available to infiltrate.
+  Defaults to `max_surface_pool`'s own value, so `runoff` stays `0` unless
+  set to something physically meaningful for the site.
+- `canopy_soil_convergence`: per-hour convergence between the canopy solve
+  and the soil-heat ODE, iterating the two to a jointly self-consistent state
+  within the hour by default (`IterationToleranceConvergence(; tolerance=0.05u"K",
+  max_iterations_per_day=80)`); `FixedIterationConvergence(1)` for a single
+  pass using the previous hour's soil temperature instead.
+- `canopy_soil_relaxation`: under-relaxation on each `canopy_soil_convergence`
+  pass's `ground_temperature` update (`x_new = relaxation*x_solved +
+  (1-relaxation)*x_prev`), `1.0` (no relaxation) by default.
 """
-@kwdef struct MicroConfig{CV,RFS,SMM,MSP}
-    convergence::CV = FixedSoilTemperatureIterations(3)
+@kwdef struct MicroConfig{CV,RFS,SMM,MSP,MPD,CSC,CSR}
+    convergence::CV = FixedIterationConvergence(3)
     rainfall_schedule::RFS = DailyRainfall()
     soil_moisture_strategy::SMM = PrescribedSoilMoisture()
     max_surface_pool::MSP = 1.0e4u"kg/m^2"
+    max_pond_depth::MPD = 1.0e4u"kg/m^2"
+    canopy_soil_convergence::CSC = IterationToleranceConvergence(; tolerance=0.05u"K", max_iterations_per_day=80)
+    canopy_soil_relaxation::CSR = 1.0
 end
 
 """
@@ -83,6 +98,7 @@ end
                  vapour_pressure_equation=GoffGratch(),
                  boundary_layer_model=MoninObukhov(),
                  evaporation_model=BulkTransferEvaporation(),
+                 condensation_model=GarrattSegalCondensation(),
                  soil_energy_model=SoilHeatTransport1D(),
                  config=MicroConfig())
 
@@ -98,13 +114,19 @@ Constant-across-runs scientific description of the simulation:
     - `vapour_pressure_equation` — cross-cutting (`GoffGratch()` / `Teten()` / `Huang()`)
     - `boundary_layer_model` — cross-cutting (`MoninObukhov()`)
     - `evaporation_model` — surface latent flux
+    - `condensation_model::AbstractCondensationModel` — ground dew/frost
+      formation (`GarrattSegalCondensation()` default, `BulkTransferCondensation()`,
+      or `NoCondensation()` to switch it off)
     - `soil_energy_model::SoilHeatTransportModel` — soil column energy ODE
       (carries the phase-transition `freezing_model` and ODE solver settings)
+    - `canopy_model::AbstractCanopyModel` — `NoCanopy()` (default, today's
+      scalar-`shade` vegetation handling, unchanged) or `MultilayerCanopy(...)`
+      (layer-resolved two-stream radiative transfer through the canopy)
 - iteration/data-delivery strategy in `config::MicroConfig`
 
 Combine with a `MicroInputs` via `MicroProblem(model, inputs; days)` to run.
 """
-@kwdef struct MicroModel{H,Dep,Ht,SPM,SHM,RAD,SNM,VPE,BLM,EVM,SEM,C}
+@kwdef struct MicroModel{H,Dep,Ht,SPM,SHM,RAD,SNM,VPE,BLM,EVM,CDM,SEM,CAN,C}
     hours::H = DEFAULT_HOURS # hour of day for solar_radiation
     depths::Dep = DEFAULT_DEPTHS # soil nodes - keep spacing close near the surface
     heights::Ht = [0.01, 2]u"m" # air nodes for temperature, wind speed and humidity profile, last height is reference height for weather data
@@ -115,7 +137,9 @@ Combine with a `MicroInputs` via `MicroProblem(model, inputs; days)` to run.
     vapour_pressure_equation::VPE = GoffGratch()
     boundary_layer_model::BLM = MoninObukhov()
     evaporation_model::EVM = BulkTransferEvaporation()
+    condensation_model::CDM = GarrattSegalCondensation()
     soil_energy_model::SEM = SoilHeatTransport1D()
+    canopy_model::CAN = NoCanopy()
     config::C = MicroConfig()
 end
 
@@ -192,6 +216,7 @@ function example_microclimate_problem(;
     soil_properties_model = example_soil_properties_model(),
     soil_hydraulic_model = example_soil_hydraulic_model(),
     snow_model = NoSnow(),
+    canopy_model = NoCanopy(),
     environment_minmax = example_monthly_weather(),
     environment_daily = example_daily_environment(days),
     environment_hourly = example_hourly_environment(days, hours; elevation=site.elevation),
@@ -199,8 +224,8 @@ function example_microclimate_problem(;
     initial_soil_temperature = fill(u"K"(7.741667u"°C"), length(depths)),
     initial_soil_moisture = fill(0.42 * 0.25, length(depths)),
 )
-    model = MicroModel(; 
-        hours, depths, heights, soil_properties_model, soil_hydraulic_model, snow_model, config
+    model = MicroModel(;
+        hours, depths, heights, soil_properties_model, soil_hydraulic_model, snow_model, canopy_model, config
     )
     inputs = MicroInputs(;
         site, soil_profile, environment_minmax, environment_daily, environment_hourly,
@@ -230,10 +255,10 @@ end
 Pre-allocated workspace. Every buffer the hot path touches lands here once
 in `init`. Lives on `MicroCache.buffers`.
 """
-struct MicroBuffers{SO,SOB,P,PB,SEB,SP,PT,SWB,SS,IB}
+struct MicroBuffers{SO,SOB,P,PB,SEB,SP,PT,SWB,SS,IB,CB}
     solar_out::SO                  # SolarRadiation output (NamedTuple of arrays)
     solar::SOB                     # SolarRadiation internal buffers (NamedTuple)
-    soil_water_profile::P          # soil moisture profile scratch used by the moisture solver
+    condensation_profile::P        # atmospheric profile scratch used by ground condensation calculation
     air_profile::PB                # atmospheric profile scratch used by solve_air!
     soil_energy_balance::SEB
     soil_properties::SP
@@ -241,6 +266,7 @@ struct MicroBuffers{SO,SOB,P,PB,SEB,SP,PT,SWB,SS,IB}
     soil_water_balance::SWB
     snow::SS                       # snow buffers (NamedTuple for SnowModel; nothing for NoSnow)
     interpolation::IB              # unused; diel `evaluate!` needs no scratch
+    canopy::CB                     # canopy buffers (nested NamedTuple for MultilayerCanopy; nothing for NoCanopy)
 end
 
 """

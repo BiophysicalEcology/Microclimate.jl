@@ -10,6 +10,8 @@ using OrdinaryDiffEqAdamsBashforthMoulton: AB3, AB4, AB5, ABM32, ABM43, ABM54
 using Unitful, UnitfulMoles
 using ModelParameters, DelimitedFiles
 using SpecialFunctions, StaticArrays
+using LinearAlgebra: Tridiagonal
+using LinearSolve: LinearProblem
 
 using FluidProperties: atmospheric_pressure, wet_air_properties, dry_air_properties, vapour_pressure
 using FluidProperties: enthalpy_of_vaporisation, molar_enthalpy_of_vaporisation, water_properties
@@ -18,6 +20,12 @@ using FluidProperties: GoffGratch, Teten, Huang
 using Unitful: °, rad, °C
 using Interpolations: AbstractInterpolation
 using SolarRadiation
+
+# leaf convection/evaporation physics (src/canopy/energy_balance.jl); convection/
+# evaporation called as HeatExchange.convection/.evaporation to avoid name clashes
+import HeatExchange
+using HeatExchange: LeafEvaporationParameters, AtmosphericConditions, ScaledDimension, zbrent, Air
+using BiophysicalGeometry: Ellipsoid, Body, Naked
 
 
 export MicroProblem, MicroModel, MicroInputs, MicroCache, MicroConfig
@@ -31,8 +39,25 @@ export AB3, AB4, AB5, ABM32, ABM43, ABM54
 # Snow model
 export AbstractSnowModel, NoSnow, SnowModel, SnowState
 
+# Canopy model
+export AbstractCanopyModel, NoCanopy, MultilayerCanopy, plant_area_index_from_density
+export example_multilayer_canopy
+export AbstractCanopyShortwaveModel, TwoStreamRadiation
+export AbstractCanopyLongwaveModel, LayeredLongwaveExchange, AllPairsLongwaveExchange, LayeredRadiosityExchange
+export AbstractCanopyWindModel, MixingLengthCanopyWindAttenuation, ExponentialCanopyWindAttenuation
+export AbstractCanopyAirProfileModel, KTheoryAirProfile, RaupachLTheoryAirProfile
+export AbstractCanopyInterceptionModel, NoInterception, LayeredRainInterception, VerticalRainInterception
+export LeafParameters
+export AbstractStomatalConductanceModel, PrescribedStomatalConductance,
+    MoistureResponsiveStomatalConductance
+export AbstractLeafTemperatureSolver, LinearizedLeafTemperature, RootFindLeafTemperature
+export AbstractLeafConvectionModel, ElaborateLeafConvection, SimpleLeafConvection
+export leaf_body
+export LeafEvaporationParameters
+export AbstractCanopyConvergenceModel, PicardCanopyConvergence
+
 # Apparent heat capacity (latent-heat-of-fusion treatment in snow)
-export AbstractApparentHeatCapacity, BonacinaStep, TanhSmoothed, Gaussian, WestermannSigmoid, apparent_heat_capacity
+export AbstractApparentHeatCapacity, BonacinaStep, TanhSmoothed, Gaussian, WestermannSigmoid
 
 # Soil thermal model
 export AbstractSoilProperties, CampbelldeVriesSoilProperties
@@ -41,12 +66,13 @@ export AbstractSoilProperties, CampbelldeVriesSoilProperties
 export AbstractSoilHydraulicsModel, CampbellSoilHydraulics, CampbellHydraulicProfile
 export example_campbell_hydraulic_profile
 export AbstractInfiltrationAlgorithm, MatricPotentialAlgorithm, MatricFluxPotentialAlgorithm
+export AbstractRainfallEntryMode, PoolCapacityRainfall, ImplicitFluxRainfall, RateLimitedFrontRainfall
 
 # Soil moisture strategy
 export AbstractSoilMoistureStrategy, PrescribedSoilMoisture, DynamicSoilMoisture
 
 # Convergence strategies
-export AbstractSoilTemperatureConvergence, FixedSoilTemperatureIterations, SoilTemperatureConvergenceTolerance
+export AbstractSoilTemperatureConvergence, FixedIterationConvergence, IterationToleranceConvergence
 
 # Time modes
 export AbstractTimeMode, NonConsecutiveDayMode, ConsecutiveDayMode
@@ -55,10 +81,10 @@ export AbstractTimeMode, NonConsecutiveDayMode, ConsecutiveDayMode
 export AbstractDiffuseFractionModel, ErbsDiffuseFraction
 
 # Atmospheric radiation models (clear-sky longwave building block)
-export AbstractAtmosphericRadiationModel, SwinbankAtmosphericRadiation, CampbellNormanAtmosphericRadiation, atmospheric_radiation
+export AbstractAtmosphericRadiationModel, SwinbankAtmosphericRadiation, CampbellNormanAtmosphericRadiation
 
 # Sunshine fraction models (Ångström building block)
-export AbstractSunshineFractionModel, Angstrom, sunshine_fraction
+export AbstractSunshineFractionModel, Angstrom
 
 # Longwave budget algorithms
 export AbstractLongwaveModel, ViewFactorLongwave
@@ -67,33 +93,29 @@ export AbstractLongwaveModel, ViewFactorLongwave
 export AbstractShortwaveModel, AngstromMaxwellShortwave
 
 # Surface evaporation models
-export AbstractEvaporationModel, BulkTransferEvaporation, surface_convection_evaporation
+export AbstractEvaporationModel, BulkTransferEvaporation
+
+# Dew/frost condensation models
+export AbstractCondensationModel, NoCondensation, BulkTransferCondensation, GarrattSegalCondensation, MonteithLeafCondensation
 
 # Soil energy balance models
 export SoilHeatTransportModel, SoilHeatTransport1D
 
 # Soil freezing models
-export SoilPhaseTransitionModel, PhaseTransitionLatentHeat, allocate_phase_transition
+export SoilPhaseTransitionModel, PhaseTransitionLatentHeat
 
 # Rainfall schedule
-export AbstractRainfallSchedule, DailyRainfall, HourlyRainfall, is_hourly
+export AbstractRainfallSchedule, DailyRainfall, HourlyRainfall
 
 export AbstractEnvironment, MonthlyMinMaxEnvironment, DailyMinMaxEnvironment, DailyTimeseries, HourlyTimeseries
 export TimeOfDay, Sunrise, Sunset, Midday, Midnight, ClockTime
 export Shape, Sine, Decay, Linear, DielCurve, DielForcing, ForcingSpec, Derived, RelativeHumidityFromVapourPressureAndTemperature, VapourPressureFromRelativeHumidityAndTemperature
-export MINMAX_FORCING_MODEL, bind_forcings, minmax_forcings
+export minmax_forcings
 export Site, AbstractSite
 export AbstractBoundaryLayerModel, MoninObukhov, atmospheric_surface_profile, atmospheric_surface_profile!
+export AbstractThermalRoughnessModel, SublayerStantonRoughness, ScalarRoughnessRatio
 export Forcing, AtmosphericProfile
 
-
-export shortwave_radiation!, longwave_radiation, precompute_longwave_sky
-
-export calc_convection
-
-export soil_properties, soil_properties!, allocate_soil_properties
-
-export soil_energy_balance, evaporation, soil_water_balance!, phase_transition
 
 export example_site, example_monthly_weather,
     example_daily_environment, example_hourly_environment,
@@ -118,10 +140,20 @@ include("soil_moisture/dynamic.jl")
 include("evaporation/abstract.jl")
 include("evaporation/bulk_transfer.jl")
 
+# Ground dew/frost condensation
+include("condensation/abstract.jl")
+include("condensation/no_condensation.jl")
+include("condensation/bulk_transfer.jl")
+include("condensation/garratt_segal.jl")
+
 # Soil hydraulics
 include("soil_hydraulics/infiltration_algorithm/abstract.jl")
 include("soil_hydraulics/infiltration_algorithm/matric_potential.jl")
 include("soil_hydraulics/infiltration_algorithm/matric_flux_potential.jl")
+include("soil_hydraulics/rainfall_entry/abstract.jl")
+include("soil_hydraulics/rainfall_entry/pool_capacity.jl")
+include("soil_hydraulics/rainfall_entry/implicit_flux.jl")
+include("soil_hydraulics/rainfall_entry/rate_limited_front.jl")
 include("soil_hydraulics/abstract.jl")
 include("soil_hydraulics/campbell.jl")
 
@@ -195,6 +227,50 @@ include("apparent_heat_capacity/westermann.jl")
 include("snow/abstract.jl")
 include("snow/no_snow.jl")
 include("snow/snow_model.jl")
+
+# Canopy models — one subfolder per sub-model family (mirrors radiation/),
+# each with its own abstract.jl + one file per variant; multilayer.jl composes them.
+include("canopy/abstract.jl")
+include("canopy/no_canopy.jl")
+
+include("canopy/shortwave/abstract.jl")
+include("canopy/shortwave/two_stream.jl")
+
+include("canopy/longwave/abstract.jl")
+include("canopy/longwave/layered.jl")
+include("canopy/longwave/all_pairs.jl")
+include("canopy/longwave/radiosity.jl")
+
+include("canopy/wind/abstract.jl")
+include("canopy/wind/mixinglength.jl")
+include("canopy/wind/exponential.jl")
+
+include("canopy/air_profile/abstract.jl")
+include("canopy/air_profile/k_theory.jl")
+include("canopy/air_profile/raupach.jl")
+
+include("canopy/interception/abstract.jl")
+include("canopy/interception/no_interception.jl")
+include("canopy/interception/layered.jl")
+include("canopy/interception/vertical.jl")
+
+include("canopy/condensation/monteith.jl")
+
+include("canopy/stomatal_conductance/abstract.jl")
+include("canopy/stomatal_conductance/prescribed.jl")
+include("canopy/stomatal_conductance/moisture_responsive.jl")
+
+include("canopy/leaf_temperature/parameters.jl")
+include("canopy/leaf_temperature/heat_balance.jl")
+include("canopy/leaf_temperature/abstract.jl")
+include("canopy/leaf_temperature/linearized.jl")
+include("canopy/leaf_temperature/root_find.jl")
+
+include("canopy/convergence/abstract.jl")
+include("canopy/convergence/picard.jl")
+
+include("canopy/multilayer.jl")
+include("canopy/energy_balance.jl")
 
 # Top-level config, parameters, problem, state, buffers, and cache types
 include("types.jl")

@@ -1,12 +1,15 @@
 """
-    FixedSoilTemperatureIterations(iterations_per_day::Int)
+    FixedIterationConvergence(iterations_per_day::Int)
 
-Run a fixed number of iterations of the soil temperature solver per simulated day.
+Run a fixed number of Picard iterations per simulated day/hour. Shared by both
+the soil temperature solver's `MicroConfig.convergence` and
+`MultilayerCanopy.convergence` (its own leaf-temperature Picard loop) -- the
+name is generic on purpose, not soil-specific.
 """
-struct FixedSoilTemperatureIterations <: AbstractSoilTemperatureConvergence
+struct FixedIterationConvergence <: AbstractSoilTemperatureConvergence
     iterations_per_day::Int
 end
 
-max_iterations(c::FixedSoilTemperatureIterations) = c.iterations_per_day
-may_iterate(c::FixedSoilTemperatureIterations) = c.iterations_per_day > 1
-is_converged(::FixedSoilTemperatureIterations, iter, niter, T0, T0_prev) = iter >= niter
+max_iterations(c::FixedIterationConvergence) = c.iterations_per_day
+may_iterate(c::FixedIterationConvergence) = c.iterations_per_day > 1
+is_converged(::FixedIterationConvergence, iter, niter, T0, T0_prev) = iter >= niter
