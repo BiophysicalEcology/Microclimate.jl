@@ -1,3 +1,9 @@
+"""
+    AbstractCanopyModel
+
+Supertype for vegetation canopy models. [`NoCanopy`](@ref) (scalar shade fraction) or
+[`MultilayerCanopy`](@ref) (layer-resolved radiative transfer).
+"""
 abstract type AbstractCanopyModel end
 
 """

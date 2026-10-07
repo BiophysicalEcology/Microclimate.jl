@@ -1,13 +1,31 @@
-# Bulk density, mineral density, mineral conductivity, mineral heat capacity,
-# and saturation moisture for the soil are properties of the soil profile, not
-# of the thermal formulation — they live on the hydraulics model / soil
-# profile and are passed into `soil_properties` as kwargs.
+"""
+    CampbelldeVriesSoilProperties(; de_vries_shape_factor, recirculation_power,
+                                     return_flow_threshold)
+
+Soil thermal conductivity/heat capacity as a function of moisture and temperature,
+following Campbell et al. (1994) and Campbell and Norman (1998). Bulk density,
+mineral density, mineral conductivity, mineral heat capacity and saturation moisture
+are properties of the soil profile, not of this thermal formulation — they live on
+[`SoilProfile`](@ref) and are passed into `soil_properties` as kwargs.
+
+- `de_vries_shape_factor` — de Vries mixing-model shape factor (0.33 for organic
+  soils, 0.1 for mineral soils)
+- `recirculation_power` — exponent for the vapour-recirculation enhancement to
+  conductivity
+- `return_flow_threshold` — soil moisture (m³/m³) below which the return-flow
+  enhancement is cut off
+"""
 @kwdef struct CampbelldeVriesSoilProperties{SF,RP,RFT} <: AbstractSoilProperties
     de_vries_shape_factor::SF
     recirculation_power::RP
     return_flow_threshold::RFT
 end
 
+"""
+    example_soil_properties_model(; kwargs...)
+
+Example [`CampbelldeVriesSoilProperties`](@ref) with mineral-soil defaults.
+"""
 function example_soil_properties_model(;
     de_vries_shape_factor = 0.1, # de Vries shape factor, 0.33 for organic soils, 0.1 for mineral
     recirculation_power = 4.0, # power for recirculation function

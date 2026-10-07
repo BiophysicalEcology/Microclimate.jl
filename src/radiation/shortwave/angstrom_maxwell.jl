@@ -30,17 +30,17 @@ function shortwave_radiation!(model::AngstromMaxwellShortwave, output, cloud::Ab
         d = doy[i]
         θ1 = 360.0 * (d - 1) / 365.0
         θ2 = 2.0 * θ1
-        ec = 1.00011 + 0.034221*cosd(θ1) + 0.00128*sind(θ1) +
+        eccentricity_correction = 1.00011 + 0.034221*cosd(θ1) + 0.00128*sind(θ1) +
                        0.000719*cosd(θ2) + 0.000077*sind(θ2)
-        eth = solar_constant * ec
+        extraterrestrial_horizontal_irradiance = solar_constant * eccentricity_correction * max(0.0, cosd(zenith[i]))
         # 2) scale by sunshine fraction (cloud-cover adjustment)
-        sf = sunshine_fraction(sunshine_fraction_model, cloud[i])
-        gcs = diffuse_clear_sky[i] + direct_clear_sky[i]
-        gr = max(sf * gcs, 0.0u"W/m^2")
-        global_radiation[i] = gr
+        sunshine_fraction_value = sunshine_fraction(sunshine_fraction_model, cloud[i])
+        clear_sky_global = diffuse_clear_sky[i] + direct_clear_sky[i]
+        hourly_global_radiation = max(sunshine_fraction_value * clear_sky_global, 0.0u"W/m^2")
+        global_radiation[i] = hourly_global_radiation
         # 3) Split global into diffuse/direct via clearness index
-        ci = clamp(gr / max(eth, ϵ), 0.0, 1.2)
-        diffuse_fraction[i] = clamp(calc_diffuse_fraction(diffuse_fraction_model, ci), 0.0, 1.0)
+        clearness_index = clamp(hourly_global_radiation / max(extraterrestrial_horizontal_irradiance, ϵ), 0.0, 1.2)
+        diffuse_fraction[i] = clamp(calc_diffuse_fraction(diffuse_fraction_model, clearness_index), 0.0, 1.0)
     end
     return (; global_radiation, diffuse_fraction)
 end

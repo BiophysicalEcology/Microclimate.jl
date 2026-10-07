@@ -1,3 +1,9 @@
+"""
+    AbstractSoilHydraulicsModel
+
+Supertype for soil moisture/infiltration models. [`CampbellSoilHydraulics`](@ref) is
+the only implementation.
+"""
 abstract type AbstractSoilHydraulicsModel end
 
 """
@@ -38,7 +44,7 @@ Base.getindex(::NoIce, ::Int) = 0.0
     ice_impeded_conductivity(hydraulic_conductivity, ice_content, porosity)
 
 Bloomsburg & Wang (1969) ice-blocking of conductivity, floored at
-[`ICE_CONDUCTIVITY_FLOOR_FACTOR`](@ref) (numerical regularization only).
+`ICE_CONDUCTIVITY_FLOOR_FACTOR` (numerical regularization only).
 """
 @inline function ice_impeded_conductivity(hydraulic_conductivity, ice_content, porosity)
     ice_content <= zero(ice_content) && return hydraulic_conductivity

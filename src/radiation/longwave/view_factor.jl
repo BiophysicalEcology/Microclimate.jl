@@ -42,7 +42,7 @@ function precompute_longwave_sky(atmospheric_radiation_model::AbstractAtmospheri
     supplied_longwave = get(environment_instant, :longwave_radiation, nothing)
 
     cloud_radiation = σ * cloud_emissivity * (u"K"(reference_temperature) - 2.0u"K")^4
-    hillshade_radiation = σ * cloud_emissivity * (u"K"(reference_temperature))^4
+    hillshade_radiation = σ * (u"K"(reference_temperature))^4 # TODO this is assuming unit emissivity, but should have a vegetation emissivity term
 
     if supplied_longwave !== nothing
         longwave_radiation_sky = supplied_longwave * (1.0 - shade)

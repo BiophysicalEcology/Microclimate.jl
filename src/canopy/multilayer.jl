@@ -81,6 +81,12 @@ other radiation models read albedo from their caller.
     convergence_model::CVM = PicardCanopyConvergence()
 end
 
+"""
+    example_multilayer_canopy(; kwargs...)
+
+Example [`MultilayerCanopy`](@ref), 1 m tall with a plant area index of 3. `kwargs`
+override any field.
+"""
 function example_multilayer_canopy(;
     canopy_height = 1.0u"m",
     plant_area_index = 3.0,

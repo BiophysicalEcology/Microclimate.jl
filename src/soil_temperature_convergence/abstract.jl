@@ -1,3 +1,9 @@
+"""
+    AbstractSoilTemperatureConvergence
+
+Supertype for within-day iteration/convergence strategies:
+[`FixedIterationConvergence`](@ref) or [`IterationToleranceConvergence`](@ref).
+"""
 abstract type AbstractSoilTemperatureConvergence end
 
 """

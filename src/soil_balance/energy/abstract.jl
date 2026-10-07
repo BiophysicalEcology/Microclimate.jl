@@ -1,3 +1,9 @@
+"""
+    SoilHeatTransportModel
+
+Supertype for soil column energy balance models. [`SoilHeatTransport1D`](@ref) is the
+only implementation.
+"""
 abstract type SoilHeatTransportModel end
 
 """

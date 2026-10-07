@@ -1,3 +1,9 @@
+"""
+    AbstractSunshineFractionModel
+
+Supertype for cloud-cover-to-sunshine-fraction models used by
+[`AngstromMaxwellShortwave`](@ref). [`Angstrom`](@ref) is the only implementation.
+"""
 abstract type AbstractSunshineFractionModel end
 
 """

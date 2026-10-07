@@ -1,3 +1,9 @@
+"""
+    AbstractSoilMoistureStrategy
+
+Supertype for how soil moisture is obtained: [`PrescribedSoilMoisture`](@ref) (from
+`environment_daily`) or [`DynamicSoilMoisture`](@ref) (solved from rainfall).
+"""
 abstract type AbstractSoilMoistureStrategy end
 
 """

@@ -1,3 +1,10 @@
+"""
+    AbstractAtmosphericRadiationModel
+
+Supertype for clear-sky downwelling longwave models, the building block
+[`ViewFactorLongwave`](@ref) combines with cloud/shade/hillshade terms.
+[`CampbellNormanAtmosphericRadiation`](@ref) or [`SwinbankAtmosphericRadiation`](@ref).
+"""
 abstract type AbstractAtmosphericRadiationModel end
 
 """

@@ -1,3 +1,9 @@
+"""
+    AbstractShortwaveModel
+
+Supertype for cloud-adjusted surface shortwave budget models.
+[`AngstromMaxwellShortwave`](@ref) is the only implementation.
+"""
 abstract type AbstractShortwaveModel end
 
 """

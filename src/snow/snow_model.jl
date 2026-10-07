@@ -1,5 +1,32 @@
 # ── Types ───────────────────────────────────────────────────────────────
 
+"""
+    SnowModel(; snow_temperature_threshold=1.5u"°C", snow_density=0.375u"g/cm^3",
+                snow_melt_factor=1.0, undercatch=1.0, rain_multiplier=1.0,
+                rain_melt_factor=0.0125, density_function=(0.0, 0.0, 0.0, 0.0),
+                snow_conductivity=0.0u"W/m/K", canopy_interception=0.0,
+                min_snow_depth=2.0u"cm",
+                snow_node_thresholds=DEFAULT_SNOW_NODE_THRESHOLDS .* u"cm",
+                melt_threshold=0.4u"°C", apparent_heat_capacity=BonacinaStep())
+
+A snow node scheme layered above the soil depth nodes. See [Snow](@ref) for the
+growth, density, albedo, conductivity and melt equations.
+
+- `snow_temperature_threshold` — air temperature below which rain falls as snow
+- `snow_density` — constant snow density, used unless `density_function` is set
+- `density_function` — `(a, b, c, d)`; `(0,0,0,0)` (default) keeps `snow_density`
+  constant; `c == 0` gives linear growth with age; `c > 0` gives the Sturm et al.
+  (2010) asymptotic form
+- `snow_conductivity` — fixed thermal conductivity; `0` (default) uses the
+  density-dependent polynomial instead
+- `min_snow_depth` — snow below this depth is treated as zero, for numerical
+  stability
+- `snow_node_thresholds` — fixed depths of the up-to-8 snow nodes
+- `melt_threshold` — node temperature above which conducted heat melts snow
+- `rain_melt_factor` — empirical rain-on-snow melt coefficient (Anderson 2006)
+- `undercatch` — precipitation gauge under-catch correction (Rasmussen et al. 2012)
+- `apparent_heat_capacity` — latent-heat-of-fusion smoothing near 0°C
+"""
 struct SnowModel{N,AHC<:AbstractApparentHeatCapacity} <: AbstractSnowModel
     snow_temperature_threshold::typeof(1.0u"°C")
     snow_density::typeof(1.0u"g/cm^3")
@@ -105,6 +132,13 @@ end
 
 # ── Snow node activation ─────────────────────────────────────────────────
 
+"""
+    activate_snow_nodes!(snow_model, state, scratch, snow_temperature, step)
+
+Bring snow nodes into or out of use as the pack in `scratch.snow_depth_hourly[step]`
+grows or shrinks past each of `snow_model.snow_node_thresholds`; zeroes everything
+below `min_snow_depth`. Returns the updated `SnowState`.
+"""
 function activate_snow_nodes!(snow_model::SnowModel{N}, state::SnowState, scratch, snow_temperature, step) where N
     (; node_depths, snow_depth_hourly) = scratch
     cursnow = snow_depth_hourly[step]

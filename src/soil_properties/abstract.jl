@@ -1,3 +1,9 @@
+"""
+    AbstractSoilProperties
+
+Supertype for soil thermal-property models. [`CampbelldeVriesSoilProperties`](@ref)
+is the only implementation.
+"""
 abstract type AbstractSoilProperties end
 
 """

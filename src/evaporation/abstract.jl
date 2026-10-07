@@ -1,3 +1,9 @@
+"""
+    AbstractEvaporationModel
+
+Supertype for surface evaporation models. [`BulkTransferEvaporation`](@ref) is the
+only implementation.
+"""
 abstract type AbstractEvaporationModel end
 
 """

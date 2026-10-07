@@ -1,3 +1,9 @@
+"""
+    SoilPhaseTransitionModel
+
+Supertype for soil ice/water phase-transition correction models.
+[`PhaseTransitionLatentHeat`](@ref) is the only implementation.
+"""
 abstract type SoilPhaseTransitionModel end
 
 """

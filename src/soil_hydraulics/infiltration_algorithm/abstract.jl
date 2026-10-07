@@ -1,3 +1,9 @@
+"""
+    AbstractInfiltrationAlgorithm
+
+Supertype for how [`CampbellSoilHydraulics`](@ref) solves the soil water mass
+balance: [`MatricPotentialAlgorithm`](@ref) or [`MatricFluxPotentialAlgorithm`](@ref).
+"""
 abstract type AbstractInfiltrationAlgorithm end
 
 """

@@ -206,6 +206,13 @@ MicroProblem(model::MicroModel, inputs::MicroInputs;
     days=DEFAULT_DAYS, time_mode=NonConsecutiveDayMode(),
 ) = MicroProblem(days, time_mode, model, inputs)
 
+"""
+    example_microclimate_problem(; kwargs...)
+
+Build a complete, ready-to-solve [`MicroProblem`](@ref) for Madison, Wisconsin, USA,
+from `example_*` defaults throughout. Any `MicroModel`/`MicroInputs`/`MicroProblem`
+field can be overridden via `kwargs`.
+"""
 function example_microclimate_problem(;
     days = DEFAULT_DAYS,
     hours = DEFAULT_HOURS,
