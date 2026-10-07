@@ -649,6 +649,7 @@ function solve_soil!(cache::MicroCache)
                     # `accumulated_latent_heat`) in place and returns the new T.
                     T0 = apply_phase_transition(snow_model, soil_freezing_model, T0, T0_before, buffers.phase_transition, ∑phase, soil_moisture, depths)
                     T0_output = T0
+                    frozen_water_content!(soil_freezing_model, buffers.phase_transition, ∑phase, soil_moisture)
                 end
 
                 # ── Snow post-ODE: mass balance, clamping, node activation ──
@@ -777,6 +778,7 @@ function solve_soil!(cache::MicroCache)
                     (; pool, soil_moisture, infil_out) = step_soil_moisture!(moisture_mode, buffers, soil_hydraulic_model;
                         soil_profile, depths, site, boundary_layer_model, environment_instant, T0, pool, soil_moisture,
                         max_surface_pool, evaporation_model, vapour_pressure_equation, snow_present,
+                        frozen_water_content = buffers.phase_transition.frozen_water_content,
                     )
                 end
                 # Write hour i's result to step + 1 (NMR convention: state at minute i*60
@@ -949,6 +951,7 @@ end
 function step_soil_moisture!(mode::DynamicSoilMoisture, buffers, soil_hydraulic_model;
     soil_profile, depths, site, boundary_layer_model, environment_instant, T0, pool, soil_moisture,
     max_surface_pool, evaporation_model, vapour_pressure_equation, snow_present=false,
+    frozen_water_content=NoIce(),
 )
     (; moisture_tolerance, moisture_max_iterations, moisture_timestep) = mode
     niter_moist = ustrip(u"s^-1", 3600 / moisture_timestep)
@@ -956,7 +959,7 @@ function step_soil_moisture!(mode::DynamicSoilMoisture, buffers, soil_hydraulic_
         soil_profile, depths, site, boundary_layer_model, environment_instant, T0, niter_moist, pool,
         soil_wetness=mode.soil_wetness, soil_moisture,
         moisture_timestep, moisture_tolerance, moisture_max_iterations, max_surface_pool,
-        evaporation_model, vapour_pressure_equation, snow_present,
+        evaporation_model, vapour_pressure_equation, snow_present, frozen_water_content,
     )
     mode.soil_wetness = soil_wetness
     return (; pool, soil_moisture, infil_out)

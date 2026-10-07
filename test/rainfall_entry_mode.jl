@@ -2,7 +2,7 @@ using Microclimate
 using Unitful
 using Test
 using Microclimate: allocate_soil_water_balance, infiltration_step!,
-    rainfall_flux_for_step, apply_rainfall_entry!, post_infiltration_pool_update
+    rainfall_flux_for_step, apply_rainfall_entry!, post_infiltration_pool_update, NoIce
 
 # rainfall_entry_mode's interface functions are internal, same rationale as
 # infiltration_algorithm_comparison.jl's own white-box testing.
@@ -29,7 +29,7 @@ function run_rainfall_hour(mode; soil_moisture, pool, dt=360.0u"s", niter_moist=
     half_thickness = depths[1] / 2
 
     rainfall_flux_rate = rainfall_flux_for_step(mode, pool, dt, niter_moist)
-    pool = apply_rainfall_entry!(mode, soil_moisture, pool, sat, half_thickness, rainfall_flux_rate, dt; depths, soil_profile=profile)
+    pool = apply_rainfall_entry!(mode, soil_moisture, pool, sat, half_thickness, rainfall_flux_rate, dt; depths, soil_profile=profile, frozen_water_content=NoIce())
     local out
     for _ in 1:niter_moist
         out = infiltration_step!(buffers, model;
@@ -37,12 +37,12 @@ function run_rainfall_hour(mode; soil_moisture, pool, dt=360.0u"s", niter_moist=
             local_relative_humidity=0.5, leaf_area_index=1.0u"Mg/m^3",
             soil_moisture, evapotranspiration=0.0u"kg/m^2/s", input_soil_temperature,
             moisture_timestep=dt, moisture_tolerance=1e-6u"kg/m^2/s", moisture_max_iterations=200,
-            rainfall_flux_rate,
+            rainfall_flux_rate, frozen_water_content=NoIce(),
         )
         soil_moisture = out.soil_moisture
         water_flux = max(0.0u"kg/m^2", out.surface_water_flux)
         pool = post_infiltration_pool_update(mode, pool, rainfall_flux_rate, dt, water_flux, 0.0u"kg/m^2", 1.0e4u"kg/m^2")
-        pool = apply_rainfall_entry!(mode, soil_moisture, pool, sat, half_thickness, rainfall_flux_rate, dt; depths, soil_profile=profile)
+        pool = apply_rainfall_entry!(mode, soil_moisture, pool, sat, half_thickness, rainfall_flux_rate, dt; depths, soil_profile=profile, frozen_water_content=NoIce())
     end
     storage = sum(i -> soil_moisture[i] * _layer_thickness(depths, half_thickness, i, num_layers), 1:num_layers) * 1000.0u"kg/m^3"
     return (; soil_moisture, pool, storage)
@@ -74,7 +74,7 @@ end
         for mode in (PoolCapacityRainfall(), RateLimitedFrontRainfall())
             soil_moisture = fill(0.10, num_layers)
             storage_before = sum(i -> soil_moisture[i] * _layer_thickness(depths, half_thickness, i, num_layers), 1:num_layers) * 1000.0u"kg/m^3"
-            remaining_pool = apply_rainfall_entry!(mode, soil_moisture, rain, sat, half_thickness, 0.0u"kg/m^2/s", dt; depths, soil_profile=profile)
+            remaining_pool = apply_rainfall_entry!(mode, soil_moisture, rain, sat, half_thickness, 0.0u"kg/m^2/s", dt; depths, soil_profile=profile, frozen_water_content=NoIce())
             storage_after = sum(i -> soil_moisture[i] * _layer_thickness(depths, half_thickness, i, num_layers), 1:num_layers) * 1000.0u"kg/m^3"
             @test isapprox(ustrip(u"kg/m^2", storage_after - storage_before + remaining_pool - rain), 0.0; atol=1e-6)
         end
