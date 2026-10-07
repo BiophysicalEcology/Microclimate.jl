@@ -2,6 +2,7 @@ tests/soil_phase_moisture.jl
 test/R/.Rhistory
 tests/R/.Rhistory
 Manifest.toml
+*.jl.*.cov
 /docs/build
 /docs/node_modules
 docs/Manifest.toml
