@@ -14,6 +14,4 @@ abstract type AbstractEnvironment end
 Whether successive day-indices are adjacent calendar days to trigger
 appropriate `DielCurve` shape algorithm.
 """
-function consecutive_days(::AbstractEnvironment)
-    return false
-end
+consecutive_days(::AbstractEnvironment) = false
