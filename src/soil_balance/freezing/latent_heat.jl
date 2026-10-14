@@ -15,7 +15,22 @@ function allocate_phase_transition(::PhaseTransitionLatentHeat, num_nodes::Int)
     mean_temperature_past = zeros(typeof(0.0u"K"), num_nodes)
     # Mutable scratch for `phase_transition!`; reused across hourly calls.
     temperature_scratch = MVector{num_nodes, typeof(0.0u"K")}(undef)
-    return (; layer_mass, phase_change_heat, mean_temperature, mean_temperature_past, temperature_scratch)
+    frozen_water_content = zeros(Float64, num_nodes)
+    return (; layer_mass, phase_change_heat, mean_temperature, mean_temperature_past, temperature_scratch, frozen_water_content)
+end
+
+# Fixed for the whole hydrology sub-step loop -- not re-derived from
+# water_content_new mid-solve, which would freeze/thaw water with no
+# matching latent-heat update.
+function frozen_water_content!(::PhaseTransitionLatentHeat, buffers::NamedTuple, accumulated_latent_heat::AbstractVector, soil_moisture::AbstractVector)
+    (; layer_mass, frozen_water_content) = buffers
+    @inbounds for i in eachindex(frozen_water_content)
+        max_latent_heat = LATENT_HEAT_FUSION * layer_mass[i]
+        fraction = max_latent_heat > zero(max_latent_heat) ?
+            clamp(ustrip(accumulated_latent_heat[i] / max_latent_heat), 0.0, 1.0) : 0.0
+        frozen_water_content[i] = fraction * soil_moisture[i]
+    end
+    return frozen_water_content
 end
 
 function phase_transition!(::PhaseTransitionLatentHeat,

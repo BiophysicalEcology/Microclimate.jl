@@ -41,16 +41,25 @@ struct, all passed in alongside this model wherever needed.
 default — better for dry soil) or [`MatricFluxPotentialAlgorithm`](@ref)
 (Program 8.2 — fewer iterations, more stable for wet soil).
 
+`rainfall_entry_mode` selects how rain reaches the soil column:
+[`PoolCapacityRainfall`](@ref) (the default — a surface `pool` fills the top
+node up to its own storage capacity before `infiltration_step!` runs),
+[`ImplicitFluxRainfall`](@ref) (rain enters as a flux boundary condition
+inside `infiltration_step!`'s own implicit solve, alongside evaporation), or
+[`RateLimitedFrontRainfall`](@ref) (a stateless, rate-limited multi-layer
+wetting-front march).
+
 # References
 Campbell, G. S. (1985). Soil Physics with BASIC. Elsevier.
 """
-@kwdef struct CampbellSoilHydraulics{RRes,SCP,LRes,SSP,RRad,Alg} <: AbstractSoilHydraulicsModel
+@kwdef struct CampbellSoilHydraulics{RRes,SCP,LRes,SSP,RRad,Alg,REM} <: AbstractSoilHydraulicsModel
     root_resistance::RRes
     stomatal_closure_potential::SCP
     leaf_resistance::LRes
     stomatal_stability_parameter::SSP
     root_radius::RRad
     infiltration_algorithm::Alg = MatricPotentialAlgorithm()
+    rainfall_entry_mode::REM = PoolCapacityRainfall()
 end
 
 # TODO move real defaults to the struct keywords
@@ -73,10 +82,12 @@ function example_soil_hydraulic_model(;
     stomatal_stability_parameter = 10.0,      # stability parameter, -, Campbell (1985) (MoistureResponsiveStomatalConductance reads this directly)
     root_radius = 0.001u"m",                  # root radius, m
     infiltration_algorithm = MatricPotentialAlgorithm(),
+    rainfall_entry_mode = PoolCapacityRainfall(),
 )
     CampbellSoilHydraulics(;
         root_resistance, stomatal_closure_potential, leaf_resistance,
         stomatal_stability_parameter, root_radius, infiltration_algorithm,
+        rainfall_entry_mode,
     )
 end
 
@@ -100,6 +111,7 @@ function allocate_soil_water_balance(::CampbellSoilHydraulics, num_layers)
         root_zone_parameter = zeros(typeof(0.0u"m"), num_layers+1),
         vapor_flux = zeros(typeof(0.0u"kg/m^2/s"), num_layers+1),
         vapor_flux_derivative = zeros(typeof(0.0u"kg*s/m^4"), num_layers+1),
+        rainfall_flux = zeros(typeof(0.0u"kg/m^2/s"), num_layers+1),
         sub_diagonal = zeros(typeof(0.0u"kg*s/m^4"), num_layers+1),
         diagonal = zeros(typeof(0.0u"kg*s/m^4"), num_layers+1),
         super_diagonal = zeros(typeof(0.0u"kg*s/m^4"), num_layers+1),
@@ -140,6 +152,8 @@ function infiltration_step!(buffers, soil_hydraulic_model::CampbellSoilHydraulic
     moisture_max_iterations,
     vapour_pressure_equation=GoffGratch(),
     canopy_transpiration_potential=nothing,
+    rainfall_flux_rate=0.0u"kg/m^2/s",  # ImplicitFluxRainfall only; every other mode leaves this 0
+    frozen_water_content,
 )
     # Local variable names
     θ_soil = soil_moisture
@@ -164,7 +178,7 @@ function infiltration_step!(buffers, soil_hydraulic_model::CampbellSoilHydraulic
        root_water_potential, air_entry_potential,
        campbell_b_inverse, campbell_exponent, campbell_exponent_complement,
        saturation_water_content, root_resistance, root_zone_parameter,
-       vapor_flux, vapor_flux_derivative,
+       vapor_flux, vapor_flux_derivative, rainfall_flux,
        mass_balance_residual,
        soil_resistance, root_water_uptake,
        campbell_flux_exponent, air_entry_flux_potential) = buffers
@@ -219,6 +233,9 @@ function infiltration_step!(buffers, soil_hydraulic_model::CampbellSoilHydraulic
     end
 
     initial_state_from_water_content!(algorithm, buffers, campbell_b, saturated_conductivity, num_layers)
+    for i in 2:num_layers
+        hydraulic_conductivity[i] = ice_impeded_conductivity(hydraulic_conductivity[i], frozen_water_content[i-1], saturation_water_content[i])
+    end
     state_to_water_potential!(algorithm, buffers, campbell_b, num_layers)
 
     for i in 2:num_layers
@@ -235,11 +252,16 @@ function infiltration_step!(buffers, soil_hydraulic_model::CampbellSoilHydraulic
     water_content_new[num_layers+1] = saturation_water_content[num_layers+1] # water content
     depth[1] = -1e10u"m" # depth at node 1, m
     depth[num_layers+1] = 1e20u"m" # depth at deepest node, m
+    # Ghost node -- not a real soil layer (input soil_moisture[num_layers] is
+    # discarded, always overwritten to saturation), so left unimpeded by ice.
     hydraulic_conductivity[num_layers+1] = saturated_conductivity[num_layers] # lower boundary conductivity
 
-    # Initialize root water uptake variables
+    # Ice-blocked layers treated as rootless -- root_resistance otherwise
+    # dwarfs soil_resistance, so the conductivity floor alone can't do this.
     for i in 2:num_layers
-        if root_density[i] > 0.0u"m/m^3"
+        has_roots = root_density[i] > 0.0u"m/m^3"
+        ice_blocked = ice_free_capacity(saturation_water_content[i], frozen_water_content[i-1]) <= ICE_IMPEDANCE_MIN_POROSITY
+        if has_roots && !ice_blocked
             root_resistance[i] = root_resistance_param / (root_density[i] * (depth[i+1] - depth[i-1]) / 2.0)
             root_zone_parameter[i] = campbell_exponent_complement[i] * log(π * root_radius^2 * root_density[i]) / (4.0 * π * root_density[i] * (depth[i+1] - depth[i-1]) / 2.0)
         else
@@ -250,6 +272,13 @@ function infiltration_step!(buffers, soil_hydraulic_model::CampbellSoilHydraulic
 
     water_potential[1] = water_potential[2]
     hydraulic_conductivity[1] = 0.0u"kg*s/m^3"
+
+    # Sign matches vapor_flux's positive-=-outflow convention: negative here
+    # is inflow at the surface. Fixed for the whole Newton solve below.
+    rainfall_flux[1] = -rainfall_flux_rate
+    for i in 2:num_layers+1
+        rainfall_flux[i] = 0.0u"kg/m^2/s"
+    end
 
     # Beer's-law soil/plant PET split (EQ12.30) -- skip under a resolved
     # canopy, where evapotranspiration is already the shaded ground-level PET.
@@ -299,6 +328,7 @@ function infiltration_step!(buffers, soil_hydraulic_model::CampbellSoilHydraulic
         counter += 1
         for i in 2:num_layers
             algorithm_hydraulic_conductivity!(algorithm, buffers, i, saturated_conductivity)
+            hydraulic_conductivity[i] = ice_impeded_conductivity(hydraulic_conductivity[i], frozen_water_content[i-1], saturation_water_content[i])
         end
         state_to_water_potential!(algorithm, buffers, campbell_b, num_layers)
 
@@ -368,15 +398,25 @@ end
 soil_water_balance(soil_hydraulic_model::CampbellSoilHydraulics; num_layers=18, kw...) =
     soil_water_balance!(allocate_soil_water_balance(soil_hydraulic_model, num_layers), soil_hydraulic_model; kw...)
 
-# Wets node 1 from the pool proportional to available water, capped at `sat`
-# -- avoids snapping to full saturation from a trace of ponding.
-@inline function _wet_surface_node!(soil_moisture, pool, sat, half_thickness)
+# Wets node 1 from the pool, capped at `sat` (soil_moisture is total
+# liquid+ice content, so the ceiling itself stays `sat`); ice instead
+# throttles the amount delivered, via the same ice-impedance factor as the
+# Darcy solve (this mode has no native rate term of its own).
+@inline function _wet_surface_node!(soil_moisture, pool, sat, half_thickness, ice_content)
     pool <= 0.0u"kg/m^2" && return pool
     node_capacity = uconvert(u"kg/m^2", half_thickness * 1000.0u"kg/m^3")
     capacity = max(0.0u"kg/m^2", (sat - soil_moisture[1]) * node_capacity)
-    delivered = min(pool, capacity)
+    impedance = ice_impeded_conductivity(1.0, ice_content, sat)
+    delivered = min(pool, capacity) * impedance
     soil_moisture[1] = min(sat, soil_moisture[1] + delivered / node_capacity)
     return pool - delivered
+end
+
+# Water above `max_pond_depth` is lost from the modeled column -- tracked as
+# runoff rather than silently discarded.
+@inline function _pond_and_runoff(pool, max_pond_depth)
+    excess = max(pool - max_pond_depth, 0.0u"kg/m^2")
+    return pool - excess, excess
 end
 
 function soil_water_balance!(buffers, soil_hydraulic_model::CampbellSoilHydraulics;
@@ -395,6 +435,7 @@ function soil_water_balance!(buffers, soil_hydraulic_model::CampbellSoilHydrauli
     moisture_max_iterations,
     max_surface_pool,
     evaporation_model::AbstractEvaporationModel=BulkTransferEvaporation(),
+    frozen_water_content,
     vapour_pressure_equation=GoffGratch(),
     snow_present=false,
     canopy_transpiration_potential=nothing,
@@ -477,11 +518,16 @@ function soil_water_balance!(buffers, soil_hydraulic_model::CampbellSoilHydrauli
         evaporation_potential = 1e-7u"kg/m^2/s"
     end
 
-    # half_thickness matches Fortran OSUB.f's (dep(2)-dep(1))/2; depths here
-    # is the fine 19-node grid, so depths[3] is the first real node below 0.
+    # Node 1's own midpoint-boundary control-volume thickness, matching
+    # infiltration_step!'s layer_water_mass[2] convention.
     sat = 1 - bulk_density[1] / mineral_density[1]
-    half_thickness = (depths[3] - depths[1]) / 2
-    pool = _wet_surface_node!(soil_moisture, pool, sat, half_thickness)
+    half_thickness = (depths[2] - depths[1]) / 2
+    rainfall_entry_mode = soil_hydraulic_model.rainfall_entry_mode
+    # Held constant across every sub-step below (ImplicitFluxRainfall only).
+    rainfall_flux_rate = rainfall_flux_for_step(rainfall_entry_mode, pool, moisture_timestep, niter_moist)
+    # Ice-impede the boundary flux itself, same factor as the Darcy solve.
+    rainfall_flux_rate *= ice_impeded_conductivity(1.0, frozen_water_content[1], sat)
+    pool = apply_rainfall_entry!(rainfall_entry_mode, soil_moisture, pool, sat, half_thickness, rainfall_flux_rate, moisture_timestep; depths, soil_profile, frozen_water_content)
 
     # run infiltration algorithm
     infil_out = infiltration_step!(buffers.soil_water_balance, soil_hydraulic_model;
@@ -494,13 +540,13 @@ function soil_water_balance!(buffers, soil_hydraulic_model::CampbellSoilHydrauli
         evapotranspiration=evaporation_potential,
         input_soil_temperature=T0,
         moisture_timestep, moisture_tolerance, moisture_max_iterations,
-        vapour_pressure_equation, canopy_transpiration_potential,
+        vapour_pressure_equation, canopy_transpiration_potential, rainfall_flux_rate, frozen_water_content,
     )
     soil_moisture = infil_out.soil_moisture
     surf_evap = max(0.0u"kg/m^2", infil_out.evaporation)
     water_flux = max(0.0u"kg/m^2", infil_out.surface_water_flux)
-    pool = clamp(pool - water_flux - surf_evap, 0.0u"kg/m^2", max_surface_pool) # pooling surface water
-    pool = _wet_surface_node!(soil_moisture, pool, sat, half_thickness)
+    pool = post_infiltration_pool_update(rainfall_entry_mode, pool, rainfall_flux_rate, moisture_timestep, water_flux, surf_evap, max_surface_pool)
+    pool = apply_rainfall_entry!(rainfall_entry_mode, soil_moisture, pool, sat, half_thickness, rainfall_flux_rate, moisture_timestep; depths, soil_profile, frozen_water_content)
     for _ in 1:(niter_moist-1)
         infil_out = infiltration_step!(buffers.soil_water_balance, soil_hydraulic_model;
             soil_profile,
@@ -512,13 +558,13 @@ function soil_water_balance!(buffers, soil_hydraulic_model::CampbellSoilHydrauli
             evapotranspiration=evaporation_potential,
             input_soil_temperature=T0,
             moisture_timestep, moisture_tolerance, moisture_max_iterations,
-            vapour_pressure_equation, canopy_transpiration_potential,
+            vapour_pressure_equation, canopy_transpiration_potential, rainfall_flux_rate, frozen_water_content,
         )
         soil_moisture = infil_out.soil_moisture
         surf_evap = max(0.0u"kg/m^2", infil_out.evaporation)
         water_flux = max(0.0u"kg/m^2", infil_out.surface_water_flux)
-        pool = clamp(pool - water_flux - surf_evap, 0.0u"kg/m^2", max_surface_pool)
-        pool = _wet_surface_node!(soil_moisture, pool, sat, half_thickness)
+        pool = post_infiltration_pool_update(rainfall_entry_mode, pool, rainfall_flux_rate, moisture_timestep, water_flux, surf_evap, max_surface_pool)
+        pool = apply_rainfall_entry!(rainfall_entry_mode, soil_moisture, pool, sat, half_thickness, rainfall_flux_rate, moisture_timestep; depths, soil_profile, frozen_water_content)
     end
     # Fortran OSUB.f line 1239: ptwet = surflux / (ep * timestep) * 100
     # Note Fortran's `surflux` is INFIL's FL output (the humidity-gradient

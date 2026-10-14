@@ -12,3 +12,10 @@ const DEFAULT_HOURS = collect(0.0:1:23.0)
 const LATENT_HEAT_FUSION = 333550.0u"J/kg"
 const DEFAULT_SNOW_NODE_THRESHOLDS = (2.0, 5.0, 10.0, 20.0, 50.0, 100.0, 200.0, 300.0)
 
+# Bloomsburg & Wang (1969, Soil Sci. Soc. Am. J. 33:686-691), via SHAW's SOILHK:
+# conductivity blocked below this ice-free porosity (m3/m3)
+const ICE_IMPEDANCE_MIN_POROSITY = 0.13
+# Numerical regularization, not part of Bloomsburg & Wang: floor so a fully
+# frozen layer's conductivity stays nonzero, avoiding 0/0 in root-uptake resistance
+const ICE_CONDUCTIVITY_FLOOR_FACTOR = 1e-6
+

@@ -67,6 +67,10 @@ strictly the "how we iterate and how data is delivered" side of the model.
 - `soil_moisture_strategy`: `PrescribedSoilMoisture()` or `DynamicSoilMoisture(; ...)`
 - `max_surface_pool`: numerical clamp on the surface-pool state variable
   (not a physical limit — keeps the pool integration from running away)
+- `max_pond_depth`: physical surface-ponding limit; standing water above this
+  depth is tracked as `runoff` rather than left available to infiltrate.
+  Defaults to `max_surface_pool`'s own value, so `runoff` stays `0` unless
+  set to something physically meaningful for the site.
 - `canopy_soil_convergence`: per-hour convergence between the canopy solve
   and the soil-heat ODE, iterating the two to a jointly self-consistent state
   within the hour by default (`IterationToleranceConvergence(; tolerance=0.05u"K",
@@ -76,11 +80,12 @@ strictly the "how we iterate and how data is delivered" side of the model.
   pass's `ground_temperature` update (`x_new = relaxation*x_solved +
   (1-relaxation)*x_prev`), `1.0` (no relaxation) by default.
 """
-@kwdef struct MicroConfig{CV,RFS,SMM,MSP,CSC,CSR}
+@kwdef struct MicroConfig{CV,RFS,SMM,MSP,MPD,CSC,CSR}
     convergence::CV = FixedIterationConvergence(3)
     rainfall_schedule::RFS = DailyRainfall()
     soil_moisture_strategy::SMM = PrescribedSoilMoisture()
     max_surface_pool::MSP = 1.0e4u"kg/m^2"
+    max_pond_depth::MPD = 1.0e4u"kg/m^2"
     canopy_soil_convergence::CSC = IterationToleranceConvergence(; tolerance=0.05u"K", max_iterations_per_day=80)
     canopy_soil_relaxation::CSR = 1.0
 end
