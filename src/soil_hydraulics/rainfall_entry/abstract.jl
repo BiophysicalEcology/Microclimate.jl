@@ -1,14 +1,14 @@
 abstract type AbstractRainfallEntryMode end
 
 """
-    RainfallEntryStep(mode; soil_profile, depths, pool, moisture_timestep, niter_moist, max_surface_pool, frozen_water_content)
+    RainfallEntryStep(soil_hydraulic_model; soil_profile, depths, pool, moisture_timestep, niter_moist, max_surface_pool, frozen_water_content)
 
 Values shared by every moisture sub-step of one hour of rainfall entry:
 the top node's saturated water content and control-volume thickness, the
-rainfall boundary flux for `mode`, the sub-step length, and the layers'
-frozen water content.
+rainfall boundary flux, the sub-step length, the layers' frozen water
+content and the model for its effect on conductivity.
 """
-struct RainfallEntryStep{S,H,F,T,D,P,M,I}
+struct RainfallEntryStep{S,H,F,T,D,P,M,I,FC}
     saturation::S
     half_thickness::H
     rainfall_flux::F
@@ -19,18 +19,21 @@ struct RainfallEntryStep{S,H,F,T,D,P,M,I}
     # Fixed for the hour: re-deriving it mid-solve would freeze or thaw water
     # without the matching latent heat
     frozen_water_content::I
+    frozen_conductivity::FC
 end
-function RainfallEntryStep(mode::AbstractRainfallEntryMode;
+function RainfallEntryStep(soil_hydraulic_model;
     soil_profile, depths, pool, moisture_timestep, niter_moist, max_surface_pool, frozen_water_content,
 )
+    (; rainfall_entry_mode, frozen_conductivity) = soil_hydraulic_model
     (; bulk_density, mineral_density) = soil_profile
     saturation = 1 - bulk_density[1] / mineral_density[1]
     # Node 1's midpoint control volume, matching infiltration_step!'s layer_water_mass[2]
     half_thickness = (depths[2] - depths[1]) / 2
-    # Fixed from the hour's starting pool for all sub-steps
-    rainfall_flux = rainfall_flux_for_step(mode, pool, moisture_timestep, niter_moist) *
-        ice_impeded_conductivity(1.0, frozen_water_content[1], saturation)
-    return RainfallEntryStep(saturation, half_thickness, rainfall_flux, moisture_timestep, depths, soil_profile, max_surface_pool, frozen_water_content)
+    # Fixed from the hour's starting pool for all sub-steps, reduced by ice in the top node
+    rainfall_flux = rainfall_flux_for_step(rainfall_entry_mode, pool, moisture_timestep, niter_moist) *
+        conductivity_factor(frozen_conductivity, frozen_water_content[1], saturation)
+    return RainfallEntryStep(saturation, half_thickness, rainfall_flux, moisture_timestep, depths,
+        soil_profile, max_surface_pool, frozen_water_content, frozen_conductivity)
 end
 
 """

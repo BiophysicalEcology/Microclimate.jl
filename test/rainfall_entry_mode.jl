@@ -2,7 +2,7 @@ using Microclimate
 using Unitful
 using Test
 using Microclimate: allocate_soil_water_balance, infiltration_substeps!,
-    RainfallEntryStep, rainfall_entry!, rainfall_flux_for_step, soil_water_storage, NoIce
+    RainfallEntryStep, rainfall_entry!, rainfall_flux_for_step, soil_water_storage
 
 # rainfall_entry_mode's interface functions are internal, same rationale as
 # infiltration_algorithm_comparison.jl's own white-box testing.
@@ -15,7 +15,8 @@ function _test_profile()
 end
 
 _entry_step(mode, profile, depths, pool, dt, niter_moist) =
-    RainfallEntryStep(mode; soil_profile=profile, depths, pool, moisture_timestep=dt, niter_moist, max_surface_pool=1.0e4u"kg/m^2", frozen_water_content=NoIce())
+    RainfallEntryStep(example_soil_hydraulic_model(; rainfall_entry_mode=mode); soil_profile=profile, depths, pool,
+        moisture_timestep=dt, niter_moist, max_surface_pool=1.0e4u"kg/m^2", frozen_water_content=zeros(length(depths)))
 
 # One hour of rainfall entry and infiltration with evaporation held at zero,
 # so the only mass terms are rain, pool and storage.
