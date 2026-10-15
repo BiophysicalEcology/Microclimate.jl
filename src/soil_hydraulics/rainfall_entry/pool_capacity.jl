@@ -12,5 +12,5 @@ rainfall_entry!(soil_moisture, ::PoolCapacityRainfall, pool; soil_profile, depth
     _wet_surface_node!(soil_moisture, pool, _saturation_water_content(soil_profile, 1), _layer_thickness(depths, 1))
 
 post_infiltration_pool_update(::PoolCapacityRainfall, pool, water_flux, surface_evaporation;
-    rainfall_flux, moisture_timestep, max_surface_pool,
-) = clamp(pool - water_flux - surface_evaporation, 0.0u"kg/m^2", max_surface_pool)
+    rainfall_flux, moisture_timestep,
+) = max(0.0u"kg/m^2", pool - water_flux - surface_evaporation)

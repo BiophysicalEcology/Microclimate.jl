@@ -31,5 +31,5 @@ function rainfall_entry!(soil_moisture, mode::RateLimitedFrontRainfall, pool; so
 end
 
 post_infiltration_pool_update(::RateLimitedFrontRainfall, pool, water_flux, surface_evaporation;
-    rainfall_flux, moisture_timestep, max_surface_pool,
-) = clamp(pool - water_flux - surface_evaporation, 0.0u"kg/m^2", max_surface_pool)
+    rainfall_flux, moisture_timestep,
+) = max(0.0u"kg/m^2", pool - water_flux - surface_evaporation)

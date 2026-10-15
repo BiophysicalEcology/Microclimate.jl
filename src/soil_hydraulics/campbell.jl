@@ -395,21 +395,21 @@ soil_water_balance(soil_hydraulic_model::CampbellSoilHydraulics; num_layers=18, 
     return pool - delivered
 end
 
-# Splits off water ponded above `max_pond_depth` as runoff
-@inline function _pond_and_runoff(pool, max_pond_depth)
-    excess = max(pool - max_pond_depth, 0.0u"kg/m^2")
+# Splits off water above `max_surface_pool` as runoff
+@inline function _split_runoff(pool, max_surface_pool)
+    excess = max(pool - max_surface_pool, 0.0u"kg/m^2")
     return pool - excess, excess
 end
 
 """
-    infiltration_substeps!(buffers, soil_hydraulic_model; soil_profile, depths, soil_moisture, pool, rainfall_flux, moisture_timestep, niter_moist, max_surface_pool, kw...)
+    infiltration_substeps!(buffers, soil_hydraulic_model; soil_profile, depths, soil_moisture, pool, rainfall_flux, moisture_timestep, niter_moist, kw...)
 
 Run `niter_moist` sub-steps of rainfall entry and `infiltration_step!`,
 updating the surface pool after each. `rainfall_flux` is held fixed over
 the sub-steps. `kw` are passed to `infiltration_step!`.
 """
 function infiltration_substeps!(buffers, soil_hydraulic_model;
-    soil_profile, depths, soil_moisture, pool, rainfall_flux, moisture_timestep, niter_moist, max_surface_pool, kw...
+    soil_profile, depths, soil_moisture, pool, rainfall_flux, moisture_timestep, niter_moist, kw...
 )
     mode = soil_hydraulic_model.rainfall_entry_mode
     pool = rainfall_entry!(soil_moisture, mode, pool; soil_profile, depths, moisture_timestep)
@@ -418,24 +418,24 @@ function infiltration_substeps!(buffers, soil_hydraulic_model;
         soil_profile, depths, soil_moisture, moisture_timestep, surface_rainfall_flux=rainfall_flux, kw...)
     soil_moisture = infil_out.soil_moisture
     pool = _update_pool!(soil_moisture, mode, pool, infil_out;
-        soil_profile, depths, moisture_timestep, rainfall_flux, max_surface_pool)
+        soil_profile, depths, moisture_timestep, rainfall_flux)
     for _ in 1:(niter_moist-1)
         infil_out = infiltration_step!(buffers, soil_hydraulic_model;
             soil_profile, depths, soil_moisture, moisture_timestep, surface_rainfall_flux=rainfall_flux, kw...)
         soil_moisture = infil_out.soil_moisture
         pool = _update_pool!(soil_moisture, mode, pool, infil_out;
-            soil_profile, depths, moisture_timestep, rainfall_flux, max_surface_pool)
+            soil_profile, depths, moisture_timestep, rainfall_flux)
     end
     return (; infil_out, pool, soil_moisture)
 end
 
 function _update_pool!(soil_moisture, mode, pool, infil_out;
-    soil_profile, depths, moisture_timestep, rainfall_flux, max_surface_pool,
+    soil_profile, depths, moisture_timestep, rainfall_flux,
 )
     surface_evaporation = max(0.0u"kg/m^2", infil_out.evaporation)
     water_flux = max(0.0u"kg/m^2", infil_out.surface_water_flux)
     pool = post_infiltration_pool_update(mode, pool, water_flux, surface_evaporation;
-        rainfall_flux, moisture_timestep, max_surface_pool)
+        rainfall_flux, moisture_timestep)
     return rainfall_entry!(soil_moisture, mode, pool; soil_profile, depths, moisture_timestep)
 end
 
@@ -453,7 +453,6 @@ function soil_water_balance!(buffers, soil_hydraulic_model::CampbellSoilHydrauli
     moisture_timestep,    # solver tuning, lives on MicroConfig
     moisture_tolerance,
     moisture_max_iterations,
-    max_surface_pool,
     evaporation_model::AbstractEvaporationModel=BulkTransferEvaporation(),
     vapour_pressure_equation=GoffGratch(),
     snow_present=false,
@@ -505,7 +504,7 @@ function soil_water_balance!(buffers, soil_hydraulic_model::CampbellSoilHydrauli
     # Fixed from the hour's starting pool for all sub-steps
     rainfall_flux = rainfall_flux_for_step(soil_hydraulic_model.rainfall_entry_mode, pool, moisture_timestep, niter_moist)
     (; infil_out, pool, soil_moisture) = infiltration_substeps!(buffers.soil_water_balance, soil_hydraulic_model;
-        soil_profile, depths, soil_moisture, pool, rainfall_flux, moisture_timestep, niter_moist, max_surface_pool,
+        soil_profile, depths, soil_moisture, pool, rainfall_flux, moisture_timestep, niter_moist,
         atmospheric_pressure,
         local_relative_humidity,
         leaf_area_index,

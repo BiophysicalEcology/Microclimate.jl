@@ -17,7 +17,7 @@ Returns the remaining `pool`.
 function rainfall_entry! end
 
 """
-    post_infiltration_pool_update(mode, pool, water_flux, surface_evaporation; rainfall_flux, moisture_timestep, max_surface_pool)
+    post_infiltration_pool_update(mode, pool, water_flux, surface_evaporation; rainfall_flux, moisture_timestep)
 
 Update `pool` after an `infiltration_step!`.
 """

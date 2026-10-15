@@ -375,7 +375,7 @@ function solve_soil!(cache::MicroCache)
     ode_integrator = cache.ode_integrator
     forcing = cache.forcing
 
-    (; convergence, rainfall_schedule, max_surface_pool, max_pond_depth) = config
+    (; convergence, rainfall_schedule, max_surface_pool) = config
     time_mode = mp.time_mode
     moisture_mode = config.soil_moisture_strategy
     (; campbell_b_parameter, air_entry_water_potential) = soil_profile.hydraulics
@@ -449,7 +449,7 @@ function solve_soil!(cache::MicroCache)
 
     # simulate all days
     pool = 0.0u"kg/m^2" # TODO make this an initialisation option
-    runoff = 0.0u"kg/m^2" # cumulative; standing water above max_pond_depth, never reset per-day
+    runoff = 0.0u"kg/m^2" # cumulative; water above max_surface_pool, never reset per-day
     Q_freeze = 0.0u"W/m^2"  # Fortran COMMON/melt/QFREZE: persists across hours
     infil_out = nothing
     for j in 1:ndays
@@ -766,17 +766,17 @@ function solve_soil!(cache::MicroCache)
                     rain_melt_water = n_snow > 0 ? uconvert(u"kg/m^2", rain_melt_snow * snow_state.density) : 0.0u"kg/m^2"
                     if snow_present && u"°C"(environment_instant.reference_temperature) < snow_temp_threshold
                         # Cold snow: rain absorbed into snowpack (handled in update_snow! as snowfall); only thermal melt enters pool
-                        pool = clamp(pool + melted_water, 0.0u"kg/m^2", max_surface_pool)
+                        pool += melted_water
                     else
                         # Warm snow or no snow: rain + rain_melt water + thermal melt enter pool
-                        pool = clamp(pool + rain + rain_melt_water + melted_water, 0.0u"kg/m^2", max_surface_pool)
+                        pool += rain + rain_melt_water + melted_water
                     end
-                    pool, runoff_increment = _pond_and_runoff(pool, max_pond_depth)
+                    pool, runoff_increment = _split_runoff(pool, max_surface_pool)
                     runoff += runoff_increment
                     # Soil moisture physics; output write happens below at output_step
                     (; pool, soil_moisture, infil_out) = step_soil_moisture!(moisture_mode, buffers, soil_hydraulic_model;
                         soil_profile, depths, site, boundary_layer_model, environment_instant, T0, pool, soil_moisture,
-                        max_surface_pool, evaporation_model, vapour_pressure_equation, snow_present,
+                        evaporation_model, vapour_pressure_equation, snow_present,
                     )
                 end
                 # Write hour i's result to step + 1 (NMR convention: state at minute i*60
@@ -948,14 +948,14 @@ end
 
 function step_soil_moisture!(mode::DynamicSoilMoisture, buffers, soil_hydraulic_model;
     soil_profile, depths, site, boundary_layer_model, environment_instant, T0, pool, soil_moisture,
-    max_surface_pool, evaporation_model, vapour_pressure_equation, snow_present=false,
+    evaporation_model, vapour_pressure_equation, snow_present=false,
 )
     (; moisture_tolerance, moisture_max_iterations, moisture_timestep) = mode
     niter_moist = ustrip(u"s^-1", 3600 / moisture_timestep)
     (; infil_out, soil_wetness, pool, soil_moisture) = soil_water_balance!(buffers, soil_hydraulic_model;
         soil_profile, depths, site, boundary_layer_model, environment_instant, T0, niter_moist, pool,
         soil_wetness=mode.soil_wetness, soil_moisture,
-        moisture_timestep, moisture_tolerance, moisture_max_iterations, max_surface_pool,
+        moisture_timestep, moisture_tolerance, moisture_max_iterations,
         evaporation_model, vapour_pressure_equation, snow_present,
     )
     mode.soil_wetness = soil_wetness

@@ -16,7 +16,7 @@ and forwards to `soil_water_balance!`.
 function soil_water_balance end
 
 """
-    soil_water_balance!(buffers, soil_hydraulic_model; soil_profile, depths, site, boundary_layer_model, environment_instant, T0, pool, niter_moist, soil_wetness, soil_moisture, moisture_timestep, moisture_tolerance, moisture_max_iterations, max_surface_pool, vapour_pressure_equation, snow_present)
+    soil_water_balance!(buffers, soil_hydraulic_model; soil_profile, depths, site, boundary_layer_model, environment_instant, T0, pool, niter_moist, soil_wetness, soil_moisture, moisture_timestep, moisture_tolerance, moisture_max_iterations, vapour_pressure_equation, snow_present)
 
 One-hour water-balance step: atmospheric profile, evaporation, surface pool
 dynamics, and `niter_moist` sub-iterations of the variant's per-timestep solver.
