@@ -24,10 +24,10 @@ end
 # matching latent-heat update.
 function frozen_water_content!(::PhaseTransitionLatentHeat, buffers::NamedTuple, accumulated_latent_heat::AbstractVector, soil_moisture::AbstractVector)
     (; layer_mass, frozen_water_content) = buffers
-    @inbounds for i in eachindex(frozen_water_content)
+    for i in eachindex(frozen_water_content)
         max_latent_heat = LATENT_HEAT_FUSION * layer_mass[i]
         fraction = max_latent_heat > zero(max_latent_heat) ?
-            clamp(ustrip(accumulated_latent_heat[i] / max_latent_heat), 0.0, 1.0) : 0.0
+            clamp(accumulated_latent_heat[i] / max_latent_heat, 0.0, 1.0) : 0.0
         frozen_water_content[i] = fraction * soil_moisture[i]
     end
     return frozen_water_content

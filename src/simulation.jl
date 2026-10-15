@@ -1216,13 +1216,11 @@ function step_soil_moisture!(mode::DynamicSoilMoisture, buffers, soil_hydraulic_
     soil_profile, depths, environment_instant, T0, pool,
     evaporation_potential, local_relative_humidity, soil_moisture,
     max_surface_pool, canopy_transpiration_potential=nothing, canopy_leaf_area_index=nothing,
-    vapour_pressure_equation=GoffGratch(), frozen_water_content=NoIce(),
+    vapour_pressure_equation=GoffGratch(), frozen_water_content,
 )
-    (; moisture_tolerance, moisture_max_iterations, moisture_timestep) = mode
-    niter_moist = ustrip(u"s^-1", 3600 / moisture_timestep)
-    (; infil_out, soil_wetness, pool, soil_moisture) = soil_water_balance!(buffers, soil_hydraulic_model;
-        soil_profile, depths, pool, evaporation_potential, local_relative_humidity, niter_moist, soil_moisture,
-        moisture_timestep, moisture_tolerance, moisture_max_iterations, max_surface_pool, T0, frozen_water_content,
+    (; infil_out, soil_wetness, pool, soil_moisture) = soil_water_balance!(buffers, soil_hydraulic_model, mode;
+        soil_profile, depths, pool, evaporation_potential, local_relative_humidity, soil_moisture,
+        max_surface_pool, T0, frozen_water_content,
         vapour_pressure_equation, canopy_transpiration_potential, canopy_leaf_area_index, environment_instant,
     )
     mode.soil_wetness = soil_wetness

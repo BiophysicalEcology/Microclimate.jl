@@ -1,17 +1,16 @@
 """
     PoolCapacityRainfall()
 
-Default rainfall-entry mode. Rain fills a surface `pool`, which
-`_wet_surface_node!` (campbell.jl) then delivers directly into the top soil
-node's water content, capped at that node's own storage capacity —
-`infiltration_step!` never sees rain as a flux term.
+Default rainfall entry mode. Rain collects in the surface pool, which wets
+the top soil node up to saturation each sub-step.
 """
 struct PoolCapacityRainfall <: AbstractRainfallEntryMode end
 
 rainfall_flux_for_step(::PoolCapacityRainfall, pool, moisture_timestep, niter_moist) = 0.0u"kg/m^2/s"
 
-apply_rainfall_entry!(::PoolCapacityRainfall, soil_moisture, pool, sat, half_thickness, rainfall_flux, moisture_timestep; frozen_water_content, kw...) =
-    _wet_surface_node!(soil_moisture, pool, sat, half_thickness, frozen_water_content[1])
+rainfall_entry!(soil_moisture, ::PoolCapacityRainfall, pool, step::RainfallEntryStep) =
+    _wet_surface_node!(soil_moisture, pool, step.saturation, step.half_thickness,
+        conductivity_factor(step.frozen_conductivity, step.frozen_water_content[1], step.saturation))
 
-post_infiltration_pool_update(::PoolCapacityRainfall, pool, rainfall_flux, moisture_timestep, water_flux, surf_evap, max_surface_pool) =
-    clamp(pool - water_flux - surf_evap, 0.0u"kg/m^2", max_surface_pool)
+post_infiltration_pool_update(::PoolCapacityRainfall, pool, step::RainfallEntryStep, water_flux, surface_evaporation) =
+    clamp(pool - water_flux - surface_evaporation, 0.0u"kg/m^2", step.max_surface_pool)
