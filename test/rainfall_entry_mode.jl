@@ -2,7 +2,7 @@ using Microclimate
 using Unitful
 using Test
 using Microclimate: allocate_soil_water_balance, infiltration_substeps!,
-    RainfallEntryStep, rainfall_entry!, rainfall_flux_for_step, soil_water_storage
+    rainfall_entry!, rainfall_flux_for_step, soil_water_storage
 
 # rainfall_entry_mode's interface functions are internal, same rationale as
 # infiltration_algorithm_comparison.jl's own white-box testing.
@@ -14,23 +14,21 @@ function _test_profile()
     (; profile, depths, num_layers)
 end
 
-_entry_step(mode, profile, depths, pool, dt, niter_moist) =
-    RainfallEntryStep(mode; soil_profile=profile, depths, pool, moisture_timestep=dt, niter_moist, max_surface_pool=1.0e4u"kg/m^2")
-
 # One hour of rainfall entry and infiltration with evaporation held at zero,
 # so the only mass terms are rain, pool and storage.
 function run_rainfall_hour(mode; soil_moisture, pool, dt=360.0u"s", niter_moist=10)
     (; profile, depths, num_layers) = _test_profile()
     model = example_soil_hydraulic_model(; rainfall_entry_mode=mode)
     buffers = allocate_soil_water_balance(model, num_layers)
-    step = _entry_step(mode, profile, depths, pool, dt, niter_moist)
-    (; soil_moisture, pool) = infiltration_substeps!(buffers, model, step;
-        soil_moisture, pool, niter_moist,
+    rainfall_flux = rainfall_flux_for_step(mode, pool, dt, niter_moist)
+    (; soil_moisture, pool) = infiltration_substeps!(buffers, model;
+        soil_profile=profile, depths, soil_moisture, pool, rainfall_flux, moisture_timestep=dt, niter_moist,
+        max_surface_pool=1.0e4u"kg/m^2",
         atmospheric_pressure=101325.0u"Pa", local_relative_humidity=0.5, leaf_area_index=1.0u"Mg/m^3",
         evapotranspiration=0.0u"kg/m^2/s", input_soil_temperature=fill(293.0u"K", num_layers),
         moisture_tolerance=1e-6u"kg/m^2/s", moisture_max_iterations=200,
     )
-    return (; soil_moisture, pool, storage=soil_water_storage(soil_moisture, step))
+    return (; soil_moisture, pool, storage=soil_water_storage(soil_moisture, depths))
 end
 
 @testset "rainfall entry modes" begin
@@ -54,11 +52,10 @@ end
         rain = 8.0u"kg/m^2"
         dt = 360.0u"s"
         for mode in (PoolCapacityRainfall(), RateLimitedFrontRainfall())
-            step = _entry_step(mode, profile, depths, rain, dt, 10)
             soil_moisture = fill(0.10, num_layers)
-            storage_before = soil_water_storage(soil_moisture, step)
-            remaining_pool = rainfall_entry!(soil_moisture, mode, rain, step)
-            storage_after = soil_water_storage(soil_moisture, step)
+            storage_before = soil_water_storage(soil_moisture, depths)
+            remaining_pool = rainfall_entry!(soil_moisture, mode, rain; soil_profile=profile, depths, moisture_timestep=dt)
+            storage_after = soil_water_storage(soil_moisture, depths)
             @test isapprox(ustrip(u"kg/m^2", storage_after - storage_before + remaining_pool - rain), 0.0; atol=1e-6)
         end
         # ImplicitFluxRainfall never mutates soil_moisture here -- its flux
