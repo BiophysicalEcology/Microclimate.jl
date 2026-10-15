@@ -151,7 +151,7 @@ function infiltration_step!(buffers, soil_hydraulic_model::CampbellSoilHydraulic
     moisture_tolerance,
     moisture_max_iterations,
     vapour_pressure_equation=GoffGratch(),
-    rainfall_flux_rate=0.0u"kg/m^2/s",  # ImplicitFluxRainfall only; every other mode leaves this 0
+    surface_rainfall_flux=0.0u"kg/m^2/s",  # ImplicitFluxRainfall only; every other mode leaves this 0
 )
     # Local variable names
     θ_soil = soil_moisture
@@ -265,7 +265,7 @@ function infiltration_step!(buffers, soil_hydraulic_model::CampbellSoilHydraulic
 
     # Sign matches vapor_flux's positive-=-outflow convention: negative here
     # is inflow at the surface. Fixed for the whole Newton solve below.
-    rainfall_flux[1] = -rainfall_flux_rate
+    rainfall_flux[1] = -surface_rainfall_flux
     for i in 2:num_layers+1
         rainfall_flux[i] = 0.0u"kg/m^2/s"
     end
@@ -384,22 +384,55 @@ end
 soil_water_balance(soil_hydraulic_model::CampbellSoilHydraulics; num_layers=18, kw...) =
     soil_water_balance!(allocate_soil_water_balance(soil_hydraulic_model, num_layers), soil_hydraulic_model; kw...)
 
-# Wets node 1 from the pool proportional to available water, capped at `sat`
+# Wets node 1 from the pool proportional to available water, capped at `saturation`
 # -- avoids snapping to full saturation from a trace of ponding.
-@inline function _wet_surface_node!(soil_moisture, pool, sat, half_thickness)
+@inline function _wet_surface_node!(soil_moisture, pool, saturation, half_thickness)
     pool <= 0.0u"kg/m^2" && return pool
-    node_capacity = uconvert(u"kg/m^2", half_thickness * 1000.0u"kg/m^3")
-    capacity = max(0.0u"kg/m^2", (sat - soil_moisture[1]) * node_capacity)
+    node_capacity = uconvert(u"kg/m^2", half_thickness * water_density)
+    capacity = max(0.0u"kg/m^2", (saturation - soil_moisture[1]) * node_capacity)
     delivered = min(pool, capacity)
-    soil_moisture[1] = min(sat, soil_moisture[1] + delivered / node_capacity)
+    soil_moisture[1] = min(saturation, soil_moisture[1] + delivered / node_capacity)
     return pool - delivered
 end
 
-# Water above `max_pond_depth` is lost from the modeled column -- tracked as
-# runoff rather than silently discarded.
+# Splits off water ponded above `max_pond_depth` as runoff
 @inline function _pond_and_runoff(pool, max_pond_depth)
     excess = max(pool - max_pond_depth, 0.0u"kg/m^2")
     return pool - excess, excess
+end
+
+"""
+    infiltration_substeps!(buffers, soil_hydraulic_model, step::RainfallEntryStep; soil_moisture, pool, niter_moist, kw...)
+
+Run `niter_moist` sub-steps of rainfall entry and `infiltration_step!`,
+updating the surface pool after each. `kw` are passed to `infiltration_step!`.
+"""
+function infiltration_substeps!(buffers, soil_hydraulic_model, step::RainfallEntryStep; soil_moisture, pool, niter_moist, kw...)
+    mode = soil_hydraulic_model.rainfall_entry_mode
+    pool = rainfall_entry!(soil_moisture, mode, pool, step)
+    # First sub-step outside the loop so infil_out is type-stable
+    infil_out = _infiltration_substep(buffers, soil_hydraulic_model, step; soil_moisture, kw...)
+    soil_moisture = infil_out.soil_moisture
+    pool = _update_pool!(soil_moisture, mode, pool, step, infil_out)
+    for _ in 1:(niter_moist-1)
+        infil_out = _infiltration_substep(buffers, soil_hydraulic_model, step; soil_moisture, kw...)
+        soil_moisture = infil_out.soil_moisture
+        pool = _update_pool!(soil_moisture, mode, pool, step, infil_out)
+    end
+    return (; infil_out, pool, soil_moisture)
+end
+
+_infiltration_substep(buffers, soil_hydraulic_model, step; soil_moisture, kw...) =
+    infiltration_step!(buffers, soil_hydraulic_model;
+        soil_profile=step.soil_profile, depths=step.depths, soil_moisture,
+        moisture_timestep=step.timestep, surface_rainfall_flux=step.rainfall_flux, kw...,
+    )
+
+function _update_pool!(soil_moisture, mode, pool, step, infil_out)
+    surface_evaporation = max(0.0u"kg/m^2", infil_out.evaporation)
+    water_flux = max(0.0u"kg/m^2", infil_out.surface_water_flux)
+    pool = post_infiltration_pool_update(mode, pool, step, water_flux, surface_evaporation)
+    return rainfall_entry!(soil_moisture, mode, pool, step)
 end
 
 function soil_water_balance!(buffers, soil_hydraulic_model::CampbellSoilHydraulics;
@@ -426,7 +459,6 @@ function soil_water_balance!(buffers, soil_hydraulic_model::CampbellSoilHydrauli
     relative_humidity = environment_instant.reference_humidity
     leaf_area_index = environment_instant.leaf_area_index
 
-    (; bulk_density, mineral_density) = soil_profile
 
     θ_soil = soil_moisture
     surface_temperature = T0[1]
@@ -466,54 +498,19 @@ function soil_water_balance!(buffers, soil_hydraulic_model::CampbellSoilHydrauli
         evaporation_potential = 1e-7u"kg/m^2/s"
     end
 
-    # Node 1's own midpoint-boundary control-volume thickness, matching
-    # infiltration_step!'s layer_water_mass[2] convention.
-    sat = 1 - bulk_density[1] / mineral_density[1]
-    half_thickness = (depths[2] - depths[1]) / 2
-    rainfall_entry_mode = soil_hydraulic_model.rainfall_entry_mode
-    # Computed once from this hour's starting pool and held constant across
-    # every sub-step below (ImplicitFluxRainfall only -- every other mode
-    # ignores it and returns 0 here regardless).
-    rainfall_flux_rate = rainfall_flux_for_step(rainfall_entry_mode, pool, moisture_timestep, niter_moist)
-    pool = apply_rainfall_entry!(rainfall_entry_mode, soil_moisture, pool, sat, half_thickness, rainfall_flux_rate, moisture_timestep; depths, soil_profile)
-
-    # run infiltration algorithm
-    infil_out = infiltration_step!(buffers.soil_water_balance, soil_hydraulic_model;
-        soil_profile,
-        depths,
+    step = RainfallEntryStep(soil_hydraulic_model.rainfall_entry_mode;
+        soil_profile, depths, pool, moisture_timestep, niter_moist, max_surface_pool,
+    )
+    (; infil_out, pool, soil_moisture) = infiltration_substeps!(buffers.soil_water_balance, soil_hydraulic_model, step;
+        soil_moisture, pool, niter_moist,
         atmospheric_pressure,
         local_relative_humidity,
         leaf_area_index,
-        soil_moisture,
         evapotranspiration=evaporation_potential,
         input_soil_temperature=T0,
-        moisture_timestep, moisture_tolerance, moisture_max_iterations,
-        vapour_pressure_equation, rainfall_flux_rate,
+        moisture_tolerance, moisture_max_iterations,
+        vapour_pressure_equation,
     )
-    soil_moisture = infil_out.soil_moisture
-    surf_evap = max(0.0u"kg/m^2", infil_out.evaporation)
-    water_flux = max(0.0u"kg/m^2", infil_out.surface_water_flux)
-    pool = post_infiltration_pool_update(rainfall_entry_mode, pool, rainfall_flux_rate, moisture_timestep, water_flux, surf_evap, max_surface_pool)
-    pool = apply_rainfall_entry!(rainfall_entry_mode, soil_moisture, pool, sat, half_thickness, rainfall_flux_rate, moisture_timestep; depths, soil_profile)
-    for _ in 1:(niter_moist-1)
-        infil_out = infiltration_step!(buffers.soil_water_balance, soil_hydraulic_model;
-            soil_profile,
-            depths,
-            atmospheric_pressure,
-            local_relative_humidity,
-            soil_moisture,
-            leaf_area_index,
-            evapotranspiration=evaporation_potential,
-            input_soil_temperature=T0,
-            moisture_timestep, moisture_tolerance, moisture_max_iterations,
-            vapour_pressure_equation, rainfall_flux_rate,
-        )
-        soil_moisture = infil_out.soil_moisture
-        surf_evap = max(0.0u"kg/m^2", infil_out.evaporation)
-        water_flux = max(0.0u"kg/m^2", infil_out.surface_water_flux)
-        pool = post_infiltration_pool_update(rainfall_entry_mode, pool, rainfall_flux_rate, moisture_timestep, water_flux, surf_evap, max_surface_pool)
-        pool = apply_rainfall_entry!(rainfall_entry_mode, soil_moisture, pool, sat, half_thickness, rainfall_flux_rate, moisture_timestep; depths, soil_profile)
-    end
     # Fortran OSUB.f line 1239: ptwet = surflux / (ep * timestep) * 100
     # Note Fortran's `surflux` is INFIL's FL output (the humidity-gradient
     # evaporation flux EP*(H(2)-HA)/(1-HA)*DT, INFIL.f:300), NOT the Darcy
