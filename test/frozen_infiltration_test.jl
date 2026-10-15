@@ -2,7 +2,7 @@ using Microclimate
 using Unitful
 using Test
 using Microclimate: allocate_soil_water_balance, infiltration_step!,
-    rainfall_flux_for_step, apply_rainfall_entry!, post_infiltration_pool_update,
+    RainfallEntryStep, rainfall_entry!, soil_water_storage,
     allocate_phase_transition, frozen_water_content!,
     ice_impeded_conductivity, ice_free_capacity, NoIce,
     ICE_IMPEDANCE_MIN_POROSITY, ICE_CONDUCTIVITY_FLOOR_FACTOR, LATENT_HEAT_FUSION
@@ -15,8 +15,9 @@ function _test_profile()
     (; profile, depths, num_layers, sat)
 end
 
-_layer_thickness(depths, half_thickness, i, n) =
-    i == 1 ? half_thickness : i == n ? (depths[n] - depths[n-1]) / 2 : (depths[i+1] - depths[i-1]) / 2
+_entry_step(mode, profile, depths, pool, dt, frozen_water_content) =
+    RainfallEntryStep(mode; soil_profile=profile, depths, pool, moisture_timestep=dt, niter_moist=10,
+        max_surface_pool=1.0e4u"kg/m^2", frozen_water_content)
 
 @testset "ice_impeded_conductivity" begin
     K = 5.0u"kg*s/m^3"
@@ -114,36 +115,38 @@ end
 
 @testset "frozen soil blocks rainfall entry" begin
     (; profile, depths, num_layers, sat) = _test_profile()
-    half_thickness = depths[1] / 2
     rain = 8.0u"kg/m^2"
     dt = 360.0u"s"
     wet = fill(sat - 0.10, num_layers)  # frozen_water_content=wet leaves ~0.10 ice-free porosity, below threshold
 
     @testset "$mode: near-saturated + fully frozen leaves rain in the pool" for mode in (PoolCapacityRainfall(), RateLimitedFrontRainfall())
         soil_moisture_unfrozen = copy(wet)
-        remaining_unfrozen = apply_rainfall_entry!(mode, soil_moisture_unfrozen, rain, sat, half_thickness, 0.0u"kg/m^2/s", dt; depths, soil_profile=profile, frozen_water_content=NoIce())
+        remaining_unfrozen = rainfall_entry!(soil_moisture_unfrozen, mode, rain, _entry_step(mode, profile, depths, rain, dt, NoIce()))
 
         soil_moisture_frozen = copy(wet)
-        remaining_frozen = apply_rainfall_entry!(mode, soil_moisture_frozen, rain, sat, half_thickness, 0.0u"kg/m^2/s", dt; depths, soil_profile=profile, frozen_water_content=wet)
+        remaining_frozen = rainfall_entry!(soil_moisture_frozen, mode, rain, _entry_step(mode, profile, depths, rain, dt, wet))
 
         @test remaining_frozen > remaining_unfrozen
         @test ustrip(u"kg/m^2", rain - remaining_frozen) < ustrip(u"kg/m^2", rain) * 1e-3  # essentially none infiltrated
     end
 
     @testset "$mode: mass conservation holds while frozen" for mode in (PoolCapacityRainfall(), RateLimitedFrontRainfall())
+        step = _entry_step(mode, profile, depths, rain, dt, wet)
         soil_moisture = copy(wet)
-        storage_before = sum(i -> soil_moisture[i] * _layer_thickness(depths, half_thickness, i, num_layers), 1:num_layers) * 1000.0u"kg/m^3"
-        remaining_pool = apply_rainfall_entry!(mode, soil_moisture, rain, sat, half_thickness, 0.0u"kg/m^2/s", dt; depths, soil_profile=profile, frozen_water_content=wet)
-        storage_after = sum(i -> soil_moisture[i] * _layer_thickness(depths, half_thickness, i, num_layers), 1:num_layers) * 1000.0u"kg/m^3"
+        storage_before = soil_water_storage(soil_moisture, step)
+        remaining_pool = rainfall_entry!(soil_moisture, mode, rain, step)
+        storage_after = soil_water_storage(soil_moisture, step)
         @test isapprox(ustrip(u"kg/m^2", storage_after - storage_before + remaining_pool - rain), 0.0; atol=1e-6)
     end
 
-    @testset "ImplicitFluxRainfall: gated at soil_water_balance! level, not apply_rainfall_entry!" begin
-        # This mode enters water via rainfall_flux_for_step/infiltration_step!'s
-        # own Newton solve; apply_rainfall_entry! is a no-op regardless of ice.
+    @testset "ImplicitFluxRainfall: ice impedes the boundary flux, rainfall_entry! is a no-op" begin
+        mode = ImplicitFluxRainfall()
         soil_moisture = copy(wet)
-        pool = apply_rainfall_entry!(ImplicitFluxRainfall(), soil_moisture, rain, sat, half_thickness, 0.0u"kg/m^2/s", dt; depths, soil_profile=profile, frozen_water_content=wet)
+        pool = rainfall_entry!(soil_moisture, mode, rain, _entry_step(mode, profile, depths, rain, dt, wet))
         @test pool == rain
         @test soil_moisture == wet
+        unfrozen = _entry_step(mode, profile, depths, rain, dt, NoIce())
+        frozen = _entry_step(mode, profile, depths, rain, dt, wet)
+        @test frozen.rainfall_flux < unfrozen.rainfall_flux * 1e-3
     end
 end

@@ -32,7 +32,7 @@ end
     soil_heat_capacity::SPH
     soil_bulk_density::SBD
     surface_water::SW
-    runoff::RO  # cumulative; standing water above max_pond_depth, lost from the modeled column
+    runoff::RO  # cumulative water ponded above max_pond_depth and removed as runoff, kg/m²
     solar_radiation::SR
     profile::Pr
     snow_fall::SF
