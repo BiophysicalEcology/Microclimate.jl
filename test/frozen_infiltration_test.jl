@@ -2,7 +2,7 @@ using Microclimate
 using Unitful
 using Test
 using Microclimate: allocate_soil_water_balance, infiltration_step!,
-    RainfallEntryStep, rainfall_entry!, soil_water_storage,
+    rainfall_entry!, soil_water_storage,
     allocate_phase_transition, frozen_water_content!,
     conductivity_factor, conductivity_blocked, LATENT_HEAT_FUSION
 
@@ -14,9 +14,8 @@ function _test_profile()
     (; profile, depths, num_layers, saturation)
 end
 
-_entry_step(mode, profile, depths, pool, dt, frozen_water_content; frozen_conductivity=BloomsburgWangFrozenConductivity()) =
-    RainfallEntryStep(example_soil_hydraulic_model(; rainfall_entry_mode=mode, frozen_conductivity); soil_profile=profile,
-        depths, pool, moisture_timestep=dt, niter_moist=10, max_surface_pool=1.0e4u"kg/m^2", frozen_water_content)
+_rainfall_entry!(soil_moisture, mode, pool, profile, depths, dt, frozen_water_content; frozen_conductivity=BloomsburgWangFrozenConductivity()) =
+    rainfall_entry!(soil_moisture, mode, pool; soil_profile=profile, depths, moisture_timestep=dt, frozen_conductivity, frozen_water_content)
 
 @testset "BloomsburgWangFrozenConductivity" begin
     model = BloomsburgWangFrozenConductivity()
@@ -123,32 +122,30 @@ end
 
     @testset "$mode: near-saturated + fully frozen leaves rain in the pool" for mode in (PoolCapacityRainfall(), RateLimitedFrontRainfall())
         soil_moisture_unfrozen = copy(wet)
-        remaining_unfrozen = rainfall_entry!(soil_moisture_unfrozen, mode, rain, _entry_step(mode, profile, depths, rain, dt, wet; frozen_conductivity=NoFrozenConductivity()))
+        remaining_unfrozen = _rainfall_entry!(soil_moisture_unfrozen, mode, rain, profile, depths, dt, wet; frozen_conductivity=NoFrozenConductivity())
 
         soil_moisture_frozen = copy(wet)
-        remaining_frozen = rainfall_entry!(soil_moisture_frozen, mode, rain, _entry_step(mode, profile, depths, rain, dt, wet))
+        remaining_frozen = _rainfall_entry!(soil_moisture_frozen, mode, rain, profile, depths, dt, wet)
 
         @test remaining_frozen > remaining_unfrozen
         @test ustrip(u"kg/m^2", rain - remaining_frozen) < ustrip(u"kg/m^2", rain) * 1e-3  # essentially none infiltrated
     end
 
     @testset "$mode: mass conservation holds while frozen" for mode in (PoolCapacityRainfall(), RateLimitedFrontRainfall())
-        step = _entry_step(mode, profile, depths, rain, dt, wet)
         soil_moisture = copy(wet)
-        storage_before = soil_water_storage(soil_moisture, step)
-        remaining_pool = rainfall_entry!(soil_moisture, mode, rain, step)
-        storage_after = soil_water_storage(soil_moisture, step)
+        storage_before = soil_water_storage(soil_moisture, depths)
+        remaining_pool = _rainfall_entry!(soil_moisture, mode, rain, profile, depths, dt, wet)
+        storage_after = soil_water_storage(soil_moisture, depths)
         @test isapprox(ustrip(u"kg/m^2", storage_after - storage_before + remaining_pool - rain), 0.0; atol=1e-6)
     end
 
     @testset "ImplicitFluxRainfall: ice impedes the boundary flux, rainfall_entry! is a no-op" begin
         mode = ImplicitFluxRainfall()
         soil_moisture = copy(wet)
-        pool = rainfall_entry!(soil_moisture, mode, rain, _entry_step(mode, profile, depths, rain, dt, wet))
+        pool = _rainfall_entry!(soil_moisture, mode, rain, profile, depths, dt, wet)
         @test pool == rain
         @test soil_moisture == wet
-        unfrozen = _entry_step(mode, profile, depths, rain, dt, wet; frozen_conductivity=NoFrozenConductivity())
-        frozen = _entry_step(mode, profile, depths, rain, dt, wet)
-        @test frozen.rainfall_flux < unfrozen.rainfall_flux * 1e-3
+        # soil_water_balance! scales the boundary flux by this factor
+        @test conductivity_factor(BloomsburgWangFrozenConductivity(), wet[1], saturation) < 1e-3
     end
 end
