@@ -138,7 +138,7 @@ function allocate_soil_water_balance(::CampbellSoilHydraulics, num_layers)
     )
 end
 
-function infiltration_step!(buffers, soil_hydraulic_model::CampbellSoilHydraulics;
+function infiltration_step!(buffers, soil_hydraulic_model::CampbellSoilHydraulics, moisture_mode::DynamicSoilMoisture;
     soil_profile,
     depths,
     atmospheric_pressure,
@@ -147,9 +147,6 @@ function infiltration_step!(buffers, soil_hydraulic_model::CampbellSoilHydraulic
     leaf_area_index,
     evapotranspiration,
     input_soil_temperature,
-    moisture_timestep,    # solver tuning, lives on MicroConfig
-    moisture_tolerance,
-    moisture_max_iterations,
     vapour_pressure_equation=GoffGratch(),
     surface_rainfall_flux=0.0u"kg/m^2/s",  # ImplicitFluxRainfall only; every other mode leaves this 0
 )
@@ -158,6 +155,7 @@ function infiltration_step!(buffers, soil_hydraulic_model::CampbellSoilHydraulic
     lai = leaf_area_index
     relative_humidity_local = local_relative_humidity
 
+    (; moisture_timestep, moisture_tolerance, moisture_max_iterations) = moisture_mode
     dt = moisture_timestep
     hydraulic_profile = soil_profile.hydraulics
     saturated_conductivity = hydraulic_profile.saturated_hydraulic_conductivity
@@ -381,8 +379,8 @@ function infiltration_step!(buffers, soil_hydraulic_model::CampbellSoilHydraulic
 end
 
 
-soil_water_balance(soil_hydraulic_model::CampbellSoilHydraulics; num_layers=18, kw...) =
-    soil_water_balance!(allocate_soil_water_balance(soil_hydraulic_model, num_layers), soil_hydraulic_model; kw...)
+soil_water_balance(soil_hydraulic_model::CampbellSoilHydraulics, moisture_mode; num_layers=18, kw...) =
+    soil_water_balance!(allocate_soil_water_balance(soil_hydraulic_model, num_layers), soil_hydraulic_model, moisture_mode; kw...)
 
 # Wets node 1 from the pool proportional to available water, capped at `saturation`
 # -- avoids snapping to full saturation from a trace of ponding.
@@ -402,44 +400,40 @@ end
 end
 
 """
-    infiltration_substeps!(buffers, soil_hydraulic_model; soil_profile, depths, soil_moisture, pool, rainfall_flux, moisture_timestep, niter_moist, kw...)
+    infiltration_substeps!(buffers, soil_hydraulic_model, moisture_mode; soil_profile, depths, soil_moisture, pool, rainfall_flux, kw...)
 
-Run `niter_moist` sub-steps of rainfall entry and `infiltration_step!`,
-updating the surface pool after each. `rainfall_flux` is held fixed over
-the sub-steps. `kw` are passed to `infiltration_step!`.
+Run one hour of rainfall entry and `infiltration_step!` sub-steps, updating
+the surface pool after each. `rainfall_flux` is held fixed over the
+sub-steps. `kw` are passed to `infiltration_step!`.
 """
-function infiltration_substeps!(buffers, soil_hydraulic_model;
-    soil_profile, depths, soil_moisture, pool, rainfall_flux, moisture_timestep, niter_moist, kw...
+function infiltration_substeps!(buffers, soil_hydraulic_model, moisture_mode;
+    soil_profile, depths, soil_moisture, pool, rainfall_flux, kw...
 )
-    mode = soil_hydraulic_model.rainfall_entry_mode
-    pool = rainfall_entry!(soil_moisture, mode, pool; soil_profile, depths, moisture_timestep)
+    entry_mode = soil_hydraulic_model.rainfall_entry_mode
+    pool = rainfall_entry!(soil_moisture, entry_mode, soil_hydraulic_model, moisture_mode, pool; soil_profile, depths)
     # First sub-step outside the loop so infil_out is type-stable
-    infil_out = infiltration_step!(buffers, soil_hydraulic_model;
-        soil_profile, depths, soil_moisture, moisture_timestep, surface_rainfall_flux=rainfall_flux, kw...)
+    infil_out = infiltration_step!(buffers, soil_hydraulic_model, moisture_mode;
+        soil_profile, depths, soil_moisture, surface_rainfall_flux=rainfall_flux, kw...)
     soil_moisture = infil_out.soil_moisture
-    pool = _update_pool!(soil_moisture, mode, pool, infil_out;
-        soil_profile, depths, moisture_timestep, rainfall_flux)
-    for _ in 1:(niter_moist-1)
-        infil_out = infiltration_step!(buffers, soil_hydraulic_model;
-            soil_profile, depths, soil_moisture, moisture_timestep, surface_rainfall_flux=rainfall_flux, kw...)
+    pool = _update_pool!(soil_moisture, soil_hydraulic_model, moisture_mode, pool, infil_out; soil_profile, depths, rainfall_flux)
+    for _ in 1:(substep_count(moisture_mode)-1)
+        infil_out = infiltration_step!(buffers, soil_hydraulic_model, moisture_mode;
+            soil_profile, depths, soil_moisture, surface_rainfall_flux=rainfall_flux, kw...)
         soil_moisture = infil_out.soil_moisture
-        pool = _update_pool!(soil_moisture, mode, pool, infil_out;
-            soil_profile, depths, moisture_timestep, rainfall_flux)
+        pool = _update_pool!(soil_moisture, soil_hydraulic_model, moisture_mode, pool, infil_out; soil_profile, depths, rainfall_flux)
     end
     return (; infil_out, pool, soil_moisture)
 end
 
-function _update_pool!(soil_moisture, mode, pool, infil_out;
-    soil_profile, depths, moisture_timestep, rainfall_flux,
-)
+function _update_pool!(soil_moisture, soil_hydraulic_model, moisture_mode, pool, infil_out; soil_profile, depths, rainfall_flux)
+    entry_mode = soil_hydraulic_model.rainfall_entry_mode
     surface_evaporation = max(0.0u"kg/m^2", infil_out.evaporation)
     water_flux = max(0.0u"kg/m^2", infil_out.surface_water_flux)
-    pool = post_infiltration_pool_update(mode, pool, water_flux, surface_evaporation;
-        rainfall_flux, moisture_timestep)
-    return rainfall_entry!(soil_moisture, mode, pool; soil_profile, depths, moisture_timestep)
+    pool = post_infiltration_pool_update(entry_mode, moisture_mode, pool, water_flux, surface_evaporation; rainfall_flux)
+    return rainfall_entry!(soil_moisture, entry_mode, soil_hydraulic_model, moisture_mode, pool; soil_profile, depths)
 end
 
-function soil_water_balance!(buffers, soil_hydraulic_model::CampbellSoilHydraulics;
+function soil_water_balance!(buffers, soil_hydraulic_model::CampbellSoilHydraulics, moisture_mode::DynamicSoilMoisture;
     soil_profile,
     depths,
     site,
@@ -447,16 +441,12 @@ function soil_water_balance!(buffers, soil_hydraulic_model::CampbellSoilHydrauli
     environment_instant,
     T0,
     pool,
-    niter_moist,
-    soil_wetness,
     soil_moisture,
-    moisture_timestep,    # solver tuning, lives on MicroConfig
-    moisture_tolerance,
-    moisture_max_iterations,
     evaporation_model::AbstractEvaporationModel=BulkTransferEvaporation(),
     vapour_pressure_equation=GoffGratch(),
     snow_present=false,
 )
+    (; soil_wetness, moisture_timestep) = moisture_mode
     air_temperature = environment_instant.reference_temperature
     atmospheric_pressure = environment_instant.atmospheric_pressure
     relative_humidity = environment_instant.reference_humidity
@@ -502,15 +492,14 @@ function soil_water_balance!(buffers, soil_hydraulic_model::CampbellSoilHydrauli
     end
 
     # Fixed from the hour's starting pool for all sub-steps
-    rainfall_flux = rainfall_flux_for_step(soil_hydraulic_model.rainfall_entry_mode, pool, moisture_timestep, niter_moist)
-    (; infil_out, pool, soil_moisture) = infiltration_substeps!(buffers.soil_water_balance, soil_hydraulic_model;
-        soil_profile, depths, soil_moisture, pool, rainfall_flux, moisture_timestep, niter_moist,
+    rainfall_flux = rainfall_flux_for_step(soil_hydraulic_model.rainfall_entry_mode, moisture_mode, pool)
+    (; infil_out, pool, soil_moisture) = infiltration_substeps!(buffers.soil_water_balance, soil_hydraulic_model, moisture_mode;
+        soil_profile, depths, soil_moisture, pool, rainfall_flux,
         atmospheric_pressure,
         local_relative_humidity,
         leaf_area_index,
         evapotranspiration=evaporation_potential,
         input_soil_temperature=T0,
-        moisture_tolerance, moisture_max_iterations,
         vapour_pressure_equation,
     )
     # Fortran OSUB.f line 1239: ptwet = surflux / (ep * timestep) * 100

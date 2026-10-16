@@ -26,6 +26,13 @@ function DynamicSoilMoisture(;
     DynamicSoilMoisture(0.0, moisture_tolerance, moisture_max_iterations, moisture_timestep)
 end
 
+"""
+    substep_count(mode::DynamicSoilMoisture)
+
+Number of moisture solver sub-steps in one hour.
+"""
+substep_count(mode::DynamicSoilMoisture) = round(Int, uconvert(NoUnits, 1u"hr" / mode.moisture_timestep))
+
 get_soil_wetness(mode::DynamicSoilMoisture, _) = mode.soil_wetness
 init_soil_wetness!(mode::DynamicSoilMoisture) = (mode.soil_wetness = 0.0; nothing)
 
