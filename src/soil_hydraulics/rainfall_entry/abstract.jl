@@ -9,9 +9,10 @@ Rainfall flux (kg/m²/s, ≥ 0) applied as the upper boundary condition of
 function rainfall_flux_for_step end
 
 """
-    rainfall_entry!(soil_moisture, entry_mode, soil_hydraulic_model, moisture_mode, pool; soil_profile, depths)
+    rainfall_entry!(soil_moisture, entry_mode, soil_hydraulic_model, moisture_mode, pool; soil_profile, depths, frozen_water_content)
 
-Move water from `pool` into `soil_moisture` before `infiltration_step!`.
+Move water from `pool` into `soil_moisture` before `infiltration_step!`,
+slowed by `frozen_water_content` according to `soil_hydraulic_model.frozen_conductivity`.
 Returns the remaining `pool`.
 """
 function rainfall_entry! end
