@@ -27,7 +27,7 @@ function canopy_interception!(buffers, model::VerticalRainInterception, canopy_p
     throughfall[1] = rainfall
 
     if rainfall <= 0.0u"kg/m^2"
-        @inbounds for i in 1:n_layers
+        for i in 1:n_layers
             throughfall[i + 1] = throughfall[i]
         end
         return (; ground_throughfall = throughfall[n_layers + 1])
@@ -35,7 +35,7 @@ function canopy_interception!(buffers, model::VerticalRainInterception, canopy_p
 
     capacity = model.leaf_water_storage_capacity
     rain_zenith_angle = model.rain_zenith_angle
-    @inbounds for i in 1:n_layers
+    for i in 1:n_layers
         _layer_rain_intercept!(leaf_surface_water, throughfall, i, rain_zenith_angle,
             canopy_projection_ratio, layer_plant_area_index[i], capacity)
     end

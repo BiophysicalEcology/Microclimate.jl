@@ -32,16 +32,16 @@ function _view_factor_weights(receiver_pai_above, source_pai_above, source_pai, 
     n_layers = length(source_pai_above)
     τ_sky = zeros(n_receivers)
     τ_ground = zeros(n_receivers)
-    @inbounds for i in 1:n_receivers
+    for i in 1:n_receivers
         τ_sky[i] = exp(-receiver_pai_above[i])
         τ_ground[i] = exp(-(pai_total - receiver_pai_above[i]))
     end
     w = zeros(n_receivers, n_layers)
-    @inbounds for j in 1:n_layers, i in 1:n_receivers
+    for j in 1:n_layers, i in 1:n_receivers
         w[i, j] = (self_view && i == j) ? 0.0 :
             exp(-abs(receiver_pai_above[i] - source_pai_above[j])) * source_pai[j]
     end
-    @inbounds for i in 1:n_receivers
+    for i in 1:n_receivers
         Σw = zero(eltype(w))
         for j in 1:n_layers
             Σw += w[i, j]
@@ -120,11 +120,11 @@ function canopy_longwave!(buffers, model::AllPairsLongwaveExchange, leaf_emissiv
     incoming_longwave = sky.incoming_longwave
     ground_emission = ground_emissivity * σ * u"K"(ground_temperature)^4
 
-    @inbounds for i in 1:n_layers
+    for i in 1:n_layers
         leaf_emission[i] = leaf_emissivity * σ * u"K"(leaf_temperature[i])^4
     end
 
-    @inbounds for i in 1:n_layers
+    for i in 1:n_layers
         down = incoming_longwave * sky_transmission[i]
         up = ground_emission * ground_transmission[i]
         for j in 1:n_layers
@@ -136,7 +136,7 @@ function canopy_longwave!(buffers, model::AllPairsLongwaveExchange, leaf_emissiv
         upward_longwave[i] = up
     end
 
-    @inbounds for i in 1:n_layers
+    for i in 1:n_layers
         # Matches R's RlwLabs = 0.5*vegem*(Rlwdown+Rlwup) exactly once carried
         # through leaf_heat_balance's per-leaf-area conversion (divides by
         # 2*(1-layer_transmission), cancelling the (1-layer_transmission) here).
@@ -148,7 +148,7 @@ function canopy_longwave!(buffers, model::AllPairsLongwaveExchange, leaf_emissiv
     # ground surface itself: every layer is "above" it (all contribute to downward);
     # nothing contributes to upward beyond the ground's own emission (no reflection)
     ground_downward = incoming_longwave * ground_sky_transmission
-    @inbounds for j in 1:n_layers
+    for j in 1:n_layers
         ground_downward += ground_view_weights[j] * leaf_emission[j]
     end
     boundary_downward_longwave[n_layers + 1] = ground_downward
@@ -160,7 +160,7 @@ function canopy_longwave!(buffers, model::AllPairsLongwaveExchange, leaf_emissiv
     # opposite receiver point) -- boundary_upward_longwave[1] sits at layer
     # 1's own position, not the top, so it understates what actually escapes.
     top_upward = ground_emission * top_ground_transmission
-    @inbounds for j in 1:n_layers
+    for j in 1:n_layers
         top_upward += top_view_weights[j] * leaf_emission[j]
     end
     net_absorbed_longwave = incoming_longwave - top_upward

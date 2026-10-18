@@ -386,14 +386,14 @@ function canopy_shortwave!(buffers, radiation_model::TwoStreamRadiation, plant_a
     direct = direct_two_stream_optics(PAI, kbeam, ρground, leaf, diffuse,)
 
     # total downward and upward shortwave fluxes at every layer
-    @inbounds for i in eachindex(Lbound)
+    for i in eachindex(Lbound)
         fractions = two_stream_flux_fractions(leaf, diffuse, direct, kbeam, ρmax, hasbeam, Lbound[i],)
         irradiances = two_stream_irradiances(fractions, Idir, Idiff,)
         F_d[i] = irradiances.downward
         F_u[i] = irradiances.upward
     end
 
-    @inbounds for i in 1:n
+    for i in 1:n
         # shortwave absorption is the flux convergence across layer i
         Qabs[i] = (F_d[i] - F_d[i + 1]) + (F_u[i + 1] - F_u[i])
         fractions = two_stream_flux_fractions(leaf, diffuse, direct, kbeam, ρmax, hasbeam, Labove[i],)

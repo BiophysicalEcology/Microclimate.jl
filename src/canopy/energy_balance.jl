@@ -194,7 +194,7 @@ function canopy_energy_balance!(buffers, model::MultilayerCanopy, boundary_layer
         converge_canopy!(buffers, model, boundary_layer_model, ctx, model.convergence_model)
 
     melt_drip_total = 0.0u"kg/m^2"
-    @inbounds for layer in 1:n_layers
+    for layer in 1:n_layers
         # evaporation_mass_flow blends transpiration and wet-surface
         # evaporation; only the wet fraction should draw down intercepted
         # rain — transpiration draws from soil/plant water instead.
@@ -332,7 +332,7 @@ function _canopy_picard_pass!(buffers, model::MultilayerCanopy, boundary_layer_m
 
     # Raw leaf-temperature solve; Aitken-blended as a whole vector below, so
     # solve and flux/clamp are separate passes either side of the blend.
-    @inbounds for layer in 1:n_layers
+    for layer in 1:n_layers
         # Radiative exchange area is the layer's interception fraction (1-τ),
         # not PAI directly (self-shading means (1-τ)<PAI); canopy_longwave!'s
         # own emission scales the same way, so emitted_longwave must match it
@@ -373,7 +373,7 @@ function _canopy_picard_pass!(buffers, model::MultilayerCanopy, boundary_layer_m
         buffers.leaf.aitken_omega, buffers.leaf.aitken_have_prev, buffers.leaf.aitken_residual_prev,
         0.02, 0.9, 1.0, 1.0, 0.0, u"K")
 
-    @inbounds for layer in 1:n_layers
+    for layer in 1:n_layers
         exchange_fraction = 1.0 - layer_transmission[layer]
         if iszero(exchange_fraction)
             sensible_heat_source[layer] = zero(sensible_heat_source[layer])

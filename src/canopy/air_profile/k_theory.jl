@@ -73,7 +73,7 @@ function _ktheory_conductances!(dl, du, relative_eddy_diffusivity, eddy_diffusiv
     g_top = ustrip(unit, scale * eddy_diffusivity_top * 0.5 *
         (relative_eddy_diffusivity[1] + relative_eddy_diffusivity[2]) / layer_spacing[1])
     g_ground = ustrip(unit, scale * eddy_diffusivity_top * relative_eddy_diffusivity[n_free + 1] / layer_spacing[n_free + 1])
-    @inbounds for i in 1:(n_free - 1)
+    for i in 1:(n_free - 1)
         eddy_diffusivity_boundary = eddy_diffusivity_top * 0.5 *
             (relative_eddy_diffusivity[i + 1] + relative_eddy_diffusivity[i + 2])
         g = ustrip(unit, scale * eddy_diffusivity_boundary / layer_spacing[i + 1])
@@ -160,7 +160,7 @@ function canopy_air_profile!(buffers, ::KTheoryAirProfile, boundary_layer_model;
     # Layer 1 and the ground provide the known boundary values.
     T₀ = ustrip(u"K", T[1])
     T_g = ustrip(u"K", T_ground)
-    @inbounds for i in 1:n_free
+    for i in 1:n_free
         g₋ = i == 1      ? g_top    : dl[i - 1]
         g₊ = i == n_free ? g_ground : dl[i]
         d[i] = -(g₋ + g₊)
@@ -183,7 +183,7 @@ function canopy_air_profile!(buffers, ::KTheoryAirProfile, boundary_layer_model;
     ρᵥ_ground = wet_air_properties(T_ground, RH_ground, p; vapour_pressure_equation).vapour_density
     ρᵥ₀ = ustrip(u"kg/m^3", ρᵥ_top)
     ρᵥ_g = ustrip(u"kg/m^3", ρᵥ_ground)
-    @inbounds for i in 1:n_free
+    for i in 1:n_free
         g₋ = i == 1      ? gᵥ_top    : dlᵥ[i - 1]
         g₊ = i == n_free ? gᵥ_ground : dlᵥ[i]
         dᵥ[i] = -(g₋ + g₊)
@@ -199,7 +199,7 @@ function canopy_air_profile!(buffers, ::KTheoryAirProfile, boundary_layer_model;
     ρᵥ[2:end] .= SciMLBase.solve!(vapor_cache).u .* u"kg/m^3"
 
     # Diagnostic relative humidity
-    @inbounds for i in 1:n
+    for i in 1:n
         ρᵥ_sat = wet_air_properties(T[i], 1.0, p; vapour_pressure_equation).vapour_density
         RH[i] = clamp(ρᵥ[i] / ρᵥ_sat, 0.0, 1.0)
     end

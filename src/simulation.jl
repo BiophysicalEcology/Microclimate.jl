@@ -84,7 +84,7 @@ end
 # soil_energy_balance substitutes for its shade-based defaults, plus the
 # updated canopy_source_temperature and (for diagnostics) the full canopy
 # result. NoCanopy passes everything through unchanged/nothing.
-@inline function apply_canopy_overrides(::NoCanopy, buffers, canopy_inputs;
+function apply_canopy_overrides(::NoCanopy, buffers, canopy_inputs;
     boundary_layer_model, site, environment_instant, ground_temperature, ground_emissivity, ground_relative_humidity,
     canopy_source_temperature, rainfall, direct_horizontal_irradiance, diffuse_horizontal_irradiance, ground_reflectance,
     leaf_water_potential,
@@ -100,7 +100,7 @@ end
     )
 end
 
-@inline function apply_canopy_overrides(model::MultilayerCanopy, buffers, canopy_inputs;
+function apply_canopy_overrides(model::MultilayerCanopy, buffers, canopy_inputs;
     boundary_layer_model, site, environment_instant, ground_temperature, ground_emissivity, ground_relative_humidity,
     canopy_source_temperature, rainfall, direct_horizontal_irradiance, diffuse_horizontal_irradiance, ground_reflectance,
     leaf_water_potential,
@@ -1034,7 +1034,7 @@ end
 # recompute their stage cache every step anyway, so we skip `reinit_cache`
 # and avoid the ~440 B/call allocation. `integrator.alg` has a concrete
 # type at the call site, so the compiler constant-folds the branch.
-@inline function _maybe_reinit_integrator!(integrator, u_new, t0=zero(integrator.t); reset_dt=true)
+function _maybe_reinit_integrator!(integrator, u_new, t0=zero(integrator.t); reset_dt=true)
     if ismultistep(integrator.alg)
         SciMLBase.reinit!(integrator, u_new;
             t0, erase_sol=false, reset_dt,
@@ -1160,7 +1160,7 @@ function _sum_canopy_fluxes(leaf)
     (; sensible_heat_source, evaporation_mass_flow, leaf_temperature) = leaf
     sensible = zero(typeof(1.0u"W/m^2"))
     latent = zero(typeof(1.0u"W/m^2"))
-    @inbounds for i in eachindex(sensible_heat_source)
+    for i in eachindex(sensible_heat_source)
         sensible += sensible_heat_source[i]
         latent += uconvert(u"W/m^2", evaporation_mass_flow[i] * enthalpy_of_vaporisation(leaf_temperature[i]) / 1.0u"m^2")
     end

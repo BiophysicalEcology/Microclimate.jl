@@ -126,7 +126,7 @@ function restore_interception! end
 # rain_zenith_angle -- wind-driven for LayeredRainInterception, fixed for
 # VerticalRainInterception. Mass-conservative: intercepted stays in storage
 # or drips to throughfall[i+1], nothing vanishes.
-@inline function _layer_rain_intercept!(leaf_surface_water, throughfall, i, rain_zenith_angle,
+function _layer_rain_intercept!(leaf_surface_water, throughfall, i, rain_zenith_angle,
     canopy_projection_ratio, layer_pai, capacity,
 )
     extinction_coefficient = ellipsoidal_extinction_coefficient(rain_zenith_angle, canopy_projection_ratio)

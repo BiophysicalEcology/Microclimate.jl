@@ -69,7 +69,7 @@ function canopy_longwave!(buffers, model::LayeredLongwaveExchange, leaf_emissivi
     sky = precompute_longwave_sky(model.atmospheric_radiation_model;
         site, environment_instant, vapour_pressure_equation, shade=0.0)
     boundary_downward_longwave[1] = sky.incoming_longwave
-    @inbounds for i in 1:n_layers
+    for i in 1:n_layers
         τ = layer_transmission[i]
         emission = leaf_emissivity * σ * u"K"(leaf_temperature[i])^4
         boundary_downward_longwave[i + 1] = boundary_downward_longwave[i] * τ + emission * (1.0 - τ)
@@ -77,13 +77,13 @@ function canopy_longwave!(buffers, model::LayeredLongwaveExchange, leaf_emissivi
 
     ground_emission = ground_emissivity * σ * u"K"(ground_temperature)^4
     boundary_upward_longwave[n_layers + 1] = ground_emission + (1.0 - ground_emissivity) * boundary_downward_longwave[n_layers + 1]
-    @inbounds for i in n_layers:-1:1
+    for i in n_layers:-1:1
         τ = layer_transmission[i]
         emission = leaf_emissivity * σ * u"K"(leaf_temperature[i])^4
         boundary_upward_longwave[i] = boundary_upward_longwave[i + 1] * τ + emission * (1.0 - τ)
     end
 
-    @inbounds for i in 1:n_layers
+    for i in 1:n_layers
         τ = layer_transmission[i]
         absorbed_longwave[i] = (1.0 - τ) * (boundary_downward_longwave[i] + boundary_upward_longwave[i + 1])
     end
