@@ -84,13 +84,7 @@ alone) that :exact omits.
     bulk_temperature_margin::BTM = 2.0u"K"
 end
 
-# Temporary diagnostic: set to true to @info the ground-resistance floor's
-# inputs/outputs every call (GWW dew-magnitude investigation). Remove once
-# resolved.
-const _DEBUG_GROUND_RESISTANCE = Ref(false)
-const _DEBUG_GROUND_RESISTANCE_COUNTER = Ref(0)
-
-function allocate_air_profile(model::RaupachLTheoryAirProfile, canopy_height, plant_area_index, heights, n_layers, boundary_layer_model)
+function allocate_air_profile(model::RaupachLTheoryAirProfile, canopy_height, displacement_height, plant_area_index, heights, n_layers, boundary_layer_model)
     geometry = canopy_layer_heights(heights, canopy_height, n_layers)
     z = geometry.layer_heights
     Δz = geometry.layer_thickness
@@ -127,6 +121,8 @@ function allocate_air_profile(model::RaupachLTheoryAirProfile, canopy_height, pl
     RH = zeros(n_layers)
 
     return (;
+        canopy_height,
+        displacement_height,
         layer_heights = z,
         layer_thickness = Δz,
         vertical_velocity_std = σw,
@@ -453,6 +449,20 @@ function _raupach_temperature_bounds(::Val{:bulk}, T_top, ground_temperature, le
     return (bound_lo, bound_hi)
 end
 
+# :bulk bounds the canopy-top boundary to the fixed ambient data,
+# reference_temperature/ground_temperature ± bulk_temperature_margin. Not widened
+# by leaf_temperature as the interior bound is: leaf temperature is clamped
+# relative to air temperature, so under a calm/cold-air runaway it collapses
+# in lockstep, and a leaf-widened floor would collapse with it.
+clamp_canopy_top_air_temperature(model::RaupachLTheoryAirProfile, canopy_top_air_temperature, reference_temperature, ground_temperature) =
+    _clamp_canopy_top_air_temperature(model.far_field_mode, model.bulk_temperature_margin,
+        canopy_top_air_temperature, reference_temperature, ground_temperature)
+_clamp_canopy_top_air_temperature(::Val{:exact}, margin, canopy_top_air_temperature, reference_temperature, ground_temperature) =
+    canopy_top_air_temperature
+_clamp_canopy_top_air_temperature(::Val{:bulk}, margin, canopy_top_air_temperature, reference_temperature, ground_temperature) =
+    clamp(canopy_top_air_temperature,
+        min(reference_temperature, ground_temperature) - margin, max(reference_temperature, ground_temperature) + margin)
+
 # Drops the Aitken residual history, not omega -- omega is a learned-good
 # relaxation rate, worth keeping as next day's starting guess; the residual
 # itself is meaningless carried from an unrelated previous day.
@@ -462,14 +472,14 @@ function reset_air_profile_scratch!(::RaupachLTheoryAirProfile, buffers)
     return nothing
 end
 
-function canopy_air_profile!(buffers, model::RaupachLTheoryAirProfile, boundary_layer_model;
-    canopy_height, displacement_height, friction_velocity, wind_speed, ground_roughness_height,
-    canopy_top_air_temperature, canopy_top_relative_humidity, ground_temperature, ground_relative_humidity,
-    sensible_heat_source, evaporation_mass_flow, obukhov_length, atmospheric_pressure, vapour_pressure_equation=GoffGratch(),
-    leaf_temperature=nothing,
-    friction_velocity_raw=nothing,  # temporary GWW diagnostic, see monin_obukhov.jl
+function canopy_air_profile!(buffers, model::RaupachLTheoryAirProfile, boundary_layer_model,
+    forcing::CanopyAirProfileForcing; site, vapour_pressure_equation=GoffGratch(),
 )
-    (; layer_heights, layer_thickness, vertical_velocity_std, inv_near_field_length, eddy_diffusivity,
+    (; friction_velocity, obukhov_length, wind_speed, canopy_top_air_temperature, canopy_top_relative_humidity,
+       ground_temperature, ground_relative_humidity, sensible_heat_source, evaporation_mass_flow,
+       leaf_temperature, atmospheric_pressure) = forcing
+    ground_roughness_height = site.roughness_height
+    (; canopy_height, displacement_height, layer_heights, layer_thickness, vertical_velocity_std, inv_near_field_length, eddy_diffusivity,
        layer_resistance, far_field_accum, far_field_accum_latent, resistance_from_top, resistance_to_ground,
        cumulative_sensible_below, sensible_near_field_weight, cumulative_latent_below, latent_near_field_weight,
        air_temperature, air_temperature_prev, vapor_density, vapor_density_prev, relative_humidity,
@@ -629,18 +639,8 @@ function canopy_air_profile!(buffers, model::RaupachLTheoryAirProfile, boundary_
     R_sublayer_heat = 1.0 / (u★_ground * sublayer_stanton_number)
     R_sublayer_vapor = R_sublayer_heat / LEWIS_HEAT_TO_MASS_RATIO
 
-    Rg_heat_raw = r[n] + R_sublayer_heat
-    Rg_vapor_raw = r[n] + R_sublayer_vapor
-    Rg_heat = max(Rg_heat_raw, min_ground_resistance)
-    Rg_vapor = max(Rg_vapor_raw, min_ground_resistance)
-
-    # Temporary diagnostic: instruments the ground-resistance floor. Remove
-    # once resolved. call_count is a call counter, not an hour index --
-    # canopy_air_profile! runs once per Picard pass.
-    if _DEBUG_GROUND_RESISTANCE[]
-        _DEBUG_GROUND_RESISTANCE_COUNTER[] += 1
-        @info "ground resistance" call_count=_DEBUG_GROUND_RESISTANCE_COUNTER[] u★ u★_raw=friction_velocity_raw u★_ground wind_speed_n=wind_speed[n] R_turbulent=r[n] R_sublayer_heat R_sublayer_vapor Rg_heat_raw Rg_vapor_raw min_ground_resistance Rg_heat Rg_vapor floor_bound_heat=(Rg_heat_raw < min_ground_resistance) floor_bound_vapor=(Rg_vapor_raw < min_ground_resistance)
-    end
+    Rg_heat = max(r[n] + R_sublayer_heat, min_ground_resistance)
+    Rg_vapor = max(r[n] + R_sublayer_vapor, min_ground_resistance)
 
     # ρcp is volumetric heat capacity, with units J m⁻³ K⁻¹.
     # ρ_cp fixed from T_top/ground_temperature, not from the (possibly still

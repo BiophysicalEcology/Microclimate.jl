@@ -318,7 +318,6 @@ function _canopy_picard_pass!(buffers, model::MultilayerCanopy, boundary_layer_m
     wind_result = canopy_wind_profile!(buffers, model, boundary_layer_model;
         site, environment_instant, canopy_source_temperature=leaf_temperature_buffer[1], vapour_pressure_equation)
     friction_velocity = wind_result.friction_velocity
-    friction_velocity_raw = wind_result.friction_velocity_raw  # temporary diagnostic, see monin_obukhov.jl
     obukhov_length = wind_result.obukhov_length
     wind_speed = buffers.wind.wind_speed
 
@@ -464,31 +463,18 @@ function _canopy_picard_pass!(buffers, model::MultilayerCanopy, boundary_layer_m
     # extreme carried-forward value barely moves per pass, so it needs the
     # same absolute bracket, not just a bounded input to blend towards.
     canopy_top_air_temperature = clamp(canopy_top_air_temperature, boundary.bound_lo, boundary.bound_hi)
-    # Raupach :bulk further tightens this to reference_temperature/ground_temperature
-    # (fixed ambient data) ± bulk_temperature_margin. Deliberately NOT widened by
-    # leaf_temperature the way the interior profile's own bound is: leaf is clamped
-    # relative to air_temperature, so under a sustained calm/cold-air runaway leaf
-    # collapses in lockstep with it -- widening this bound via leaf lets the "floor"
-    # collapse together with the thing it's meant to catch.
-    air_profile_model = model.air_profile_model
-    if air_profile_model isa RaupachLTheoryAirProfile && air_profile_model.far_field_mode isa Val{:bulk}
-        margin = air_profile_model.bulk_temperature_margin
-        tight_lo = min(reference_temperature, ground_temperature) - margin
-        tight_hi = max(reference_temperature, ground_temperature) + margin
-        canopy_top_air_temperature = clamp(canopy_top_air_temperature, tight_lo, tight_hi)
-    end
+    canopy_top_air_temperature = clamp_canopy_top_air_temperature(model.air_profile_model,
+        canopy_top_air_temperature, reference_temperature, ground_temperature)
     canopy_top_relative_humidity = relaxation * boundary_relative_humidity +
         (1.0 - relaxation) * canopy_top_relative_humidity_prev
 
     air_temperature_prev .= buffers.air_profile.air_temperature
     relative_humidity_prev .= buffers.air_profile.relative_humidity
 
-    canopy_air_profile!(buffers, model, boundary_layer_model;
-        canopy_height, displacement_height, friction_velocity, friction_velocity_raw,
-        wind_speed=buffers.wind.wind_speed, ground_roughness_height=site.roughness_height,
+    forcing = CanopyAirProfileForcing(; friction_velocity, obukhov_length, wind_speed,
         canopy_top_air_temperature, canopy_top_relative_humidity, ground_temperature, ground_relative_humidity,
-        sensible_heat_source, evaporation_mass_flow, obukhov_length, atmospheric_pressure, vapour_pressure_equation,
-        leaf_temperature=leaf_temperature_buffer)
+        sensible_heat_source, evaporation_mass_flow, leaf_temperature=leaf_temperature_buffer, atmospheric_pressure)
+    canopy_air_profile!(buffers, model, boundary_layer_model, forcing; site, vapour_pressure_equation)
 
     _relax_air_profile!(buffers, model.air_profile_model, relaxation, air_temperature_prev, relative_humidity_prev)
 

@@ -32,7 +32,7 @@ canopy-top value `κ u* (canopy_height - displacement_height)`.
 """
 struct KTheoryAirProfile <: AbstractCanopyAirProfileModel end
 
-function allocate_air_profile(::KTheoryAirProfile, canopy_height, plant_area_index, heights, n_layers, boundary_layer_model)
+function allocate_air_profile(::KTheoryAirProfile, canopy_height, displacement_height, plant_area_index, heights, n_layers, boundary_layer_model)
     (; layer_thickness) = canopy_layer_heights(heights, canopy_height, n_layers)
     Δz = layer_thickness
 
@@ -52,6 +52,7 @@ function allocate_air_profile(::KTheoryAirProfile, canopy_height, plant_area_ind
     vapor_cache = SciMLBase.init(LinearProblem(vapor_matrix, rhs_v))
 
     return (;
+        canopy_height, displacement_height,
         layer_spacing = Δz, relative_eddy_diffusivity = K_relative,
         heat_lower_diagonal = dl, heat_diagonal = d, heat_upper_diagonal = du, heat_right_hand_side = rhs,
         vapor_lower_diagonal = dl_v, vapor_diagonal = d_v, vapor_upper_diagonal = du_v, vapor_right_hand_side = rhs_v,
@@ -85,19 +86,13 @@ function _ktheory_conductances!(dl, du, relative_eddy_diffusivity, eddy_diffusiv
     return g_top, g_ground
 end
 
-function canopy_air_profile!(buffers, ::KTheoryAirProfile, boundary_layer_model;
-    canopy_height, displacement_height, friction_velocity,
-    canopy_top_air_temperature, canopy_top_relative_humidity, ground_temperature, ground_relative_humidity,
-    sensible_heat_source, evaporation_mass_flow, atmospheric_pressure, vapour_pressure_equation=GoffGratch(),
-    obukhov_length=nothing,  # shared dispatch surface with RaupachLTheoryAirProfile; K-theory's steady closure doesn't need it
-    wind_attenuation=nothing,  # ditto -- K-theory already derives its own ground diffusivity from relative_eddy_diffusivity
-    leaf_temperature=nothing,  # ditto -- only RaupachLTheoryAirProfile's :bulk mode uses it
-    friction_velocity_raw=nothing,  # ditto -- temporary GWW diagnostic, RaupachLTheoryAirProfile only
-    wind_speed=nothing,  # ditto -- RaupachLTheoryAirProfile's ground quasi-laminar sublayer term only
-    ground_roughness_height=nothing,  # ditto
+function canopy_air_profile!(buffers, ::KTheoryAirProfile, boundary_layer_model,
+    forcing::CanopyAirProfileForcing; site, vapour_pressure_equation=GoffGratch(),
 )
+    (; friction_velocity, canopy_top_air_temperature, canopy_top_relative_humidity, ground_temperature,
+       ground_relative_humidity, sensible_heat_source, evaporation_mass_flow, atmospheric_pressure) = forcing
     (;
-        layer_spacing, relative_eddy_diffusivity,
+        canopy_height, displacement_height, layer_spacing, relative_eddy_diffusivity,
         heat_lower_diagonal, heat_diagonal, heat_upper_diagonal, heat_right_hand_side,
         vapor_lower_diagonal, vapor_diagonal, vapor_upper_diagonal, vapor_right_hand_side,
         heat_matrix, vapor_matrix, heat_solver_cache, vapor_solver_cache,

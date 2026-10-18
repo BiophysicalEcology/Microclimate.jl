@@ -230,7 +230,6 @@ function atmospheric_surface_profile!(bl::MoninObukhov, buffers;
     roughness_height_temp = Obukhov_out.roughness_height_temperature
     convective_heat_flux = Obukhov_out.convective_heat_flux
     friction_velocity = Obukhov_out.friction_velocity
-    friction_velocity_raw = Obukhov_out.friction_velocity_raw
     ψ_h = Obukhov_out.ψ_h
     # See docstring: default anchors on z0/roughness_height_temp; temperature_anchor_height
     # switches to a direct two-point interpolation, ψ_h included at the anchor.
@@ -292,7 +291,6 @@ function atmospheric_surface_profile!(bl::MoninObukhov, buffers;
         relative_humidity,
         convective_heat_flux=u"W/m^2"(convective_heat_flux),
         friction_velocity,
-        friction_velocity_raw,  # temporary diagnostic field, pre-floor value; remove once GWW investigation concludes
         obukhov_length,
     )
 end
@@ -742,7 +740,6 @@ to. Converges to `±Inf` (neutral) as `ΔT → 0`.
     relative_error = 1.0
     count = 0
     just_above_zero = 1.0e-6
-    friction_velocity_raw = 0.0u"m/s"  # pre-min_friction_velocity-floor value, diagnostic only
     while relative_error > tol && count < max_iter
         count += 1
         ψ_m = calc_ψ_m(z, γ, obukhov_length, stable_beta)
@@ -750,8 +747,7 @@ to. Converges to `±Inf` (neutral) as `ΔT → 0`.
         log_z_ratio_i = log(z / z0)
         # Floor at a fraction of the neutral log term to avoid unstable friction_velocity
         log_ratio_corrected = max(log_z_ratio_i - ψ_m, 0.1 * log_z_ratio_i, just_above_zero)
-        friction_velocity_raw = κ * v_ref_height / log_ratio_corrected
-        friction_velocity = max(friction_velocity_raw, min_friction_velocity)
+        friction_velocity = max(κ * v_ref_height / log_ratio_corrected, min_friction_velocity)
         convective_heat_flux, roughness_height_temperature = _unstable_convective_heat_flux(thermal_roughness_model,
             ρ_cp, ΔT, friction_velocity, κ, z0, z, log_ratio_corrected, ψ_h, obukhov_length, kinematic_viscosity,
             reference_temp, surface_temp)
@@ -763,7 +759,6 @@ to. Converges to `±Inf` (neutral) as `ΔT → 0`.
     return (;
         obukhov_length=u"m"(obukhov_length),
         friction_velocity,
-        friction_velocity_raw,  # temporary diagnostic field, pre-floor value; remove once GWW investigation concludes
         ψ_h,
         convective_heat_flux=u"W/m^2"(convective_heat_flux),
         roughness_height_temperature,
