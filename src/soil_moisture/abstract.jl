@@ -1,18 +1,12 @@
 abstract type AbstractSoilMoistureStrategy end
 
 """
-    get_soil_wetness(strategy, environment_instant)
+    get_soil_wetness(strategy, environment_instant, soil_wetness)
 
-Surface wetness (0–1) at the current step.
+Surface wetness (0–1) at the current step: prescribed from
+`environment_instant`, or the solved `soil_wetness` state.
 """
 function get_soil_wetness end
-
-"""
-    init_soil_wetness!(strategy)
-
-Reset any mutable wetness state held by the strategy at the start of a run.
-"""
-function init_soil_wetness! end
 
 """
     initialise_soil_humidity!(strategy, output, soil_water_potential, T0)

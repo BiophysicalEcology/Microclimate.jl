@@ -102,7 +102,7 @@ end
     soil_heat_capacity::SPH
     soil_bulk_density::SBD
     ground_surface_water::SW
-    runoff::RO  # cumulative water ponded above max_pond_depth and removed as runoff, kg/m²
+    runoff::RO  # cumulative water above max_surface_pool removed as runoff, kg/m²
     solar_radiation::SR
     profile::Pr
     snow_fall::SF

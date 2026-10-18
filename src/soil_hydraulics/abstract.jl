@@ -18,7 +18,7 @@ function soil_water_balance end
 """
     soil_water_balance!(buffers, soil_hydraulic_model, moisture_mode::DynamicSoilMoisture;
         soil_profile, depths, pool, evaporation_potential, local_relative_humidity, soil_moisture,
-        max_surface_pool, T0, frozen_water_content, vapour_pressure_equation,
+        T0, frozen_water_content, vapour_pressure_equation,
         canopy_transpiration_potential, canopy_leaf_area_index, environment_instant)
 
 One-hour water-balance step: sub-steps of the variant's infiltration solver,
