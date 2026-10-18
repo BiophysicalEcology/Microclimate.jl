@@ -13,19 +13,28 @@ RateLimitedFrontRainfall(; fill_fraction=0.9) = RateLimitedFrontRainfall(fill_fr
 
 rainfall_flux_for_step(::RateLimitedFrontRainfall, moisture_mode, pool) = 0.0u"kg/m^2/s"
 
-function rainfall_entry!(soil_moisture, entry_mode::RateLimitedFrontRainfall, soil_hydraulic_model, moisture_mode, pool; soil_profile, depths)
+function rainfall_entry!(soil_moisture, entry_mode::RateLimitedFrontRainfall, soil_hydraulic_model, moisture_mode, pool;
+    soil_profile, depths, frozen_water_content,
+)
     pool <= 0.0u"kg/m^2" && return pool
+    frozen_conductivity = soil_hydraulic_model.frozen_conductivity
     saturated_conductivity = soil_profile.hydraulics.saturated_hydraulic_conductivity
     remaining = pool
+    # soil_moisture is total (liquid+ice) content, so the ceiling stays
+    # fill_target regardless of ice; ice instead reduces the rate limit.
     for i in eachindex(soil_moisture)
         remaining <= 0.0u"kg/m^2" && break
-        fill_target = entry_mode.fill_fraction * _saturation_water_content(soil_profile, i)
+        saturation = _saturation_water_content(soil_profile, i)
+        ice_content = frozen_water_content[i]
+        fill_target = entry_mode.fill_fraction * saturation
         layer_mass = _layer_thickness(depths, i) * water_density
         layer_capacity = max(0.0u"kg/m^2", (fill_target - soil_moisture[i]) * layer_mass)
-        rate_limit = uconvert(u"kg/m^2", Unitful.gn * saturated_conductivity[i] * moisture_mode.moisture_timestep)
+        conductivity = saturated_conductivity[i] * conductivity_factor(frozen_conductivity, ice_content, saturation)
+        rate_limit = uconvert(u"kg/m^2", Unitful.gn * conductivity * moisture_mode.moisture_timestep)
         infiltrated = min(remaining, layer_capacity, rate_limit)
         soil_moisture[i] += infiltrated / layer_mass
         remaining -= infiltrated
+        conductivity_blocked(frozen_conductivity, ice_content, saturation) && break  # frozen layer halts the front
     end
     return remaining
 end

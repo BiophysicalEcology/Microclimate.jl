@@ -25,7 +25,7 @@ function run_rainfall_hour(mode; soil_moisture, pool)
     buffers = allocate_soil_water_balance(model, num_layers)
     rainfall_flux = rainfall_flux_for_step(mode, moisture_mode, pool)
     (; soil_moisture, pool) = infiltration_substeps!(buffers, model, moisture_mode;
-        soil_profile=profile, depths, soil_moisture, pool, rainfall_flux,
+        soil_profile=profile, depths, soil_moisture, pool, rainfall_flux, frozen_water_content=zeros(num_layers),
         atmospheric_pressure=101325.0u"Pa", local_relative_humidity=0.5, leaf_area_index=1.0u"Mg/m^3",
         evapotranspiration=0.0u"kg/m^2/s", input_soil_temperature=fill(293.0u"K", num_layers),
     )
@@ -56,7 +56,7 @@ end
             soil_moisture = fill(0.10, num_layers)
             storage_before = soil_water_storage(soil_moisture, depths)
             remaining_pool = rainfall_entry!(soil_moisture, mode, example_soil_hydraulic_model(; rainfall_entry_mode=mode), moisture_mode, rain;
-                soil_profile=profile, depths)
+                soil_profile=profile, depths, frozen_water_content=zeros(num_layers))
             storage_after = soil_water_storage(soil_moisture, depths)
             @test isapprox(ustrip(u"kg/m^2", storage_after - storage_before + remaining_pool - rain), 0.0; atol=1e-6)
         end
