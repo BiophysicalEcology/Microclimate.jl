@@ -14,6 +14,15 @@ and how a wetted leaf surface enhances evaporation. Held on
 abstract type AbstractCanopyInterceptionModel end
 
 """
+    AbstractStorageInterception <: AbstractCanopyInterceptionModel
+
+Interception models that hold intercepted rain, dew and frost in per-layer
+leaf storage. Subtypes share the storage bookkeeping and differ only in how
+rain is caught.
+"""
+abstract type AbstractStorageInterception <: AbstractCanopyInterceptionModel end
+
+"""
     allocate_interception(model, canopy_height, plant_area_index, heights, n_layers, boundary_layer_model)
 
 Pre-allocate and precompute the structural buffers a model needs.

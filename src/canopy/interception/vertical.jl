@@ -11,7 +11,7 @@ relation. Set `rain_zenith_angle` to the site's `slope` for that
 equivalence (rain falls vertically in the world frame, so its angle
 relative to the canopy's local zenith equals terrain slope).
 """
-@kwdef struct VerticalRainInterception{C,A} <: AbstractCanopyInterceptionModel
+@kwdef struct VerticalRainInterception{C,A} <: AbstractStorageInterception
     leaf_water_storage_capacity::C = 0.1u"kg/m^2"
     rain_zenith_angle::A = 0.0u"°"
 end
@@ -43,59 +43,55 @@ function canopy_interception!(buffers, model::VerticalRainInterception, canopy_p
     return (; ground_throughfall = throughfall[n_layers + 1])
 end
 
-# Storage bookkeeping shared with LayeredRainInterception -- identical for
-# both, only the interception mechanism above differs.
-const _StorageBasedInterception = Union{LayeredRainInterception,VerticalRainInterception}
-
-function wet_canopy_fraction(model::_StorageBasedInterception, buffers, layer)
+function wet_canopy_fraction(model::AbstractStorageInterception, buffers, layer)
     layer_capacity = model.leaf_water_storage_capacity * buffers.layer_plant_area_index[layer]
     iszero(layer_capacity) && return 0.0
     return clamp(buffers.leaf_surface_water[layer] / layer_capacity, 0.0, 1.0)
 end
 
-available_canopy_water(::_StorageBasedInterception, buffers, layer) = buffers.leaf_surface_water[layer]
+available_canopy_water(::AbstractStorageInterception, buffers, layer) = buffers.leaf_surface_water[layer]
 
-canopy_water_capacity(model::_StorageBasedInterception, buffers, layer) =
+canopy_water_capacity(model::AbstractStorageInterception, buffers, layer) =
     model.leaf_water_storage_capacity * buffers.layer_plant_area_index[layer]
 
-function deplete_canopy_water!(::_StorageBasedInterception, buffers, layer, evaporated_mass)
+function deplete_canopy_water!(::AbstractStorageInterception, buffers, layer, evaporated_mass)
     buffers.leaf_surface_water[layer] = max(buffers.leaf_surface_water[layer] - evaporated_mass, 0.0u"kg/m^2")
     return nothing
 end
 
-leaf_standing_dew(::_StorageBasedInterception, buffers, layer) = buffers.leaf_standing_dew[layer]
-leaf_standing_frost(::_StorageBasedInterception, buffers, layer) = buffers.leaf_standing_frost[layer]
+leaf_standing_dew(::AbstractStorageInterception, buffers, layer) = buffers.leaf_standing_dew[layer]
+leaf_standing_frost(::AbstractStorageInterception, buffers, layer) = buffers.leaf_standing_frost[layer]
 
-function add_leaf_standing_dew!(::_StorageBasedInterception, buffers, layer, Δ)
+function add_leaf_standing_dew!(::AbstractStorageInterception, buffers, layer, Δ)
     buffers.leaf_standing_dew[layer] = max(buffers.leaf_standing_dew[layer] + Δ, 0.0u"kg/m^2")
     return nothing
 end
 
-function add_leaf_standing_frost!(::_StorageBasedInterception, buffers, layer, Δ)
+function add_leaf_standing_frost!(::AbstractStorageInterception, buffers, layer, Δ)
     buffers.leaf_standing_frost[layer] = max(buffers.leaf_standing_frost[layer] + Δ, 0.0u"kg/m^2")
     return nothing
 end
 
-function clamp_leaf_standing_dew!(::_StorageBasedInterception, buffers, layer, ceiling)
+function clamp_leaf_standing_dew!(::AbstractStorageInterception, buffers, layer, ceiling)
     buffers.leaf_standing_dew[layer] = min(buffers.leaf_standing_dew[layer], ceiling)
     return nothing
 end
 
-function snapshot_interception!(::_StorageBasedInterception, buffers)
+function snapshot_interception!(::AbstractStorageInterception, buffers)
     buffers.leaf_surface_water_day_start .= buffers.leaf_surface_water
     buffers.leaf_standing_dew_day_start .= buffers.leaf_standing_dew
     buffers.leaf_standing_frost_day_start .= buffers.leaf_standing_frost
     return nothing
 end
 
-function restore_interception!(::_StorageBasedInterception, buffers)
+function restore_interception!(::AbstractStorageInterception, buffers)
     buffers.leaf_surface_water .= buffers.leaf_surface_water_day_start
     buffers.leaf_standing_dew .= buffers.leaf_standing_dew_day_start
     buffers.leaf_standing_frost .= buffers.leaf_standing_frost_day_start
     return nothing
 end
 
-function reset_interception!(::_StorageBasedInterception, buffers)
+function reset_interception!(::AbstractStorageInterception, buffers)
     fill!(buffers.leaf_surface_water, 0.0u"kg/m^2")
     fill!(buffers.leaf_standing_dew, 0.0u"kg/m^2")
     fill!(buffers.leaf_standing_frost, 0.0u"kg/m^2")

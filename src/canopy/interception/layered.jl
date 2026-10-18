@@ -15,7 +15,7 @@ incident rain, not a distinct (larger, near-vertical) drop stream. Wetness
 Rain-fall angle assumes drops track local wind instantaneously -- a
 trajectory approximation, not a physical drop model.
 """
-@kwdef struct LayeredRainInterception{C} <: AbstractCanopyInterceptionModel
+@kwdef struct LayeredRainInterception{C} <: AbstractStorageInterception
     leaf_water_storage_capacity::C = 0.1u"kg/m^2"
 end
 
