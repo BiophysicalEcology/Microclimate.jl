@@ -18,10 +18,10 @@ function soil_water_balance end
 """
     soil_water_balance!(buffers, soil_hydraulic_model, moisture_mode::DynamicSoilMoisture;
         soil_profile, depths, site, boundary_layer_model, environment_instant, T0, pool, soil_moisture,
-        evaporation_model, vapour_pressure_equation, snow_present)
+        soil_wetness, evaporation_model, vapour_pressure_equation, snow_present)
 
 One-hour water-balance step: atmospheric profile, evaporation, surface pool
-dynamics, and sub-steps of the variant's solver. Solver settings and the
-current soil wetness come from `moisture_mode`.
+dynamics, and sub-steps of the variant's solver. Solver settings come
+from `moisture_mode`.
 """
 function soil_water_balance! end

@@ -4,16 +4,14 @@
                           moisture_timestep=360.0u"s")
 
 Run the Campbell soil water balance solver to dynamically compute soil moisture
-at each hourly timestep. Tracks the evolving surface soil wetness fraction
-internally.
+at each hourly timestep.
 
 Solver tuning:
 - `moisture_tolerance` — maximum mass-balance residual
 - `moisture_max_iterations` — maximum iterations of the moisture solver
 - `moisture_timestep` — timestep of the moisture solver (≤ 1 hour)
 """
-mutable struct DynamicSoilMoisture{MT,MTS} <: AbstractSoilMoistureStrategy
-    soil_wetness::Float64
+struct DynamicSoilMoisture{MT,MTS} <: AbstractSoilMoistureStrategy
     moisture_tolerance::MT
     moisture_max_iterations::Int
     moisture_timestep::MTS
@@ -23,7 +21,7 @@ function DynamicSoilMoisture(;
     moisture_max_iterations = 500,
     moisture_timestep = 360.0u"s",
 )
-    DynamicSoilMoisture(0.0, moisture_tolerance, moisture_max_iterations, moisture_timestep)
+    DynamicSoilMoisture(moisture_tolerance, moisture_max_iterations, moisture_timestep)
 end
 
 """
@@ -33,8 +31,7 @@ Number of moisture solver sub-steps in one hour.
 """
 substep_count(mode::DynamicSoilMoisture) = round(Int, uconvert(NoUnits, 1u"hr" / mode.moisture_timestep))
 
-get_soil_wetness(mode::DynamicSoilMoisture, _) = mode.soil_wetness
-init_soil_wetness!(mode::DynamicSoilMoisture) = (mode.soil_wetness = 0.0; nothing)
+get_soil_wetness(::DynamicSoilMoisture, environment_instant, soil_wetness) = soil_wetness
 
 function initialise_soil_humidity!(::DynamicSoilMoisture, output, soil_water_potential, T0)
     water_molar_mass = 0.01801528u"kg/mol"

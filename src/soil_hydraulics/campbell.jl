@@ -442,11 +442,12 @@ function soil_water_balance!(buffers, soil_hydraulic_model::CampbellSoilHydrauli
     T0,
     pool,
     soil_moisture,
+    soil_wetness,
     evaporation_model::AbstractEvaporationModel=BulkTransferEvaporation(),
     vapour_pressure_equation=GoffGratch(),
     snow_present=false,
 )
-    (; soil_wetness, moisture_timestep) = moisture_mode
+    moisture_timestep = moisture_mode.moisture_timestep
     air_temperature = environment_instant.reference_temperature
     atmospheric_pressure = environment_instant.atmospheric_pressure
     relative_humidity = environment_instant.reference_humidity
