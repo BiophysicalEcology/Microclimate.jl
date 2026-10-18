@@ -2,6 +2,8 @@ using Microclimate
 using Unitful
 using Test
 
+include("helpers.jl")
+
 body = Microclimate.leaf_body(0.05u"m", 0.02u"m", 1.0)
 stomatal_conductance = LeafEvaporationParameters(;
     abaxial_vapour_conductance = 0.3u"mol/m^2/s", adaxial_vapour_conductance = 0.0u"mol/m^2/s",
@@ -54,12 +56,9 @@ end
     @test dry > wet
 end
 
-@testset "leaf_temperature is allocation-light" begin
-    solver = LinearizedLeafTemperature()
-    f() = Microclimate.leaf_temperature(solver, 300.0u"W/m^2", air_temperature, relative_humidity,
-        wind_speed, atmospheric_pressure, leaf_emissivity, stomatal_conductance, leaf_water_potential, body)
-    f() # warm up
-    @test (@allocated f()) < 100
+@testset "leaf_temperature: zero allocations" begin
+    @test allocations(Microclimate.leaf_temperature, LinearizedLeafTemperature(), 300.0u"W/m^2", air_temperature,
+        relative_humidity, wind_speed, atmospheric_pressure, leaf_emissivity, stomatal_conductance, leaf_water_potential, body) == 0
 end
 
 @testset "energy balance closes at the solved temperature" begin
