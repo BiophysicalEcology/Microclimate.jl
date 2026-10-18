@@ -126,24 +126,25 @@ time_mode = _daily ? ConsecutiveDayMode(; spinup_first_day=_spinup) :
 config = MicroConfig(;
     convergence = FixedIterationConvergence(10),
     rainfall_schedule = Bool(Int(microinput[:rainhourly])) ? HourlyRainfall() : DailyRainfall(),
-    soil_moisture_strategy = _runmoist ? DynamicSoilMoisture() :
-        PrescribedSoilMoisture(; precomputed_soil_moisture),
 )
+soil_moisture_strategy = _runmoist ? DynamicSoilMoisture() :
+    PrescribedSoilMoisture(; precomputed_soil_moisture)
 
 # now try the simulation function
 model = MicroModel(;
-    hours = collect(0.0:1:23.0), # hour of day for solar_radiation
-    depths,
-    heights, # air nodes for temperature, wind speed and humidity profile
-    radiation,
-    soil_properties_model,
-    soil_hydraulic_model,
-    boundary_layer_model,
+    hours = collect(0.0:1:23.0),
+    site,
+    soil = SoilModel(;
+        depths = depths,
+        profile = soil_profile,
+        properties_model = soil_properties_model,
+        hydraulic_model = soil_hydraulic_model,
+        moisture_strategy = soil_moisture_strategy,
+    ),
+    atmosphere = AtmosphereModel(; heights = heights, radiation, boundary_layer_model),
     config,
 )
 inputs = MicroInputs(;
-    site,
-    soil_profile,
     environment_minmax,
     environment_daily,
     environment_hourly,

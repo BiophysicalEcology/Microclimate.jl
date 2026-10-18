@@ -102,7 +102,7 @@ Hourly output of `solve`/`solve!`, one row per `(day, hour)` step. Key fields:
 - `snow_depth`, `snow_density`, `snow_temperature`, `snow_fall` — snow state
   (`snow_temperature` is `(nsteps, 0)` when `snow_model = NoSnow()`)
 - `profile::AtmosphericProfile` — air temperature/wind/humidity at each of
-  `MicroModel.heights`
+  `MicroModel.atmosphere.heights`
 - `canopy::CanopyOutput` — per-layer canopy diagnostics (zero-column when
   `canopy_model = NoCanopy()`)
 - `solar_radiation` — the underlying `SolarRadiation.jl` output `NamedTuple`

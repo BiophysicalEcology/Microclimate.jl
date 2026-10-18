@@ -173,23 +173,23 @@ snow_model = SnowModel(;
 config = MicroConfig(;
     convergence = FixedIterationConvergence(3),
     rainfall_schedule = DailyRainfall(),
-    soil_moisture_strategy = DynamicSoilMoisture(),
 )
 
 model = MicroModel(;
-    hours   = collect(0.0:1:23.0),
-    depths  = DEPTHS,
-    heights = [USRHYT, REFHYT],
-    radiation,
-    soil_properties_model,
-    soil_hydraulic_model,
-    snow_model,
-    boundary_layer_model,
+    hours = collect(0.0:1:23.0),
+    site,
+    soil = SoilModel(;
+        depths = DEPTHS,
+        profile = soil_profile,
+        properties_model = soil_properties_model,
+        hydraulic_model = soil_hydraulic_model,
+        moisture_strategy = DynamicSoilMoisture(),
+    ),
+    atmosphere = AtmosphereModel(; heights = [USRHYT, REFHYT], radiation, boundary_layer_model),
+    snow = snow_model,
     config,
 )
 inputs = MicroInputs(;
-    site,
-    soil_profile,
     environment_minmax,
     environment_daily,
     environment_hourly,

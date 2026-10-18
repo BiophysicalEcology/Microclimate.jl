@@ -39,3 +39,16 @@ end
     @test all(out.soil_temperature .> 200u"K")
     @test all(out.soil_temperature .< 350u"K")
 end
+
+@testset "reinit! with a new model: same result as a fresh solve" begin
+    problem = example_microclimate_problem()
+    site = example_site(; latitude = -30.0u"°", albedo = 0.3)
+    model = Microclimate.ConstructionBase.setproperties(problem.model, (; site))
+    cache = init(problem)
+    solve!(cache)
+    reinit!(cache, model, problem.inputs)
+    reused = solve!(cache)
+    fresh = solve(MicroProblem(model, problem.inputs; days = problem.days))
+    @test reused.soil_temperature ≈ fresh.soil_temperature rtol=1e-4
+    @test reused.global_radiation ≈ fresh.global_radiation
+end

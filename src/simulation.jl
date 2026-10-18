@@ -20,7 +20,7 @@ _quantity_buffer(f::DielForcing) = zeros(eltype(first(f.values)), 24 * n_days(f)
 function populate_weather!(output, mp, solar_radiation_out, interpolation_scratch)
     (; hours) = mp.model
     days = mp.days
-    shortwave_model = mp.model.radiation.shortwave_model
+    shortwave_model = mp.model.atmosphere.radiation.shortwave_model
     (; environment_minmax, environment_daily, environment_hourly) = mp.inputs
     interpolate_minmax!(output, environment_minmax, environment_daily, environment_hourly, solar_radiation_out, interpolation_scratch)
     (; global_radiation, diffuse_fraction) = adjust_for_cloud_cover!(
@@ -204,14 +204,19 @@ touches, sized for `problem.model`. Call [`solve!`](@ref) to run it, or
 reallocating.
 """
 function CommonSolve.init(mp::MicroProblem)
-    (; hours, depths, heights,
-       soil_properties_model, soil_hydraulic_model, snow_model,
-       vapour_pressure_equation, boundary_layer_model,
-       radiation, evaporation_model, soil_energy_model,
-       canopy_model, config) = mp.model
+    model = mp.model
+    (; hours, site, vapour_pressure_equation, config) = model
+    (; depths) = model.soil
+    soil_profile = model.soil.profile
+    soil_properties_model = model.soil.properties_model
+    soil_hydraulic_model = model.soil.hydraulic_model
+    soil_energy_model = model.soil.energy_model
+    (; heights, radiation, boundary_layer_model) = model.atmosphere
+    snow_model = model.snow
+    canopy_model = model.canopy
     days = mp.days
     longwave_model = radiation.longwave_model
-    (; site, soil_profile, environment_minmax, environment_daily, environment_hourly,
+    (; environment_minmax, environment_daily, environment_hourly,
        initial_soil_temperature, initial_soil_moisture,
        initial_snow_depth, initial_snow_temperature, initial_snow_density) = mp.inputs
     n_snow = n_snow_nodes(snow_model)
@@ -287,20 +292,13 @@ function CommonSolve.init(mp::MicroProblem)
     environment_instant = get_instant(environment_day, environment_hourly, output, soil_moisture, 1)
     longwave_sky = precompute_longwave_sky(longwave_model;
         site, environment_instant, vapour_pressure_equation)
-    soil_energy_parameters = SoilEnergyParameters(;
-        model=soil_energy_model,
-        evaporation_model,
-        atmospheric_radiation_model=longwave_model.atmospheric_radiation_model,
-        soil_properties_model, soil_profile, heights,
-        site, boundary_layer_model, vapour_pressure_equation, snow_model,
-    )
     hourly_proto = HourlySoilEnergyInputs(;
         depths=depths_proto, environment_instant,
         soil_wetness=0.0, longwave_sky, albedo=site.albedo,
         snow_state=initial_snow_state(snow_model),
         initial_ground_overrides(canopy_model)...,
     )
-    inputs_proto = SoilEnergyInputs(soil_energy_parameters, hourly_proto, forcing, buffers, soil_moisture)
+    inputs_proto = SoilEnergyInputs(model, hourly_proto, forcing, buffers, soil_moisture)
     ode_integrator = allocate_ode_integrator(soil_energy_model, T0_ode, inputs_proto)
 
     state = MicroState(soil_moisture, ∑phase, similar(∑phase))
@@ -346,21 +344,27 @@ end
 
 """
     reinit!(cache::MicroCache, inputs::MicroInputs)
+    reinit!(cache::MicroCache, model::MicroModel, inputs::MicroInputs)
 
-Swap the inputs on `cache.problem` while keeping the model and every
-pre-allocated array. The model is constant across runs, so dimensions are
-guaranteed to match — invalid input sizes will surface as a `BoundsError`
-or unit-mismatch on first access during `solve!`.
+Swap the inputs, and optionally the model, on `cache.problem` while keeping
+every pre-allocated array. A new `model` must have the same types and
+dimensions as the original, e.g. the same model with a different `site` or
+soil `profile` (see `ConstructionBase.setproperties`). Invalid sizes surface
+as a `BoundsError` or unit mismatch on first access during `solve!`.
 """
-function reinit!(cache::MicroCache, inputs::MicroInputs)
-    cache.problem = MicroProblem(cache.problem.days, cache.problem.time_mode, cache.problem.model, inputs)
+reinit!(cache::MicroCache, inputs::MicroInputs) = reinit!(cache, cache.problem.model, inputs)
+function reinit!(cache::MicroCache, model::MicroModel, inputs::MicroInputs)
+    (; days, time_mode) = cache.problem
+    cache.problem = MicroProblem(days, time_mode, model, inputs)
+    (; hourly, forcing, buffers, soil_moisture) = cache.ode_integrator.p
+    cache.ode_integrator.p = SoilEnergyInputs(model, hourly, forcing, buffers, soil_moisture)
     return cache
 end
 
 function allocate_solar(mp::MicroProblem)
     (; hours) = mp.model
     days = mp.days
-    solar_radiation_model = mp.model.radiation.solar_radiation_model
+    solar_radiation_model = mp.model.atmosphere.radiation.solar_radiation_model
     nmax = solar_radiation_model.wavelength_count
     nsteps = length(days) * length(hours)
     out = SolarRadiation.allocate_output_arrays(nsteps, length(days), nmax)
@@ -372,8 +376,8 @@ end
 function solve_solar!(out::NamedTuple, buffers::NamedTuple, mp::MicroProblem)
     (; hours) = mp.model
     days = mp.days
-    solar_radiation_model = mp.model.radiation.solar_radiation_model
-    site = mp.inputs.site
+    solar_radiation_model = mp.model.atmosphere.radiation.solar_radiation_model
+    site = mp.model.site
     SolarRadiation.solar_radiation!(out, buffers, solar_radiation_model;
         days, hours, solar_terrain=SolarRadiation.SolarTerrain(site),
     )
@@ -435,15 +439,22 @@ end
 # Solves soil temperature and moisture using pre-allocated cache buffers
 function solve_soil!(cache::MicroCache)
     mp = cache.problem
-    (; hours, depths, heights,
-       soil_properties_model, soil_hydraulic_model, snow_model,
-       vapour_pressure_equation, boundary_layer_model,
-       radiation, evaporation_model, condensation_model, soil_energy_model,
-       canopy_model, config) = mp.model
+    model = mp.model
+    (; hours, site, vapour_pressure_equation, config) = model
+    (; depths) = model.soil
+    soil_profile = model.soil.profile
+    soil_properties_model = model.soil.properties_model
+    soil_hydraulic_model = model.soil.hydraulic_model
+    soil_energy_model = model.soil.energy_model
+    moisture_mode = model.soil.moisture_strategy
+    (; evaporation_model, condensation_model, max_surface_pool) = model.surface
+    (; heights, radiation, boundary_layer_model) = model.atmosphere
+    snow_model = model.snow
+    canopy_model = model.canopy
     days = mp.days
     longwave_model = radiation.longwave_model
     soil_freezing_model = soil_energy_model.freezing_model
-    (; site, soil_profile, environment_daily, environment_hourly,
+    (; environment_daily, environment_hourly,
        initial_soil_temperature, initial_soil_moisture,
        initial_snow_depth, initial_snow_temperature, initial_snow_density) = mp.inputs
     n_snow = n_snow_nodes(snow_model)
@@ -456,9 +467,8 @@ function solve_soil!(cache::MicroCache)
     ode_integrator = cache.ode_integrator
     forcing = cache.forcing
 
-    (; convergence, rainfall_schedule, max_surface_pool, canopy_soil_convergence, canopy_soil_relaxation) = config
+    (; convergence, rainfall_schedule, canopy_soil_convergence, canopy_soil_relaxation) = config
     time_mode = mp.time_mode
-    moisture_mode = config.soil_moisture_strategy
     (; campbell_b_parameter, air_entry_water_potential) = soil_profile.hydraulics
     (; bulk_density, mineral_density, mineral_conductivity, mineral_heat_capacity) = soil_profile
 
@@ -1011,8 +1021,10 @@ function solve_air!(cache::MicroCache)
     mp = cache.problem
     output = cache.output
     solar_radiation_out = cache.buffers.solar_out
-    site = mp.inputs.site
-    (; canopy_model, boundary_layer_model, vapour_pressure_equation, snow_model) = mp.model
+    (; site, vapour_pressure_equation) = mp.model
+    (; boundary_layer_model) = mp.model.atmosphere
+    canopy_model = mp.model.canopy
+    snow_model = mp.model.snow
     profile_buffers = cache.buffers.air_profile
     n_snow = n_snow_nodes(snow_model)
     (; displacement_height, roughness_length, thermal_roughness_model, temperature_anchor_height) = canopy_profile_origin(canopy_model, cache.buffers.canopy, site, boundary_layer_model)
@@ -1080,7 +1092,7 @@ function step_to_hour!(integrator, hour_index)
     target_t = hour_index * 60.0u"minute"
     SciMLBase.add_tstop!(integrator, target_t)
     T_lo = u"K"(-81.0u"°C")
-    T_hi = u"K"(integrator.p.parameters.model.maximum_surface_temperature)
+    T_hi = u"K"(integrator.p.model.soil.energy_model.maximum_surface_temperature)
     while integrator.t < target_t - 1e-10u"minute"
         SciMLBase.step!(integrator)
         u_clamped = map(t -> clamp(t, T_lo, T_hi), integrator.u)

@@ -66,9 +66,9 @@ end
 
 @testset "MatricFluxPotentialAlgorithm end-to-end smoke test" begin
     soil_hydraulic_model = example_soil_hydraulic_model(; infiltration_algorithm=MatricFluxPotentialAlgorithm())
-    config = MicroConfig(; soil_moisture_strategy=DynamicSoilMoisture())
+    soil_moisture_strategy = DynamicSoilMoisture()
     soil_profile = example_soil_profile(; bulk_density=1.3u"Mg/m^3", mineral_density=2.65u"Mg/m^3")
-    out = solve(example_microclimate_problem(; soil_hydraulic_model, config, soil_profile))
+    out = solve(example_microclimate_problem(; soil_hydraulic_model, soil_moisture_strategy, soil_profile))
     @test !any(isnan, ustrip.(out.soil_temperature))
     @test all(out.soil_temperature .> 200u"K")
     @test all(out.soil_temperature .< 350u"K")

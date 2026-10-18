@@ -11,7 +11,7 @@ abstract type AbstractCondensationModel end
 
 Signed surface energy flux (W/m²) available for dew/frost formation this
 hour -- Monteith convention, positive = evaporative loss, negative =
-condensation. Ground variants (on `MicroModel.condensation_model`):
+condensation. Ground variants (on `MicroModel.surface.condensation_model`):
 [`NoCondensation`](@ref) (off), [`BulkTransferCondensation`](@ref),
 [`GarrattSegalCondensation`](@ref) (default). Leaf variant (on
 `MultilayerCanopy.condensation_model`): [`MonteithLeafCondensation`](@ref).

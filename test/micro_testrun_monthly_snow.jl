@@ -135,24 +135,25 @@ snow_model = SnowModel(;
 config = MicroConfig(;
     convergence = FixedIterationConvergence(Int(microinput[:ndmax])),
     rainfall_schedule = Bool(Int(microinput[:rainhourly])) ? HourlyRainfall() : DailyRainfall(),
-    soil_moisture_strategy = _runmoist ? DynamicSoilMoisture() :
-        PrescribedSoilMoisture(; precomputed_soil_moisture),
 )
+soil_moisture_strategy = _runmoist ? DynamicSoilMoisture() :
+    PrescribedSoilMoisture(; precomputed_soil_moisture)
 
 model = MicroModel(;
     hours = collect(0.0:1:23.0),
-    depths,
-    heights,
-    radiation,
-    soil_properties_model,
-    soil_hydraulic_model,
-    snow_model,
-    boundary_layer_model,
+    site,
+    soil = SoilModel(;
+        depths = depths,
+        profile = soil_profile,
+        properties_model = soil_properties_model,
+        hydraulic_model = soil_hydraulic_model,
+        moisture_strategy = soil_moisture_strategy,
+    ),
+    atmosphere = AtmosphereModel(; heights = heights, radiation, boundary_layer_model),
+    snow = snow_model,
     config,
 )
 inputs = MicroInputs(;
-    site,
-    soil_profile,
     environment_minmax,
     environment_daily,
     environment_hourly,

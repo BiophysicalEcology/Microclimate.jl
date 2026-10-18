@@ -144,24 +144,24 @@ soil_moisture_strategy = _runmoist ?
 config = MicroConfig(;
     convergence = FixedIterationConvergence(Int(microinput[:ndmax])),
     rainfall_schedule = Bool(Int(microinput[:rainhourly])) ? HourlyRainfall() : DailyRainfall(),
-    soil_moisture_strategy,
-    max_surface_pool = microinput[:maxpool] * 1000.0u"kg/m^2",
 )
 
 # now try the simulation function
 model = MicroModel(;
-    hours = 0:1:23, # hour of day for solar_radiation
-    depths, # soil nodes - keep spacing close near the surface
-    heights, # air nodes for temperature, wind speed and humidity profile
-    radiation,
-    soil_properties_model,
-    soil_hydraulic_model,
-    boundary_layer_model,
+    hours = 0:1:23,
+    site,
+    soil = SoilModel(;
+        depths = depths,
+        profile = soil_profile,
+        properties_model = soil_properties_model,
+        hydraulic_model = soil_hydraulic_model,
+        moisture_strategy = soil_moisture_strategy,
+    ),
+    surface = SurfaceModel(; max_surface_pool = microinput[:maxpool] * 1000.0u"kg/m^2"),
+    atmosphere = AtmosphereModel(; heights = heights, radiation, boundary_layer_model),
     config,
 )
 inputs = MicroInputs(;
-    site,
-    soil_profile,
     environment_minmax,
     environment_daily,
     environment_hourly,
