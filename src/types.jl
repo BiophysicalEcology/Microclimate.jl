@@ -65,8 +65,8 @@ strictly the "how we iterate and how data is delivered" side of the model.
 - `convergence`: `FixedSoilTemperatureIterations(3)` or `SoilTemperatureConvergenceTolerance(; tolerance, max_iterations_per_day)`
 - `rainfall_schedule`: `DailyRainfall()` (default) or `HourlyRainfall()`
 - `soil_moisture_strategy`: `PrescribedSoilMoisture()` or `DynamicSoilMoisture(; ...)`
-- `max_surface_pool`: numerical clamp on the surface-pool state variable
-  (not a physical limit — keeps the pool integration from running away)
+- `max_surface_pool`: maximum water held on the soil surface (NicheMapR
+  `maxpool`); water above it is removed as `runoff`.
 """
 @kwdef struct MicroConfig{CV,RFS,SMM,MSP}
     convergence::CV = FixedSoilTemperatureIterations(3)

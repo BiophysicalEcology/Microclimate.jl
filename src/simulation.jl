@@ -43,18 +43,18 @@ end
 # PR #102 / Fortran OSUB.f:354 (`IF IFINAL .LT. ND GO TO 200`) skips the snow
 # block on non-final spinup iters — overrides are applied only on the final
 # (output) iter. We mirror that via the `is_last_iter` flag.
-@inline function apply_snow_overrides(::NoSnow, snow_state, snow_scratch, step, site, moisture_mode, environment_instant, longwave_model, vapour_pressure_equation; is_last_iter::Bool=true)
+@inline function apply_snow_overrides(::NoSnow, snow_state, snow_scratch, step, site, moisture_mode, soil_wetness, environment_instant, longwave_model, vapour_pressure_equation; is_last_iter::Bool=true)
     longwave_sky = precompute_longwave_sky(longwave_model;
         site, environment_instant, vapour_pressure_equation)
     return (;
         albedo = _baseline_albedo(site, environment_instant),
-        effective_wetness = get_soil_wetness(moisture_mode, environment_instant),
+        effective_wetness = get_soil_wetness(moisture_mode, environment_instant, soil_wetness),
         longwave_sky,
     )
 end
 
 @inline function apply_snow_overrides(snow_model::SnowModel, snow_state, snow_scratch, step,
-    site, moisture_mode, environment_instant, longwave_model, vapour_pressure_equation;
+    site, moisture_mode, soil_wetness, environment_instant, longwave_model, vapour_pressure_equation;
     is_last_iter::Bool=true,
 )
     # Fortran OSUB.f line 1023-1041: snow surface overrides fire only when the
@@ -72,7 +72,7 @@ end
         )
     else
         albedo = _baseline_albedo(site, environment_instant)
-        effective_wetness = get_soil_wetness(moisture_mode, environment_instant)
+        effective_wetness = get_soil_wetness(moisture_mode, environment_instant, soil_wetness)
         longwave_sky = precompute_longwave_sky(longwave_model;
             site, environment_instant, vapour_pressure_equation,
         )
@@ -380,7 +380,6 @@ function solve_soil!(cache::MicroCache)
     moisture_mode = config.soil_moisture_strategy
     (; campbell_b_parameter, air_entry_water_potential) = soil_profile.hydraulics
     (; bulk_density, mineral_density, mineral_conductivity, mineral_heat_capacity) = soil_profile
-    init_soil_wetness!(moisture_mode)
 
     ndays = length(days)
     nhours = length(hours)
@@ -449,6 +448,8 @@ function solve_soil!(cache::MicroCache)
 
     # simulate all days
     pool = 0.0u"kg/m^2" # TODO make this an initialisation option
+    runoff = 0.0u"kg/m^2" # cumulative; water above max_surface_pool, never reset per-day
+    soil_wetness = 0.0 # solved surface wetness, used by DynamicSoilMoisture
     Q_freeze = 0.0u"W/m^2"  # Fortran COMMON/melt/QFREZE: persists across hours
     infil_out = nothing
     for j in 1:ndays
@@ -561,6 +562,7 @@ function solve_soil!(cache::MicroCache)
                 # at OUT(4) = T(1) at TIME=0 of the output pass.
                 _write_row!(output.soil_temperature, day_init_step, T0)
                 output.surface_water[day_init_step] = pool
+                output.runoff[day_init_step] = runoff
                 _write_row!(output.soil_moisture, day_init_step, soil_moisture)
                 @inbounds for i in eachindex(soil_moisture)
                     output.soil_water_potential[day_init_step, i] =
@@ -576,7 +578,7 @@ function solve_soil!(cache::MicroCache)
                 # without the type-unstable conditional `merge` — use the
                 # apply_snow_overrides helper from above.
                 (; longwave_sky) = apply_snow_overrides(snow_model, snow_state, buffers.snow,
-                    day_init_step, site, moisture_mode, env_init,
+                    day_init_step, site, moisture_mode, soil_wetness, env_init,
                     longwave_model, vapour_pressure_equation)
                 output.sky_temperature[day_init_step] = longwave_sky.sky_temperature
                 update_soil_properties!(output, soil_prop_view, soil_properties_model;
@@ -596,7 +598,7 @@ function solve_soil!(cache::MicroCache)
             environment_instant = get_instant(environment_day, environment_hourly, output, soil_moisture, step)
             T0 = setindex(T0, environment_instant.deep_soil_temperature, num_soil_nodes)
             (; albedo, effective_wetness, longwave_sky) = apply_snow_overrides(
-                snow_model, snow_state, buffers.snow, step, site, moisture_mode, environment_instant,
+                snow_model, snow_state, buffers.snow, step, site, moisture_mode, soil_wetness, environment_instant,
                 longwave_model, vapour_pressure_equation;
                 is_last_iter)
             if n_snow > 0
@@ -714,7 +716,7 @@ function solve_soil!(cache::MicroCache)
                     environment_instant = get_instant(environment_day, environment_hourly, output, soil_moisture, next_step)
                     T0 = setindex(T0, environment_instant.deep_soil_temperature, num_soil_nodes)
                     (; albedo, effective_wetness, longwave_sky) = apply_snow_overrides(
-                        snow_model, snow_state, buffers.snow, next_step, site, moisture_mode, environment_instant,
+                        snow_model, snow_state, buffers.snow, next_step, site, moisture_mode, soil_wetness, environment_instant,
                         longwave_model, vapour_pressure_equation;
                         is_last_iter)
                     if n_snow > 0
@@ -764,15 +766,17 @@ function solve_soil!(cache::MicroCache)
                     rain_melt_water = n_snow > 0 ? uconvert(u"kg/m^2", rain_melt_snow * snow_state.density) : 0.0u"kg/m^2"
                     if snow_present && u"°C"(environment_instant.reference_temperature) < snow_temp_threshold
                         # Cold snow: rain absorbed into snowpack (handled in update_snow! as snowfall); only thermal melt enters pool
-                        pool = clamp(pool + melted_water, 0.0u"kg/m^2", max_surface_pool)
+                        pool += melted_water
                     else
                         # Warm snow or no snow: rain + rain_melt water + thermal melt enter pool
-                        pool = clamp(pool + rain + rain_melt_water + melted_water, 0.0u"kg/m^2", max_surface_pool)
+                        pool += rain + rain_melt_water + melted_water
                     end
+                    pool, runoff_increment = _split_runoff(pool, max_surface_pool)
+                    runoff += runoff_increment
                     # Soil moisture physics; output write happens below at output_step
-                    (; pool, soil_moisture, infil_out) = step_soil_moisture!(moisture_mode, buffers, soil_hydraulic_model;
-                        soil_profile, depths, site, boundary_layer_model, environment_instant, T0, pool, soil_moisture,
-                        max_surface_pool, evaporation_model, vapour_pressure_equation, snow_present,
+                    (; pool, soil_moisture, soil_wetness, infil_out) = step_soil_moisture!(moisture_mode, buffers, soil_hydraulic_model;
+                        soil_profile, depths, site, boundary_layer_model, environment_instant, T0, pool, soil_moisture, soil_wetness,
+                        evaporation_model, vapour_pressure_equation, snow_present,
                     )
                 end
                 # Write hour i's result to step + 1 (NMR convention: state at minute i*60
@@ -786,6 +790,7 @@ function solve_soil!(cache::MicroCache)
                 write_output = is_last_iter && in_bounds && !next_day_resets
                 if write_output
                     output.surface_water[output_step] = pool
+                    output.runoff[output_step] = runoff
                     _write_row!(output.soil_temperature, output_step, T0_output)
                     output.sky_temperature[output_step] = longwave_sky.sky_temperature
                     update_soil_water!(output, soil_moisture, infil_out, output_step)
@@ -942,22 +947,18 @@ end
 # ── Soil moisture stepping dispatch ───────────────────────────────────────
 
 function step_soil_moisture!(mode::DynamicSoilMoisture, buffers, soil_hydraulic_model;
-    soil_profile, depths, site, boundary_layer_model, environment_instant, T0, pool, soil_moisture,
-    max_surface_pool, evaporation_model, vapour_pressure_equation, snow_present=false,
+    soil_profile, depths, site, boundary_layer_model, environment_instant, T0, pool, soil_moisture, soil_wetness,
+    evaporation_model, vapour_pressure_equation, snow_present=false,
 )
-    (; moisture_tolerance, moisture_max_iterations, moisture_timestep) = mode
-    niter_moist = ustrip(u"s^-1", 3600 / moisture_timestep)
-    (; infil_out, soil_wetness, pool, soil_moisture) = soil_water_balance!(buffers, soil_hydraulic_model;
-        soil_profile, depths, site, boundary_layer_model, environment_instant, T0, niter_moist, pool,
-        soil_wetness=mode.soil_wetness, soil_moisture,
-        moisture_timestep, moisture_tolerance, moisture_max_iterations, max_surface_pool,
+    (; infil_out, soil_wetness, pool, soil_moisture) = soil_water_balance!(buffers, soil_hydraulic_model, mode;
+        soil_profile, depths, site, boundary_layer_model, environment_instant, T0, pool, soil_moisture, soil_wetness,
         evaporation_model, vapour_pressure_equation, snow_present,
     )
-    mode.soil_wetness = soil_wetness
-    return (; pool, soil_moisture, infil_out)
+    return (; pool, soil_moisture, soil_wetness, infil_out)
 end
 
-step_soil_moisture!(::PrescribedSoilMoisture, args...; pool, soil_moisture, kw...) = (; pool, soil_moisture, infil_out=nothing)
+step_soil_moisture!(::PrescribedSoilMoisture, args...; pool, soil_moisture, soil_wetness, kw...) =
+    (; pool, soil_moisture, soil_wetness, infil_out=nothing)
 
 """
 Build a single `Forcing` whose 8 `ScaledInterpolation`s wrap freshly-allocated

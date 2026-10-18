@@ -16,9 +16,10 @@ function run_infiltration(algorithm; initial_moisture, evapotranspiration, nstep
     model = example_soil_hydraulic_model(; infiltration_algorithm=algorithm)
     buffers = allocate_soil_water_balance(model, num_layers)
     soil_moisture = fill(initial_moisture, num_layers)
+    moisture_mode = DynamicSoilMoisture(; moisture_timestep=360.0u"s", moisture_tolerance=1e-6u"kg/m^2/s", moisture_max_iterations=200)
     local out
     for _ in 1:nsteps
-        out = infiltration_step!(buffers, model;
+        out = infiltration_step!(buffers, model, moisture_mode;
             soil_profile=profile,
             depths,
             atmospheric_pressure=101325.0u"Pa",
@@ -27,9 +28,6 @@ function run_infiltration(algorithm; initial_moisture, evapotranspiration, nstep
             soil_moisture,
             evapotranspiration,
             input_soil_temperature,
-            moisture_timestep=360.0u"s",
-            moisture_tolerance=1e-6u"kg/m^2/s",
-            moisture_max_iterations=200,
         )
         soil_moisture = out.soil_moisture
     end
