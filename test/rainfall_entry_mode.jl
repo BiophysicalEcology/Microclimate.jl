@@ -1,8 +1,8 @@
 using Microclimate
 using Unitful
 using Test
-using Microclimate: allocate_soil_water_balance, infiltration_step!,
-    rainfall_flux_for_step, apply_rainfall_entry!, post_infiltration_pool_update, NoIce
+using Microclimate: allocate_soil_water_balance, infiltration_substeps!,
+    rainfall_entry!, rainfall_flux_for_step, soil_water_storage
 
 # rainfall_entry_mode's interface functions are internal, same rationale as
 # infiltration_algorithm_comparison.jl's own white-box testing.
@@ -14,38 +14,22 @@ function _test_profile()
     (; profile, depths, num_layers)
 end
 
-_layer_thickness(depths, half_thickness, i, n) =
-    i == 1 ? half_thickness : i == n ? (depths[n] - depths[n-1]) / 2 : (depths[i+1] - depths[i-1]) / 2
+# One hour of rainfall entry and infiltration with evaporation held at zero,
+# so the only mass terms are rain, pool and storage.
+_moisture_mode() = DynamicSoilMoisture(; moisture_timestep=360.0u"s", moisture_tolerance=1e-6u"kg/m^2/s", moisture_max_iterations=200)
 
-# One hour's worth of rainfall_entry_mode + infiltration_step! sub-stepping,
-# mirroring soil_water_balance!'s own loop but with evaporation held at zero
-# so the mass ledger only has rain/pool/storage/runoff terms to track.
-function run_rainfall_hour(mode; soil_moisture, pool, dt=360.0u"s", niter_moist=10)
+function run_rainfall_hour(mode; soil_moisture, pool)
     (; profile, depths, num_layers) = _test_profile()
-    input_soil_temperature = fill(293.0u"K", num_layers)
     model = example_soil_hydraulic_model(; rainfall_entry_mode=mode)
+    moisture_mode = _moisture_mode()
     buffers = allocate_soil_water_balance(model, num_layers)
-    sat = 1 - profile.bulk_density[1] / profile.mineral_density[1]
-    half_thickness = depths[1] / 2
-
-    rainfall_flux_rate = rainfall_flux_for_step(mode, pool, dt, niter_moist)
-    pool = apply_rainfall_entry!(mode, soil_moisture, pool, sat, half_thickness, rainfall_flux_rate, dt; depths, soil_profile=profile, frozen_water_content=NoIce())
-    local out
-    for _ in 1:niter_moist
-        out = infiltration_step!(buffers, model;
-            soil_profile=profile, depths, atmospheric_pressure=101325.0u"Pa",
-            local_relative_humidity=0.5, leaf_area_index=1.0u"Mg/m^3",
-            soil_moisture, evapotranspiration=0.0u"kg/m^2/s", input_soil_temperature,
-            moisture_timestep=dt, moisture_tolerance=1e-6u"kg/m^2/s", moisture_max_iterations=200,
-            rainfall_flux_rate, frozen_water_content=NoIce(),
-        )
-        soil_moisture = out.soil_moisture
-        water_flux = max(0.0u"kg/m^2", out.surface_water_flux)
-        pool = post_infiltration_pool_update(mode, pool, rainfall_flux_rate, dt, water_flux, 0.0u"kg/m^2", 1.0e4u"kg/m^2")
-        pool = apply_rainfall_entry!(mode, soil_moisture, pool, sat, half_thickness, rainfall_flux_rate, dt; depths, soil_profile=profile, frozen_water_content=NoIce())
-    end
-    storage = sum(i -> soil_moisture[i] * _layer_thickness(depths, half_thickness, i, num_layers), 1:num_layers) * 1000.0u"kg/m^3"
-    return (; soil_moisture, pool, storage)
+    rainfall_flux = rainfall_flux_for_step(mode, moisture_mode, pool)
+    (; soil_moisture, pool) = infiltration_substeps!(buffers, model, moisture_mode;
+        soil_profile=profile, depths, soil_moisture, pool, rainfall_flux, frozen_water_content=zeros(num_layers),
+        atmospheric_pressure=101325.0u"Pa", local_relative_humidity=0.5, leaf_area_index=1.0u"Mg/m^3",
+        evapotranspiration=0.0u"kg/m^2/s", input_soil_temperature=fill(293.0u"K", num_layers),
+    )
+    return (; soil_moisture, pool, storage=soil_water_storage(soil_moisture, depths))
 end
 
 @testset "rainfall entry modes" begin
@@ -62,26 +46,24 @@ end
         end
     end
 
-    # apply_rainfall_entry! alone, no infiltration_step! -- isolates the new
-    # rainfall-entry mechanism from the fixed-water-table boundary's own
-    # (intentional, pre-existing) storage contribution.
-    @testset "apply_rainfall_entry! conserves mass" begin
+    # rainfall_entry! alone, no infiltration_step! -- isolates the
+    # rainfall entry from the fixed-water-table boundary's own storage change.
+    @testset "rainfall_entry! conserves mass" begin
         (; profile, depths, num_layers) = _test_profile()
-        sat = 1 - profile.bulk_density[1] / profile.mineral_density[1]
-        half_thickness = depths[1] / 2
         rain = 8.0u"kg/m^2"
-        dt = 360.0u"s"
+        moisture_mode = _moisture_mode()
         for mode in (PoolCapacityRainfall(), RateLimitedFrontRainfall())
             soil_moisture = fill(0.10, num_layers)
-            storage_before = sum(i -> soil_moisture[i] * _layer_thickness(depths, half_thickness, i, num_layers), 1:num_layers) * 1000.0u"kg/m^3"
-            remaining_pool = apply_rainfall_entry!(mode, soil_moisture, rain, sat, half_thickness, 0.0u"kg/m^2/s", dt; depths, soil_profile=profile, frozen_water_content=NoIce())
-            storage_after = sum(i -> soil_moisture[i] * _layer_thickness(depths, half_thickness, i, num_layers), 1:num_layers) * 1000.0u"kg/m^3"
+            storage_before = soil_water_storage(soil_moisture, depths)
+            remaining_pool = rainfall_entry!(soil_moisture, mode, example_soil_hydraulic_model(; rainfall_entry_mode=mode), moisture_mode, rain;
+                soil_profile=profile, depths, frozen_water_content=zeros(num_layers))
+            storage_after = soil_water_storage(soil_moisture, depths)
             @test isapprox(ustrip(u"kg/m^2", storage_after - storage_before + remaining_pool - rain), 0.0; atol=1e-6)
         end
         # ImplicitFluxRainfall never mutates soil_moisture here -- its flux
         # rate integrates back to the original pool over the hour instead.
-        rate = rainfall_flux_for_step(ImplicitFluxRainfall(), rain, dt, 10)
-        @test isapprox(ustrip(u"kg/m^2", rate * 10 * dt), ustrip(u"kg/m^2", rain); atol=1e-9)
+        rate = rainfall_flux_for_step(ImplicitFluxRainfall(), moisture_mode, rain)
+        @test isapprox(ustrip(u"kg/m^2", rate * 1u"hr"), ustrip(u"kg/m^2", rain); atol=1e-9)
     end
 
     @testset "end-to-end smoke test per mode" begin
@@ -100,20 +82,20 @@ end
 end
 
 @testset "runoff tracking" begin
-    @testset "default max_pond_depth: runoff stays exactly zero (backward compat)" begin
+    @testset "default max_surface_pool: runoff stays exactly zero" begin
         out = solve(example_microclimate_problem(; config=MicroConfig(; soil_moisture_strategy=DynamicSoilMoisture())))
         @test all(iszero, out.runoff)
     end
 
-    @testset "small max_pond_depth generates nonzero, non-decreasing runoff" begin
-        config = MicroConfig(; soil_moisture_strategy=DynamicSoilMoisture(), max_pond_depth=0.01u"kg/m^2")
+    @testset "small max_surface_pool generates nonzero, non-decreasing runoff" begin
+        config = MicroConfig(; soil_moisture_strategy=DynamicSoilMoisture(), max_surface_pool=0.01u"kg/m^2")
         out = solve(example_microclimate_problem(; config))
         @test out.runoff[end] > 0u"kg/m^2"
         @test all(diff(ustrip.(u"kg/m^2", out.runoff)) .>= -1e-9)  # cumulative, monotonically non-decreasing
     end
 
     @testset "runoff still accumulates under PrescribedSoilMoisture (no infiltration solve)" begin
-        config = MicroConfig(; max_pond_depth=0.01u"kg/m^2")  # soil_moisture_strategy defaults to PrescribedSoilMoisture
+        config = MicroConfig(; max_surface_pool=0.01u"kg/m^2")  # soil_moisture_strategy defaults to PrescribedSoilMoisture
         out = solve(example_microclimate_problem(; config))
         @test out.runoff[end] > 0u"kg/m^2"
     end

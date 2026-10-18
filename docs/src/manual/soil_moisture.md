@@ -184,8 +184,8 @@ chooses between it and a constant/prescribed alternative:
   model from externally computed or observed soil moisture without running Campbell's
   algorithm at all.
 - [`DynamicSoilMoisture`](@ref) runs `infiltration_step!`/
-  `soil_water_balance!` every hour as described above, tracking surface
-  wetness as an evolving state rather than reading it from the environment.
+  `soil_water_balance!` every hour as described above, solving surface
+  wetness each hour rather than reading it from the environment.
   `moisture_tolerance`, `moisture_max_iterations` and `moisture_timestep` (≤ 1 hour)
   tune the Newton-Raphson sub-stepping.
 

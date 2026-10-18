@@ -67,6 +67,7 @@ export AbstractSoilHydraulicsModel, CampbellSoilHydraulics, CampbellHydraulicPro
 export example_campbell_hydraulic_profile
 export AbstractInfiltrationAlgorithm, MatricPotentialAlgorithm, MatricFluxPotentialAlgorithm
 export AbstractRainfallEntryMode, PoolCapacityRainfall, ImplicitFluxRainfall, RateLimitedFrontRainfall
+export AbstractFrozenConductivity, NoFrozenConductivity, BloomsburgWangFrozenConductivity
 
 # Soil moisture strategy
 export AbstractSoilMoistureStrategy, PrescribedSoilMoisture, DynamicSoilMoisture
@@ -150,6 +151,9 @@ include("condensation/garratt_segal.jl")
 include("soil_hydraulics/infiltration_algorithm/abstract.jl")
 include("soil_hydraulics/infiltration_algorithm/matric_potential.jl")
 include("soil_hydraulics/infiltration_algorithm/matric_flux_potential.jl")
+include("soil_hydraulics/frozen_conductivity/abstract.jl")
+include("soil_hydraulics/frozen_conductivity/no_frozen_conductivity.jl")
+include("soil_hydraulics/frozen_conductivity/bloomsburg_wang.jl")
 include("soil_hydraulics/rainfall_entry/abstract.jl")
 include("soil_hydraulics/rainfall_entry/pool_capacity.jl")
 include("soil_hydraulics/rainfall_entry/implicit_flux.jl")

@@ -54,18 +54,20 @@ Four interchangeable forms are available:
 Once a layer has a nonzero frozen water content, two independent things stop water
 moving through it:
 
-- **Through the soil matrix**: `ice_impeded_conductivity` scales hydraulic
-  conductivity downward following Bloomsburg and Wang's (1969) relation, based on the
-  *ice-free* porosity remaining (`porosity - ice_content`). Above a threshold
-  (`ICE_IMPEDANCE_MIN_POROSITY = 0.13` m³/m³) conductivity is reduced roughly in
+- **Through the soil matrix**: the `frozen_conductivity` model on
+  [`CampbellSoilHydraulics`](@ref) scales hydraulic conductivity by a factor
+  (`conductivity_factor`) of the ice content. The default,
+  [`BloomsburgWangFrozenConductivity`](@ref), follows Bloomsburg and Wang's (1969)
+  relation, based on the *ice-free* porosity remaining (`porosity - ice_content`).
+  Above `min_ice_free_porosity` (0.13 m³/m³) conductivity is reduced roughly in
   proportion to how much ice-free pore space is left; at or below it, conductivity is
-  floored at a tiny fraction of its unimpeded value (`ICE_CONDUCTIVITY_FLOOR_FACTOR =
-  1e-6`, to avoid a literal division/root-finding singularity downstream) bit in practice 
-  this results in no meaningful flow.
+  floored at `conductivity_floor` (1e-6) of its ice-free value, to avoid a
+  division/root-finding singularity downstream, but in practice this results in no
+  meaningful flow. [`NoFrozenConductivity`](@ref) turns the effect off.
 - **Through roots**: root resistance normally *dwarfs* soil resistance so the the mechanism
   above preventing frozen water moving through soil does not prevent it moving through roots.
-  Thus, a layer whose ice-free porosity has crossed the same `ICE_IMPEDANCE_MIN_POROSITY` 
-  threshold is additionally treated as **rootless**: its `root_resistance` is set prohibitivley
+  Thus, a layer whose conductivity is blocked by ice (`conductivity_blocked`, the
+  same `min_ice_free_porosity` threshold) is additionally treated as **rootless**: its `root_resistance` is set prohibitivley
   high irrespective of that node's `root_density`. See [Soil moisture](soil_moisture.md#Initialisation) 
   for how `root_resistance` normally factors into water uptake.
 

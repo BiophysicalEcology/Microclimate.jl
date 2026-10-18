@@ -1,49 +1,43 @@
 """
     RateLimitedFrontRainfall(; fill_fraction=0.9)
 
-Stateless, single-pass Green-Ampt-style wetting-front march (Shaw 1990's
-`RAINSL`, simplified): rain advances layer by layer from the surface down,
-each layer accepting the lesser of its remaining storage capacity (up to
-`fill_fraction * sat`) and a conductivity-rate limit (`gn * saturated_hydraulic_conductivity`
-— the same gravity-driven-flux relationship `infiltration_step!` already
-uses for `drainage`), for as many layers as the timestep's rain and time
-allow. Unlike [`PoolCapacityRainfall`](@ref), a strong pulse can wet several
-layers in one call; unlike [`ImplicitFluxRainfall`](@ref), it never touches
-`infiltration_step!`'s implicit solve. Front position isn't tracked across
-calls — each call re-derives how far rain penetrates from the current
-`soil_moisture` profile alone.
+Simplified wetting front after the SHAW model's `RAINSL` subroutine. Rain
+fills layers from the surface down, each layer taking the smallest of the
+remaining rain, its capacity up to `fill_fraction` of saturation, and
+`gn * saturated_hydraulic_conductivity * timestep`.
 """
 struct RateLimitedFrontRainfall{F} <: AbstractRainfallEntryMode
     fill_fraction::F
 end
 RateLimitedFrontRainfall(; fill_fraction=0.9) = RateLimitedFrontRainfall(fill_fraction)
 
-rainfall_flux_for_step(::RateLimitedFrontRainfall, pool, moisture_timestep, niter_moist) = 0.0u"kg/m^2/s"
+rainfall_flux_for_step(::RateLimitedFrontRainfall, moisture_mode, pool) = 0.0u"kg/m^2/s"
 
-function apply_rainfall_entry!(mode::RateLimitedFrontRainfall, soil_moisture, pool, sat, half_thickness, rainfall_flux, moisture_timestep; depths, soil_profile, frozen_water_content)
+function rainfall_entry!(soil_moisture, entry_mode::RateLimitedFrontRainfall, soil_hydraulic_model, moisture_mode, pool;
+    soil_profile, depths, frozen_water_content,
+)
     pool <= 0.0u"kg/m^2" && return pool
-    water_density = 1000.0u"kg/m^3"
-    fill_target = mode.fill_fraction * sat
+    frozen_conductivity = soil_hydraulic_model.frozen_conductivity
     saturated_conductivity = soil_profile.hydraulics.saturated_hydraulic_conductivity
-    n = length(soil_moisture)
     remaining = pool
     # soil_moisture is total (liquid+ice) content, so the ceiling stays
-    # fill_target regardless of ice; ice instead impedes the rate limit.
-    @inbounds for i in 1:n
+    # fill_target regardless of ice; ice instead reduces the rate limit.
+    for i in eachindex(soil_moisture)
         remaining <= 0.0u"kg/m^2" && break
+        saturation = _saturation_water_content(soil_profile, i)
         ice_content = frozen_water_content[i]
-        layer_thickness = i == 1 ? half_thickness :
-            i == n ? (depths[n] - depths[n-1]) / 2 : (depths[i+1] - depths[i-1]) / 2
-        layer_capacity = max(0.0u"kg/m^2", (fill_target - soil_moisture[i]) * layer_thickness * water_density)
-        impeded_conductivity = ice_impeded_conductivity(saturated_conductivity[i], ice_content, sat)
-        rate_limit = uconvert(u"kg/m^2", Unitful.gn * impeded_conductivity * moisture_timestep)
+        fill_target = entry_mode.fill_fraction * saturation
+        layer_mass = _layer_thickness(depths, i) * water_density
+        layer_capacity = max(0.0u"kg/m^2", (fill_target - soil_moisture[i]) * layer_mass)
+        conductivity = saturated_conductivity[i] * conductivity_factor(frozen_conductivity, ice_content, saturation)
+        rate_limit = uconvert(u"kg/m^2", Unitful.gn * conductivity * moisture_mode.moisture_timestep)
         infiltrated = min(remaining, layer_capacity, rate_limit)
-        soil_moisture[i] += infiltrated / (layer_thickness * water_density)
+        soil_moisture[i] += infiltrated / layer_mass
         remaining -= infiltrated
-        ice_free_capacity(sat, ice_content) <= ICE_IMPEDANCE_MIN_POROSITY && break  # frozen layer halts the front
+        conductivity_blocked(frozen_conductivity, ice_content, saturation) && break  # frozen layer halts the front
     end
     return remaining
 end
 
-post_infiltration_pool_update(::RateLimitedFrontRainfall, pool, rainfall_flux, moisture_timestep, water_flux, surf_evap, max_surface_pool) =
-    clamp(pool - water_flux - surf_evap, 0.0u"kg/m^2", max_surface_pool)
+post_infiltration_pool_update(::RateLimitedFrontRainfall, moisture_mode, pool, water_flux, surface_evaporation; rainfall_flux) =
+    max(0.0u"kg/m^2", pool - water_flux - surface_evaporation)

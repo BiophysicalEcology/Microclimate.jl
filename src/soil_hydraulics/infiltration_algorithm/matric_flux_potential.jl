@@ -52,11 +52,22 @@ function assemble_tridiagonal_system!(::MatricFluxPotentialAlgorithm, buffers, i
        vapor_flux, rainfall_flux, root_water_uptake,
        flux_sub_diagonal, flux_diagonal, flux_super_diagonal, mass_balance_residual) = buffers
     b3 = campbell_flux_exponent[i]
-    hydraulic_capacitance = layer_water_mass[i] * water_content_new[i] / ((campbell_b[i] + 3.0) * matric_flux_potential[i] * dt)
-    flux_sub_diagonal[i] = -1.0 / (depth[i] - depth[i-1]) - Unitful.gn * b3 * hydraulic_conductivity[i-1] / matric_flux_potential[i-1]
-    flux_super_diagonal[i] = -1.0 / (depth[i+1] - depth[i])
-    flux_diagonal[i] = 1.0 / (depth[i] - depth[i-1]) + 1.0 / (depth[i+1] - depth[i]) + hydraulic_capacitance + Unitful.gn * b3 * hydraulic_conductivity[i] / matric_flux_potential[i]
-    mass_balance_residual[i] = (matric_flux_potential[i] - matric_flux_potential[i-1]) / (depth[i] - depth[i-1]) - (matric_flux_potential[i+1] - matric_flux_potential[i]) / (depth[i+1] - depth[i]) + layer_water_mass[i] * (water_content_new[i] - water_content[i]) / dt - Unitful.gn * (hydraulic_conductivity[i-1] - hydraulic_conductivity[i]) + vapor_flux[i-1] - vapor_flux[i] + rainfall_flux[i-1] - rainfall_flux[i] + root_water_uptake[i]
+    Φ, K = matric_flux_potential, hydraulic_conductivity
+    Δz_upper = depth[i] - depth[i-1]
+    Δz_lower = depth[i+1] - depth[i]
+    hydraulic_capacitance = layer_water_mass[i] * water_content_new[i] / ((campbell_b[i] + 3.0) * Φ[i] * dt)
+    flux_sub_diagonal[i] = -1.0 / Δz_upper - Unitful.gn * b3 * K[i-1] / Φ[i-1]
+    flux_super_diagonal[i] = -1.0 / Δz_lower
+    flux_diagonal[i] = 1.0 / Δz_upper + 1.0 / Δz_lower + hydraulic_capacitance + Unitful.gn * b3 * K[i] / Φ[i]
+
+    # Mass balance residual: net outflow plus storage change, zero at convergence
+    matric_divergence = (Φ[i] - Φ[i-1]) / Δz_upper - (Φ[i+1] - Φ[i]) / Δz_lower
+    storage_change = layer_water_mass[i] * (water_content_new[i] - water_content[i]) / dt
+    gravity_divergence = Unitful.gn * (K[i-1] - K[i])
+    # Vapor and rainfall flux terms added one at a time: grouping them changes
+    # the rounding, which shifts where Newton stops and so the results
+    mass_balance_residual[i] = matric_divergence + storage_change - gravity_divergence +
+        vapor_flux[i-1] - vapor_flux[i] + rainfall_flux[i-1] - rainfall_flux[i] + root_water_uptake[i]
     return nothing
 end
 

@@ -1,23 +1,18 @@
 """
     ImplicitFluxRainfall()
 
-Rain enters as a flux boundary condition inside `infiltration_step!`'s own
-implicit solve — the same role `evaporation_potential`/`vapor_flux[1]`
-already plays — rather than pre-loading the top soil node from a `pool`.
-Node 1 updates purely from the Newton solve, like every other layer, so a
-single hour's rain can influence multiple layers within one implicit step
-instead of needing several sub-steps to fill the surface node's own
-capacity first.
+Rain enters as a flux boundary condition in `infiltration_step!`'s implicit
+solve, spread evenly over the hour's sub-steps, so it can wet several layers
+in one step.
 """
 struct ImplicitFluxRainfall <: AbstractRainfallEntryMode end
 
-rainfall_flux_for_step(::ImplicitFluxRainfall, pool, moisture_timestep, niter_moist) =
-    pool / (niter_moist * moisture_timestep)
+rainfall_flux_for_step(::ImplicitFluxRainfall, moisture_mode, pool) =
+    pool / (substep_count(moisture_mode) * moisture_mode.moisture_timestep)
 
-apply_rainfall_entry!(::ImplicitFluxRainfall, soil_moisture, pool, sat, half_thickness, rainfall_flux, moisture_timestep; kw...) = pool
+rainfall_entry!(soil_moisture, ::ImplicitFluxRainfall, soil_hydraulic_model, moisture_mode, pool; kw...) = pool
 
-# water_flux/surf_evap are already downstream consequences of the rain that
-# entered via rainfall_flux this sub-step -- subtracting them here too would
-# double-count it.
-post_infiltration_pool_update(::ImplicitFluxRainfall, pool, rainfall_flux, moisture_timestep, water_flux, surf_evap, max_surface_pool) =
-    max(0.0u"kg/m^2", pool - rainfall_flux * moisture_timestep)
+# water_flux and surface_evaporation already result from the rain applied as
+# flux this sub-step, so subtracting them as well would double-count it.
+post_infiltration_pool_update(::ImplicitFluxRainfall, moisture_mode, pool, water_flux, surface_evaporation; rainfall_flux) =
+    max(0.0u"kg/m^2", pool - rainfall_flux * moisture_mode.moisture_timestep)

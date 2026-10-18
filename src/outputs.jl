@@ -124,7 +124,7 @@ Hourly output of `solve`/`solve!`, one row per `(day, hour)` step. Key fields:
     soil_heat_capacity::SPH
     soil_bulk_density::SBD
     ground_surface_water::SW
-    runoff::RO  # cumulative; standing water above max_pond_depth, lost from the modeled column
+    runoff::RO  # cumulative water above max_surface_pool removed as runoff, kg/m²
     solar_radiation::SR
     profile::Pr
     snow_fall::SF
