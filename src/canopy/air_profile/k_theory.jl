@@ -46,14 +46,16 @@ function allocate_air_profile(::KTheoryAirProfile, canopy_height, plant_area_ind
     n_free = n_layers - 1
     dl, d, du, rhs = zeros(n_free - 1), zeros(n_free), zeros(n_free - 1), zeros(n_free)
     dl_v, d_v, du_v, rhs_v = zeros(n_free - 1), zeros(n_free), zeros(n_free - 1), zeros(n_free)
-    heat_cache = SciMLBase.init(LinearProblem(Tridiagonal(dl, d, du), rhs))
-    vapor_cache = SciMLBase.init(LinearProblem(Tridiagonal(dl_v, d_v, du_v), rhs_v))
+    heat_matrix = Tridiagonal(dl, d, du)
+    vapor_matrix = Tridiagonal(dl_v, d_v, du_v)
+    heat_cache = SciMLBase.init(LinearProblem(heat_matrix, rhs))
+    vapor_cache = SciMLBase.init(LinearProblem(vapor_matrix, rhs_v))
 
     return (;
         layer_spacing = Δz, relative_eddy_diffusivity = K_relative,
         heat_lower_diagonal = dl, heat_diagonal = d, heat_upper_diagonal = du, heat_right_hand_side = rhs,
         vapor_lower_diagonal = dl_v, vapor_diagonal = d_v, vapor_upper_diagonal = du_v, vapor_right_hand_side = rhs_v,
-        heat_solver_cache = heat_cache, vapor_solver_cache = vapor_cache,
+        heat_matrix, vapor_matrix, heat_solver_cache = heat_cache, vapor_solver_cache = vapor_cache,
         air_temperature = zeros(typeof(0.0u"K"), n_layers),
         vapor_density = zeros(typeof(0.0u"kg/m^3"), n_layers),
         relative_humidity = zeros(n_layers),
@@ -98,7 +100,7 @@ function canopy_air_profile!(buffers, ::KTheoryAirProfile, boundary_layer_model;
         layer_spacing, relative_eddy_diffusivity,
         heat_lower_diagonal, heat_diagonal, heat_upper_diagonal, heat_right_hand_side,
         vapor_lower_diagonal, vapor_diagonal, vapor_upper_diagonal, vapor_right_hand_side,
-        heat_solver_cache, vapor_solver_cache,
+        heat_matrix, vapor_matrix, heat_solver_cache, vapor_solver_cache,
         air_temperature, vapor_density, relative_humidity,
         ground_heat_conductance, ground_vapor_conductance,
     ) = buffers
@@ -170,7 +172,7 @@ function canopy_air_profile!(buffers, ::KTheoryAirProfile, boundary_layer_model;
     b[1] -= g_top * T₀
     b[n_free] -= g_ground * T_g
 
-    heat_cache.A = Tridiagonal(dl, d, du)
+    heat_cache.A = heat_matrix
     heat_cache.b = b
 
     T[2:end] .= SciMLBase.solve!(heat_cache).u .* u"K"
@@ -193,7 +195,7 @@ function canopy_air_profile!(buffers, ::KTheoryAirProfile, boundary_layer_model;
     bᵥ[1] -= gᵥ_top * ρᵥ₀
     bᵥ[n_free] -= gᵥ_ground * ρᵥ_g
 
-    vapor_cache.A = Tridiagonal(dlᵥ, dᵥ, duᵥ)
+    vapor_cache.A = vapor_matrix
     vapor_cache.b = bᵥ
 
     ρᵥ[2:end] .= SciMLBase.solve!(vapor_cache).u .* u"kg/m^3"
