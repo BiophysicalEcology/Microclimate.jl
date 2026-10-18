@@ -14,11 +14,11 @@ environment_instant(; zenith_angle = 30.0u"°", reference_temperature = 293.0u"K
 )
 
 # Hourly canopy inputs for a clear midday hour over a 290 K ground
-canopy_inputs(model; site = Microclimate.example_site(), zenith_angle = 30.0u"°", reference_temperature = 293.0u"K",
+canopy_inputs(model; zenith_angle = 30.0u"°", reference_temperature = 293.0u"K",
     direct_horizontal_irradiance = 500.0u"W/m^2", diffuse_horizontal_irradiance = 100.0u"W/m^2",
     ground_temperature = 290.0u"K", canopy_source_temperature = reference_temperature, kw...) =
     Microclimate.CanopyEnergyBalanceInputs(model;
-        site, environment_instant = environment_instant(; zenith_angle, reference_temperature), zenith_angle,
+        environment_instant = environment_instant(; zenith_angle, reference_temperature), zenith_angle,
         direct_horizontal_irradiance, diffuse_horizontal_irradiance,
         ground_reflectance = 0.15, ground_temperature, ground_emissivity = 0.95,
         ground_relative_humidity = 0.5, canopy_source_temperature, kw...,

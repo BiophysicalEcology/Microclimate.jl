@@ -190,7 +190,7 @@ end
         inputs = canopy_inputs(model; zenith_angle = 20.0u"°", direct_horizontal_irradiance = 600.0u"W/m^2",
             reference_temperature = 293.0u"K", ground_temperature = 295.0u"K", canopy_source_temperature = 295.0u"K",
             rainfall = 5.0u"kg/m^2")
-        Microclimate.canopy_energy_balance!(buffers, model, boundary_layer_model, inputs)
+        Microclimate.canopy_energy_balance!(buffers, model, boundary_layer_model, inputs; site = Microclimate.example_site())
         buffers
     end
 

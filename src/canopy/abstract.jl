@@ -41,20 +41,10 @@ No-op for `NoCanopy`.
 function restore_canopy_water! end
 
 """
-    allocate_canopy_inputs(model; site, environment_instant, boundary_layer_model, soil_hydraulic_model)
-
-Build a canopy model's mutable per-hour inputs (`nothing` for `NoCanopy`;
-a `CanopyEnergyBalanceInputs` for `MultilayerCanopy`). `soil_hydraulic_model`
-is `MicroModel.soil_hydraulic_model`, threaded through statically for
-[`stomatal_conductance`](@ref) (see `CanopyEnergyBalanceInputs`).
-"""
-function allocate_canopy_inputs end
-
-"""
     initial_ground_overrides(model)
 
 Properly-typed placeholder `(; ground_shortwave_transmission,
-ground_incoming_longwave)` for `SoilEnergyInputs`'s initial construction —
+ground_incoming_longwave)` for the initial `HourlySoilEnergyInputs` —
 `nothing` for `NoCanopy`, concrete for `MultilayerCanopy`. Fixes the field's
 type up front so later per-hour updates don't hit a `Nothing`-locked field.
 """
