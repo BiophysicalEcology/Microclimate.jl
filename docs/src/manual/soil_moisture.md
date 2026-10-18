@@ -51,7 +51,7 @@ resistances in series from the soil, through the root and xylem, to the leaf, dr
 evaporation ``E``.
 
 Soil moisture is solved on the same depth nodes as [soil temperature](soil_thermal_properties.md)
-— `MicroModel.depths` (19 nodes by default, `DEFAULT_DEPTHS`, but any node
+— `MicroModel.soil.depths` (19 nodes by default, `DEFAULT_DEPTHS`, but any node
 count or spacing the user configures) — plus one extra node beyond the deepest
 supplied depth, whose hydraulic properties are copied from the last real layer and
 which is held saturated throughout as the lower boundary condition. Each hour, after
@@ -173,7 +173,7 @@ potential drops, driving stomatal closure and reduced transpiration.
 
 ## Prescribed or dynamic
 
-Running the full Campbell solve every hour is optional — `MicroConfig.soil_moisture_strategy`
+Running the full Campbell solve every hour is optional — `MicroModel.soil.moisture_strategy`
 chooses between it and a constant/prescribed alternative:
 
 - [`PrescribedSoilMoisture`](@ref) (the default) skips the solver entirely. Surface

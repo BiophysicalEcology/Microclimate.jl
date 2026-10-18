@@ -35,7 +35,7 @@ solver tolerances. For a given node ``i``, the discretized right-hand side is
 
 with node heat capacity ``C_i = \rho_i c_i \frac{z_{i+1}-z_{i-1}}{2}`` and
 ``K_i = k_i (z_{i+1}-z_i)``, ``k_i`` the thermal conductivity. The depth nodes
-themselves are `MicroModel.depths` — any count or spacing the user chooses, 19 nodes
+themselves are `MicroModel.soil.depths` — any count or spacing the user chooses, 19 nodes
 by default (`DEFAULT_DEPTHS`), spaced closer near the surface where
 temperature changes fastest — see the soil-depth-grid note in
 [Soil hydraulics algorithms](../tutorials/soil_hydraulics_algorithms.md) for why
