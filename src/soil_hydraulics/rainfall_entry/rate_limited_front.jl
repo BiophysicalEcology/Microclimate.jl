@@ -15,11 +15,11 @@ rainfall_flux_for_step(::RateLimitedFrontRainfall, moisture_mode, pool) = 0.0u"k
 
 function rainfall_entry!(soil_moisture, entry_mode::RateLimitedFrontRainfall, soil_hydraulic_model, moisture_mode, pool; soil_profile, depths)
     pool <= 0.0u"kg/m^2" && return pool
-    fill_target = entry_mode.fill_fraction * _saturation_water_content(soil_profile, 1)
     saturated_conductivity = soil_profile.hydraulics.saturated_hydraulic_conductivity
     remaining = pool
     for i in eachindex(soil_moisture)
         remaining <= 0.0u"kg/m^2" && break
+        fill_target = entry_mode.fill_fraction * _saturation_water_content(soil_profile, i)
         layer_mass = _layer_thickness(depths, i) * water_density
         layer_capacity = max(0.0u"kg/m^2", (fill_target - soil_moisture[i]) * layer_mass)
         rate_limit = uconvert(u"kg/m^2", Unitful.gn * saturated_conductivity[i] * moisture_mode.moisture_timestep)
