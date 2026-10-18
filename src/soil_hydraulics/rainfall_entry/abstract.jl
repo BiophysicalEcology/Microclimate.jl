@@ -1,7 +1,7 @@
 abstract type AbstractRainfallEntryMode end
 
 """
-    rainfall_flux_for_step(mode, pool, moisture_timestep, niter_moist)
+    rainfall_flux_for_step(entry_mode, moisture_mode, pool)
 
 Rainfall flux (kg/m²/s, ≥ 0) applied as the upper boundary condition of
 `infiltration_step!`. Zero for modes that move water with [`rainfall_entry!`](@ref).
@@ -9,16 +9,16 @@ Rainfall flux (kg/m²/s, ≥ 0) applied as the upper boundary condition of
 function rainfall_flux_for_step end
 
 """
-    rainfall_entry!(soil_moisture, mode, pool; soil_profile, depths, moisture_timestep, frozen_conductivity, frozen_water_content)
+    rainfall_entry!(soil_moisture, entry_mode, soil_hydraulic_model, moisture_mode, pool; soil_profile, depths, frozen_water_content)
 
 Move water from `pool` into `soil_moisture` before `infiltration_step!`,
-slowed by `frozen_water_content` according to `frozen_conductivity`.
+slowed by `frozen_water_content` according to `soil_hydraulic_model.frozen_conductivity`.
 Returns the remaining `pool`.
 """
 function rainfall_entry! end
 
 """
-    post_infiltration_pool_update(mode, pool, water_flux, surface_evaporation; rainfall_flux, moisture_timestep, max_surface_pool)
+    post_infiltration_pool_update(entry_mode, moisture_mode, pool, water_flux, surface_evaporation; rainfall_flux)
 
 Update `pool` after an `infiltration_step!`.
 """

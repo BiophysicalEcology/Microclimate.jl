@@ -11,25 +11,26 @@ struct RateLimitedFrontRainfall{F} <: AbstractRainfallEntryMode
 end
 RateLimitedFrontRainfall(; fill_fraction=0.9) = RateLimitedFrontRainfall(fill_fraction)
 
-rainfall_flux_for_step(::RateLimitedFrontRainfall, pool, moisture_timestep, niter_moist) = 0.0u"kg/m^2/s"
+rainfall_flux_for_step(::RateLimitedFrontRainfall, moisture_mode, pool) = 0.0u"kg/m^2/s"
 
-function rainfall_entry!(soil_moisture, mode::RateLimitedFrontRainfall, pool;
-    soil_profile, depths, moisture_timestep, frozen_conductivity, frozen_water_content,
+function rainfall_entry!(soil_moisture, entry_mode::RateLimitedFrontRainfall, soil_hydraulic_model, moisture_mode, pool;
+    soil_profile, depths, frozen_water_content,
 )
     pool <= 0.0u"kg/m^2" && return pool
-    saturation = _saturation_water_content(soil_profile, 1)
-    fill_target = mode.fill_fraction * saturation
+    frozen_conductivity = soil_hydraulic_model.frozen_conductivity
     saturated_conductivity = soil_profile.hydraulics.saturated_hydraulic_conductivity
     remaining = pool
     # soil_moisture is total (liquid+ice) content, so the ceiling stays
     # fill_target regardless of ice; ice instead reduces the rate limit.
     for i in eachindex(soil_moisture)
         remaining <= 0.0u"kg/m^2" && break
+        saturation = _saturation_water_content(soil_profile, i)
         ice_content = frozen_water_content[i]
+        fill_target = entry_mode.fill_fraction * saturation
         layer_mass = _layer_thickness(depths, i) * water_density
         layer_capacity = max(0.0u"kg/m^2", (fill_target - soil_moisture[i]) * layer_mass)
         conductivity = saturated_conductivity[i] * conductivity_factor(frozen_conductivity, ice_content, saturation)
-        rate_limit = uconvert(u"kg/m^2", Unitful.gn * conductivity * moisture_timestep)
+        rate_limit = uconvert(u"kg/m^2", Unitful.gn * conductivity * moisture_mode.moisture_timestep)
         infiltrated = min(remaining, layer_capacity, rate_limit)
         soil_moisture[i] += infiltrated / layer_mass
         remaining -= infiltrated
@@ -38,6 +39,5 @@ function rainfall_entry!(soil_moisture, mode::RateLimitedFrontRainfall, pool;
     return remaining
 end
 
-post_infiltration_pool_update(::RateLimitedFrontRainfall, pool, water_flux, surface_evaporation;
-    rainfall_flux, moisture_timestep, max_surface_pool,
-) = clamp(pool - water_flux - surface_evaporation, 0.0u"kg/m^2", max_surface_pool)
+post_infiltration_pool_update(::RateLimitedFrontRainfall, moisture_mode, pool, water_flux, surface_evaporation; rainfall_flux) =
+    max(0.0u"kg/m^2", pool - water_flux - surface_evaporation)

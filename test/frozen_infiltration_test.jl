@@ -14,8 +14,11 @@ function _test_profile()
     (; profile, depths, num_layers, saturation)
 end
 
-_rainfall_entry!(soil_moisture, mode, pool, profile, depths, dt, frozen_water_content; frozen_conductivity=BloomsburgWangFrozenConductivity()) =
-    rainfall_entry!(soil_moisture, mode, pool; soil_profile=profile, depths, moisture_timestep=dt, frozen_conductivity, frozen_water_content)
+_moisture_mode() = DynamicSoilMoisture(; moisture_timestep=360.0u"s", moisture_tolerance=1e-6u"kg/m^2/s", moisture_max_iterations=200)
+
+_rainfall_entry!(soil_moisture, mode, pool, profile, depths, frozen_water_content; frozen_conductivity=BloomsburgWangFrozenConductivity()) =
+    rainfall_entry!(soil_moisture, mode, example_soil_hydraulic_model(; rainfall_entry_mode=mode, frozen_conductivity), _moisture_mode(), pool;
+        soil_profile=profile, depths, frozen_water_content)
 
 @testset "BloomsburgWangFrozenConductivity" begin
     model = BloomsburgWangFrozenConductivity()
@@ -85,11 +88,10 @@ end
     function run(frozen_water_content; frozen_conductivity=BloomsburgWangFrozenConductivity(), soil_moisture=fill(0.30, num_layers))
         model = example_soil_hydraulic_model(; frozen_conductivity)
         buffers = allocate_soil_water_balance(model, num_layers)
-        infiltration_step!(buffers, model;
+        infiltration_step!(buffers, model, _moisture_mode();
             soil_profile=profile, depths, atmospheric_pressure=101325.0u"Pa",
             local_relative_humidity=0.5, leaf_area_index=1.0u"Mg/m^3",
             soil_moisture, evapotranspiration=0.0u"kg/m^2/s", input_soil_temperature,
-            moisture_timestep=360.0u"s", moisture_tolerance=1e-6u"kg/m^2/s", moisture_max_iterations=200,
             frozen_water_content,
         )
     end
@@ -117,15 +119,14 @@ end
 @testset "frozen soil blocks rainfall entry" begin
     (; profile, depths, num_layers, saturation) = _test_profile()
     rain = 8.0u"kg/m^2"
-    dt = 360.0u"s"
     wet = fill(saturation - 0.10, num_layers)  # frozen_water_content=wet leaves ~0.10 ice-free porosity, below threshold
 
     @testset "$mode: near-saturated + fully frozen leaves rain in the pool" for mode in (PoolCapacityRainfall(), RateLimitedFrontRainfall())
         soil_moisture_unfrozen = copy(wet)
-        remaining_unfrozen = _rainfall_entry!(soil_moisture_unfrozen, mode, rain, profile, depths, dt, wet; frozen_conductivity=NoFrozenConductivity())
+        remaining_unfrozen = _rainfall_entry!(soil_moisture_unfrozen, mode, rain, profile, depths, wet; frozen_conductivity=NoFrozenConductivity())
 
         soil_moisture_frozen = copy(wet)
-        remaining_frozen = _rainfall_entry!(soil_moisture_frozen, mode, rain, profile, depths, dt, wet)
+        remaining_frozen = _rainfall_entry!(soil_moisture_frozen, mode, rain, profile, depths, wet)
 
         @test remaining_frozen > remaining_unfrozen
         @test ustrip(u"kg/m^2", rain - remaining_frozen) < ustrip(u"kg/m^2", rain) * 1e-3  # essentially none infiltrated
@@ -134,7 +135,7 @@ end
     @testset "$mode: mass conservation holds while frozen" for mode in (PoolCapacityRainfall(), RateLimitedFrontRainfall())
         soil_moisture = copy(wet)
         storage_before = soil_water_storage(soil_moisture, depths)
-        remaining_pool = _rainfall_entry!(soil_moisture, mode, rain, profile, depths, dt, wet)
+        remaining_pool = _rainfall_entry!(soil_moisture, mode, rain, profile, depths, wet)
         storage_after = soil_water_storage(soil_moisture, depths)
         @test isapprox(ustrip(u"kg/m^2", storage_after - storage_before + remaining_pool - rain), 0.0; atol=1e-6)
     end
@@ -142,7 +143,7 @@ end
     @testset "ImplicitFluxRainfall: ice impedes the boundary flux, rainfall_entry! is a no-op" begin
         mode = ImplicitFluxRainfall()
         soil_moisture = copy(wet)
-        pool = _rainfall_entry!(soil_moisture, mode, rain, profile, depths, dt, wet)
+        pool = _rainfall_entry!(soil_moisture, mode, rain, profile, depths, wet)
         @test pool == rain
         @test soil_moisture == wet
         # soil_water_balance! scales the boundary flux by this factor
