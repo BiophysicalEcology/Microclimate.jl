@@ -13,8 +13,7 @@ end
 PrescribedSoilMoisture(; precomputed_soil_moisture=nothing) =
     PrescribedSoilMoisture(precomputed_soil_moisture)
 
-get_soil_wetness(::PrescribedSoilMoisture, environment_instant) = environment_instant.soil_wetness
-init_soil_wetness!(::PrescribedSoilMoisture) = nothing
+get_soil_wetness(::PrescribedSoilMoisture, environment_instant, soil_wetness) = environment_instant.soil_wetness
 initialise_soil_humidity!(::PrescribedSoilMoisture, output, soil_water_potential, T0) = nothing
 
 function reset_day_soil_moisture!(mode::PrescribedSoilMoisture, soil_moisture, initial_soil_moisture, day_index)
