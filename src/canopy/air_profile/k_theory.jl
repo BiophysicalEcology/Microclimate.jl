@@ -86,7 +86,7 @@ function _ktheory_conductances!(dl, du, relative_eddy_diffusivity, eddy_diffusiv
     return g_top, g_ground
 end
 
-function canopy_air_profile!(buffers, ::KTheoryAirProfile, boundary_layer_model,
+function canopy_heat_vapor_transport!(buffers, ::KTheoryAirProfile, boundary_layer_model,
     forcing::CanopyAirProfileForcing; site, vapour_pressure_equation=GoffGratch(),
 )
     (; friction_velocity, canopy_top_air_temperature, canopy_top_relative_humidity, ground_temperature,
@@ -96,7 +96,7 @@ function canopy_air_profile!(buffers, ::KTheoryAirProfile, boundary_layer_model,
         heat_lower_diagonal, heat_diagonal, heat_upper_diagonal, heat_right_hand_side,
         vapor_lower_diagonal, vapor_diagonal, vapor_upper_diagonal, vapor_right_hand_side,
         heat_matrix, vapor_matrix, heat_solver_cache, vapor_solver_cache,
-        air_temperature, vapor_density, relative_humidity,
+        air_temperature, vapor_density,
         ground_heat_conductance, ground_vapor_conductance,
     ) = buffers
 
@@ -118,7 +118,6 @@ function canopy_air_profile!(buffers, ::KTheoryAirProfile, boundary_layer_model,
 
     T = air_temperature
     ρᵥ = vapor_density
-    RH = relative_humidity
 
     h = canopy_height
     d₀ = displacement_height
@@ -195,11 +194,21 @@ function canopy_air_profile!(buffers, ::KTheoryAirProfile, boundary_layer_model,
 
     ρᵥ[2:end] .= SciMLBase.solve!(vapor_cache).u .* u"kg/m^3"
 
+    return nothing
+end
+
+function canopy_air_profile!(buffers, model::KTheoryAirProfile, boundary_layer_model,
+    forcing::CanopyAirProfileForcing; site, vapour_pressure_equation=GoffGratch(),
+)
+    (; air_temperature, vapor_density, relative_humidity) = buffers
+    canopy_heat_vapor_transport!(buffers, model, boundary_layer_model, forcing; site, vapour_pressure_equation)
+
     # Diagnostic relative humidity
-    for i in 1:n
-        ρᵥ_sat = wet_air_properties(T[i], 1.0, p; vapour_pressure_equation).vapour_density
-        RH[i] = clamp(ρᵥ[i] / ρᵥ_sat, 0.0, 1.0)
+    for i in eachindex(air_temperature)
+        saturation_vapour_density = wet_air_properties(air_temperature[i], 1.0, forcing.atmospheric_pressure;
+            vapour_pressure_equation).vapour_density
+        relative_humidity[i] = clamp(vapor_density[i] / saturation_vapour_density, 0.0, 1.0)
     end
 
-    return (; air_temperature = T, relative_humidity = RH,)
+    return (; air_temperature, relative_humidity)
 end
