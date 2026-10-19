@@ -78,14 +78,17 @@ function canopy_shortwave! end
 
 """
     canopy_wind_profile!(buffers, model, boundary_layer_model; site, environment_instant,
-                          canopy_source_temperature, vapour_pressure_equation)
+                          canopy_source_temperature, vapour_pressure_equation, inverse_obukhov_length=nothing)
 
 Per-layer wind-speed profile through the canopy for the current hour;
 writes into `buffers`, returns `(; canopy_top_wind_speed,
-canopy_top_air_temperature, friction_velocity)`. Above canopy top this is
+canopy_top_air_temperature, canopy_top_relative_humidity, friction_velocity,
+inverse_obukhov_length, inverse_obukhov_length_update)`. Above canopy top this is
 `atmospheric_surface_profile!` with the canopy's displacement height and
 roughness length; below top, the wind-attenuation shape scales that
-boundary value down through the layers.
+boundary value down through the layers. Stability is iterated unless
+`inverse_obukhov_length` is given; `inverse_obukhov_length_update` is what
+the Obukhov relation gives back for it (see `atmospheric_surface_profile!`).
 """
 function canopy_wind_profile! end
 
