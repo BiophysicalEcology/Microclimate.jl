@@ -7,7 +7,7 @@ Supertype for vegetation canopy models. [`NoCanopy`](@ref) (scalar shade fractio
 abstract type AbstractCanopyModel end
 
 """
-    allocate_canopy(model, heights, boundary_layer_model)
+    allocate_canopy(model, heights, boundary_layer_model; site, vapour_pressure_equation, soil_hydraulic_model)
 
 Pre-allocate a canopy model's per-layer buffers, sized to the sub-canopy
 portion of `heights`. Structural quantities depending only on `model`/
@@ -93,8 +93,7 @@ the Obukhov relation gives back for it (see `atmospheric_surface_profile!`).
 function canopy_wind_profile! end
 
 """
-    canopy_longwave!(buffers, model; leaf_temperature, ground_temperature, ground_emissivity,
-                      site, environment_instant, vapour_pressure_equation)
+    canopy_longwave!(buffers, model; leaf_temperature, ground_temperature, ground_emissivity, incoming_longwave)
 
 Layer-resolved longwave exchange (leaf emission/absorption plus sky/ground
 boundary terms) for the current hour; writes per-layer results into
@@ -107,6 +106,16 @@ top_of_canopy_upward`), not canopy-only absorption — sum the per-layer
 `absorbed_longwave` buffer for that.
 """
 function canopy_longwave! end
+
+"""
+    canopy_incoming_longwave(model; site, environment_instant, vapour_pressure_equation)
+
+Sky longwave arriving at the canopy top for the hour, from the longwave
+model's `atmospheric_radiation_model` ([`precompute_longwave_sky`](@ref),
+`shade=0`). Independent of canopy state, so computed once per hour and passed
+to [`canopy_longwave!`](@ref).
+"""
+function canopy_incoming_longwave end
 
 """
     canopy_layer_geometry(plant_area_index, n_layers)

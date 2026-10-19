@@ -17,7 +17,8 @@ canopy(; plant_area_index = plant_area_index,
         convergence_model = PicardCanopyConvergence(; convergence))
 
 function solve_canopy(model, inputs)
-    buffers = allocate_canopy(model, heights, boundary_layer_model)
+    buffers = allocate_canopy(model, heights, boundary_layer_model;
+        site = Microclimate.example_site(), vapour_pressure_equation = Microclimate.GoffGratch(), soil_hydraulic_model = nothing)
     result = canopy_energy_balance!(buffers, model, boundary_layer_model, inputs; site)
     return result, buffers
 end
@@ -36,7 +37,8 @@ end
 
 @testset "new hourly inputs drive day -> night on the same buffers" begin
     model = canopy()
-    buffers = allocate_canopy(model, heights, boundary_layer_model)
+    buffers = allocate_canopy(model, heights, boundary_layer_model;
+        site = Microclimate.example_site(), vapour_pressure_equation = Microclimate.GoffGratch(), soil_hydraulic_model = nothing)
     @test canopy_energy_balance!(buffers, model, boundary_layer_model, canopy_inputs(model); site).net_absorbed_shortwave > 0.0u"W/m^2"
 
     night_inputs = canopy_inputs(model; zenith_angle = 100.0u"°", reference_temperature = 283.0u"K",
@@ -62,7 +64,8 @@ end
 @testset "zero allocations" begin
     for plant_area_index in (plant_area_index, fill(plant_area_index / 10, 10), [0.6, 0.5, 0.45, 0.4, 0.35, 0.3, 0.2, 0.15, 0.1, 0.05])
         model = canopy(; plant_area_index, convergence = FixedIterationConvergence(3))
-        buffers = allocate_canopy(model, heights, boundary_layer_model)
+        buffers = allocate_canopy(model, heights, boundary_layer_model;
+        site = Microclimate.example_site(), vapour_pressure_equation = Microclimate.GoffGratch(), soil_hydraulic_model = nothing)
         @test allocations(canopy_energy_balance!, buffers, model, boundary_layer_model, canopy_inputs(model); site) == 0
     end
 end

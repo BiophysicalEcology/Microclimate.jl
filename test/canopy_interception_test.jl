@@ -186,7 +186,8 @@ end
             canopy_height = 1.0u"m", plant_area_index = 3.0,
             interception_model = LayeredRainInterception(; leaf_water_storage_capacity = capacity),
         )
-        buffers = Microclimate.allocate_canopy(model, heights, boundary_layer_model)
+        buffers = Microclimate.allocate_canopy(model, heights, boundary_layer_model;
+        site = Microclimate.example_site(), vapour_pressure_equation = Microclimate.GoffGratch(), soil_hydraulic_model = nothing)
         inputs = canopy_inputs(model; zenith_angle = 20.0u"°", direct_horizontal_irradiance = 600.0u"W/m^2",
             reference_temperature = 293.0u"K", ground_temperature = 295.0u"K", canopy_source_temperature = 295.0u"K",
             rainfall = 5.0u"kg/m^2")

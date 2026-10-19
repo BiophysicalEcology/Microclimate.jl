@@ -23,3 +23,7 @@ Pre-allocate and precompute the structural buffers a model needs.
 weights are leaf-angle dependent; models that don't need it just ignore it.
 """
 function allocate_longwave end
+
+canopy_incoming_longwave(model::AbstractCanopyLongwaveModel; site, environment_instant, vapour_pressure_equation=GoffGratch()) =
+    precompute_longwave_sky(model.atmospheric_radiation_model;
+        site, environment_instant, vapour_pressure_equation, shade=0.0).incoming_longwave

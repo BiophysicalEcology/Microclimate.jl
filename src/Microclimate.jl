@@ -12,6 +12,11 @@ using ModelParameters, DelimitedFiles
 using SpecialFunctions, StaticArrays
 using LinearAlgebra: Tridiagonal
 using LinearSolve: LinearProblem
+using NonlinearSolveFirstOrder: NewtonRaphson
+using NonlinearSolveQuasiNewton: Broyden
+using DifferentiationInterface: prepare_jacobian, jacobian!, Cache, Constant
+using ADTypes: AutoEnzyme
+import Enzyme
 
 using FluidProperties: atmospheric_pressure, wet_air_properties, dry_air_properties, vapour_pressure
 using FluidProperties: enthalpy_of_vaporisation, molar_enthalpy_of_vaporisation, water_properties
@@ -20,6 +25,8 @@ using FluidProperties: GoffGratch, Teten, Huang
 using Unitful: °, rad, °C
 using Interpolations: AbstractInterpolation
 using SolarRadiation
+
+include("unitful.jl")
 
 # leaf convection/evaporation physics (src/canopy/energy_balance.jl); convection/
 # evaporation called as HeatExchange.convection/.evaporation to avoid name clashes
@@ -55,7 +62,7 @@ export AbstractLeafTemperatureSolver, LinearizedLeafTemperature, RootFindLeafTem
 export AbstractLeafConvectionModel, ElaborateLeafConvection, SimpleLeafConvection
 export leaf_body
 export LeafEvaporationParameters
-export AbstractCanopyConvergenceModel, PicardCanopyConvergence
+export AbstractCanopyConvergenceModel, PicardCanopyConvergence, NewtonCanopyConvergence
 
 # Apparent heat capacity (latent-heat-of-fusion treatment in snow)
 export AbstractApparentHeatCapacity, BonacinaStep, TanhSmoothed, Gaussian, WestermannSigmoid
@@ -276,6 +283,8 @@ include("canopy/convergence/picard.jl")
 
 include("canopy/multilayer.jl")
 include("canopy/energy_balance.jl")
+include("canopy/residual.jl")
+include("canopy/convergence/newton.jl")
 
 # Top-level config, parameters, problem, state, buffers, and cache types
 include("types.jl")
