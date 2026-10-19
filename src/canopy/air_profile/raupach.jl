@@ -472,19 +472,17 @@ function reset_air_profile_scratch!(::RaupachLTheoryAirProfile, buffers)
     return nothing
 end
 
-function canopy_air_profile!(buffers, model::RaupachLTheoryAirProfile, boundary_layer_model,
+function canopy_heat_vapor_transport!(buffers, model::RaupachLTheoryAirProfile, boundary_layer_model,
     forcing::CanopyAirProfileForcing; site, vapour_pressure_equation=GoffGratch(),
 )
     (; friction_velocity, obukhov_length, wind_speed, canopy_top_air_temperature, canopy_top_relative_humidity,
        ground_temperature, ground_relative_humidity, sensible_heat_source, evaporation_mass_flow,
-       leaf_temperature, atmospheric_pressure) = forcing
+       atmospheric_pressure) = forcing
     ground_roughness_height = site.roughness_height
     (; canopy_height, displacement_height, layer_heights, layer_thickness, vertical_velocity_std, inv_near_field_length, eddy_diffusivity,
        layer_resistance, far_field_accum, far_field_accum_latent, resistance_from_top, resistance_to_ground,
        cumulative_sensible_below, sensible_near_field_weight, cumulative_latent_below, latent_near_field_weight,
-       air_temperature, air_temperature_prev, vapor_density, vapor_density_prev, relative_humidity,
-       aitken_omega, aitken_omega_latent, aitken_have_prev, aitken_have_prev_latent,
-       aitken_residual_prev, aitken_residual_prev_latent,
+       air_temperature, air_temperature_prev, vapor_density, vapor_density_prev,
        ground_heat_conductance, ground_vapor_conductance) = buffers
 
     # Mathematical aliases used within the implementation.
@@ -509,7 +507,6 @@ function canopy_air_profile!(buffers, model::RaupachLTheoryAirProfile, boundary_
     T₀ = air_temperature_prev
     ρv = vapor_density
     ρv₀ = vapor_density_prev
-    RH = relative_humidity
 
     h = canopy_height
     d = displacement_height
@@ -540,27 +537,12 @@ function canopy_air_profile!(buffers, model::RaupachLTheoryAirProfile, boundary_
         vapour_pressure_equation,
     ).vapour_density
 
-    # Preserve the previous Picard iterate.
-    T₀ .= T
-
-    if all(iszero, ρv)
-        fill!(ρv, ρv_top)
-    end
-
-    ρv₀ .= ρv
-
     (;
         ground_velocity_std_factor,
         canopy_top_velocity_std_factor,
         min_ground_resistance,
-        aitken_omega_min,
-        aitken_omega_max,
-        aitken_weight_bottom,
-        aitken_weight_top,
-        aitken_bottom_emphasis,
         near_field_subdivisions,
         max_lagrangian_timescale,
-        max_air_temperature_deviation,
     ) = model
 
     # Raupach's notation.
@@ -745,6 +727,43 @@ function canopy_air_profile!(buffers, model::RaupachLTheoryAirProfile, boundary_
         # Vapor terms already have concentration units, kg m⁻³.
         ρv[i] = ρv_top + Cff_v[i] + Cn_v - Cn_top_v
     end
+
+    return nothing
+end
+
+function canopy_air_profile!(buffers, model::RaupachLTheoryAirProfile, boundary_layer_model,
+    forcing::CanopyAirProfileForcing; site, vapour_pressure_equation=GoffGratch(),
+)
+    (; canopy_top_air_temperature, canopy_top_relative_humidity, ground_temperature,
+       leaf_temperature, atmospheric_pressure) = forcing
+    (; canopy_height, layer_heights, air_temperature, air_temperature_prev, vapor_density, vapor_density_prev,
+       relative_humidity, aitken_omega, aitken_omega_latent, aitken_have_prev, aitken_have_prev_latent,
+       aitken_residual_prev, aitken_residual_prev_latent) = buffers
+    (; aitken_omega_min, aitken_omega_max, aitken_weight_bottom, aitken_weight_top, aitken_bottom_emphasis,
+       max_air_temperature_deviation) = model
+
+    z = layer_heights
+    h = canopy_height
+    T = air_temperature
+    T₀ = air_temperature_prev
+    ρv = vapor_density
+    ρv₀ = vapor_density_prev
+    RH = relative_humidity
+    Ttop = canopy_top_air_temperature
+    Tg = ground_temperature
+    p = atmospheric_pressure
+    n = length(T)
+
+    # Preserve the previous Picard iterate.
+    T₀ .= T
+
+    if all(iszero, ρv)
+        fill!(ρv, wet_air_properties(Ttop, canopy_top_relative_humidity, p; vapour_pressure_equation).vapour_density)
+    end
+
+    ρv₀ .= ρv
+
+    canopy_heat_vapor_transport!(buffers, model, boundary_layer_model, forcing; site, vapour_pressure_equation)
 
     # Aitken needs the whole residual vector to fit omega, so this is a
     # separate pass over the raw solve above, not folded into that loop.

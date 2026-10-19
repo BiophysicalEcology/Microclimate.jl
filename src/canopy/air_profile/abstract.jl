@@ -51,6 +51,19 @@ pass; writes into `buffers`, returns `(; air_temperature, relative_humidity)`.
 function canopy_air_profile! end
 
 """
+    canopy_heat_vapor_transport!(buffers, model, boundary_layer_model, forcing::CanopyAirProfileForcing;
+                              site, vapour_pressure_equation=GoffGratch())
+
+The model's physical map from leaf sources and boundary values to the
+in-canopy air temperature and vapour density, written into
+`buffers.air_temperature` and `buffers.vapor_density`. A model whose map
+depends on the current air state reads it from `buffers.air_temperature_prev`
+and `buffers.vapor_density_prev`. No relaxation, clamping or relative
+humidity: [`canopy_air_profile!`](@ref) adds those for the Picard solve.
+"""
+function canopy_heat_vapor_transport! end
+
+"""
     clamp_canopy_top_air_temperature(model, canopy_top_air_temperature, reference_temperature, ground_temperature)
 
 Any model-specific bound on the canopy-top boundary temperature. No bound by default.
