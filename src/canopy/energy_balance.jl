@@ -108,7 +108,6 @@ function canopy_energy_balance!(buffers, model::MultilayerCanopy, boundary_layer
        rainfall, leaf_water_potential) = inputs
 
     leaf_temperature_buffer = buffers.leaf.leaf_temperature  # avoids shadowing the leaf_temperature(solver, ...) function
-    vapor_density_buffer = buffers.air_profile.vapor_density
     air_temperature = buffers.air_profile.air_temperature
     evaporation_mass_flow = buffers.leaf.evaporation_mass_flow
     sensible_heat_source = buffers.leaf.sensible_heat_source
@@ -131,17 +130,12 @@ function canopy_energy_balance!(buffers, model::MultilayerCanopy, boundary_layer
     interception_result = canopy_interception!(buffers, model; rainfall, wind_speed)
 
     # Warm-start from last hour's converged state; only seed on the very
-    # first call (buffer still zero, and the guess must not be 0 K/0 kg/m^3).
+    # first call (buffer still zero, and the guess must not be 0 K).
     # The first Picard pass solves leaf temperature against this air state
     # before the air profile is recomputed.
     iszero(air_temperature[1]) && fill!(air_temperature, wind_result.canopy_top_air_temperature)
     fill!(buffers.air_profile.relative_humidity, wind_result.canopy_top_relative_humidity)
     iszero(leaf_temperature_buffer[1]) && fill!(leaf_temperature_buffer, wind_result.canopy_top_air_temperature)
-    # RaupachLTheoryAirProfile iterates from the previous vapor density, so
-    # it must not start from zero humidity.
-    iszero(vapor_density_buffer[1]) && fill!(vapor_density_buffer,
-        wet_air_properties(wind_result.canopy_top_air_temperature, wind_result.canopy_top_relative_humidity,
-            environment_instant.atmospheric_pressure; vapour_pressure_equation).vapour_density)
 
     longwave_result, iter, canopy_top_air_temperature, canopy_top_relative_humidity, friction_velocity, obukhov_length =
         converge_canopy!(buffers, model, boundary_layer_model, inputs, wind_result, model.convergence_model;
