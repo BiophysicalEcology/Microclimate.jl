@@ -58,7 +58,9 @@ function allocate_air_profile(::KTheoryAirProfile, canopy_height, displacement_h
         vapor_lower_diagonal = dl_v, vapor_diagonal = d_v, vapor_upper_diagonal = du_v, vapor_right_hand_side = rhs_v,
         heat_matrix, vapor_matrix, heat_solver_cache = heat_cache, vapor_solver_cache = vapor_cache,
         air_temperature = zeros(typeof(0.0u"K"), n_layers),
+        air_temperature_prev = zeros(typeof(0.0u"K"), n_layers),
         vapor_density = zeros(typeof(0.0u"kg/m^3"), n_layers),
+        vapor_density_prev = zeros(typeof(0.0u"kg/m^3"), n_layers),
         relative_humidity = zeros(n_layers),
         ground_heat_conductance = Ref(0.0u"W/m^2/K"),
         ground_vapor_conductance = Ref(0.0u"m/s"),
@@ -195,20 +197,4 @@ function canopy_heat_vapor_transport!(buffers, ::KTheoryAirProfile, boundary_lay
     ρᵥ[2:end] .= SciMLBase.solve!(vapor_cache).u .* u"kg/m^3"
 
     return nothing
-end
-
-function canopy_air_profile!(buffers, model::KTheoryAirProfile, boundary_layer_model,
-    forcing::CanopyAirProfileForcing; site, vapour_pressure_equation=GoffGratch(),
-)
-    (; air_temperature, vapor_density, relative_humidity) = buffers
-    canopy_heat_vapor_transport!(buffers, model, boundary_layer_model, forcing; site, vapour_pressure_equation)
-
-    # Diagnostic relative humidity
-    for i in eachindex(air_temperature)
-        saturation_vapour_density = wet_air_properties(air_temperature[i], 1.0, forcing.atmospheric_pressure;
-            vapour_pressure_equation).vapour_density
-        relative_humidity[i] = clamp(vapor_density[i] / saturation_vapour_density, 0.0, 1.0)
-    end
-
-    return (; air_temperature, relative_humidity)
 end

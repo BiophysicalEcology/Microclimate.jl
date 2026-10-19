@@ -10,7 +10,7 @@ gap-fraction cascade, O(n_layers)), [`AllPairsLongwaveExchange`](@ref)
 micropoint/microclimlearn for direct comparison), and
 [`LayeredRadiosityExchange`](@ref) (implicit reflecting two-stream slabs,
 O(n_layers), following Flerchinger's SHAW model). Each is re-evaluated
-every Picard pass rather than cached across iterations.
+at every canopy residual evaluation.
 """
 abstract type AbstractCanopyLongwaveModel end
 

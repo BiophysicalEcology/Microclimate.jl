@@ -42,12 +42,12 @@ end
     @test model.shortwave_model isa TwoStreamRadiation
     @test model.wind_model isa ExponentialCanopyWindAttenuation
     @test model.stomatal_model isa MoistureResponsiveStomatalConductance
-    @test model.leaf_temperature_solver isa LinearizedLeafTemperature
 
     heights = vcat(0.1:0.1:1.0, [2.0]) .* u"m"
     boundary_layer_model = MoninObukhov()
     buffers = Microclimate.allocate_canopy(model, heights, boundary_layer_model;
-        site = Microclimate.example_site(), vapour_pressure_equation = Microclimate.GoffGratch(), soil_hydraulic_model = nothing)
+        site = Microclimate.example_site(), vapour_pressure_equation = Microclimate.GoffGratch(),
+        soil_hydraulic_model = Microclimate.example_soil_hydraulic_model())
     # shortwave, wind, and leaf buffers all present after composition, nested one field per sub-model
     @test haskey(buffers.shortwave, :absorbed_shortwave)
     @test haskey(buffers.wind, :wind_speed)

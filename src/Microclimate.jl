@@ -31,7 +31,7 @@ include("unitful.jl")
 # leaf convection/evaporation physics (src/canopy/energy_balance.jl); convection/
 # evaporation called as HeatExchange.convection/.evaporation to avoid name clashes
 import HeatExchange
-using HeatExchange: LeafEvaporationParameters, AtmosphericConditions, ScaledDimension, zbrent, Air
+using HeatExchange: LeafEvaporationParameters, AtmosphericConditions, ScaledDimension, Air
 using BiophysicalGeometry: Ellipsoid, Body, Naked
 
 
@@ -58,11 +58,10 @@ export AbstractCanopyInterceptionModel, NoInterception, LayeredRainInterception,
 export LeafParameters
 export AbstractStomatalConductanceModel, PrescribedStomatalConductance,
     MoistureResponsiveStomatalConductance
-export AbstractLeafTemperatureSolver, LinearizedLeafTemperature, RootFindLeafTemperature
 export AbstractLeafConvectionModel, ElaborateLeafConvection, SimpleLeafConvection
 export leaf_body
 export LeafEvaporationParameters
-export AbstractCanopyConvergenceModel, PicardCanopyConvergence, NewtonCanopyConvergence
+export AbstractCanopyConvergenceModel, NewtonCanopyConvergence
 
 # Apparent heat capacity (latent-heat-of-fusion treatment in snow)
 export AbstractApparentHeatCapacity, BonacinaStep, TanhSmoothed, Gaussian, WestermannSigmoid
@@ -274,12 +273,8 @@ include("canopy/stomatal_conductance/moisture_responsive.jl")
 
 include("canopy/leaf_temperature/parameters.jl")
 include("canopy/leaf_temperature/heat_balance.jl")
-include("canopy/leaf_temperature/abstract.jl")
-include("canopy/leaf_temperature/linearized.jl")
-include("canopy/leaf_temperature/root_find.jl")
 
 include("canopy/convergence/abstract.jl")
-include("canopy/convergence/picard.jl")
 
 include("canopy/multilayer.jl")
 include("canopy/energy_balance.jl")

@@ -124,8 +124,7 @@ function evaluate_canopy!(residual, state, buffers, model::MultilayerCanopy, bou
         wind.inverse_obukhov_length, sum(sensible_heat_source), sum(evaporation_mass_flow) / 1.0u"m^2",
         ground_temperature, ground_vapor_density, reference_temperature, reference_vapor_density,
         forcing.canopy_top_air_temperature, initial_top_vapor_density)
-    canopy_top_air_temperature = clamp_canopy_top_air_temperature(model.air_profile_model, boundary.top_temperature,
-        reference_temperature, ground_temperature)
+    canopy_top_air_temperature = boundary.top_temperature
     top_saturation = wet_air_properties(canopy_top_air_temperature, 1.0, atmospheric_pressure;
         vapour_pressure_equation).vapour_density
     canopy_top_relative_humidity = clamp(boundary.top_vapour_density / top_saturation, 0.0, 1.0)
