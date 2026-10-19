@@ -125,7 +125,7 @@ environment_hourly = HourlyTimeseries(;
 )
 
 radiation = RadiationModel(;
-    solar_radiation_model = SolarProblem(; scattered_uv = Bool(Int(microinput[:IUV]))),
+    solar_radiation_model = SolarProblem(; diffuse_model = Bool(Int(microinput[:IUV])) ? ChandrasekharScattering() : DaveFurukawaScattering()),
 )
 
 # Set up time mode from the daily/spinup flags
