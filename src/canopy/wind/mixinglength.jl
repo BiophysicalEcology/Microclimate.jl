@@ -166,12 +166,15 @@ canopy_wind_profile!(buffers, ::MixingLengthCanopyWindAttenuation, boundary_laye
 # ExponentialCanopyWindAttenuation) -- only the shape differs between them.
 function _shape_based_canopy_wind_profile!(buffers, boundary_layer_model;
     site, environment_instant, canopy_source_temperature, vapour_pressure_equation=GoffGratch(),
+    inverse_obukhov_length=nothing,
 )
     profile = atmospheric_surface_profile!(boundary_layer_model, buffers.above_canopy_profile;
         site, environment_instant, surface_temperature=canopy_source_temperature, vapour_pressure_equation,
         displacement_height=buffers.displacement_height, roughness_length=buffers.roughness_length,
         thermal_roughness_model=buffers.thermal_roughness_model,
         temperature_anchor_height=buffers.canopy_height,
+        stability_variable=InverseObukhovLength(),
+        stability=inverse_obukhov_length,
     )
     canopy_top_wind_speed = first(profile.wind_speed)
     canopy_top_air_temperature = first(profile.air_temperature)
@@ -184,12 +187,13 @@ function _shape_based_canopy_wind_profile!(buffers, boundary_layer_model;
 
     return (; canopy_top_wind_speed, canopy_top_air_temperature, canopy_top_relative_humidity,
         friction_velocity=profile.friction_velocity,
-        obukhov_length=profile.obukhov_length)
+        inverse_obukhov_length=profile.inverse_obukhov_length,
+        inverse_obukhov_length_update=profile.stability_update)
 end
 
 """
     canopy_top_flux_boundary(boundary_layer_model, canopy_height, displacement_height, roughness_length,
-                              reference_height, friction_velocity, obukhov_length,
+                              reference_height, friction_velocity, inverse_obukhov_length,
                               total_sensible_flux, total_latent_flux, ground_temperature, ground_vapour_density,
                               reference_temperature, reference_vapour_density, previous_top_temperature,
                               previous_top_vapour_density; max_resistance=2000.0u"s/m")
@@ -220,7 +224,7 @@ exponentially toward `previous_top_temperature`/`previous_top_vapour_density`
 by that residence time before the bound is applied.
 """
 function canopy_top_flux_boundary(boundary_layer_model, canopy_height, displacement_height, roughness_length,
-    reference_height, friction_velocity, obukhov_length,
+    reference_height, friction_velocity, inverse_obukhov_length,
     total_sensible_flux, total_latent_flux, ground_temperature, ground_vapour_density,
     reference_temperature, reference_vapour_density, previous_top_temperature, previous_top_vapour_density;
     max_resistance=2000.0u"s/m",
@@ -233,8 +237,8 @@ function canopy_top_flux_boundary(boundary_layer_model, canopy_height, displacem
     ground_resistance = min(canopy_height / (κ * friction_velocity * z_top), max_resistance)
 
     log_ratio = log(z_ref / roughness_length)
-    ψ_h = isfinite(obukhov_length) ?
-        calc_ψ_h(z_ref, γ, obukhov_length, boundary_layer_model.stable_beta, boundary_layer_model.turbulent_prandtl_number) : 0.0
+    ψ_h = calc_ψ_h(stability_parameter(InverseObukhovLength(), z_ref, inverse_obukhov_length), γ,
+        boundary_layer_model.stable_beta, boundary_layer_model.turbulent_prandtl_number)
     top_resistance = min(max(log_ratio - ψ_h, 0.1 * log_ratio, 1.0e-6) / (κ * friction_velocity), max_resistance)
 
     # ρ_cp fixed from ambient data, not the solved top_temperature: calc_ρ_cp
@@ -266,9 +270,7 @@ function canopy_top_flux_boundary(boundary_layer_model, canopy_height, displacem
 
     # Final backstop: the damping step above can walk back outside the
     # bracket if previous_top_temperature itself sits near/at the edge.
-    clamped = top_temperature < bound_lo ? :cold : top_temperature > bound_hi ? :hot : :none
     top_temperature = clamp(top_temperature, bound_lo, bound_hi)
     top_vapour_density = max(top_vapour_density, zero(top_vapour_density))
-    return (; top_temperature, top_vapour_density, bound_lo, bound_hi, clamped,
-        undamped_top_temperature, previous_top_temperature, physical_weight, τ, top_resistance, ground_resistance)
+    return (; top_temperature, top_vapour_density, bound_lo, bound_hi)
 end

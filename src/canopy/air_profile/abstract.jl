@@ -17,7 +17,7 @@ Pre-allocate and precompute the structural buffers a model needs.
 function allocate_air_profile end
 
 """
-    CanopyAirProfileForcing(; friction_velocity, obukhov_length, wind_speed,
+    CanopyAirProfileForcing(; friction_velocity, inverse_obukhov_length, wind_speed,
         canopy_top_air_temperature, canopy_top_relative_humidity, ground_temperature,
         ground_relative_humidity, sensible_heat_source, evaporation_mass_flow,
         leaf_temperature, atmospheric_pressure)
@@ -29,7 +29,7 @@ air-profile model receives the same forcing and reads the fields it needs.
 """
 @kwdef struct CanopyAirProfileForcing{FV,OL,WS,TT,TRH,GT,GRH,SH,EM,LT,P}
     friction_velocity::FV
-    obukhov_length::OL
+    inverse_obukhov_length::OL
     wind_speed::WS
     canopy_top_air_temperature::TT
     canopy_top_relative_humidity::TRH

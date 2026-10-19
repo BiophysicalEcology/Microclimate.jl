@@ -475,7 +475,7 @@ end
 function canopy_heat_vapor_transport!(buffers, model::RaupachLTheoryAirProfile, boundary_layer_model,
     forcing::CanopyAirProfileForcing; site, vapour_pressure_equation=GoffGratch(),
 )
-    (; friction_velocity, obukhov_length, wind_speed, canopy_top_air_temperature, canopy_top_relative_humidity,
+    (; friction_velocity, inverse_obukhov_length, wind_speed, canopy_top_air_temperature, canopy_top_relative_humidity,
        ground_temperature, ground_relative_humidity, sensible_heat_source, evaporation_mass_flow,
        atmospheric_pressure) = forcing
     ground_roughness_height = site.roughness_height
@@ -582,15 +582,13 @@ function canopy_heat_vapor_transport!(buffers, model::RaupachLTheoryAirProfile, 
     #   T_L = min(a₂h/u★, T_L,max)
     z★ = max(h - d, 1.0e-3u"m")
 
-    Φh = isfinite(obukhov_length) ?
-        calc_Φ_h(
-            z★,
-            γ,
-            obukhov_length,
-            boundary_layer_model.stable_Φ_h_coefficient,
-            boundary_layer_model.min_stable_Φ_h,
-            boundary_layer_model.max_stable_Φ_h,
-        ) : 1.0
+    Φh = calc_Φ_h(
+        stability_parameter(InverseObukhovLength(), z★, inverse_obukhov_length),
+        γ,
+        boundary_layer_model.stable_Φ_h_coefficient,
+        boundary_layer_model.min_stable_Φ_h,
+        boundary_layer_model.max_stable_Φ_h,
+    )
 
     a₂ = κ * (1.0 - d / h) / (a₁^2 * Φh)
     TL = min(a₂ * h / u★, max_lagrangian_timescale)
