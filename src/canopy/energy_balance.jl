@@ -168,18 +168,15 @@ function canopy_energy_balance!(buffers, model::MultilayerCanopy, boundary_layer
 
     interception_result = canopy_interception!(buffers, model; rainfall, wind_speed)
 
-    # Warm-start from last hour's converged state; only reset on the very
+    # Warm-start from last hour's converged state; only seed on the very
     # first call (buffer still zero, and the guess must not be 0 K/0 kg/m^3).
-    # air_temperature must warm-start too -- NonlinearSolveCanopyConvergence
-    # reads it directly as its starting guess, unlike PicardCanopyConvergence
-    # which re-derives it every pass regardless of the starting value.
+    # The first Picard pass solves leaf temperature against this air state
+    # before the air profile is recomputed.
     iszero(air_temperature[1]) && fill!(air_temperature, wind_result.canopy_top_air_temperature)
     fill!(buffers.air_profile.relative_humidity, wind_result.canopy_top_relative_humidity)
     iszero(leaf_temperature_buffer[1]) && fill!(leaf_temperature_buffer, wind_result.canopy_top_air_temperature)
-    # vapor_density has no analogous "already warm" check -- it's read as
-    # NonlinearSolveCanopyConvergence's starting guess every call, so leaving
-    # it at its zero-allocation default on the first call is a degenerate
-    # (zero-humidity) corner, not just a poor guess.
+    # RaupachLTheoryAirProfile iterates from the previous vapor density, so
+    # it must not start from zero humidity.
     iszero(vapor_density_buffer[1]) && fill!(vapor_density_buffer,
         wet_air_properties(wind_result.canopy_top_air_temperature, wind_result.canopy_top_relative_humidity,
             environment_instant.atmospheric_pressure; vapour_pressure_equation).vapour_density)
