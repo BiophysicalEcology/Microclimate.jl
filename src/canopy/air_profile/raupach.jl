@@ -1,11 +1,7 @@
 """
     RaupachLTheoryAirProfile(; ground_velocity_std_factor=0.25, canopy_top_velocity_std_factor=1.25,
-                              min_ground_resistance=10.0u"s/m", relaxation=0.7,
-                              aitken_omega_min=0.02, aitken_omega_max=0.8,
-                              aitken_weight_bottom=0.05, aitken_weight_top=0.8,
-                              aitken_bottom_emphasis=10.0, near_field_subdivisions=20,
-                              max_lagrangian_timescale=200.0u"s", max_air_temperature_deviation=40.0u"K",
-                              bulk_temperature_margin=2.0u"K")
+                              min_ground_resistance=10.0u"s/m", near_field_subdivisions=20,
+                              far_field_mode=Val(:exact), max_lagrangian_timescale=200.0u"s")
 
 Raupach's (1989) localized near-field (LNF) Lagrangian in-canopy scalar
 transport model: each layer's temperature and humidity is the sum of a
@@ -28,16 +24,7 @@ resolved by subdividing the source layer's own thickness into
 `near_field_subdivisions` sub-points and averaging the kernel over them.
 Raising `near_field_subdivisions` trades runtime for accuracy.
 
-The recursive dependence of Fg (ground flux) on the air_temperature it helps 
-solve and the potential runaway that causes for a tall/dense canopy is handled
-with adaptive Aitken Δ²-acceleration: `omega` s relearned each pass from
-the residual history, clamped to `[aitken_omega_min, aitken_omega_max]`, and 
-weighted to under-relax hardest at the ground (`aitken_weight_bottom`) and 
-lightest at canopy top (`aitken_weight_top`); `aitken_bottom_emphasis` weights 
-ground-proximate residuals more heavily in the omega fit. `relaxation` seeds 
-the first pass, before there's a residual history.
-
-`T_L` (see `canopy_air_profile!`'s own derivation) is `∝ 1/friction_velocity`
+`T_L` (see `canopy_heat_vapor_transport!`) is `∝ 1/friction_velocity`
 and grows further under instability via `calc_Φ_h`, which can push `T_L`
 (and the near-field kernel's `ζ = distance/(σ_w·T_L)` argument) toward
 physically implausible eddy-turnover-time values under calm/unstable
@@ -67,33 +54,19 @@ alone) that :exact omits.
   concentrations to source distributions in vegetation canopies. *Quarterly
   Journal of the Royal Meteorological Society*, 115(487), 609-632.
 """
-@kwdef struct RaupachLTheoryAirProfile{GVSF,CVSF,GR,RL,OMIN,OMAX,WBOT,WTOP,BETA,NS,FFM,MTL,MAD,BTM} <: AbstractCanopyAirProfileModel
+@kwdef struct RaupachLTheoryAirProfile{GVSF,CVSF,GR,NS,FFM,MTL} <: AbstractCanopyAirProfileModel
     ground_velocity_std_factor::GVSF = 0.25
     canopy_top_velocity_std_factor::CVSF = 1.25
     min_ground_resistance::GR = 10.0u"s/m"
-    relaxation::RL = 0.7
-    aitken_omega_min::OMIN = 0.02
-    aitken_omega_max::OMAX = 0.8
-    aitken_weight_bottom::WBOT = 0.05
-    aitken_weight_top::WTOP = 0.8
-    aitken_bottom_emphasis::BETA = 10.0
     near_field_subdivisions::NS = 20
     far_field_mode::FFM = Val(:exact)
     max_lagrangian_timescale::MTL = 200.0u"s"
-    max_air_temperature_deviation::MAD = 40.0u"K"
-    bulk_temperature_margin::BTM = 2.0u"K"
 end
 
 function allocate_air_profile(model::RaupachLTheoryAirProfile, canopy_height, displacement_height, plant_area_index, heights, n_layers, boundary_layer_model)
     geometry = canopy_layer_heights(heights, canopy_height, n_layers)
     z = geometry.layer_heights
     Δz = geometry.layer_thickness
-
-    ω₀ = clamp(
-        Float64(model.relaxation),
-        model.aitken_omega_min,
-        model.aitken_omega_max,
-    )
 
     σw = zeros(typeof(0.0u"m/s"), n_layers)
     λ⁻¹ = zeros(typeof(1.0 / (1.0u"m/s" * 1.0u"s")), n_layers)
@@ -144,13 +117,6 @@ function allocate_air_profile(model::RaupachLTheoryAirProfile, canopy_height, di
         vapor_density = ρv,
         vapor_density_prev = ρv_prev,
         relative_humidity = RH,
-
-        aitken_omega = Ref(ω₀),
-        aitken_omega_latent = Ref(ω₀),
-        aitken_have_prev = Ref(false),
-        aitken_have_prev_latent = Ref(false),
-        aitken_residual_prev = zeros(typeof(0.0u"K"), n_layers),
-        aitken_residual_prev_latent = zeros(typeof(0.0u"kg/m^3"), n_layers),
 
         ground_heat_conductance = Ref(0.0u"W/m^2/K"),
         ground_vapor_conductance = Ref(0.0u"m/s"),
@@ -269,71 +235,6 @@ function _raupach_pair_kernel_weight(::Val{:bulk}, i, j, layer_heights, layer_th
     return j == i ? 0.0 : _raupach_bulk_kernel_weight(layer_heights[i], j, layer_heights, inv_near_field_length)
 end
 
-# Weighted Aitken Δ²-acceleration.
-# `newv` holds the raw unrelaxed solve on entry, the blended result on exit.
-# `unit` strips units for the (dimensionless) omega fit only.
-function _aitken_relax!(newv, oldv, layer_heights, canopy_height, omega_ref, have_prev_ref, residual_prev,
-    omega_min, omega_max, weight_bottom, weight_top, bottom_emphasis, unit)
-    x = newv
-    x₀ = oldv
-    z = layer_heights
-    h = canopy_height
-
-    ωref = omega_ref
-    have_prev = have_prev_ref
-    r_prev = residual_prev
-
-    ωmin = omega_min
-    ωmax = omega_max
-    w₀ = weight_bottom
-    w₁ = weight_top
-    β = bottom_emphasis
-
-    n = length(x)
-    Δw = w₁ - w₀
-
-    if !have_prev[]
-        ω = clamp(ωref[], ωmin, ωmax)
-
-        for i in 1:n
-            r = x[i] - x₀[i]
-            wz = w₀ + Δw * (z[i] / h)^2
-            r_prev[i] = r
-            x[i] = x₀[i] + ω * wz * r
-        end
-
-        ωref[] = ω
-        have_prev[] = true
-        return nothing
-    end
-
-    numerator = 0.0
-    denominator = 0.0
-
-    for i in 1:n
-        r = x[i] - x₀[i]
-        Δr = r - r_prev[i]
-        ξ = 1.0 - z[i] / h
-        w = 1.0 + β * ξ^2
-
-        numerator += w * ustrip(unit, r_prev[i]) * ustrip(unit, Δr)
-        denominator += w * ustrip(unit, Δr)^2
-    end
-
-    ω = denominator > 0.0 ? -ωref[] * numerator / denominator : ωref[]
-    ω = clamp(ω, ωmin, ωmax)
-
-    for i in 1:n
-        r = x[i] - x₀[i]
-        wz = w₀ + Δw * (z[i] / h)^2
-        r_prev[i] = r
-        x[i] = x₀[i] + ω * wz * r
-    end
-
-    ωref[] = ω
-    return nothing
-end
-
 # Eq. 19a: Cf(z)-Cf(zR) = ∫[z,zR] F(z')/Kf(z') dz' -- each layer's own local
 # flux over its own local resistance, summed; not one flux value times the
 # total resistance across the range. Fg is a single ground flux, evaluated
@@ -436,41 +337,6 @@ _raupach_near_field_scale(::Val{:bulk}, n) = 1.0 + 0.894 * exp(-0.01386 * n) + 9
 # _raupach_far_field!'s own comment on why :bulk keeps this).
 _raupach_layer_ρ_cp(::Val{:exact}, ρ_cp, _air_temperature_prev, _i) = ρ_cp
 _raupach_layer_ρ_cp(::Val{:bulk}, _ρ_cp, air_temperature_prev, i) = calc_ρ_cp(air_temperature_prev[i])
-
-# :exact's backstop is ±max_air_temperature_deviation around T_top/ground_temperature.
-# :bulk matches micropoint's tmn/tmx exactly: ±bulk_temperature_margin around
-# T_top/ground_temperature, widened (not margined) to cover leaf_temperature's own range.
-_raupach_temperature_bounds(::Val{:exact}, T_top, ground_temperature, leaf_temperature, max_air_temperature_deviation, bulk_temperature_margin) =
-    (min(T_top, ground_temperature) - max_air_temperature_deviation, max(T_top, ground_temperature) + max_air_temperature_deviation)
-function _raupach_temperature_bounds(::Val{:bulk}, T_top, ground_temperature, leaf_temperature, max_air_temperature_deviation, bulk_temperature_margin)
-    leaf_lo, leaf_hi = extrema(leaf_temperature)
-    bound_lo = min(min(T_top, ground_temperature) - bulk_temperature_margin, leaf_lo)
-    bound_hi = max(max(T_top, ground_temperature) + bulk_temperature_margin, leaf_hi)
-    return (bound_lo, bound_hi)
-end
-
-# :bulk bounds the canopy-top boundary to the fixed ambient data,
-# reference_temperature/ground_temperature ± bulk_temperature_margin. Not widened
-# by leaf_temperature as the interior bound is: leaf temperature is clamped
-# relative to air temperature, so under a calm/cold-air runaway it collapses
-# in lockstep, and a leaf-widened floor would collapse with it.
-clamp_canopy_top_air_temperature(model::RaupachLTheoryAirProfile, canopy_top_air_temperature, reference_temperature, ground_temperature) =
-    _clamp_canopy_top_air_temperature(model.far_field_mode, model.bulk_temperature_margin,
-        canopy_top_air_temperature, reference_temperature, ground_temperature)
-_clamp_canopy_top_air_temperature(::Val{:exact}, margin, canopy_top_air_temperature, reference_temperature, ground_temperature) =
-    canopy_top_air_temperature
-_clamp_canopy_top_air_temperature(::Val{:bulk}, margin, canopy_top_air_temperature, reference_temperature, ground_temperature) =
-    clamp(canopy_top_air_temperature,
-        min(reference_temperature, ground_temperature) - margin, max(reference_temperature, ground_temperature) + margin)
-
-# Drops the Aitken residual history, not omega -- omega is a learned-good
-# relaxation rate, worth keeping as next day's starting guess; the residual
-# itself is meaningless carried from an unrelated previous day.
-function reset_air_profile_scratch!(::RaupachLTheoryAirProfile, buffers)
-    buffers.aitken_have_prev[] = false
-    buffers.aitken_have_prev_latent[] = false
-    return nothing
-end
 
 function canopy_heat_vapor_transport!(buffers, model::RaupachLTheoryAirProfile, boundary_layer_model,
     forcing::CanopyAirProfileForcing; site, vapour_pressure_equation=GoffGratch(),
@@ -727,114 +593,4 @@ function canopy_heat_vapor_transport!(buffers, model::RaupachLTheoryAirProfile, 
     end
 
     return nothing
-end
-
-function canopy_air_profile!(buffers, model::RaupachLTheoryAirProfile, boundary_layer_model,
-    forcing::CanopyAirProfileForcing; site, vapour_pressure_equation=GoffGratch(),
-)
-    (; canopy_top_air_temperature, canopy_top_relative_humidity, ground_temperature,
-       leaf_temperature, atmospheric_pressure) = forcing
-    (; canopy_height, layer_heights, air_temperature, air_temperature_prev, vapor_density, vapor_density_prev,
-       relative_humidity, aitken_omega, aitken_omega_latent, aitken_have_prev, aitken_have_prev_latent,
-       aitken_residual_prev, aitken_residual_prev_latent) = buffers
-    (; aitken_omega_min, aitken_omega_max, aitken_weight_bottom, aitken_weight_top, aitken_bottom_emphasis,
-       max_air_temperature_deviation) = model
-
-    z = layer_heights
-    h = canopy_height
-    T = air_temperature
-    T₀ = air_temperature_prev
-    ρv = vapor_density
-    ρv₀ = vapor_density_prev
-    RH = relative_humidity
-    Ttop = canopy_top_air_temperature
-    Tg = ground_temperature
-    p = atmospheric_pressure
-    n = length(T)
-
-    # Preserve the previous Picard iterate.
-    T₀ .= T
-
-    if all(iszero, ρv)
-        fill!(ρv, wet_air_properties(Ttop, canopy_top_relative_humidity, p; vapour_pressure_equation).vapour_density)
-    end
-
-    ρv₀ .= ρv
-
-    canopy_heat_vapor_transport!(buffers, model, boundary_layer_model, forcing; site, vapour_pressure_equation)
-
-    # Aitken needs the whole residual vector to fit omega, so this is a
-    # separate pass over the raw solve above, not folded into that loop.
-    _aitken_relax!(
-        T,
-        T₀,
-        z,
-        h,
-        aitken_omega,
-        aitken_have_prev,
-        aitken_residual_prev,
-        aitken_omega_min,
-        aitken_omega_max,
-        aitken_weight_bottom,
-        aitken_weight_top,
-        aitken_bottom_emphasis,
-        u"K",
-    )
-
-    _aitken_relax!(
-        ρv,
-        ρv₀,
-        z,
-        h,
-        aitken_omega_latent,
-        aitken_have_prev_latent,
-        aitken_residual_prev_latent,
-        aitken_omega_min,
-        aitken_omega_max,
-        aitken_weight_bottom,
-        aitken_weight_top,
-        aitken_bottom_emphasis,
-        u"kg/m^3",
-    )
-
-    # Absolute backstop anchored to T_top/ground_temperature -- leaf
-    # temperature is clamped only relative to this array, so without an
-    # absolute bound here the two can climb together, unanchored.
-    Tlo, Thi = _raupach_temperature_bounds(
-        model.far_field_mode,
-        Ttop,
-        Tg,
-        leaf_temperature,
-        max_air_temperature_deviation,
-        model.bulk_temperature_margin,
-    )
-
-    for i in 1:n
-        T[i] = clamp(T[i], Tlo, Thi)
-    end
-
-    all(isfinite, T) || throw(
-        DomainError(T, "RaupachLTheoryAirProfile produced a non-finite air temperature"),
-    )
-
-    all(isfinite, ρv) || throw(
-        DomainError(ρv, "RaupachLTheoryAirProfile produced a non-finite vapor density"),
-    )
-
-    for i in 1:n
-        ρv_sat = wet_air_properties(
-            T[i],
-            1.0,
-            p;
-            vapour_pressure_equation,
-        ).vapour_density
-
-        RH[i] = clamp(ρv[i] / ρv_sat, 0.0, 1.0)
-    end
-
-    return (;
-        air_temperature = T,
-        relative_humidity = RH,
-    )
-
 end

@@ -8,9 +8,8 @@
                        condensation_model=MonteithLeafCondensation(),
                        leaf_parameters=LeafParameters(),
                        stomatal_model=PrescribedStomatalConductance(),
-                       leaf_temperature_solver=LinearizedLeafTemperature(),
                        leaf_convection_model=ElaborateLeafConvection(),
-                       convergence_model=PicardCanopyConvergence())
+                       convergence_model=NewtonCanopyConvergence())
 
 Multi-layer canopy structure resolved by height. Splits the canopy into as
 many layers as there are `MicroModel.atmosphere.heights` entries at or below
@@ -51,20 +50,18 @@ Composes swappable sub-models the same way `MicroModel` composes
   stress should actually reach the leaf's transpiration/temperature —
   `PrescribedStomatalConductance` leaves Campbell's `leaf_water_potential`
   output unused.
-- `leaf_temperature_solver::AbstractLeafTemperatureSolver` — how leaf
-  temperature is solved each call (default [`LinearizedLeafTemperature`](@ref))
 - `leaf_convection_model::AbstractLeafConvectionModel` — leaf boundary-layer
   Nusselt correlation (default [`ElaborateLeafConvection`](@ref); see also
   [`SimpleLeafConvection`](@ref))
 - `convergence_model::AbstractCanopyConvergenceModel` — how the hourly
-  leaf/air-temperature fixed point is solved (default
-  [`PicardCanopyConvergence`](@ref))
+  leaf/air-temperature state is solved (default
+  [`NewtonCanopyConvergence`](@ref))
 
 Ground reflectance is not stored here — supplied to
 [`canopy_shortwave!`](@ref) by the caller (e.g. `Site.albedo`), matching how
 other radiation models read albedo from their caller.
 """
-@kwdef struct MultilayerCanopy{H,PAI,WAF,RM,LWM,WM,APM,IM,CDM,LP,SM,LTS,LCM,CVM} <: AbstractCanopyModel
+@kwdef struct MultilayerCanopy{H,PAI,WAF,RM,LWM,WM,APM,IM,CDM,LP,SM,LCM,CVM} <: AbstractCanopyModel
     canopy_height::H
     plant_area_index::PAI
     woody_area_fraction::WAF = 0.0
@@ -76,9 +73,8 @@ other radiation models read albedo from their caller.
     condensation_model::CDM = MonteithLeafCondensation()
     leaf_parameters::LP = LeafParameters()
     stomatal_model::SM = PrescribedStomatalConductance()
-    leaf_temperature_solver::LTS = LinearizedLeafTemperature()
     leaf_convection_model::LCM = ElaborateLeafConvection()
-    convergence_model::CVM = PicardCanopyConvergence()
+    convergence_model::CVM = NewtonCanopyConvergence()
 end
 
 """
@@ -99,13 +95,12 @@ function example_multilayer_canopy(;
     condensation_model = MonteithLeafCondensation(),
     leaf_parameters = LeafParameters(),
     stomatal_model = PrescribedStomatalConductance(),
-    leaf_temperature_solver = LinearizedLeafTemperature(),
     leaf_convection_model = ElaborateLeafConvection(),
-    convergence_model = PicardCanopyConvergence(),
+    convergence_model = NewtonCanopyConvergence(),
 )
     MultilayerCanopy(;
         canopy_height, plant_area_index, woody_area_fraction, shortwave_model, longwave_model, wind_model,
-        air_profile_model, interception_model, condensation_model, leaf_parameters, stomatal_model, leaf_temperature_solver,
+        air_profile_model, interception_model, condensation_model, leaf_parameters, stomatal_model,
         leaf_convection_model, convergence_model,
     )
 end
@@ -139,7 +134,6 @@ function allocate_canopy(model::MultilayerCanopy, heights, boundary_layer_model;
         leaf = (;
             leaf_body = leaf_body(model.leaf_parameters.leaf_length, model.leaf_parameters.leaf_width, canopy_projection_ratio),
             leaf_temperature = zeros(typeof(0.0u"K"), n_layers),
-            leaf_temperature_prev = zeros(typeof(0.0u"K"), n_layers),
             sensible_heat_source = zeros(typeof(0.0u"W/m^2"), n_layers),
             evaporation_mass_flow = zeros(typeof(0.0u"g/s"), n_layers),
             potential_evaporation_mass_flow = zeros(typeof(0.0u"g/s"), n_layers),
@@ -147,16 +141,6 @@ function allocate_canopy(model::MultilayerCanopy, heights, boundary_layer_model;
             leaf_frost_formed = zeros(typeof(0.0u"kg/m^2"), n_layers),
             absorbed_radiation = zeros(typeof(0.0u"W/m^2"), n_layers),
             net_balance = zeros(typeof(0.0u"W"), n_layers),
-            air_temperature_prev = zeros(typeof(0.0u"K"), n_layers),
-            relative_humidity_prev = zeros(n_layers),
-            # Aitken Δ²-acceleration state for leaf_temperature's Picard
-            # relaxation (see _canopy_picard_pass!); persists hour to hour.
-            # aitken_dummy_heights is all-zero and unused (uniform weighting),
-            # just a same-length unitted array to stay allocation-free.
-            aitken_omega = Ref(0.5),
-            aitken_have_prev = Ref(false),
-            aitken_residual_prev = zeros(typeof(0.0u"K"), n_layers),
-            aitken_dummy_heights = zeros(typeof(0.0u"m"), n_layers),
         ),
     )
     convergence = allocate_canopy_convergence(model.convergence_model, buffers, model, boundary_layer_model;
@@ -174,9 +158,6 @@ canopy_incoming_longwave(model::MultilayerCanopy; kw...) = canopy_incoming_longw
 
 canopy_wind_profile!(buffers, model::MultilayerCanopy, boundary_layer_model; kw...) =
     canopy_wind_profile!(buffers.wind, model.wind_model, boundary_layer_model; kw...)
-
-canopy_air_profile!(buffers, model::MultilayerCanopy, boundary_layer_model, forcing; kw...) =
-    canopy_air_profile!(buffers.air_profile, model.air_profile_model, boundary_layer_model, forcing; kw...)
 
 canopy_interception!(buffers, model::MultilayerCanopy; kw...) =
     canopy_interception!(buffers.interception, model.interception_model, model.leaf_parameters.canopy_projection_ratio; kw...)
@@ -216,10 +197,6 @@ restore_canopy_water!(model::MultilayerCanopy, buffers) =
 
 function reset_canopy_scratch!(model::MultilayerCanopy, buffers)
     reset_interception!(model.interception_model, buffers.interception)
-    # Leaf-temperature Aitken state: same reasoning as reset_air_profile_scratch! --
-    # drop the residual history, keep omega as a learned-good starting guess.
-    buffers.leaf.aitken_have_prev[] = false
-    reset_air_profile_scratch!(model.air_profile_model, buffers.air_profile)
     return nothing
 end
 

@@ -73,8 +73,7 @@ leaf_convection(convection_model, body, leaf_area, air_temperature, leaf_tempera
         wind_speed, atmospheric_pressure, fluid=Air(), characteristic_dimension_formula=LEAF_CHARACTERISTIC_DIMENSION,
         correlation=_convection_correlation(convection_model))
 
-# HeatExchange.evaporation, flux-clamped. Shared by leaf_heat_balance and
-# LinearizedLeafTemperature's perturbation -- both must clamp identically.
+# HeatExchange.evaporation, with the latent flux clamped to ±500 W/m².
 function _clamped_leaf_evaporation(stomatal_conductance, mass_transfer_coefficient, atmos, leaf_area,
     leaf_temperature, air_temperature, leaf_water_potential,
 )

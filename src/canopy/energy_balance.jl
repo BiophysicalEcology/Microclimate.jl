@@ -64,9 +64,9 @@ end
 Hourly solve tying every canopy sub-model together. Shortwave, the
 above-canopy wind/temperature profile, and rain interception are computed
 once per call (none depends on leaf temperature). Longwave, the in-canopy
-air profile, and per-layer leaf temperature are then driven to a fixed point
-by [`converge_canopy!`](@ref), dispatching on `model.convergence_model`
-([`PicardCanopyConvergence`](@ref)).
+air profile, and per-layer leaf temperature are then solved together by
+[`converge_canopy!`](@ref), dispatching on `model.convergence_model`
+([`NewtonCanopyConvergence`](@ref)).
 
 A wetted leaf surface ([`wet_canopy_fraction`](@ref)) blends stomatal
 conductance toward [`WET_SURFACE_CONDUCTANCE`](@ref)
@@ -96,7 +96,7 @@ feeding a soil-hydraulics demand term (e.g. `CampbellSoilHydraulics`).
 own ground-to-lowest-layer conductances, for the soil model's surface exchange to
 reuse instead of inverting the log law at a reference height too close to the
 roughness length (see `ground_convection_conditions`). The last five fields are
-the converged above-canopy boundary state `canopy_air_profile!` was driven with —
+the solved above-canopy boundary state —
 diagnostic-oriented (e.g. comparing against an independent implementation's own
 boundary solve), not consumed elsewhere in this package.
 """
@@ -107,7 +107,7 @@ function canopy_energy_balance!(buffers, model::MultilayerCanopy, boundary_layer
        ground_reflectance, ground_temperature, ground_emissivity, ground_relative_humidity, canopy_source_temperature,
        rainfall, leaf_water_potential) = inputs
 
-    leaf_temperature_buffer = buffers.leaf.leaf_temperature  # avoids shadowing the leaf_temperature(solver, ...) function
+    leaf_temperature = buffers.leaf.leaf_temperature
     air_temperature = buffers.air_profile.air_temperature
     evaporation_mass_flow = buffers.leaf.evaporation_mass_flow
     sensible_heat_source = buffers.leaf.sensible_heat_source
@@ -119,7 +119,7 @@ function canopy_energy_balance!(buffers, model::MultilayerCanopy, boundary_layer
     (; layer_plant_area_index_boundaries) = buffers.shortwave
     (; layer_transmission) = buffers.longwave
     atmospheric_pressure = environment_instant.atmospheric_pressure
-    n_layers = length(leaf_temperature_buffer)
+    n_layers = length(leaf_temperature)
 
     shortwave_result = canopy_shortwave!(buffers, model;
         zenith_angle, direct_horizontal_irradiance, diffuse_horizontal_irradiance, ground_reflectance)
@@ -129,13 +129,10 @@ function canopy_energy_balance!(buffers, model::MultilayerCanopy, boundary_layer
 
     interception_result = canopy_interception!(buffers, model; rainfall, wind_speed)
 
-    # Warm-start from last hour's converged state; only seed on the very
-    # first call (buffer still zero, and the guess must not be 0 K).
-    # The first Picard pass solves leaf temperature against this air state
-    # before the air profile is recomputed.
+    # Warm-start from last hour's solution; only seed on the very first call
+    # (buffer still zero, and the guess must not be 0 K).
     iszero(air_temperature[1]) && fill!(air_temperature, wind_result.canopy_top_air_temperature)
-    fill!(buffers.air_profile.relative_humidity, wind_result.canopy_top_relative_humidity)
-    iszero(leaf_temperature_buffer[1]) && fill!(leaf_temperature_buffer, wind_result.canopy_top_air_temperature)
+    iszero(leaf_temperature[1]) && fill!(leaf_temperature, wind_result.canopy_top_air_temperature)
 
     longwave_result, iter, canopy_top_air_temperature, canopy_top_relative_humidity, friction_velocity, inverse_obukhov_length =
         converge_canopy!(buffers, model, boundary_layer_model, inputs, wind_result, model.convergence_model;
@@ -153,7 +150,7 @@ function canopy_energy_balance!(buffers, model::MultilayerCanopy, boundary_layer
             evaporation_mass_flow[layer], sensible_heat_source[layer], wet_fraction, available_mass, layer_capacity,
             air_temperature[layer])
 
-        leaf_temp = leaf_temperature_buffer[layer]
+        leaf_temp = leaf_temperature[layer]
         leaf_dew_formed[layer] = 0.0u"kg/m^2"
         leaf_frost_formed[layer] = 0.0u"kg/m^2"
         # Standing frost melts into standing dew (and leaf_surface_water) once the leaf
@@ -230,275 +227,14 @@ function canopy_energy_balance!(buffers, model::MultilayerCanopy, boundary_layer
 end
 
 """
-    _canopy_picard_pass!(buffers, model, boundary_layer_model, inputs, initial_wind, relaxation,
-        canopy_top_air_temperature_prev, canopy_top_relative_humidity_prev; site, vapour_pressure_equation, soil_hydraulic_model)
-
-One relaxed Picard pass: re-anchor the above-canopy boundary on this pass's
-own top-leaf temperature, longwave exchange, per-layer leaf temperature
-(under-relaxed against `buffers.leaf.leaf_temperature_prev`, which the
-caller must set beforehand), then the in-canopy air/vapor profile (also
-under-relaxed). Called once per [`PicardCanopyConvergence`](@ref) iteration.
-Returns `(longwave_result, any_clamped, canopy_top_air_temperature,
-canopy_top_relative_humidity, friction_velocity, inverse_obukhov_length)` -- the last
-two are this pass's own (`leaf_temperature_buffer[1]`-driven) values, the
-ones `canopy_air_profile!` is actually driven with below, not `initial_wind`'s
-one-time pre-loop seed.
-"""
-function _canopy_picard_pass!(buffers, model::MultilayerCanopy, boundary_layer_model, inputs::CanopyEnergyBalanceInputs,
-    initial_wind, relaxation, canopy_top_air_temperature_prev, canopy_top_relative_humidity_prev;
-    site, vapour_pressure_equation, soil_hydraulic_model,
-)
-    (; environment_instant, zenith_angle, ground_temperature, ground_emissivity, ground_relative_humidity,
-       leaf_water_potential) = inputs
-
-    (; leaf_body, leaf_temperature_prev, sensible_heat_source, evaporation_mass_flow,
-       potential_evaporation_mass_flow, net_balance, air_temperature_prev, relative_humidity_prev) = buffers.leaf
-    leaf_temperature_buffer = buffers.leaf.leaf_temperature
-    absorbed_radiation_buffer = buffers.leaf.absorbed_radiation
-    (; absorbed_shortwave, layer_plant_area_index_boundaries) = buffers.shortwave
-    (; absorbed_longwave, layer_transmission) = buffers.longwave
-    displacement_height = buffers.wind.displacement_height
-    n_layers = length(leaf_temperature_buffer)
-    (; atmospheric_pressure) = environment_instant
-    leaf_emissivity = model.leaf_parameters.leaf_emissivity
-    canopy_height = model.canopy_height
-
-    # Wind/stability only here -- canopy_source_temperature (lagged top-leaf
-    # temperature) sets stability, not the canopy-top boundary temperature
-    # itself (see canopy_top_flux_boundary below).
-    wind_result = canopy_wind_profile!(buffers, model, boundary_layer_model;
-        site, environment_instant, canopy_source_temperature=leaf_temperature_buffer[1], vapour_pressure_equation)
-    friction_velocity = wind_result.friction_velocity
-    inverse_obukhov_length = wind_result.inverse_obukhov_length
-    wind_speed = buffers.wind.wind_speed
-
-    # A binding clamp can hold the value unchanged between iterations, falsely
-    # satisfying the convergence check while net stays nonzero.
-    any_clamped = false
-
-    longwave_result = canopy_longwave!(buffers, model;
-        leaf_temperature=leaf_temperature_buffer, ground_temperature, ground_emissivity,
-        incoming_longwave=canopy_incoming_longwave(model; site, environment_instant, vapour_pressure_equation))
-
-    # Raw leaf-temperature solve; Aitken-blended as a whole vector below, so
-    # solve and flux/clamp are separate passes either side of the blend.
-    for layer in 1:n_layers
-        # Radiative exchange area is the layer's interception fraction (1-τ),
-        # not PAI directly (self-shading means (1-τ)<PAI); canopy_longwave!'s
-        # own emission scales the same way, so emitted_longwave must match it
-        # for longwave conservation. Aerodynamic exchange (convection/
-        # evaporation) doesn't self-shade the same way -- it scales with
-        # actual leaf surface (PAI) instead. 2.0 = both leaf surfaces.
-        exchange_fraction = 1.0 - layer_transmission[layer]
-        air_temperature_layer = buffers.air_profile.air_temperature[layer]
-
-        if iszero(exchange_fraction)
-            # No leaf area (zero PAI): avoid 0/0 below, no distinct leaf temperature.
-            leaf_temperature_buffer[layer] = air_temperature_layer
-            absorbed_radiation_buffer[layer] = zero(absorbed_radiation_buffer[layer])
-            continue
-        end
-
-        relative_humidity_layer = buffers.air_profile.relative_humidity[layer]
-        leaf_area = 2.0 * exchange_fraction * 1.0u"m^2"
-        layer_pai = layer_plant_area_index_boundaries[layer + 1] - layer_plant_area_index_boundaries[layer]
-        aerodynamic_area = 2.0 * layer_pai * 1.0u"m^2"
-        # absorbed_shortwave/absorbed_longwave are per unit ground area;
-        # leaf_heat_balance/leaf_temperature want per unit leaf_area.
-        absorbed_radiation = (absorbed_shortwave[layer] + absorbed_longwave[layer]) / (2.0 * exchange_fraction)
-        dry_conductance = stomatal_conductance(model.stomatal_model, zenith_angle, leaf_water_potential, soil_hydraulic_model)
-        conductance = blend_stomatal_conductance(dry_conductance, wet_canopy_fraction(model, buffers, layer))
-
-        leaf_temperature_buffer[layer] = leaf_temperature(model.leaf_temperature_solver, absorbed_radiation,
-            air_temperature_layer, relative_humidity_layer, wind_speed[layer], atmospheric_pressure,
-            leaf_emissivity, conductance, leaf_water_potential, leaf_body;
-            leaf_area, aerodynamic_area, leaf_temperature_guess=leaf_temperature_buffer[layer],
-            convection_model=model.leaf_convection_model)
-        absorbed_radiation_buffer[layer] = absorbed_radiation
-    end
-
-    # Uniform across layers (weight_bottom==weight_top): layer heights aren't
-    # available for every air_profile_model, so no bottom/top emphasis here.
-    _aitken_relax!(leaf_temperature_buffer, leaf_temperature_prev, buffers.leaf.aitken_dummy_heights, 1.0u"m",
-        buffers.leaf.aitken_omega, buffers.leaf.aitken_have_prev, buffers.leaf.aitken_residual_prev,
-        0.02, 0.9, 1.0, 1.0, 0.0, u"K")
-
-    for layer in 1:n_layers
-        exchange_fraction = 1.0 - layer_transmission[layer]
-        if iszero(exchange_fraction)
-            sensible_heat_source[layer] = zero(sensible_heat_source[layer])
-            evaporation_mass_flow[layer] = zero(evaporation_mass_flow[layer])
-            net_balance[layer] = zero(net_balance[layer])
-            potential_evaporation_mass_flow[layer] = zero(potential_evaporation_mass_flow[layer])
-            continue
-        end
-
-        air_temperature_layer = buffers.air_profile.air_temperature[layer]
-        relative_humidity_layer = buffers.air_profile.relative_humidity[layer]
-        leaf_area = 2.0 * exchange_fraction * 1.0u"m^2"
-        layer_pai = layer_plant_area_index_boundaries[layer + 1] - layer_plant_area_index_boundaries[layer]
-        aerodynamic_area = 2.0 * layer_pai * 1.0u"m^2"
-        absorbed_radiation = absorbed_radiation_buffer[layer]
-        dry_conductance = stomatal_conductance(model.stomatal_model, zenith_angle, leaf_water_potential, soil_hydraulic_model)
-        conductance = blend_stomatal_conductance(dry_conductance, wet_canopy_fraction(model, buffers, layer))
-
-        # Clamp to a physically sane range (same bracket RootFindLeafTemperature
-        # uses) as a hard backstop against a runaway Aitken step. Free/tunable,
-        # uncited; asymmetric since radiative/convective heating under low
-        # wind can push a leaf further above air temperature than
-        # evaporative cooling pushes it below.
-        clamp_lo = air_temperature_layer - 30.0u"K"
-        clamp_hi = air_temperature_layer + 40.0u"K"
-        any_clamped |= leaf_temperature_buffer[layer] < clamp_lo || leaf_temperature_buffer[layer] > clamp_hi
-        leaf_temperature_buffer[layer] = clamp(leaf_temperature_buffer[layer], clamp_lo, clamp_hi)
-
-        balance = leaf_heat_balance(leaf_temperature_buffer[layer], absorbed_radiation, air_temperature_layer,
-            relative_humidity_layer, wind_speed[layer], atmospheric_pressure, leaf_emissivity,
-            conductance, leaf_water_potential, leaf_body, leaf_area, model.leaf_convection_model; aerodynamic_area)
-        # balance.net is nonzero mid-iteration (clamp bound, or the Aitken-
-        # blended temperature just not yet the true root) -- net_balance
-        # keeps that as a diagnostic; sensible_heat_source stays actual
-        # physical convection so it can't feed iteration error back into
-        # canopy_air_profile!'s H/σw term within the same hour.
-        sensible_heat_source[layer] = balance.conv.convection_flow / 1.0u"m^2"
-        evaporation_mass_flow[layer] = balance.evap.transpiration_mass_flow
-        net_balance[layer] = balance.net
-
-        # Unstressed (water_potential=0) reference transpiration, for a
-        # soil-hydraulics demand term — not the leaf's own energy balance.
-        # Conductance is recomputed at water_potential=0 too, so this stays a
-        # true unstressed demand under MoistureResponsiveStomatalConductance.
-        unstressed_dry_conductance = stomatal_conductance(model.stomatal_model, zenith_angle, 0.0u"J/kg", soil_hydraulic_model)
-        atmos = AtmosphericConditions(relative_humidity_layer, wind_speed[layer], atmospheric_pressure)
-        potential_evap = HeatExchange.evaporation(unstressed_dry_conductance, balance.conv.mass_transfer_coefficient,
-            atmos, aerodynamic_area, leaf_temperature_buffer[layer], air_temperature_layer; water_potential=0.0u"J/kg")
-        potential_evaporation_mass_flow[layer] = potential_evap.transpiration_mass_flow
-    end
-
-    # Whole-canopy aggregated-flux boundary (canopy_top_flux_boundary,
-    # wind/mixinglength.jl) -- not a bare-ground MOST surface with a single
-    # leaf's temperature standing in for the whole canopy's own boundary
-    # condition. Relaxed across passes same as before.
-    total_sensible_flux = sum(sensible_heat_source)
-    total_latent_flux = sum(evaporation_mass_flow) / 1.0u"m^2"
-    reference_height = buffers.wind.above_canopy_profile.heights[2]
-    reference_temperature = environment_instant.reference_temperature
-    # Threshold scales with n_layers (-25 W/m^2/layer) so a many-layer canopy
-    # doesn't false-alarm on an otherwise unremarkable per-layer flux.
-    if ustrip(u"W/m^2", total_sensible_flux) < -25.0 * n_layers
-        fmt(v, unit) = join(round.(ustrip.(unit, v); digits=1), ", ")
-        @warn "extreme total_sensible_flux (cold) -- per-layer trace" total_sensible_flux ground_temperature reference_temperature sensible_heat_source=fmt(sensible_heat_source, u"W/m^2") leaf_temperature=fmt(leaf_temperature_buffer, u"°C") air_temperature=fmt(buffers.air_profile.air_temperature, u"°C") maxlog=5
-    end
-    reference_vapour_density = wet_air_properties(reference_temperature, environment_instant.reference_humidity,
-        atmospheric_pressure; vapour_pressure_equation).vapour_density
-    ground_vapour_density = wet_air_properties(ground_temperature, ground_relative_humidity,
-        atmospheric_pressure; vapour_pressure_equation).vapour_density
-    # Fixed for the whole hour (initial_wind's seed, not pass-to-pass
-    # canopy_top_air_temperature_prev) -- the damping anchor must stay put
-    # across passes to bound the converged answer, not just slow reaching it.
-    previous_top_vapour_density = wet_air_properties(initial_wind.canopy_top_air_temperature, initial_wind.canopy_top_relative_humidity,
-        atmospheric_pressure; vapour_pressure_equation).vapour_density
-    boundary = canopy_top_flux_boundary(boundary_layer_model, canopy_height, displacement_height,
-        buffers.wind.roughness_length, reference_height, friction_velocity, inverse_obukhov_length,
-        total_sensible_flux, total_latent_flux, ground_temperature, ground_vapour_density,
-        reference_temperature, reference_vapour_density, initial_wind.canopy_top_air_temperature, previous_top_vapour_density)
-    saturation_vapour_density = wet_air_properties(boundary.top_temperature, 1.0, atmospheric_pressure;
-        vapour_pressure_equation).vapour_density
-    boundary_relative_humidity = clamp(
-        ustrip(u"kg/m^3", boundary.top_vapour_density) / ustrip(u"kg/m^3", saturation_vapour_density), 0.0, 1.0)
-    canopy_top_air_temperature = relaxation * boundary.top_temperature +
-        (1.0 - relaxation) * canopy_top_air_temperature_prev
-    # boundary.top_temperature is already bracketed by boundary.bound_lo/hi,
-    # but canopy_top_air_temperature is a running blend that carries forward
-    # pass to pass (and hour to hour) -- under heavy relaxation an already-
-    # extreme carried-forward value barely moves per pass, so it needs the
-    # same absolute bracket, not just a bounded input to blend towards.
-    canopy_top_air_temperature = clamp(canopy_top_air_temperature, boundary.bound_lo, boundary.bound_hi)
-    canopy_top_air_temperature = clamp_canopy_top_air_temperature(model.air_profile_model,
-        canopy_top_air_temperature, reference_temperature, ground_temperature)
-    canopy_top_relative_humidity = relaxation * boundary_relative_humidity +
-        (1.0 - relaxation) * canopy_top_relative_humidity_prev
-
-    air_temperature_prev .= buffers.air_profile.air_temperature
-    relative_humidity_prev .= buffers.air_profile.relative_humidity
-
-    forcing = CanopyAirProfileForcing(; friction_velocity, inverse_obukhov_length, wind_speed,
-        canopy_top_air_temperature, canopy_top_relative_humidity, ground_temperature, ground_relative_humidity,
-        sensible_heat_source, evaporation_mass_flow, leaf_temperature=leaf_temperature_buffer, atmospheric_pressure)
-    canopy_air_profile!(buffers, model, boundary_layer_model, forcing; site, vapour_pressure_equation)
-
-    _relax_air_profile!(buffers, model.air_profile_model, relaxation, air_temperature_prev, relative_humidity_prev)
-
-    return longwave_result, any_clamped, canopy_top_air_temperature, canopy_top_relative_humidity, friction_velocity, inverse_obukhov_length
-end
-
-# Under-relax the air profile: it feeds back into next pass's leaf
-# temperature via sensible_heat_source, so damping only the leaf side
-# doesn't stop a joint leaf/air runaway. Skipped for air-profile models that
-# already stabilize themselves internally -- RaupachLTheoryAirProfile runs
-# its own adaptive Aitken acceleration inside canopy_air_profile!, and
-# compounding a second fixed relaxation on top of that double-damps it.
-function _relax_air_profile!(buffers, ::AbstractCanopyAirProfileModel, relaxation, air_temperature_prev, relative_humidity_prev)
-    buffers.air_profile.air_temperature .= relaxation .* buffers.air_profile.air_temperature .+
-        (1.0 - relaxation) .* air_temperature_prev
-    buffers.air_profile.relative_humidity .= relaxation .* buffers.air_profile.relative_humidity .+
-        (1.0 - relaxation) .* relative_humidity_prev
-    return nothing
-end
-_relax_air_profile!(buffers, ::RaupachLTheoryAirProfile, relaxation, air_temperature_prev, relative_humidity_prev) = nothing
-
-# Whether the canopy-top boundary (re-anchored each pass by
-# _canopy_picard_pass!) has itself stopped moving -- checked alongside the
-# per-layer leaf-temperature convergence so a still-drifting boundary can't
-# hide behind an already-converged leaf array. FixedIterationConvergence
-# always runs its full count regardless, so this is a no-op for it.
-_canopy_top_converged(::FixedIterationConvergence, canopy_top_air_temperature, canopy_top_air_temperature_prev) = true
-_canopy_top_converged(c::IterationToleranceConvergence, canopy_top_air_temperature, canopy_top_air_temperature_prev) =
-    abs(canopy_top_air_temperature - canopy_top_air_temperature_prev) < c.tolerance
-
-"""
     converge_canopy!(buffers, model::MultilayerCanopy, boundary_layer_model, inputs::CanopyEnergyBalanceInputs,
         initial_wind, convergence_model; site, vapour_pressure_equation, soil_hydraulic_model)
 
-Drives the per-hour leaf/air-temperature fixed point to convergence, per
-`convergence_model` ([`PicardCanopyConvergence`](@ref)). `initial_wind` is the
-hour's pre-loop [`canopy_wind_profile!`](@ref) result, whose canopy-top air
-temperature and humidity seed the loop and anchor the boundary. Re-anchors the
-canopy-top boundary on the current pass's own leaf temperature each pass
-(see `_canopy_picard_pass!`). Returns `(longwave_result, iterations,
-canopy_top_air_temperature, canopy_top_relative_humidity, friction_velocity,
-inverse_obukhov_length)` -- the last four are the final pass's own converged values.
-`longwave_result`/wind-stability are each computed from the *previous*
-pass's leaf temperature (see `_canopy_picard_pass!`'s own call order), so
-they lag the final `leaf_temperature_buffer` by one pass; negligible once
-`IterationToleranceConvergence` has actually converged, not bounded under
-`FixedIterationConvergence`.
+Solve the hour's leaf/air-temperature state per `convergence_model`
+([`NewtonCanopyConvergence`](@ref)). `initial_wind` is the hour's
+[`canopy_wind_profile!`](@ref) result, whose canopy-top air temperature and
+humidity anchor the canopy-top boundary. Returns `(longwave_result,
+iterations, canopy_top_air_temperature, canopy_top_relative_humidity,
+friction_velocity, inverse_obukhov_length)` at the solution.
 """
-function converge_canopy!(buffers, model::MultilayerCanopy, boundary_layer_model, inputs::CanopyEnergyBalanceInputs,
-    initial_wind, cm::PicardCanopyConvergence; site, vapour_pressure_equation, soil_hydraulic_model,
-)
-    leaf_temperature_buffer = buffers.leaf.leaf_temperature
-    leaf_temperature_prev = buffers.leaf.leaf_temperature_prev
-    niter = max_iterations(cm.convergence)
-    niter >= 1 || throw(ArgumentError("PicardCanopyConvergence: convergence must allow at least 1 iteration, got max_iterations=$niter"))
-    local longwave_result, friction_velocity, inverse_obukhov_length
-    canopy_top_air_temperature_prev = initial_wind.canopy_top_air_temperature
-    canopy_top_relative_humidity_prev = initial_wind.canopy_top_relative_humidity
-    iter = 0
-    for i in 1:niter
-        iter = i
-        leaf_temperature_prev .= leaf_temperature_buffer
-        longwave_result, any_clamped, canopy_top_air_temperature, canopy_top_relative_humidity, friction_velocity, inverse_obukhov_length =
-            _canopy_picard_pass!(buffers, model, boundary_layer_model, inputs, initial_wind, cm.relaxation,
-                canopy_top_air_temperature_prev, canopy_top_relative_humidity_prev; site, vapour_pressure_equation, soil_hydraulic_model)
-        # A binding clamp means the stored Aitken residual reflects a
-        # pre-clamp value now overridden -- stale for the next pass's Δr.
-        any_clamped && (buffers.leaf.aitken_have_prev[] = false)
-        boundary_converged = _canopy_top_converged(cm.convergence, canopy_top_air_temperature, canopy_top_air_temperature_prev)
-        canopy_top_air_temperature_prev = canopy_top_air_temperature
-        canopy_top_relative_humidity_prev = canopy_top_relative_humidity
-        !any_clamped && boundary_converged &&
-            is_converged(cm.convergence, iter, niter, leaf_temperature_buffer, leaf_temperature_prev) && break
-    end
-    return longwave_result, iter, canopy_top_air_temperature_prev, canopy_top_relative_humidity_prev, friction_velocity, inverse_obukhov_length
-end
+function converge_canopy! end

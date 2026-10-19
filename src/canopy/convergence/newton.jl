@@ -15,8 +15,6 @@ through DifferentiationInterface. The solver cache is built once by
     backend::B = AutoEnzyme(; mode=Enzyme.set_runtime_activity(Enzyme.Forward))
 end
 
-allocate_canopy_convergence(::PicardCanopyConvergence, buffers, model, boundary_layer_model; kw...) = nothing
-
 function allocate_canopy_convergence(convergence_model::NewtonCanopyConvergence, buffers, model, boundary_layer_model;
     site, vapour_pressure_equation, soil_hydraulic_model,
 )
