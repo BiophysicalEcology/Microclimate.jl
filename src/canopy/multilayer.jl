@@ -114,7 +114,7 @@ end
 n_canopy_layers(model::MultilayerCanopy, heights) = count(h -> h <= model.canopy_height, heights)
 
 """
-    allocate_canopy(model::MultilayerCanopy, heights, boundary_layer_model)
+    allocate_canopy(model::MultilayerCanopy, heights, boundary_layer_model; site, vapour_pressure_equation, soil_hydraulic_model)
 
 Buffers nest one sub-struct per sub-model — `buffers.shortwave`,
 `buffers.longwave`, `buffers.wind`, `buffers.air_profile`,
@@ -124,12 +124,12 @@ composition, rather than flattening every sub-model's fields into one
 `buffers.leaf` bundles orchestrator-owned per-layer state: leaf body,
 temperature, and the source terms other sub-models read/write.
 """
-function allocate_canopy(model::MultilayerCanopy, heights, boundary_layer_model)
+function allocate_canopy(model::MultilayerCanopy, heights, boundary_layer_model; site, vapour_pressure_equation, soil_hydraulic_model)
     n_layers = n_canopy_layers(model, heights)
     canopy_projection_ratio = model.leaf_parameters.canopy_projection_ratio
     wind = allocate_wind(model.wind_model, model.canopy_height, model.plant_area_index, boundary_layer_model, heights, n_layers)
 
-    return (;
+    buffers = (;
         shortwave = allocate_shortwave(model.shortwave_model, model.canopy_height, model.plant_area_index, n_layers, canopy_projection_ratio),
         longwave = allocate_longwave(model.longwave_model, model.plant_area_index, n_layers, canopy_projection_ratio),
         wind,
@@ -159,6 +159,9 @@ function allocate_canopy(model::MultilayerCanopy, heights, boundary_layer_model)
             aitken_dummy_heights = zeros(typeof(0.0u"m"), n_layers),
         ),
     )
+    convergence = allocate_canopy_convergence(model.convergence_model, buffers, model, boundary_layer_model;
+        site, vapour_pressure_equation, soil_hydraulic_model)
+    return (; buffers..., convergence)
 end
 
 canopy_shortwave!(buffers, model::MultilayerCanopy; kw...) =
@@ -166,6 +169,8 @@ canopy_shortwave!(buffers, model::MultilayerCanopy; kw...) =
 
 canopy_longwave!(buffers, model::MultilayerCanopy; kw...) =
     canopy_longwave!(buffers.longwave, model.longwave_model, model.leaf_parameters.leaf_emissivity; kw...)
+
+canopy_incoming_longwave(model::MultilayerCanopy; kw...) = canopy_incoming_longwave(model.longwave_model; kw...)
 
 canopy_wind_profile!(buffers, model::MultilayerCanopy, boundary_layer_model; kw...) =
     canopy_wind_profile!(buffers.wind, model.wind_model, boundary_layer_model; kw...)

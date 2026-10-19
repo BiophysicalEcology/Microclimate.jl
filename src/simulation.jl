@@ -259,7 +259,7 @@ function CommonSolve.init(mp::MicroProblem)
         allocate_soil_water_balance(soil_hydraulic_model, num_soil_nodes),
         snow_scratch,
         allocate_interpolation_scratch(environment_minmax),
-        allocate_canopy(canopy_model, heights, boundary_layer_model),
+        allocate_canopy(canopy_model, heights, boundary_layer_model; site, vapour_pressure_equation, soil_hydraulic_model),
     )
 
     # ODE integrator — sized for the combined (snow + soil) vector

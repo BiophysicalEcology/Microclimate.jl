@@ -9,7 +9,8 @@ model = Microclimate.example_multilayer_canopy(;
 )
 heights = vcat(0.1:0.1:1.0, [2.0]) .* u"m"
 boundary_layer_model = MoninObukhov()
-buffers = Microclimate.allocate_canopy(model, heights, boundary_layer_model)
+buffers = Microclimate.allocate_canopy(model, heights, boundary_layer_model;
+        site = Microclimate.example_site(), vapour_pressure_equation = Microclimate.GoffGratch(), soil_hydraulic_model = nothing)
 n_layers = length(buffers.shortwave.layer_plant_area_index_above)
 
 # The diffuse-only two-stream solution closes energy conservation to

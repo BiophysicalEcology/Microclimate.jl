@@ -278,7 +278,7 @@ function _canopy_picard_pass!(buffers, model::MultilayerCanopy, boundary_layer_m
 
     longwave_result = canopy_longwave!(buffers, model;
         leaf_temperature=leaf_temperature_buffer, ground_temperature, ground_emissivity,
-        site, environment_instant, vapour_pressure_equation)
+        incoming_longwave=canopy_incoming_longwave(model; site, environment_instant, vapour_pressure_equation))
 
     # Raw leaf-temperature solve; Aitken-blended as a whole vector below, so
     # solve and flux/clamp are separate passes either side of the blend.
