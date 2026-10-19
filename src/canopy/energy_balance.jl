@@ -184,14 +184,9 @@ function canopy_energy_balance!(buffers, model::MultilayerCanopy, boundary_layer
         wet_air_properties(wind_result.canopy_top_air_temperature, wind_result.canopy_top_relative_humidity,
             environment_instant.atmospheric_pressure; vapour_pressure_equation).vapour_density)
 
-    ctx = (; site, environment_instant, zenith_angle, ground_temperature, ground_emissivity, ground_relative_humidity,
-        vapour_pressure_equation, leaf_water_potential, soil_hydraulic_model,
-        canopy_top_air_temperature=wind_result.canopy_top_air_temperature,
-        canopy_top_relative_humidity=wind_result.canopy_top_relative_humidity,
-        friction_velocity=wind_result.friction_velocity, obukhov_length=wind_result.obukhov_length,
-    )
     longwave_result, iter, canopy_top_air_temperature, canopy_top_relative_humidity, friction_velocity, obukhov_length =
-        converge_canopy!(buffers, model, boundary_layer_model, ctx, model.convergence_model)
+        converge_canopy!(buffers, model, boundary_layer_model, inputs, wind_result, model.convergence_model;
+            site, vapour_pressure_equation, soil_hydraulic_model)
 
     melt_drip_total = 0.0u"kg/m^2"
     for layer in 1:n_layers
@@ -282,7 +277,8 @@ function canopy_energy_balance!(buffers, model::MultilayerCanopy, boundary_layer
 end
 
 """
-    _canopy_picard_pass!(buffers, model, boundary_layer_model, ctx, relaxation)
+    _canopy_picard_pass!(buffers, model, boundary_layer_model, inputs, initial_wind, relaxation,
+        canopy_top_air_temperature_prev, canopy_top_relative_humidity_prev; site, vapour_pressure_equation, soil_hydraulic_model)
 
 One relaxed Picard pass: re-anchor the above-canopy boundary on this pass's
 own top-leaf temperature, longwave exchange, per-layer leaf temperature
@@ -292,13 +288,15 @@ under-relaxed). Called once per [`PicardCanopyConvergence`](@ref) iteration.
 Returns `(longwave_result, any_clamped, canopy_top_air_temperature,
 canopy_top_relative_humidity, friction_velocity, obukhov_length)` -- the last
 two are this pass's own (`leaf_temperature_buffer[1]`-driven) values, the
-ones `canopy_air_profile!` is actually driven with below, not `ctx`'s
+ones `canopy_air_profile!` is actually driven with below, not `initial_wind`'s
 one-time pre-loop seed.
 """
-function _canopy_picard_pass!(buffers, model::MultilayerCanopy, boundary_layer_model, ctx, relaxation,
-                               canopy_top_air_temperature_prev, canopy_top_relative_humidity_prev)
-    (; site, environment_instant, zenith_angle, ground_temperature, ground_emissivity, ground_relative_humidity,
-       vapour_pressure_equation, leaf_water_potential, soil_hydraulic_model) = ctx
+function _canopy_picard_pass!(buffers, model::MultilayerCanopy, boundary_layer_model, inputs::CanopyEnergyBalanceInputs,
+    initial_wind, relaxation, canopy_top_air_temperature_prev, canopy_top_relative_humidity_prev;
+    site, vapour_pressure_equation, soil_hydraulic_model,
+)
+    (; environment_instant, zenith_angle, ground_temperature, ground_emissivity, ground_relative_humidity,
+       leaf_water_potential) = inputs
 
     (; leaf_body, leaf_temperature_prev, sensible_heat_source, evaporation_mass_flow,
        potential_evaporation_mass_flow, net_balance, air_temperature_prev, relative_humidity_prev) = buffers.leaf
@@ -442,15 +440,15 @@ function _canopy_picard_pass!(buffers, model::MultilayerCanopy, boundary_layer_m
         atmospheric_pressure; vapour_pressure_equation).vapour_density
     ground_vapour_density = wet_air_properties(ground_temperature, ground_relative_humidity,
         atmospheric_pressure; vapour_pressure_equation).vapour_density
-    # Fixed for the whole hour (ctx's seed, not pass-to-pass
+    # Fixed for the whole hour (initial_wind's seed, not pass-to-pass
     # canopy_top_air_temperature_prev) -- the damping anchor must stay put
     # across passes to bound the converged answer, not just slow reaching it.
-    previous_top_vapour_density = wet_air_properties(ctx.canopy_top_air_temperature, ctx.canopy_top_relative_humidity,
+    previous_top_vapour_density = wet_air_properties(initial_wind.canopy_top_air_temperature, initial_wind.canopy_top_relative_humidity,
         atmospheric_pressure; vapour_pressure_equation).vapour_density
     boundary = canopy_top_flux_boundary(boundary_layer_model, canopy_height, displacement_height,
         buffers.wind.roughness_length, reference_height, friction_velocity, obukhov_length,
         total_sensible_flux, total_latent_flux, ground_temperature, ground_vapour_density,
-        reference_temperature, reference_vapour_density, ctx.canopy_top_air_temperature, previous_top_vapour_density)
+        reference_temperature, reference_vapour_density, initial_wind.canopy_top_air_temperature, previous_top_vapour_density)
     saturation_vapour_density = wet_air_properties(boundary.top_temperature, 1.0, atmospheric_pressure;
         vapour_pressure_equation).vapour_density
     boundary_relative_humidity = clamp(
@@ -506,12 +504,13 @@ _canopy_top_converged(c::IterationToleranceConvergence, canopy_top_air_temperatu
     abs(canopy_top_air_temperature - canopy_top_air_temperature_prev) < c.tolerance
 
 """
-    converge_canopy!(buffers, model::MultilayerCanopy, boundary_layer_model, ctx, convergence_model)
+    converge_canopy!(buffers, model::MultilayerCanopy, boundary_layer_model, inputs::CanopyEnergyBalanceInputs,
+        initial_wind, convergence_model; site, vapour_pressure_equation, soil_hydraulic_model)
 
 Drives the per-hour leaf/air-temperature fixed point to convergence, per
-`convergence_model` ([`PicardCanopyConvergence`](@ref)). `ctx` bundles the
-per-hour boundary conditions `canopy_energy_balance!` doesn't already expose
-via `buffers`/`model` (site/environment/ground state). Re-anchors the
+`convergence_model` ([`PicardCanopyConvergence`](@ref)). `initial_wind` is the
+hour's pre-loop [`canopy_wind_profile!`](@ref) result, whose canopy-top air
+temperature and humidity seed the loop and anchor the boundary. Re-anchors the
 canopy-top boundary on the current pass's own leaf temperature each pass
 (see `_canopy_picard_pass!`). Returns `(longwave_result, iterations,
 canopy_top_air_temperature, canopy_top_relative_humidity, friction_velocity,
@@ -522,21 +521,23 @@ they lag the final `leaf_temperature_buffer` by one pass; negligible once
 `IterationToleranceConvergence` has actually converged, not bounded under
 `FixedIterationConvergence`.
 """
-function converge_canopy!(buffers, model::MultilayerCanopy, boundary_layer_model, ctx, cm::PicardCanopyConvergence)
+function converge_canopy!(buffers, model::MultilayerCanopy, boundary_layer_model, inputs::CanopyEnergyBalanceInputs,
+    initial_wind, cm::PicardCanopyConvergence; site, vapour_pressure_equation, soil_hydraulic_model,
+)
     leaf_temperature_buffer = buffers.leaf.leaf_temperature
     leaf_temperature_prev = buffers.leaf.leaf_temperature_prev
     niter = max_iterations(cm.convergence)
     niter >= 1 || throw(ArgumentError("PicardCanopyConvergence: convergence must allow at least 1 iteration, got max_iterations=$niter"))
     local longwave_result, friction_velocity, obukhov_length, boundary_clamped
-    canopy_top_air_temperature_prev = ctx.canopy_top_air_temperature
-    canopy_top_relative_humidity_prev = ctx.canopy_top_relative_humidity
+    canopy_top_air_temperature_prev = initial_wind.canopy_top_air_temperature
+    canopy_top_relative_humidity_prev = initial_wind.canopy_top_relative_humidity
     iter = 0
     for i in 1:niter
         iter = i
         leaf_temperature_prev .= leaf_temperature_buffer
         longwave_result, any_clamped, canopy_top_air_temperature, canopy_top_relative_humidity, friction_velocity, obukhov_length, boundary_clamped =
-            _canopy_picard_pass!(buffers, model, boundary_layer_model, ctx, cm.relaxation,
-                                  canopy_top_air_temperature_prev, canopy_top_relative_humidity_prev)
+            _canopy_picard_pass!(buffers, model, boundary_layer_model, inputs, initial_wind, cm.relaxation,
+                canopy_top_air_temperature_prev, canopy_top_relative_humidity_prev; site, vapour_pressure_equation, soil_hydraulic_model)
         # A binding clamp means the stored Aitken residual reflects a
         # pre-clamp value now overridden -- stale for the next pass's Δr.
         any_clamped && (buffers.leaf.aitken_have_prev[] = false)
