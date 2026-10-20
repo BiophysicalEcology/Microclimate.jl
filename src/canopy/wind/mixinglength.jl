@@ -236,6 +236,7 @@ function canopy_top_flux_boundary(boundary_layer_model, canopy_height, displacem
     log_ratio = log(z_ref / roughness_length)
     ψ_h = calc_ψ_h(stability_parameter(InverseObukhovLength(), z_ref, inverse_obukhov_length), γ,
         boundary_layer_model.stable_beta, boundary_layer_model.turbulent_prandtl_number)
+    # TODO drop the log-ratio floor with the smooth ψ (#137)
     top_resistance = min(max(log_ratio - ψ_h, 0.1 * log_ratio, 1.0e-6) / (κ * friction_velocity), max_resistance)
 
     # ρ_cp fixed from ambient data, not the solved top_temperature: calc_ρ_cp
