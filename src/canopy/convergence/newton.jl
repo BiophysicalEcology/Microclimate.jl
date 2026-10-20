@@ -12,6 +12,7 @@ through DifferentiationInterface. The solver cache is built once by
     algorithm::A = NewtonRaphson()
     abstol::T = 1e-8
     maxiters::Int = 50
+    # TODO drop set_runtime_activity with the reference-height pin in atmospheric_surface_profile! (#137)
     backend::B = AutoEnzyme(; mode=Enzyme.set_runtime_activity(Enzyme.Forward))
 end
 
