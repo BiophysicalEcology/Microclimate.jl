@@ -257,7 +257,5 @@ function canopy_top_flux_boundary(boundary_layer_model, canopy_height, displacem
     physical_weight = 1.0 - exp(-ustrip(u"s", CANOPY_TIMESTEP) / ustrip(u"s", τ))
     top_temperature = previous_top_temperature + (top_temperature - previous_top_temperature) * physical_weight
     top_vapour_density = previous_top_vapour_density + (top_vapour_density - previous_top_vapour_density) * physical_weight
-
-    top_vapour_density = max(top_vapour_density, zero(top_vapour_density))
     return (; top_temperature, top_vapour_density)
 end
