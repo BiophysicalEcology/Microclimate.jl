@@ -2,7 +2,7 @@
 
 # Bytes allocated by a warmed-up call, measured in function scope so
 # non-constant test globals don't add their own boxing
-function allocations(f, args...; kw...)
+function allocations(f::F, args::Vararg{Any,N}; kw...) where {F,N}
     f(args...; kw...)
     return @allocated f(args...; kw...)
 end
