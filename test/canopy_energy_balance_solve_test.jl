@@ -77,3 +77,8 @@ end
         site = Microclimate.example_site(; roughness_height = 0.1u"m"),
         vapour_pressure_equation = Microclimate.GoffGratch(), soil_hydraulic_model = nothing)
 end
+
+@testset "canopy layer heights must be distinct and above the ground" begin
+    @test_throws ArgumentError Microclimate.canopy_layer_heights([1.0, 0.5, 0.5] .* u"m", canopy_height, 3)
+    @test_throws ArgumentError Microclimate.canopy_layer_heights([1.0, 0.5, 0.0] .* u"m", canopy_height, 3)
+end
