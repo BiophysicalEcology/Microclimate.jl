@@ -121,6 +121,9 @@ temperature, and the source terms other sub-models read/write.
 """
 function allocate_canopy(model::MultilayerCanopy, heights, boundary_layer_model; site, vapour_pressure_equation, soil_hydraulic_model)
     n_layers = n_canopy_layers(model, heights)
+    lowest_layer_height = minimum(h for h in heights if h <= model.canopy_height)
+    lowest_layer_height > site.roughness_height || throw(ArgumentError(
+        "lowest canopy layer height ($lowest_layer_height) must be above the ground roughness height ($(site.roughness_height))"))
     canopy_projection_ratio = model.leaf_parameters.canopy_projection_ratio
     wind = allocate_wind(model.wind_model, model.canopy_height, model.plant_area_index, boundary_layer_model, heights, n_layers)
 

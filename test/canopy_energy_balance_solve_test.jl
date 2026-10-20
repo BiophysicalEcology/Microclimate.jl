@@ -71,3 +71,9 @@ end
     vector = last(solve_canopy(vector_model, canopy_inputs(vector_model))).leaf.leaf_temperature
     @test all(isapprox.(scalar, vector; atol = 1e-6u"K"))
 end
+
+@testset "lowest canopy layer must be above the ground roughness height" begin
+    @test_throws ArgumentError allocate_canopy(canopy(), heights, boundary_layer_model;
+        site = Microclimate.example_site(; roughness_height = 0.1u"m"),
+        vapour_pressure_equation = Microclimate.GoffGratch(), soil_hydraulic_model = nothing)
+end
