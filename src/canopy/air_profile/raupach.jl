@@ -478,7 +478,7 @@ function canopy_heat_vapor_transport!(buffers, model::RaupachLTheoryAirProfile, 
     # against ground_roughness_height, not canopy-top u★/roughness). Heat
     # and vapor sublayer resistances split via the existing Lewis factor.
     z0_ground = ground_roughness_height
-    log_ratio_ground = max(log(z[n] / z0_ground), 0.1 * log(z[n] / z0_ground), 1.0e-6)
+    log_ratio_ground = log(z[n] / z0_ground)  # positive: allocate_canopy checks z[n] > z0_ground
     u★_ground = κ * wind_speed[n] / log_ratio_ground
     kinematic_viscosity = dry_air_properties((Ttop + Tg) / 2, p).kinematic_viscosity
     sublayer_stanton_number = sublayer_stanton(z0_ground, u★_ground, kinematic_viscosity)
