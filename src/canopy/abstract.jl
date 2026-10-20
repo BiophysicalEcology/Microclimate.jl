@@ -143,22 +143,24 @@ function canopy_layer_geometry(layer_plant_area_index::AbstractVector, n_layers)
 end
 
 """
-    canopy_layer_heights(heights, canopy_height, n_layers; min_spacing=1.0e-3u"m")
+    canopy_layer_heights(heights, canopy_height, n_layers)
 
 Canopy layer node heights (top-to-bottom) and each layer's height thickness
-(distance to the next node, or to the ground for the bottom layer), floored
-at `min_spacing` (a node can legitimately sit exactly at `canopy_height`).
+(distance to the next node, or to the ground for the bottom layer). Throws
+unless the node heights are distinct and above the ground.
 """
-function canopy_layer_heights(heights, canopy_height, n_layers; min_spacing=1.0e-3u"m")
+function canopy_layer_heights(heights, canopy_height, n_layers)
     layer_heights = sort(heights[heights .<= canopy_height]; rev=true)
     length(layer_heights) == n_layers ||
         throw(ArgumentError("number of `heights` at or below `canopy_height` must equal n_layers"))
+    allunique(layer_heights) && last(layer_heights) > zero(last(layer_heights)) ||
+        throw(ArgumentError("canopy layer `heights` must be distinct and above the ground"))
 
     layer_thickness = similar(layer_heights)
     for i in 1:(n_layers - 1)
-        layer_thickness[i] = max(layer_heights[i] - layer_heights[i + 1], min_spacing)
+        layer_thickness[i] = layer_heights[i] - layer_heights[i + 1]
     end
-    layer_thickness[n_layers] = max(layer_heights[n_layers], min_spacing)  # bottom layer down to the ground (z=0)
+    layer_thickness[n_layers] = layer_heights[n_layers]  # bottom layer down to the ground (z=0)
     return (; layer_heights, layer_thickness)
 end
 
