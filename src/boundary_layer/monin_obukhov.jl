@@ -193,8 +193,10 @@ function atmospheric_surface_profile!(bl::MoninObukhov, buffers;
     ref_height = u"m"(reference_height)
     z0 = roughness_length
     z = ref_height - displacement_height
-    # If the reference height appears in the heights array, pin its slot to measured values
-    # to avoid the small inconsistency in ψ_h between the penultimate and final Obukhov iterations.
+    # Pin a reference-height slot to the measured values.
+    # TODO remove with the min_friction_velocity floor (#137): the floor is all that makes
+    # the profile differ from the forcing there, and this constant store is why the canopy
+    # Enzyme Jacobian needs set_runtime_activity.
     ref_idx = findfirst(==(ref_height), heights)
 
     if !warned_below_roughness[] && minimum(heights) - displacement_height < z0
@@ -803,26 +805,22 @@ end
 
 Iterate [`monin_obukhov_step`](@ref) (same `args` and `kw`) from
 `initial_value` until the stability stops changing, under-relaxing each
-update by `relax`. Returns the last step's fluxes and `value`, the converged
-stability.
+update by `relax`. Returns the last step's fluxes and `value`, the
+stability that step was evaluated at.
 """
 function monin_obukhov_iteration(stability_variable, reference_temp, surface_temp, v_ref_height, z0, z, ρcpTκg, κ, ΔT,
     ρ_cp, kinematic_viscosity; initial_value, max_iter=50, tol=1e-2, relax=0.5, kw...,
 )
     value = initial_value
-    step = monin_obukhov_step(stability_variable, value, reference_temp, surface_temp, v_ref_height, z0, z, ρcpTκg, κ,
-        ΔT, ρ_cp, kinematic_viscosity; kw...)
-    change = stability_change(stability_variable, z, step.stability_update, value)
-    value = relax * step.stability_update + (1.0 - relax) * value
     count = 1
-    while change > tol && count < max_iter
-        count += 1
+    while true
         step = monin_obukhov_step(stability_variable, value, reference_temp, surface_temp, v_ref_height, z0, z, ρcpTκg, κ,
             ΔT, ρ_cp, kinematic_viscosity; kw...)
         change = stability_change(stability_variable, z, step.stability_update, value)
+        (change <= tol || count >= max_iter) && return (; value, step...)
         value = relax * step.stability_update + (1.0 - relax) * value
+        count += 1
     end
-    return (; value, step...)
 end
 
 """
