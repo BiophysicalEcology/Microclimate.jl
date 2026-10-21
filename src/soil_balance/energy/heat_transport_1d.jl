@@ -29,104 +29,81 @@ Solver tuning lives here, not on `MicroConfig`, because each
 end
 
 """
-    SoilEnergyInputs
+    SoilEnergyParameters
 
-Mutable parameters passed to the ODE integrator via `integrator.p`. Mutable so
-the per-hour-changing fields (`environment_instant`, `longwave_sky`, `albedo`,
-`Q_freeze`, `snow_state`, `depths`, `soil_wetness`) can be updated in place
-instead of allocating a fresh struct each hour. All fields are concretely
-typed via the parametric `{F,B,…}` slots; the underlying heap object is the
-same across hours.
+Parameters of the soil energy ODE, fixed for the whole run.
 """
-mutable struct SoilEnergyInputs{M<:SoilHeatTransportModel,EVM<:AbstractEvaporationModel,ARM<:AbstractAtmosphericRadiationModel,F,B,SP,SPR,D<:Vector{<:Number},H<:Vector{<:Number},S,BLM,EI,SW,VP,LW,QF,SNM,SNS,SM,GST,GIL,GWS,GAT,GRH,GRFH,GHC,GVC}
-    model::M
-    evaporation_model::EVM
-    atmospheric_radiation_model::ARM
-    forcing::F
-    buffers::B
+@kwdef struct SoilEnergyParameters{M<:SoilHeatTransportModel,EVM<:AbstractEvaporationModel,ARM<:AbstractAtmosphericRadiationModel,SP,SPR,H<:Vector{<:Number},S,BLM,VP,SNM}
+    model::M = SoilHeatTransport1D()
+    evaporation_model::EVM = BulkTransferEvaporation()
+    atmospheric_radiation_model::ARM = CampbellNormanAtmosphericRadiation()
     soil_properties_model::SP
     soil_profile::SPR
-    depths::D
     heights::H
     site::S
     boundary_layer_model::BLM
+    vapour_pressure_equation::VP = GoffGratch()
+    snow_model::SNM = nothing
+end
+
+"""
+    HourlySoilEnergyInputs
+
+Forcing and state held fixed over one hour of the soil energy ODE.
+"""
+@kwdef struct HourlySoilEnergyInputs{D<:Vector{<:Number},EI,SW,LW,QF,SNS,GST,GIL,GWS,GAT,GRH,GRFH,GHC,GVC}
+    # Node depths, including any active snow nodes
+    depths::D
     environment_instant::EI
     soil_wetness::SW
-    vapour_pressure_equation::VP
     longwave_sky::LW
     albedo::Float64
-    Q_freeze::QF
-    # Snow/soil property recomputation inside ODE (matching Fortran DSUB calling SOILPROPS)
-    snow_model::SNM
-    snow_state::SNS
-    soil_moisture::SM
+    Q_freeze::QF = 0.0u"W/m^2"
+    snow_state::SNS = nothing
     # Canopy ground-boundary overrides (nothing under NoCanopy; see apply_canopy_overrides)
-    ground_shortwave_transmission::GST
-    ground_incoming_longwave::GIL
+    ground_shortwave_transmission::GST = nothing
+    ground_incoming_longwave::GIL = nothing
     # Canopy-resolved sub-canopy boundary layer for convection/evaporation
     # (nothing under NoCanopy): the canopy's ground-most-layer wind/air
     # temperature/humidity and that layer's height, used as the reference
     # level in place of the free-atmosphere forcing.
-    ground_wind_speed::GWS
-    ground_air_temperature::GAT
-    ground_air_relative_humidity::GRH
-    ground_reference_height::GRFH
+    ground_wind_speed::GWS = nothing
+    ground_air_temperature::GAT = nothing
+    ground_air_relative_humidity::GRH = nothing
+    ground_reference_height::GRFH = nothing
     # Air-profile model's own ground-to-lowest-layer conductances (nothing
     # under NoCanopy) -- used instead of surface_fluxes's log-law inversion,
     # which is invalid when ground_reference_height is too close to
     # site.roughness_height (see ground_heat_vapor_flux).
-    ground_heat_conductance::GHC
-    ground_vapor_conductance::GVC
+    ground_heat_conductance::GHC = nothing
+    ground_vapor_conductance::GVC = nothing
 end
 
-function SoilEnergyInputs(; model=SoilHeatTransport1D(), evaporation_model=BulkTransferEvaporation(),
-    atmospheric_radiation_model=CampbellNormanAtmosphericRadiation(),
-    forcing, buffers, soil_properties_model, soil_profile, depths, heights, site,
-    boundary_layer_model, environment_instant, soil_wetness,
-    vapour_pressure_equation=GoffGratch(),
-    longwave_sky, albedo, Q_freeze=0.0u"W/m^2",
-    snow_model=nothing, snow_state=nothing,
-    soil_moisture=nothing,
-    ground_shortwave_transmission=nothing, ground_incoming_longwave=nothing,
-    ground_wind_speed=nothing, ground_air_temperature=nothing,
-    ground_air_relative_humidity=nothing, ground_reference_height=nothing,
-    ground_heat_conductance=nothing, ground_vapor_conductance=nothing,
-)
-    SoilEnergyInputs(model, evaporation_model, atmospheric_radiation_model,
-        forcing, buffers, soil_properties_model, soil_profile,
-        depths, heights, site, boundary_layer_model, environment_instant,
-        soil_wetness, vapour_pressure_equation, longwave_sky, albedo, Q_freeze,
-        snow_model, snow_state, soil_moisture,
-        ground_shortwave_transmission, ground_incoming_longwave,
-        ground_wind_speed, ground_air_temperature, ground_air_relative_humidity, ground_reference_height,
-        ground_heat_conductance, ground_vapor_conductance)
+"""
+    SoilEnergyInputs(parameters, hourly, forcing, buffers, soil_moisture)
+
+The ODE integrator's `p`: run [`SoilEnergyParameters`](@ref), the current
+[`HourlySoilEnergyInputs`](@ref), the day's forcing interpolants, scratch
+buffers and the soil moisture state. Replaced each hour with
+[`set_hourly_inputs!`](@ref).
+"""
+struct SoilEnergyInputs{P<:SoilEnergyParameters,HI<:HourlySoilEnergyInputs,F,B,SM}
+    parameters::P
+    hourly::HI
+    forcing::F
+    buffers::B
+    soil_moisture::SM
 end
 
-# In-place per-hour update — no allocation. Only the fields that change per
-# hour are written; static fields stay put.
-@inline function update_soil_energy_inputs!(p::SoilEnergyInputs;
-    depths, environment_instant, soil_wetness, longwave_sky, albedo, Q_freeze,
-    snow_state, ground_shortwave_transmission=nothing, ground_incoming_longwave=nothing,
-    ground_wind_speed=nothing, ground_air_temperature=nothing,
-    ground_air_relative_humidity=nothing, ground_reference_height=nothing,
-    ground_heat_conductance=nothing, ground_vapor_conductance=nothing,
-)
-    p.depths = depths
-    p.environment_instant = environment_instant
-    p.soil_wetness = soil_wetness
-    p.longwave_sky = longwave_sky
-    p.albedo = albedo
-    p.Q_freeze = Q_freeze
-    p.snow_state = snow_state
-    p.ground_shortwave_transmission = ground_shortwave_transmission
-    p.ground_incoming_longwave = ground_incoming_longwave
-    p.ground_wind_speed = ground_wind_speed
-    p.ground_air_temperature = ground_air_temperature
-    p.ground_air_relative_humidity = ground_air_relative_humidity
-    p.ground_reference_height = ground_reference_height
-    p.ground_heat_conductance = ground_heat_conductance
-    p.ground_vapor_conductance = ground_vapor_conductance
-    return p
+"""
+    set_hourly_inputs!(integrator, hourly::HourlySoilEnergyInputs)
+
+Replace the hourly forcing and state in the soil energy ODE `integrator`.
+"""
+function set_hourly_inputs!(integrator, hourly::HourlySoilEnergyInputs)
+    (; parameters, forcing, buffers, soil_moisture) = integrator.p
+    integrator.p = SoilEnergyInputs(parameters, hourly, forcing, buffers, soil_moisture)
+    return integrator
 end
 
 @inline function _first_active_node(heat_capacity, N)
@@ -143,10 +120,11 @@ end
 # uses Val(N) so SVector sizes are compile-time.
 @inline function _recompute_soil_snow_properties_no_snow!(p, soil_temperature,
     atmospheric_pressure, vapour_pressure_equation)
-    soil_properties!(p.buffers.soil_properties, p.soil_properties_model;
+    (; soil_properties_model, soil_profile) = p.parameters
+    soil_properties!(p.buffers.soil_properties, soil_properties_model;
         soil_temperature, soil_moisture=p.soil_moisture,
-        bulk_density=p.soil_profile.bulk_density, mineral_density=p.soil_profile.mineral_density,
-        mineral_conductivity=p.soil_profile.mineral_conductivity, mineral_heat_capacity=p.soil_profile.mineral_heat_capacity,
+        bulk_density=soil_profile.bulk_density, mineral_density=soil_profile.mineral_density,
+        mineral_conductivity=soil_profile.mineral_conductivity, mineral_heat_capacity=soil_profile.mineral_heat_capacity,
         atmospheric_pressure, vapour_pressure_equation,
     )
     return nothing
@@ -154,7 +132,7 @@ end
 @inline _recompute_soil_snow_properties!(::Nothing, p, st, ap, vpe) =
     _recompute_soil_snow_properties_no_snow!(p, st, ap, vpe)
 
-# Compile-time snow node count for an ODE's `p.snow_model`. The `::SnowModel{N}`
+# Compile-time snow node count for an ODE's `p.parameters.snow_model`. The `::SnowModel{N}`
 # method is in snow/snow_model.jl; both ::Nothing and ::NoSnow return 0.
 @inline _n_snow(::Nothing) = 0
 
@@ -212,8 +190,8 @@ function allocate_soil_energy_balance(::SoilHeatTransport1D, num_nodes::Int)
     return (; layer_depths, heat_capacity, thermal_conductance, obukhov_length_prev)
 end
 
-# SciML ODE rhs. Dispatches the actual physics on `p.model`.
-soil_energy_balance(u, p::SoilEnergyInputs, t) = soil_energy_balance(p.model, u, p, t)
+# SciML ODE rhs. Dispatches the actual physics on `p.parameters.model`.
+soil_energy_balance(u, p::SoilEnergyInputs, t) = soil_energy_balance(p.parameters.model, u, p, t)
 
 function soil_energy_balance(model::SoilHeatTransport1D,
     temperature_state::U,  # state
@@ -221,7 +199,9 @@ function soil_energy_balance(model::SoilHeatTransport1D,
     t::Quantity,           # timestep
 ) where U <: SVector{N} where N
     # extract parameters
-    (; forcing, buffers, heights, depths, environment_instant, site, boundary_layer_model, soil_wetness, vapour_pressure_equation, longwave_sky, Q_freeze, evaporation_model) = p
+    (; parameters, hourly, forcing, buffers) = p
+    (; heights, site, boundary_layer_model, vapour_pressure_equation, evaporation_model, atmospheric_radiation_model, snow_model) = parameters
+    (; depths, environment_instant, soil_wetness, longwave_sky, albedo, Q_freeze) = hourly
     maximum_surface_temperature = model.maximum_surface_temperature
     (; layer_depths, heat_capacity, thermal_conductance) = buffers.soil_energy_balance
     (; shade) = environment_instant
@@ -229,7 +209,6 @@ function soil_energy_balance(model::SoilHeatTransport1D,
     (; atmospheric_pressure, air_temperature, wind_speed, zenith_angle, solar_radiation, cloud_cover, relative_humidity, slope_zenith_angle, diffuse_fraction) = interpolate_forcings(forcing, t)
     (; roughness_height, slope) = site
     (; karman_constant, dyer_constant) = boundary_layer_model
-    albedo = p.albedo
 
     reference_height = last(heights)
     absorptivity = 1.0 - albedo
@@ -244,9 +223,9 @@ function soil_energy_balance(model::SoilHeatTransport1D,
     # Recompute soil/snow properties at current temperatures on every ODE sub-step,
     # matching Fortran DSUB.f lines 274-337 which calls SOILPROPS on every evaluation.
     # Dispatch on snow_model type so N_snow is compile-time (no runtime ntuple).
-    _recompute_soil_snow_properties!(p.snow_model, p, soil_temperature,
+    _recompute_soil_snow_properties!(snow_model, p, soil_temperature,
         atmospheric_pressure, vapour_pressure_equation)
-    n_snow = _n_snow(p.snow_model)
+    n_snow = _n_snow(snow_model)
     (; bulk_thermal_conductivity, bulk_heat_capacity, bulk_density) = buffers.soil_properties
 
 
@@ -301,7 +280,7 @@ function soil_energy_balance(model::SoilHeatTransport1D,
     # global flux by `cos_slope_zenith / cos_zenith` (the old behaviour)
     # zeroes both components when the sun is behind the slope, which
     # produced sharp per-pixel sun/shadow streaks at fine DEM resolution.
-    Q_solar = absorptivity * solar_radiation * ground_shortwave_fraction(shade, p.ground_shortwave_transmission)
+    Q_solar = absorptivity * solar_radiation * ground_shortwave_fraction(shade, hourly.ground_shortwave_transmission)
     if slope > 0 && zenith_angle < 90u"°"
         cos_zenith = cosd(zenith_angle)
         cos_slope_zenith = cosd(slope_zenith_angle)
@@ -318,7 +297,7 @@ function soil_energy_balance(model::SoilHeatTransport1D,
     (; surface_emissivity, cloud_emissivity) = environment_instant
     sky_view_fraction = site.sky_view_fraction
     wet_air_out = wet_air_properties(u"K"(air_temperature), relative_humidity, atmospheric_pressure; vapour_pressure_equation)
-    atmospheric_longwave = atmospheric_radiation(p.atmospheric_radiation_model, wet_air_out.vapour_pressure, air_temperature)
+    atmospheric_longwave = atmospheric_radiation(atmospheric_radiation_model, wet_air_out.vapour_pressure, air_temperature)
     cloud_radiation = σ * cloud_emissivity * (u"K"(air_temperature) - 2.0u"K")^4
     hillshade_radiation = σ * (u"K"(air_temperature))^4 # TODO this is assuming unit emissivity, but should have a vegetation emissivity term
     clear_sky_fraction = 1.0 - cloud_cover
@@ -329,7 +308,7 @@ function soil_energy_balance(model::SoilHeatTransport1D,
     outgoing_coeff = (1.0 - shade) * σ * surface_emissivity
     ground_shade_term = shade * hillshade_radiation
     (incoming_longwave, outgoing_coeff, ground_shade_term) = ground_longwave_terms(
-        incoming_longwave, outgoing_coeff, ground_shade_term, surface_emissivity, p.ground_incoming_longwave)
+        incoming_longwave, outgoing_coeff, ground_shade_term, surface_emissivity, hourly.ground_incoming_longwave)
     Q_infrared = incoming_longwave - outgoing_coeff * (u"K"(soil_temperature[j]))^4 - ground_shade_term
 
     # Conduction from first active node to the node below it
@@ -353,7 +332,7 @@ function soil_energy_balance(model::SoilHeatTransport1D,
     # free-atmosphere air_temperature/relative_humidity, not the canopy-attenuated ones.
     (convection_air_temperature, convection_wind_speed, convection_relative_humidity, convection_reference_height) =
         ground_convection_conditions(air_temperature, wind_speed, relative_humidity, reference_height,
-            p.ground_air_temperature, p.ground_wind_speed, p.ground_air_relative_humidity, p.ground_reference_height)
+            hourly.ground_air_temperature, hourly.ground_wind_speed, hourly.ground_air_relative_humidity, hourly.ground_reference_height)
     convection_ctx = (; boundary_layer_model,
         surface_temperature, air_temperature=convection_air_temperature, wind_speed=convection_wind_speed,
         relative_humidity=convection_relative_humidity,
@@ -362,7 +341,7 @@ function soil_energy_balance(model::SoilHeatTransport1D,
         obukhov_length_prev=buffers.soil_energy_balance.obukhov_length_prev,
     )
     Q_evaporation, convective_heat_flux = ground_heat_vapor_flux(evaporation_model,
-        p.ground_heat_conductance, p.ground_vapor_conductance, convection_ctx)
+        hourly.ground_heat_conductance, hourly.ground_vapor_conductance, convection_ctx)
 
     # Surface energy derivative for the first active node
     # QFREZE: snow melt energy correction, matching Fortran DSUB.f line 567

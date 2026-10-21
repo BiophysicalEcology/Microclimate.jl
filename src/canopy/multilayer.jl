@@ -218,20 +218,6 @@ function reset_canopy_scratch!(model::MultilayerCanopy, buffers)
     return nothing
 end
 
-# Bootstrap values only — refreshed before first real use by apply_canopy_overrides.
-function allocate_canopy_inputs(model::MultilayerCanopy; site, environment_instant, boundary_layer_model, soil_hydraulic_model=nothing)
-    CanopyEnergyBalanceInputs(model;
-        site, environment_instant, zenith_angle = environment_instant.zenith_angle,
-        direct_horizontal_irradiance = 0.0u"W/m^2", diffuse_horizontal_irradiance = 0.0u"W/m^2",
-        ground_reflectance = _baseline_albedo(site, environment_instant),
-        ground_temperature = environment_instant.reference_temperature,
-        ground_emissivity = environment_instant.surface_emissivity,
-        ground_relative_humidity = environment_instant.reference_humidity,
-        canopy_source_temperature = environment_instant.reference_temperature,
-        soil_hydraulic_model,
-    )
-end
-
 initial_ground_overrides(::MultilayerCanopy) = (;
     ground_shortwave_transmission = 1.0, ground_incoming_longwave = 0.0u"W/m^2",
     ground_wind_speed = 0.0u"m/s", ground_air_temperature = 288.0u"K",

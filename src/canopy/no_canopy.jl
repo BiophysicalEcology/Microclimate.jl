@@ -16,8 +16,6 @@ snapshot_canopy_water!(::NoCanopy, buffers) = nothing
 
 restore_canopy_water!(::NoCanopy, buffers) = nothing
 
-allocate_canopy_inputs(::NoCanopy; kw...) = nothing
-
 initial_ground_overrides(::NoCanopy) = (;
     ground_shortwave_transmission = nothing, ground_incoming_longwave = nothing,
     ground_wind_speed = nothing, ground_air_temperature = nothing,

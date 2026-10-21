@@ -9,6 +9,7 @@ canopy_height = 1.0u"m"
 plant_area_index = 3.0
 heights = vcat(0.1:0.1:1.0, [2.0]) .* u"m"
 boundary_layer_model = MoninObukhov()
+site = Microclimate.example_site()
 
 canopy(; plant_area_index = plant_area_index,
     convergence = IterationToleranceConvergence(; tolerance = 0.01u"K", max_iterations_per_day = 15)) =
@@ -17,7 +18,7 @@ canopy(; plant_area_index = plant_area_index,
 
 function solve_canopy(model, inputs)
     buffers = allocate_canopy(model, heights, boundary_layer_model)
-    result = canopy_energy_balance!(buffers, model, boundary_layer_model, inputs)
+    result = canopy_energy_balance!(buffers, model, boundary_layer_model, inputs; site)
     return result, buffers
 end
 
@@ -33,20 +34,15 @@ mean_leaf_temperature(buffers) = sum(buffers.leaf.leaf_temperature) / length(buf
     @test result.canopy_potential_transpiration >= sum(buffers.leaf.evaporation_mass_flow) / 1.0u"m^2"
 end
 
-@testset "update_canopy_energy_balance_inputs!: in-place refresh drives day -> night" begin
+@testset "new hourly inputs drive day -> night on the same buffers" begin
     model = canopy()
-    inputs = canopy_inputs(model)
     buffers = allocate_canopy(model, heights, boundary_layer_model)
-    @test canopy_energy_balance!(buffers, model, boundary_layer_model, inputs).net_absorbed_shortwave > 0.0u"W/m^2"
+    @test canopy_energy_balance!(buffers, model, boundary_layer_model, canopy_inputs(model); site).net_absorbed_shortwave > 0.0u"W/m^2"
 
-    Microclimate.update_canopy_energy_balance_inputs!(inputs;
-        environment_instant = environment_instant(; zenith_angle = 100.0u"°", reference_temperature = 283.0u"K"),
-        zenith_angle = 100.0u"°",
+    night_inputs = canopy_inputs(model; zenith_angle = 100.0u"°", reference_temperature = 283.0u"K",
         direct_horizontal_irradiance = 0.0u"W/m^2", diffuse_horizontal_irradiance = 0.0u"W/m^2",
-        ground_reflectance = 0.15, ground_temperature = 280.0u"K", ground_emissivity = 0.95,
-        ground_relative_humidity = 0.5, canopy_source_temperature = 283.0u"K",
-    )
-    night = canopy_energy_balance!(buffers, model, boundary_layer_model, inputs)
+        ground_temperature = 280.0u"K")
+    night = canopy_energy_balance!(buffers, model, boundary_layer_model, night_inputs; site)
     @test night.net_absorbed_shortwave == 0.0u"W/m^2"
     @test all(t -> 250.0u"K" < t < 310.0u"K", buffers.leaf.leaf_temperature)
 end
@@ -67,7 +63,7 @@ end
     for plant_area_index in (plant_area_index, fill(plant_area_index / 10, 10), [0.6, 0.5, 0.45, 0.4, 0.35, 0.3, 0.2, 0.15, 0.1, 0.05])
         model = canopy(; plant_area_index, convergence = FixedIterationConvergence(3))
         buffers = allocate_canopy(model, heights, boundary_layer_model)
-        @test allocations(canopy_energy_balance!, buffers, model, boundary_layer_model, canopy_inputs(model)) == 0
+        @test allocations(canopy_energy_balance!, buffers, model, boundary_layer_model, canopy_inputs(model); site) == 0
     end
 end
 

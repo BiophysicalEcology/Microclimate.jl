@@ -7,23 +7,15 @@ Fixed one-hour step for rain-interception storage depletion, matching
 const CANOPY_TIMESTEP = 1.0u"hr"
 
 """
-    CanopyEnergyBalanceInputs(model::MultilayerCanopy; site, environment_instant, zenith_angle,
+    CanopyEnergyBalanceInputs(model::MultilayerCanopy; environment_instant, zenith_angle,
                                direct_horizontal_irradiance, diffuse_horizontal_irradiance,
                                ground_reflectance, ground_temperature, ground_emissivity,
                                ground_relative_humidity, canopy_source_temperature, rainfall=0.0u"kg/m^2",
-                               leaf_water_potential=model.leaf_parameters.leaf_water_potential,
-                               vapour_pressure_equation=GoffGratch(), soil_hydraulic_model=nothing)
+                               leaf_water_potential=model.leaf_parameters.leaf_water_potential)
 
-Per-hour inputs to [`canopy_energy_balance!`](@ref), mirroring
-`SoilEnergyInputs`: built once, refreshed in place via
-[`update_canopy_energy_balance_inputs!`](@ref). `soil_hydraulic_model`
-(`MicroModel.soil_hydraulic_model`) is static like `site` — passed through
-to [`stomatal_conductance`](@ref) so models like
-[`MoistureResponsiveStomatalConductance`](@ref) share its parameters
-instead of storing their own copy.
+Hourly forcing and lagged state for [`canopy_energy_balance!`](@ref).
 """
-mutable struct CanopyEnergyBalanceInputs{S,EI,ZA,DHI,DFI,GR,GT,GE,GRH,CST,RF,LWP,VP,SHM}
-    site::S
+struct CanopyEnergyBalanceInputs{EI,ZA,DHI,DFI,GR,GT,GE,GRH,CST,RF,LWP}
     environment_instant::EI
     zenith_angle::ZA
     direct_horizontal_irradiance::DHI
@@ -35,49 +27,16 @@ mutable struct CanopyEnergyBalanceInputs{S,EI,ZA,DHI,DFI,GR,GT,GE,GRH,CST,RF,LWP
     canopy_source_temperature::CST
     rainfall::RF
     leaf_water_potential::LWP
-    vapour_pressure_equation::VP
-    soil_hydraulic_model::SHM
 end
 
 function CanopyEnergyBalanceInputs(model::MultilayerCanopy;
-    site, environment_instant, zenith_angle, direct_horizontal_irradiance, diffuse_horizontal_irradiance,
-    ground_reflectance, ground_temperature, ground_emissivity, ground_relative_humidity, canopy_source_temperature,
-    rainfall=0.0u"kg/m^2", leaf_water_potential=model.leaf_parameters.leaf_water_potential,
-    vapour_pressure_equation=GoffGratch(), soil_hydraulic_model=nothing,
-)
-    CanopyEnergyBalanceInputs(site, environment_instant, zenith_angle, direct_horizontal_irradiance,
-        diffuse_horizontal_irradiance, ground_reflectance, ground_temperature, ground_emissivity,
-        ground_relative_humidity, canopy_source_temperature, rainfall, leaf_water_potential, vapour_pressure_equation,
-        soil_hydraulic_model)
-end
-
-"""
-    update_canopy_energy_balance_inputs!(inputs::CanopyEnergyBalanceInputs; environment_instant, zenith_angle,
-                                          direct_horizontal_irradiance, diffuse_horizontal_irradiance,
-                                          ground_reflectance, ground_temperature, ground_emissivity,
-                                          ground_relative_humidity, canopy_source_temperature, rainfall=0.0u"kg/m^2",
-                                          leaf_water_potential=inputs.leaf_water_potential)
-
-In-place per-hour update, no allocation. `site`/`vapour_pressure_equation`
-aren't refreshed (static for a run).
-"""
-function update_canopy_energy_balance_inputs!(inputs::CanopyEnergyBalanceInputs;
     environment_instant, zenith_angle, direct_horizontal_irradiance, diffuse_horizontal_irradiance,
     ground_reflectance, ground_temperature, ground_emissivity, ground_relative_humidity, canopy_source_temperature,
-    rainfall=0.0u"kg/m^2", leaf_water_potential=inputs.leaf_water_potential,
+    rainfall=0.0u"kg/m^2", leaf_water_potential=model.leaf_parameters.leaf_water_potential,
 )
-    inputs.environment_instant = environment_instant
-    inputs.zenith_angle = zenith_angle
-    inputs.direct_horizontal_irradiance = direct_horizontal_irradiance
-    inputs.diffuse_horizontal_irradiance = diffuse_horizontal_irradiance
-    inputs.ground_reflectance = ground_reflectance
-    inputs.ground_temperature = ground_temperature
-    inputs.ground_emissivity = ground_emissivity
-    inputs.ground_relative_humidity = ground_relative_humidity
-    inputs.canopy_source_temperature = canopy_source_temperature
-    inputs.rainfall = rainfall
-    inputs.leaf_water_potential = leaf_water_potential
-    return inputs
+    CanopyEnergyBalanceInputs(environment_instant, zenith_angle, direct_horizontal_irradiance,
+        diffuse_horizontal_irradiance, ground_reflectance, ground_temperature, ground_emissivity,
+        ground_relative_humidity, canopy_source_temperature, rainfall, leaf_water_potential)
 end
 
 # Bounds the wet-surface share of evaporation_mass_flow to what storage can
@@ -99,7 +58,8 @@ function _cap_wet_surface_evaporation(evaporation_mass_flow, sensible_heat_flow,
 end
 
 """
-    canopy_energy_balance!(buffers, model::MultilayerCanopy, boundary_layer_model, inputs::CanopyEnergyBalanceInputs)
+    canopy_energy_balance!(buffers, model::MultilayerCanopy, boundary_layer_model, inputs::CanopyEnergyBalanceInputs;
+        site, vapour_pressure_equation=GoffGratch(), soil_hydraulic_model=nothing)
 
 Hourly solve tying every canopy sub-model together. Shortwave, the
 above-canopy wind/temperature profile, and rain interception are computed
@@ -140,10 +100,12 @@ the converged above-canopy boundary state `canopy_air_profile!` was driven with 
 diagnostic-oriented (e.g. comparing against an independent implementation's own
 boundary solve), not consumed elsewhere in this package.
 """
-function canopy_energy_balance!(buffers, model::MultilayerCanopy, boundary_layer_model, inputs::CanopyEnergyBalanceInputs)
-    (; site, environment_instant, zenith_angle, direct_horizontal_irradiance, diffuse_horizontal_irradiance,
+function canopy_energy_balance!(buffers, model::MultilayerCanopy, boundary_layer_model, inputs::CanopyEnergyBalanceInputs;
+    site, vapour_pressure_equation=GoffGratch(), soil_hydraulic_model=nothing,
+)
+    (; environment_instant, zenith_angle, direct_horizontal_irradiance, diffuse_horizontal_irradiance,
        ground_reflectance, ground_temperature, ground_emissivity, ground_relative_humidity, canopy_source_temperature,
-       rainfall, leaf_water_potential, vapour_pressure_equation, soil_hydraulic_model) = inputs
+       rainfall, leaf_water_potential) = inputs
 
     leaf_temperature_buffer = buffers.leaf.leaf_temperature  # avoids shadowing the leaf_temperature(solver, ...) function
     vapor_density_buffer = buffers.air_profile.vapor_density
