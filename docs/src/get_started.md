@@ -12,10 +12,11 @@ Pkg.add(url = "https://github.com/BiophysicalEcology/Microclimate.jl")
 
 ## The building blocks
 
-A Microclimate.jl run needs four things: a [`MicroModel`](@ref) describing which physical process
-models to use, a [`Site`](@ref), a [`SoilProfile`](@ref), and a set of
-environment forcings. Microclimate.jl ships `example_*` constructors for all of these, built
-around a default site (Madison, Wisconsin, USA):
+A Microclimate.jl run needs two things: a [`MicroModel`](@ref) holding every parameter,
+including the [`Site`](@ref) and the [`SoilProfile`](@ref), and [`MicroInputs`](@ref)
+holding the environment forcings and initial conditions. Microclimate.jl ships
+`example_*` constructors for all of these, built around a default site (Madison,
+Wisconsin, USA):
 
 ```@example get_started
 using Microclimate, Unitful
@@ -37,18 +38,20 @@ already-hourly values directly.
 
 ## The model
 
-A [`MicroModel`](@ref) collects the physical process models — including soil thermal
-properties, soil hydraulics, radiation, snow, canopy algorithms — and the hours, depths and heights
-across which to compute. By default it uses
-[`CampbelldeVriesSoilProperties`](@ref) for soil thermal properties,
-[`CampbellSoilHydraulics`](@ref) for water infiltration, [`NoSnow`](@ref) and
-[`NoCanopy`](@ref):
+A [`MicroModel`](@ref) is a tree of every parameter: the site, the soil column
+([`SoilModel`](@ref): depths, profile, thermal properties, hydraulics), the ground
+surface, the atmosphere (heights, radiation, boundary layer), snow and canopy, and the
+hours to compute. Here the soil uses [`CampbelldeVriesSoilProperties`](@ref) for soil
+thermal properties and [`CampbellSoilHydraulics`](@ref) for water infiltration, and
+the model defaults to [`NoSnow`](@ref) and [`NoCanopy`](@ref):
 
 ```@example get_started
-model = MicroModel(;
-    soil_properties_model = example_soil_properties_model(),
-    soil_hydraulic_model = example_soil_hydraulic_model(),
+soil = SoilModel(;
+    profile = soil_profile,
+    properties_model = example_soil_properties_model(),
+    hydraulic_model = example_soil_hydraulic_model(),
 )
+model = MicroModel(; site, soil)
 nothing # hide
 ```
 
@@ -57,15 +60,15 @@ See [Configuring the model](manual/configuring_the_model.md) for what each of
 
 ## Assembling and solving a problem
 
-[`MicroInputs`](@ref) pairs the site, soil profile and environment with initial
-conditions; [`MicroProblem`](@ref) pairs a model with a set of inputs, the days to
+[`MicroInputs`](@ref) holds the environment forcings and initial conditions;
+[`MicroProblem`](@ref) pairs a model with a set of inputs, the days to
 simulate and how each day is connected (middle day of each month solved non-consecutively 
 by default):
 
 ```@example get_started
-depths = model.depths
+depths = model.soil.depths
 inputs = MicroInputs(;
-    site, soil_profile, environment_minmax, environment_daily, environment_hourly,
+    environment_minmax, environment_daily, environment_hourly,
     initial_soil_temperature = nothing,  # each representative day resets to its own mean air temperature
     initial_soil_moisture = fill(0.105, length(depths)),
 )
@@ -91,7 +94,7 @@ first_day = @view out.soil_temperature[1:24, :]
 (surface = first_day[:, 1], deep = first_day[:, end])
 ```
 
-Air temperature and wind speed at each of `model.heights`:
+Air temperature at each of `model.atmosphere.heights`:
 
 ```@example get_started
 out.profile.air_temperature[1:3, :]
@@ -106,7 +109,7 @@ re-solved for different input data without reallocating:
 cache = init(problem)
 out1 = solve!(cache)
 inputs = MicroInputs(;
-    site, soil_profile, environment_minmax, environment_daily, environment_hourly,
+    environment_minmax, environment_daily, environment_hourly,
     initial_soil_temperature = nothing,  # must match the type used to build `problem`/`cache`
     initial_soil_moisture = fill(0.2, length(depths)),
 )

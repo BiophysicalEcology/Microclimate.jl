@@ -17,13 +17,13 @@ should agree closely:
 ```@example algorithms
 using Microclimate, Unitful
 
-config = MicroConfig(; soil_moisture_strategy = DynamicSoilMoisture())
+soil_moisture_strategy = DynamicSoilMoisture()
 n = length(Microclimate.DEFAULT_DEPTHS)
 wet_initial_moisture = fill(0.30, n)
 
 function run_with(infiltration_algorithm)
     soil_hydraulic_model = example_soil_hydraulic_model(; infiltration_algorithm)
-    solve(example_microclimate_problem(; soil_hydraulic_model, config,
+    solve(example_microclimate_problem(; soil_hydraulic_model, soil_moisture_strategy,
         initial_soil_moisture = wet_initial_moisture))
 end
 
@@ -51,7 +51,7 @@ environment_daily = example_daily_environment(; rainfall = fill(30.0, 12)u"kg/m^
 function run_with_rain(rainfall_entry_mode)
     soil_hydraulic_model = example_soil_hydraulic_model(; rainfall_entry_mode)
     inputs_kw = (; environment_daily, initial_soil_moisture = fill(0.15, n))
-    solve(example_microclimate_problem(; soil_hydraulic_model, config, inputs_kw...))
+    solve(example_microclimate_problem(; soil_hydraulic_model, soil_moisture_strategy, inputs_kw...))
 end
 
 pool_out = run_with_rain(PoolCapacityRainfall())

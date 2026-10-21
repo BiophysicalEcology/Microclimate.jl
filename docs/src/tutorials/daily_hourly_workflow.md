@@ -65,10 +65,14 @@ clear_sky_hourly = HourlyTimeseries(;
     global_radiation = nothing, longwave_radiation = nothing,
     cloud_cover = zeros(length(hours)), rainfall = nothing, zenith_angle = nothing,
 )
+model = MicroModel(; site, soil = SoilModel(;
+    depths, profile = example_soil_profile(depths),
+    properties_model = example_soil_properties_model(),
+    hydraulic_model = example_soil_hydraulic_model(),
+))
 clear_sky_problem = MicroProblem(
-    MicroModel(; soil_properties_model = example_soil_properties_model(),
-                 soil_hydraulic_model = example_soil_hydraulic_model(), depths),
-    MicroInputs(; site, soil_profile = example_soil_profile(depths),
+    model,
+    MicroInputs(;
         environment_minmax = nothing, environment_daily = example_daily_environment(days; rainfall = zeros(length(days))u"kg/m^2"),
         environment_hourly = clear_sky_hourly,
         initial_soil_temperature = fill(u"K"(20.0u"°C"), n), initial_soil_moisture = fill(0.15, n)),
@@ -109,9 +113,8 @@ observed_hourly = HourlyTimeseries(;
     cloud_cover = estimated_cloud_cover, rainfall = nothing, zenith_angle = nothing,
 )
 problem = MicroProblem(
-    MicroModel(; soil_properties_model = example_soil_properties_model(),
-                 soil_hydraulic_model = example_soil_hydraulic_model(), depths),
-    MicroInputs(; site, soil_profile = example_soil_profile(depths),
+    model,
+    MicroInputs(;
         environment_minmax = nothing, environment_daily = example_daily_environment(days; rainfall = zeros(length(days))u"kg/m^2"),
         environment_hourly = observed_hourly,
         initial_soil_temperature = fill(u"K"(20.0u"°C"), n), initial_soil_moisture = fill(0.15, n)),

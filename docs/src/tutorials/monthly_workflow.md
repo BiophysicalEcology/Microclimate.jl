@@ -14,14 +14,15 @@ using Microclimate, Unitful, CairoMakie
 
 site = example_site()
 soil_profile = example_soil_profile()
-model = MicroModel(;
-    soil_properties_model = example_soil_properties_model(),
-    soil_hydraulic_model = example_soil_hydraulic_model(),
+soil = SoilModel(;
+    profile = soil_profile,
+    properties_model = example_soil_properties_model(),
+    hydraulic_model = example_soil_hydraulic_model(),
 )
-depths = model.depths
+model = MicroModel(; site, soil)
+depths = model.soil.depths
 
 inputs = MicroInputs(;
-    site, soil_profile,
     environment_minmax = example_monthly_weather(),
     environment_daily = example_daily_environment(),
     environment_hourly = example_hourly_environment(),
@@ -73,15 +74,19 @@ rock_profile = example_soil_profile(;
     bulk_density = 2.55u"Mg/m^3", mineral_density = 2.6u"Mg/m^3",
     mineral_conductivity = 2.5u"W/m/K", mineral_heat_capacity = 750.0u"J/kg/K",
 )
+rock_model = MicroModel(; site, soil = SoilModel(;
+    profile = rock_profile,
+    properties_model = example_soil_properties_model(),
+    hydraulic_model = example_soil_hydraulic_model(),
+))
 rock_inputs = MicroInputs(;
-    site, soil_profile = rock_profile,
     environment_minmax = example_monthly_weather(),
     environment_daily = example_daily_environment(),
     environment_hourly = example_hourly_environment(),
     initial_soil_temperature = nothing,
     initial_soil_moisture = fill(0.01, length(depths)),
 )
-rock_out = solve(MicroProblem(model, rock_inputs))
+rock_out = solve(MicroProblem(rock_model, rock_inputs))
 
 fig2 = Figure(size = (700, 400))
 ax2 = Axis(fig2[1, 1]; xlabel = "Hour (July, day 196)", ylabel = "Surface temperature (°C)")
