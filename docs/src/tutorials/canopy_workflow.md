@@ -7,7 +7,7 @@ each one comes from.
 
 ## Building a canopy over a set of heights
 
-A canopy needs enough entries in `MicroModel.heights` at or below `canopy_height` to
+A canopy needs enough entries in `MicroModel.atmosphere.heights` at or below `canopy_height` to
 resolve into layers:
 
 ```@example canopy_workflow

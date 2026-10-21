@@ -29,24 +29,6 @@ Solver tuning lives here, not on `MicroConfig`, because each
 end
 
 """
-    SoilEnergyParameters
-
-Parameters of the soil energy ODE, fixed for the whole run.
-"""
-@kwdef struct SoilEnergyParameters{M<:SoilHeatTransportModel,EVM<:AbstractEvaporationModel,ARM<:AbstractAtmosphericRadiationModel,SP,SPR,H<:Vector{<:Number},S,BLM,VP,SNM}
-    model::M = SoilHeatTransport1D()
-    evaporation_model::EVM = BulkTransferEvaporation()
-    atmospheric_radiation_model::ARM = CampbellNormanAtmosphericRadiation()
-    soil_properties_model::SP
-    soil_profile::SPR
-    heights::H
-    site::S
-    boundary_layer_model::BLM
-    vapour_pressure_equation::VP = GoffGratch()
-    snow_model::SNM = nothing
-end
-
-"""
     HourlySoilEnergyInputs
 
 Forcing and state held fixed over one hour of the soil energy ODE.
@@ -80,15 +62,15 @@ Forcing and state held fixed over one hour of the soil energy ODE.
 end
 
 """
-    SoilEnergyInputs(parameters, hourly, forcing, buffers, soil_moisture)
+    SoilEnergyInputs(model, hourly, forcing, buffers, soil_moisture)
 
-The ODE integrator's `p`: run [`SoilEnergyParameters`](@ref), the current
+The ODE integrator's `p`: the [`MicroModel`](@ref) parameter tree, the current
 [`HourlySoilEnergyInputs`](@ref), the day's forcing interpolants, scratch
 buffers and the soil moisture state. Replaced each hour with
 [`set_hourly_inputs!`](@ref).
 """
-struct SoilEnergyInputs{P<:SoilEnergyParameters,HI<:HourlySoilEnergyInputs,F,B,SM}
-    parameters::P
+struct SoilEnergyInputs{M,HI<:HourlySoilEnergyInputs,F,B,SM}
+    model::M
     hourly::HI
     forcing::F
     buffers::B
@@ -101,8 +83,8 @@ end
 Replace the hourly forcing and state in the soil energy ODE `integrator`.
 """
 function set_hourly_inputs!(integrator, hourly::HourlySoilEnergyInputs)
-    (; parameters, forcing, buffers, soil_moisture) = integrator.p
-    integrator.p = SoilEnergyInputs(parameters, hourly, forcing, buffers, soil_moisture)
+    (; model, forcing, buffers, soil_moisture) = integrator.p
+    integrator.p = SoilEnergyInputs(model, hourly, forcing, buffers, soil_moisture)
     return integrator
 end
 
@@ -120,11 +102,11 @@ end
 # uses Val(N) so SVector sizes are compile-time.
 @inline function _recompute_soil_snow_properties_no_snow!(p, soil_temperature,
     atmospheric_pressure, vapour_pressure_equation)
-    (; soil_properties_model, soil_profile) = p.parameters
-    soil_properties!(p.buffers.soil_properties, soil_properties_model;
+    (; properties_model, profile) = p.model.soil
+    soil_properties!(p.buffers.soil_properties, properties_model;
         soil_temperature, soil_moisture=p.soil_moisture,
-        bulk_density=soil_profile.bulk_density, mineral_density=soil_profile.mineral_density,
-        mineral_conductivity=soil_profile.mineral_conductivity, mineral_heat_capacity=soil_profile.mineral_heat_capacity,
+        bulk_density=profile.bulk_density, mineral_density=profile.mineral_density,
+        mineral_conductivity=profile.mineral_conductivity, mineral_heat_capacity=profile.mineral_heat_capacity,
         atmospheric_pressure, vapour_pressure_equation,
     )
     return nothing
@@ -132,7 +114,7 @@ end
 @inline _recompute_soil_snow_properties!(::Nothing, p, st, ap, vpe) =
     _recompute_soil_snow_properties_no_snow!(p, st, ap, vpe)
 
-# Compile-time snow node count for an ODE's `p.parameters.snow_model`. The `::SnowModel{N}`
+# Compile-time snow node count for an ODE's `p.model.snow`. The `::SnowModel{N}`
 # method is in snow/snow_model.jl; both ::Nothing and ::NoSnow return 0.
 @inline _n_snow(::Nothing) = 0
 
@@ -190,8 +172,8 @@ function allocate_soil_energy_balance(::SoilHeatTransport1D, num_nodes::Int)
     return (; layer_depths, heat_capacity, thermal_conductance, obukhov_length_prev)
 end
 
-# SciML ODE rhs. Dispatches the actual physics on `p.parameters.model`.
-soil_energy_balance(u, p::SoilEnergyInputs, t) = soil_energy_balance(p.parameters.model, u, p, t)
+# SciML ODE rhs. Dispatches the actual physics on `p.model.soil.energy_model`.
+soil_energy_balance(u, p::SoilEnergyInputs, t) = soil_energy_balance(p.model.soil.energy_model, u, p, t)
 
 function soil_energy_balance(model::SoilHeatTransport1D,
     temperature_state::U,  # state
@@ -199,8 +181,12 @@ function soil_energy_balance(model::SoilHeatTransport1D,
     t::Quantity,           # timestep
 ) where U <: SVector{N} where N
     # extract parameters
-    (; parameters, hourly, forcing, buffers) = p
-    (; heights, site, boundary_layer_model, vapour_pressure_equation, evaporation_model, atmospheric_radiation_model, snow_model) = parameters
+    (; hourly, forcing, buffers) = p
+    (; site, vapour_pressure_equation) = p.model
+    (; heights, boundary_layer_model) = p.model.atmosphere
+    atmospheric_radiation_model = p.model.atmosphere.radiation.longwave_model.atmospheric_radiation_model
+    evaporation_model = p.model.surface.evaporation_model
+    snow_model = p.model.snow
     (; depths, environment_instant, soil_wetness, longwave_sky, albedo, Q_freeze) = hourly
     maximum_surface_temperature = model.maximum_surface_temperature
     (; layer_depths, heat_capacity, thermal_conductance) = buffers.soil_energy_balance

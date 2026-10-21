@@ -145,7 +145,7 @@ atmospheric_surface_profile(bl::MoninObukhov; heights=DEFAULT_HEIGHTS, reference
 origin to a canopy-displaced height with a canopy-derived roughness length,
 instead of bare ground. Defaults (`0.0u"m"` / `site.roughness_height`)
 give the bare-ground profile. Heights are measured from the true ground (as
-in `MicroModel.heights`); `displacement_height` is subtracted internally
+in `MicroModel.atmosphere.heights`); `displacement_height` is subtracted internally
 wherever the log-law needs height above the displaced origin.
 
 `temperature_anchor_height`: by default (`nothing`) the temperature profile

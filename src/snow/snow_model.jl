@@ -679,12 +679,12 @@ end
         bulk_density = view(soil_props.bulk_density, N_snow+1:N_total),
     )
     soil_temp_soil = SVector(ntuple(k -> soil_temperature[N_snow + k], Val(N_total - N_snow)))
-    (; soil_properties_model, soil_profile) = p.parameters
-    soil_properties!(soil_view, soil_properties_model;
+    (; properties_model, profile) = p.model.soil
+    soil_properties!(soil_view, properties_model;
         soil_temperature=soil_temp_soil,
         soil_moisture=p.soil_moisture,
-        bulk_density=soil_profile.bulk_density, mineral_density=soil_profile.mineral_density,
-        mineral_conductivity=soil_profile.mineral_conductivity, mineral_heat_capacity=soil_profile.mineral_heat_capacity,
+        bulk_density=profile.bulk_density, mineral_density=profile.mineral_density,
+        mineral_conductivity=profile.mineral_conductivity, mineral_heat_capacity=profile.mineral_heat_capacity,
         atmospheric_pressure, vapour_pressure_equation,
     )
     soil_temp_snow = SVector(ntuple(k -> soil_temperature[k], Val(N_snow)))

@@ -29,6 +29,7 @@ using BiophysicalGeometry: Ellipsoid, Body, Naked
 
 
 export MicroProblem, MicroModel, MicroInputs, MicroCache, MicroConfig
+export SoilModel, SurfaceModel, AtmosphereModel
 export SoilProfile, RadiationModel
 export example_soil_profile
 

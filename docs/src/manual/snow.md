@@ -22,7 +22,7 @@ albedo as it ages.
 
 ## Node scheme
 
-[`SnowModel`](@ref) extends the soil depth nodes (`MicroModel.depths`) with up to 8
+[`SnowModel`](@ref) extends the soil depth nodes (`MicroModel.soil.depths`) with up to 8
 additional snow nodes at fixed depths (`snow_node_thresholds`), thermal properties set
 to that of ice while snow is present. The nodes default to 2, 5, 10, 20, 50, 100, 200
 and 300 cm (`DEFAULT_SNOW_NODE_THRESHOLDS`), with the original 0 cm surface

@@ -13,7 +13,7 @@
                        convergence_model=PicardCanopyConvergence())
 
 Multi-layer canopy structure resolved by height. Splits the canopy into as
-many layers as there are `MicroModel.heights` entries at or below
+many layers as there are `MicroModel.atmosphere.heights` entries at or below
 `canopy_height`.
 
 Composes swappable sub-models the same way `MicroModel` composes
@@ -42,7 +42,7 @@ Composes swappable sub-models the same way `MicroModel` composes
   (default [`NoInterception`](@ref): off)
 - `condensation_model::AbstractCondensationModel` — leaf dew/frost formation
   (default [`MonteithLeafCondensation`](@ref); [`NoCondensation`](@ref) to
-  switch it off). Independent of `MicroModel.condensation_model` (ground).
+  switch it off). Independent of `MicroModel.surface.condensation_model` (ground).
 - `leaf_parameters::LeafParameters` — per-leaf structural/physiological data
 - `stomatal_model::AbstractStomatalConductanceModel` — stomatal response
   (default [`PrescribedStomatalConductance`](@ref): day/night gating only,

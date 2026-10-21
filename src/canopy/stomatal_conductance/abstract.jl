@@ -21,7 +21,7 @@ abstract type AbstractStomatalConductanceModel end
 
 The `HeatExchange.LeafEvaporationParameters` to use this hour, given the
 solar `zenith_angle` and the current `leaf_water_potential`.
-`soil_hydraulic_model` (`MicroModel.soil_hydraulic_model`) is threaded
+`soil_hydraulic_model` (`MicroModel.soil.hydraulic_model`) is threaded
 through so models sharing parameters with it — currently
 [`MoistureResponsiveStomatalConductance`](@ref) and
 [`CampbellSoilHydraulics`](@ref) — read from that single source rather

@@ -50,12 +50,12 @@ end
 
 @testset "MultilayerCanopy leaf temperature responds to soil moisture via Campbell coupling" begin
     canopy_model = example_multilayer_canopy(; canopy_height = 1.0u"m", plant_area_index = 3.0)
-    config = MicroConfig(; soil_moisture_strategy = DynamicSoilMoisture())
+    soil_moisture_strategy = DynamicSoilMoisture()
     n = length(Microclimate.DEFAULT_DEPTHS)
 
-    wet_output = solve(example_microclimate_problem(; heights, canopy_model, config,
+    wet_output = solve(example_microclimate_problem(; heights, canopy_model, soil_moisture_strategy,
         initial_soil_moisture = fill(0.35, n)))
-    dry_output = solve(example_microclimate_problem(; heights, canopy_model, config,
+    dry_output = solve(example_microclimate_problem(; heights, canopy_model, soil_moisture_strategy,
         initial_soil_moisture = fill(0.03, n)))
 
     @test all(isfinite, ustrip.(u"K", wet_output.canopy.leaf_temperature))

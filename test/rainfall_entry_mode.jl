@@ -69,9 +69,9 @@ end
     @testset "end-to-end smoke test per mode" begin
         for mode in modes
             soil_hydraulic_model = example_soil_hydraulic_model(; rainfall_entry_mode=mode)
-            config = MicroConfig(; soil_moisture_strategy=DynamicSoilMoisture())
+            soil_moisture_strategy = DynamicSoilMoisture()
             soil_profile = example_soil_profile(; bulk_density=1.3u"Mg/m^3", mineral_density=2.65u"Mg/m^3")
-            out = solve(example_microclimate_problem(; soil_hydraulic_model, config, soil_profile))
+            out = solve(example_microclimate_problem(; soil_hydraulic_model, soil_moisture_strategy, soil_profile))
             @test !any(isnan, ustrip.(out.soil_temperature))
             @test !any(isnan, out.soil_moisture)
             @test all(0 .<= out.soil_moisture .<= 1)
@@ -83,28 +83,29 @@ end
 
 @testset "runoff tracking" begin
     @testset "default max_surface_pool: runoff stays exactly zero" begin
-        out = solve(example_microclimate_problem(; config=MicroConfig(; soil_moisture_strategy=DynamicSoilMoisture())))
+        out = solve(example_microclimate_problem(; soil_moisture_strategy=DynamicSoilMoisture()))
         @test all(iszero, out.runoff)
     end
 
     @testset "small max_surface_pool generates nonzero, non-decreasing runoff" begin
-        config = MicroConfig(; soil_moisture_strategy=DynamicSoilMoisture(), max_surface_pool=0.01u"kg/m^2")
-        out = solve(example_microclimate_problem(; config))
+        soil_moisture_strategy = DynamicSoilMoisture()
+        max_surface_pool = 0.01u"kg/m^2"
+        out = solve(example_microclimate_problem(; soil_moisture_strategy, max_surface_pool))
         @test out.runoff[end] > 0u"kg/m^2"
         @test all(diff(ustrip.(u"kg/m^2", out.runoff)) .>= -1e-9)  # cumulative, monotonically non-decreasing
     end
 
     @testset "runoff still accumulates under PrescribedSoilMoisture (no infiltration solve)" begin
-        config = MicroConfig(; max_surface_pool=0.01u"kg/m^2")  # soil_moisture_strategy defaults to PrescribedSoilMoisture
-        out = solve(example_microclimate_problem(; config))
+        max_surface_pool = 0.01u"kg/m^2"  # soil_moisture_strategy defaults to PrescribedSoilMoisture
+        out = solve(example_microclimate_problem(; max_surface_pool))
         @test out.runoff[end] > 0u"kg/m^2"
     end
 
     @testset "PoolCapacityRainfall() explicit == default (regression guard)" begin
-        config = MicroConfig(; soil_moisture_strategy=DynamicSoilMoisture())
+        soil_moisture_strategy = DynamicSoilMoisture()
         soil_profile = example_soil_profile(; bulk_density=1.3u"Mg/m^3", mineral_density=2.65u"Mg/m^3")
-        out_default = solve(example_microclimate_problem(; soil_hydraulic_model=example_soil_hydraulic_model(), config, soil_profile))
-        out_explicit = solve(example_microclimate_problem(; soil_hydraulic_model=example_soil_hydraulic_model(; rainfall_entry_mode=PoolCapacityRainfall()), config, soil_profile))
+        out_default = solve(example_microclimate_problem(; soil_hydraulic_model=example_soil_hydraulic_model(), soil_moisture_strategy, soil_profile))
+        out_explicit = solve(example_microclimate_problem(; soil_hydraulic_model=example_soil_hydraulic_model(; rainfall_entry_mode=PoolCapacityRainfall()), soil_moisture_strategy, soil_profile))
         @test out_default.soil_moisture == out_explicit.soil_moisture
         @test out_default.soil_temperature == out_explicit.soil_temperature
     end

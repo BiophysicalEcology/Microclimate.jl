@@ -3,13 +3,13 @@
 A single scalar `shade` fraction ([`NoCanopy`](@ref), the default) cannot represent
 how radiation, wind, temperature and humidity change with height through a
 canopy. [`MultilayerCanopy`](@ref) resolves the canopy into layers (one per 
-`MicroModel.heights` entry at or below `canopy_height`) and solves shortwave, longwave, 
+`MicroModel.atmosphere.heights` entry at or below `canopy_height`) and solves shortwave, longwave, 
 wind, air-profile, interception and leaf temperature sub-models per layer, each hour, 
 converging the canopy against the soil surface temperature with [`PicardCanopyConvergence`](@ref).
 
 The default wind model, [`ExponentialCanopyWindAttenuation`](@ref), requires at least
 10 canopy layers (it replaces the bottom tenth of the profile with a local log-law
-correction near the ground) — `MicroModel.heights` needs at least 10 entries at or
+correction near the ground) — `MicroModel.atmosphere.heights` needs at least 10 entries at or
 below `canopy_height` when using it, as in [Canopy workflow](../tutorials/canopy_workflow.md).
 
 ## Sources

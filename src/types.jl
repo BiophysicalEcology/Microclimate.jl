@@ -2,7 +2,7 @@
     SoilProfile(; bulk_density, mineral_density, mineral_conductivity, mineral_heat_capacity, hydraulics)
 
 Per-depth soil column profile read by the soil properties model (thermal)
-and the soil hydraulic model. Sized to match `MicroModel.depths`.
+and the soil hydraulic model. Sized to match `MicroModel.soil.depths`.
 
 - `bulk_density` — dry soil bulk density (kg/m³) at each depth node
 - `mineral_density` — soil mineral density (kg/m³) at each depth node
@@ -56,17 +56,72 @@ Bundle of radiation models used by the simulation:
 end
 
 """
+    SoilModel(; depths=DEFAULT_DEPTHS, profile, properties_model, hydraulic_model,
+                energy_model=SoilHeatTransport1D(), moisture_strategy=PrescribedSoilMoisture())
+
+The soil column:
+
+- `depths` — soil nodes; keep spacing close near the surface
+- `profile::SoilProfile` — per-depth `bulk_density`, `mineral_density`,
+  `mineral_conductivity`, `mineral_heat_capacity` and hydraulic profile
+- `properties_model::AbstractSoilProperties` (e.g. `CampbelldeVriesSoilProperties(...)`)
+- `hydraulic_model::AbstractSoilHydraulicsModel` (e.g. `CampbellSoilHydraulics(...)`)
+- `energy_model::SoilHeatTransportModel` — soil column energy ODE (carries the
+  phase-transition `freezing_model` and ODE solver settings)
+- `moisture_strategy` — `PrescribedSoilMoisture()` or `DynamicSoilMoisture(; ...)`
+"""
+@kwdef struct SoilModel{Dep,SP<:SoilProfile,SPM,SHM,SEM,SMS}
+    depths::Dep = DEFAULT_DEPTHS
+    profile::SP
+    properties_model::SPM
+    hydraulic_model::SHM
+    energy_model::SEM = SoilHeatTransport1D()
+    moisture_strategy::SMS = PrescribedSoilMoisture()
+end
+
+"""
+    SurfaceModel(; evaporation_model=BulkTransferEvaporation(),
+                   condensation_model=GarrattSegalCondensation(),
+                   max_surface_pool=1.0e4u"kg/m^2")
+
+Exchange of water at the ground surface:
+
+- `evaporation_model` — surface latent flux
+- `condensation_model::AbstractCondensationModel` — ground dew/frost formation
+  (`GarrattSegalCondensation()` default, `BulkTransferCondensation()`, or
+  `NoCondensation()` to switch it off)
+- `max_surface_pool` — maximum water held on the soil surface; water above it is removed as `runoff`
+"""
+@kwdef struct SurfaceModel{EVM,CDM,MSP}
+    evaporation_model::EVM = BulkTransferEvaporation()
+    condensation_model::CDM = GarrattSegalCondensation()
+    max_surface_pool::MSP = 1.0e4u"kg/m^2"
+end
+
+"""
+    AtmosphereModel(; heights=[0.01, 2]u"m", radiation=RadiationModel(),
+                      boundary_layer_model=MoninObukhov())
+
+The air above the ground:
+
+- `heights` — air nodes for the temperature, wind speed and humidity profile;
+  the last is the reference height of the weather data
+- `radiation::RadiationModel` — solar, shortwave and longwave models
+- `boundary_layer_model` — surface-layer profile and fluxes (`MoninObukhov()`)
+"""
+@kwdef struct AtmosphereModel{Ht,RAD,BLM}
+    heights::Ht = [0.01, 2]u"m"
+    radiation::RAD = RadiationModel()
+    boundary_layer_model::BLM = MoninObukhov()
+end
+
+"""
     MicroConfig(; ...)
 
-Solver/iteration/data-delivery strategy. Lives on `MicroModel.config`.
-Physical-process models live directly on `MicroModel`; this struct is
-strictly the "how we iterate and how data is delivered" side of the model.
+Solver iteration and data-delivery strategy. Lives on `MicroModel.config`.
 
 - `convergence`: `FixedIterationConvergence(3)` or `IterationToleranceConvergence(; tolerance, max_iterations_per_day)`
 - `rainfall_schedule`: `DailyRainfall()` (default) or `HourlyRainfall()`
-- `soil_moisture_strategy`: `PrescribedSoilMoisture()` or `DynamicSoilMoisture(; ...)`
-- `max_surface_pool`: maximum water held on the soil surface (NicheMapR
-  `maxpool`); water above it is removed as `runoff`.
 - `canopy_soil_convergence`: per-hour convergence between the canopy solve
   and the soil-heat ODE, iterating the two to a jointly self-consistent state
   within the hour by default (`IterationToleranceConvergence(; tolerance=0.05u"K",
@@ -76,95 +131,63 @@ strictly the "how we iterate and how data is delivered" side of the model.
   pass's `ground_temperature` update (`x_new = relaxation*x_solved +
   (1-relaxation)*x_prev`), `1.0` (no relaxation) by default.
 """
-@kwdef struct MicroConfig{CV,RFS,SMM,MSP,CSC,CSR}
+@kwdef struct MicroConfig{CV,RFS,CSC,CSR}
     convergence::CV = FixedIterationConvergence(3)
     rainfall_schedule::RFS = DailyRainfall()
-    soil_moisture_strategy::SMM = PrescribedSoilMoisture()
-    max_surface_pool::MSP = 1.0e4u"kg/m^2"
     canopy_soil_convergence::CSC = IterationToleranceConvergence(; tolerance=0.05u"K", max_iterations_per_day=80)
     canopy_soil_relaxation::CSR = 1.0
 end
 
 """
-    MicroModel(; hours, depths, heights,
-                 soil_properties_model, soil_hydraulic_model,
-                 radiation=RadiationModel(),
-                 snow_model=NoSnow(),
-                 vapour_pressure_equation=GoffGratch(),
-                 boundary_layer_model=MoninObukhov(),
-                 evaporation_model=BulkTransferEvaporation(),
-                 condensation_model=GarrattSegalCondensation(),
-                 soil_energy_model=SoilHeatTransport1D(),
-                 config=MicroConfig())
+    MicroModel(; hours=DEFAULT_HOURS, site, soil, surface=SurfaceModel(),
+                 atmosphere=AtmosphereModel(), snow=NoSnow(), canopy=NoCanopy(),
+                 vapour_pressure_equation=GoffGratch(), config=MicroConfig())
 
-Constant-across-runs scientific description of the simulation:
+Every parameter of the simulation, as one tree:
 
-- solver geometry (`hours`, `depths`, `heights`) # TODO generalise to sub-hourly
-- physical-process models:
-    - `soil_properties_model::AbstractSoilProperties` (e.g. `CampbelldeVriesSoilProperties(...)`)
-    - `soil_hydraulic_model::AbstractSoilHydraulicsModel` (e.g. `CampbellSoilHydraulics(...)`)
-    - `radiation::RadiationModel` — bundle of `solar_radiation_model`,
-      `longwave_model`, and `shortwave_model`Anchored 
-    - `snow_model::AbstractSnowModel` — `NoSnow()` (default) or `SnowModel(...)`
-    - `vapour_pressure_equation` — cross-cutting (`GoffGratch()` / `Teten()` / `Huang()`)
-    - `boundary_layer_model` — cross-cutting (`MoninObukhov()`)
-    - `evaporation_model` — surface latent flux
-    - `condensation_model::AbstractCondensationModel` — ground dew/frost
-      formation (`GarrattSegalCondensation()` default, `BulkTransferCondensation()`,
-      or `NoCondensation()` to switch it off)
-    - `soil_energy_model::SoilHeatTransportModel` — soil column energy ODE
-      (carries the phase-transition `freezing_model` and ODE solver settings)
-    - `canopy_model::AbstractCanopyModel` — `NoCanopy()` (default, today's
-      scalar-`shade` vegetation handling, unchanged) or `MultilayerCanopy(...)`
-      (layer-resolved two-stream radiative transfer through the canopy)
-- iteration/data-delivery strategy in `config::MicroConfig`
+- `hours` — hours of the day to solve # TODO generalise to sub-hourly
+- `site::Site` — properties of the place
+- `soil::SoilModel` — the soil column
+- `surface::SurfaceModel` — water exchange at the ground surface
+- `atmosphere::AtmosphereModel` — air nodes, radiation and boundary layer
+- `snow::AbstractSnowModel` — `NoSnow()` (default) or `SnowModel(...)`
+- `canopy::AbstractCanopyModel` — `NoCanopy()` (default, scalar `shade`
+  vegetation handling) or `MultilayerCanopy(...)` (layer-resolved two-stream
+  radiative transfer through the canopy)
+- `vapour_pressure_equation` — `GoffGratch()`, `Teten()` or `Huang()`
+- `config::MicroConfig` — iteration and data-delivery strategy
 
 Combine with a `MicroInputs` via `MicroProblem(model, inputs; days)` to run.
 """
-@kwdef struct MicroModel{H,Dep,Ht,SPM,SHM,RAD,SNM,VPE,BLM,EVM,CDM,SEM,CAN,C}
-    hours::H = DEFAULT_HOURS # hour of day for solar_radiation
-    depths::Dep = DEFAULT_DEPTHS # soil nodes - keep spacing close near the surface
-    heights::Ht = [0.01, 2]u"m" # air nodes for temperature, wind speed and humidity profile, last height is reference height for weather data
-    soil_properties_model::SPM
-    soil_hydraulic_model::SHM
-    radiation::RAD = RadiationModel()
-    snow_model::SNM = NoSnow()
+@kwdef struct MicroModel{H,S,SO<:SoilModel,SU<:SurfaceModel,A<:AtmosphereModel,SNM,CAN,VPE,C}
+    hours::H = DEFAULT_HOURS
+    site::S
+    soil::SO
+    surface::SU = SurfaceModel()
+    atmosphere::A = AtmosphereModel()
+    snow::SNM = NoSnow()
+    canopy::CAN = NoCanopy()
     vapour_pressure_equation::VPE = GoffGratch()
-    boundary_layer_model::BLM = MoninObukhov()
-    evaporation_model::EVM = BulkTransferEvaporation()
-    condensation_model::CDM = GarrattSegalCondensation()
-    soil_energy_model::SEM = SoilHeatTransport1D()
-    canopy_model::CAN = NoCanopy()
     config::C = MicroConfig()
 end
 
 """
-    MicroInputs(; site, soil_profile, environment_minmax, environment_daily,
-                  environment_hourly=nothing,
+    MicroInputs(; environment_minmax, environment_daily, environment_hourly=nothing,
                   initial_soil_temperature=nothing, initial_soil_moisture,
                   initial_snow_depth=0.0u"cm", initial_snow_temperature=u"K"(0.0u"°C"),
                   initial_snow_density=nothing)
 
-Per-run input data: site, soil column profile, environment forcings, and
-initial conditions.
+Per-run forcing and initial conditions.
 
-- `site::Site` — properties of the place
-- `soil_profile::SoilProfile` — per-depth `bulk_density`, `mineral_density`,
-  `mineral_conductivity`, and `mineral_heat_capacity` read by both the soil
-  properties and soil hydraulic models. Per-location structural soil-column
-  data; lives here (not on `MicroModel`) because it varies between sites
-  without changing the physics.
 - `environment_minmax`, `environment_daily`, `environment_hourly` — input forcings
 - `initial_*` — initial conditions (`initial_soil_temperature=nothing` falls back to
   the day-mean reference air temperature)
-- `initial_snow_density=nothing` → use `model.snow_model.snow_density`
+- `initial_snow_density=nothing` → use `model.snow.snow_density`
 
 Pass a fresh `MicroInputs` to `reinit!(cache, inputs)` to re-solve the same
 model on different data without rebuilding the cache.
 """
-@kwdef struct MicroInputs{S,SP<:SoilProfile,EMM,EH,ED,IST,ISM,ISD,ISNT,ISND}
-    site::S
-    soil_profile::SP
+@kwdef struct MicroInputs{EMM,EH,ED,IST,ISM,ISD,ISNT,ISND}
     environment_minmax::EMM
     environment_hourly::EH = nothing
     environment_daily::ED
@@ -205,8 +228,8 @@ MicroProblem(model::MicroModel, inputs::MicroInputs;
     example_microclimate_problem(; kwargs...)
 
 Build a complete, ready-to-solve [`MicroProblem`](@ref) for Madison, Wisconsin, USA,
-from `example_*` defaults throughout. Any `MicroModel`/`MicroInputs`/`MicroProblem`
-field can be overridden via `kwargs`.
+from `example_*` defaults throughout. Any field of the model tree, the inputs or
+the problem can be overridden by name via `kwargs`.
 """
 function example_microclimate_problem(;
     days = DEFAULT_DAYS,
@@ -217,6 +240,8 @@ function example_microclimate_problem(;
     soil_profile = example_soil_profile(depths),
     soil_properties_model = example_soil_properties_model(),
     soil_hydraulic_model = example_soil_hydraulic_model(),
+    soil_moisture_strategy = PrescribedSoilMoisture(),
+    max_surface_pool = 1.0e4u"kg/m^2",
     snow_model = NoSnow(),
     canopy_model = NoCanopy(),
     environment_minmax = example_monthly_weather(),
@@ -226,11 +251,16 @@ function example_microclimate_problem(;
     initial_soil_temperature = fill(u"K"(7.741667u"°C"), length(depths)),
     initial_soil_moisture = fill(0.42 * 0.25, length(depths)),
 )
+    soil = SoilModel(;
+        depths, profile=soil_profile, properties_model=soil_properties_model,
+        hydraulic_model=soil_hydraulic_model, moisture_strategy=soil_moisture_strategy,
+    )
     model = MicroModel(;
-        hours, depths, heights, soil_properties_model, soil_hydraulic_model, snow_model, canopy_model, config
+        hours, site, soil, surface=SurfaceModel(; max_surface_pool), atmosphere=AtmosphereModel(; heights),
+        snow=snow_model, canopy=canopy_model, config,
     )
     inputs = MicroInputs(;
-        site, soil_profile, environment_minmax, environment_daily, environment_hourly,
+        environment_minmax, environment_daily, environment_hourly,
         initial_soil_temperature, initial_soil_moisture,
     )
     MicroProblem(model, inputs; days)

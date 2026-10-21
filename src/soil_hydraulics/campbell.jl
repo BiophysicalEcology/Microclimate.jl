@@ -9,7 +9,7 @@ model. Lives on `SoilProfile.hydraulics` (per-location structural data),
 not on `CampbellSoilHydraulics` (which now carries only the plant-side
 scalars).
 
-Each field is a vector sized to match `MicroModel.depths`.
+Each field is a vector sized to match `MicroModel.soil.depths`.
 """
 @kwdef struct CampbellHydraulicProfile{AEWP,SHC,CBP,RDen}
     air_entry_water_potential::AEWP
@@ -25,7 +25,7 @@ end
 
 Plant-side scalar parameters for Campbell's (1985) soil water balance
 model. Holds parameters only — the moisture-solver strategy lives on
-`MicroConfig.soil_moisture_strategy` (`PrescribedSoilMoisture` /
+`MicroModel.soil.moisture_strategy` (`PrescribedSoilMoisture` /
 `DynamicSoilMoisture`), with solver tuning (`moisture_tolerance`,
 `moisture_max_iterations`, `moisture_timestep`) carried on
 `DynamicSoilMoisture` itself.
