@@ -1,3 +1,9 @@
+"""
+    AbstractSoilHydraulicsModel
+
+Supertype for soil moisture/infiltration models. [`CampbellSoilHydraulics`](@ref) is
+the only implementation.
+"""
 abstract type AbstractSoilHydraulicsModel end
 
 """

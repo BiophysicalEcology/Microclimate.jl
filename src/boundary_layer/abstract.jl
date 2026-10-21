@@ -1,3 +1,9 @@
+"""
+    AbstractBoundaryLayerModel
+
+Supertype for wind/temperature/humidity vertical profile models. [`MoninObukhov`](@ref)
+is the only implementation.
+"""
 abstract type AbstractBoundaryLayerModel end
 
 """

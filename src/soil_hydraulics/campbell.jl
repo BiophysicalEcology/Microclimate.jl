@@ -144,6 +144,15 @@ function allocate_soil_water_balance(::CampbellSoilHydraulics, num_layers)
     )
 end
 
+"""
+    infiltration_step!(buffers, soil_hydraulic_model::CampbellSoilHydraulics, moisture_mode::DynamicSoilMoisture; kwargs...)
+
+One Newton-Raphson/Thomas-algorithm sub-step of Campbell's (1985) soil water mass
+balance (see [Soil moisture](@ref)): partitions potential evapotranspiration,
+computes plant water uptake and stomatal closure, and solves the per-node water
+potential update. Called repeatedly by [`infiltration_substeps!`](@ref) within
+each hour, with solver settings from `moisture_mode`.
+"""
 function infiltration_step!(buffers, soil_hydraulic_model::CampbellSoilHydraulics, moisture_mode::DynamicSoilMoisture;
     soil_profile,
     depths,
@@ -623,6 +632,13 @@ function _update_pool!(soil_moisture, soil_hydraulic_model, moisture_mode, pool,
         soil_profile, depths, frozen_water_content)
 end
 
+"""
+    soil_water_balance!(buffers, soil_hydraulic_model::CampbellSoilHydraulics, moisture_mode::DynamicSoilMoisture; kwargs...)
+
+The hourly soil moisture solve: applies rainfall entry (`rainfall_entry_mode`) and
+sub-steps [`infiltration_step!`](@ref) through the hour in steps of
+`moisture_mode.moisture_timestep`, updating the surface pool and soil moisture.
+"""
 function soil_water_balance!(buffers, soil_hydraulic_model::CampbellSoilHydraulics, moisture_mode::DynamicSoilMoisture;
     soil_profile,
     depths,

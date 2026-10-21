@@ -1,3 +1,9 @@
+"""
+    AbstractLongwaveModel
+
+Supertype for surface longwave budget models. [`ViewFactorLongwave`](@ref) is the
+only implementation.
+"""
 abstract type AbstractLongwaveModel end
 
 """
