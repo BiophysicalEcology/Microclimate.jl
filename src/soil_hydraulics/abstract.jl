@@ -17,11 +17,14 @@ function soil_water_balance end
 
 """
     soil_water_balance!(buffers, soil_hydraulic_model, moisture_mode::DynamicSoilMoisture;
-        soil_profile, depths, site, boundary_layer_model, environment_instant, T0, pool, soil_moisture,
-        soil_wetness, evaporation_model, frozen_water_content, vapour_pressure_equation, snow_present)
+        soil_profile, depths, pool, evaporation_potential, local_relative_humidity, soil_moisture,
+        T0, frozen_water_content, vapour_pressure_equation,
+        canopy_transpiration_potential, canopy_leaf_area_index, environment_instant)
 
-One-hour water-balance step: atmospheric profile, evaporation, surface pool
-dynamics, and sub-steps of the variant's solver. Solver settings come
-from `moisture_mode`.
+One-hour water-balance step: sub-steps of the variant's infiltration solver,
+driven by `evaporation_potential` (the ground-surface evaporative demand after
+[`ground_condensation_step!`](@ref) has already shielded it with any standing
+dew/frost) and `local_relative_humidity` (also from that call). Solver settings
+come from `moisture_mode`.
 """
 function soil_water_balance! end

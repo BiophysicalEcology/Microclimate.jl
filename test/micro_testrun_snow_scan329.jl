@@ -204,7 +204,7 @@ snow_model = SnowModel(;
 
 # ── Build and solve ───────────────────────────────────────────────────────────
 config = MicroConfig(;
-    convergence = FixedSoilTemperatureIterations(3),
+    convergence = FixedIterationConvergence(3),
     rainfall_schedule = DailyRainfall(),
     soil_moisture_strategy = DynamicSoilMoisture(),
 )

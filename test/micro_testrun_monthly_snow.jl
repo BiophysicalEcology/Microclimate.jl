@@ -133,7 +133,7 @@ snow_model = SnowModel(;
 )
 
 config = MicroConfig(;
-    convergence = FixedSoilTemperatureIterations(Int(microinput[:ndmax])),
+    convergence = FixedIterationConvergence(Int(microinput[:ndmax])),
     rainfall_schedule = Bool(Int(microinput[:rainhourly])) ? HourlyRainfall() : DailyRainfall(),
     soil_moisture_strategy = _runmoist ? DynamicSoilMoisture() :
         PrescribedSoilMoisture(; precomputed_soil_moisture),
