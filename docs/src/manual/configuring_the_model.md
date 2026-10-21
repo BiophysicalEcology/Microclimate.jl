@@ -97,7 +97,7 @@ with different aspects converging in different ways via different algorithsm:
   to a SciML integrator) — continuous within the hour, not a single explicit step.
 - **Canopy**, when present, is jointly converged against that same ODE each hour:
   the canopy-soil iteration repeatedly (a) solves the canopy's shortwave,
-  longwave, wind and leaf-temperature state ([`NewtonCanopyConvergence`](@ref)) for the current guess of ground
+  longwave, wind and leaf-temperature state ([`NonlinearCanopyConvergence`](@ref)) for the current guess of ground
   temperature, (b) feeds the resulting ground-surface boundary condition into the
   soil ODE and advances it through the hour, (c) compares the new ground temperature
   to the previous guess, and repeats until `canopy_soil_convergence` is satisfied (or

@@ -1,14 +1,18 @@
 """
-    NewtonCanopyConvergence(; algorithm=NewtonRaphson(), abstol=1e-8, maxiters=50,
+    NonlinearCanopyConvergence(; algorithm=NewtonRaphson(), abstol=1e-8, maxiters=50,
         backend=AutoEnzyme(; mode=Enzyme.set_runtime_activity(Enzyme.Forward)))
 
 Solves the hourly canopy residual ([`evaluate_canopy!`](@ref)) for leaf and
 air temperature, vapor density and inverse Obukhov length together, with a
 NonlinearSolve `algorithm` and the residual's Jacobian from `backend`
 through DifferentiationInterface. The solver cache is built once by
-`allocate_canopy` and re-initialised each hour.
+`allocate_canopy` and re-initialized each hour.
+
+`algorithm` is any in-place NonlinearSolve algorithm, e.g. `NewtonRaphson()`
+or `Broyden(; init_jacobian=Val(:true_jacobian))` to compute the Jacobian
+once per hour.
 """
-@kwdef struct NewtonCanopyConvergence{A,T,B} <: AbstractCanopyConvergenceModel
+@kwdef struct NonlinearCanopyConvergence{A,T,B} <: AbstractCanopyConvergenceModel
     algorithm::A = NewtonRaphson()
     abstol::T = 1e-8
     maxiters::Int = 50
@@ -16,7 +20,7 @@ through DifferentiationInterface. The solver cache is built once by
     backend::B = AutoEnzyme(; mode=Enzyme.set_runtime_activity(Enzyme.Forward))
 end
 
-function allocate_canopy_convergence(convergence_model::NewtonCanopyConvergence, buffers, model, boundary_layer_model;
+function allocate_canopy_convergence(convergence_model::NonlinearCanopyConvergence, buffers, model, boundary_layer_model;
     site, vapour_pressure_equation, soil_hydraulic_model,
 )
     n_state = canopy_state_length(buffers)
@@ -51,7 +55,7 @@ function canopy_nonlinear_jacobian!(jacobian, state, parameters)
 end
 
 function converge_canopy!(buffers, model::MultilayerCanopy, boundary_layer_model, inputs::CanopyEnergyBalanceInputs,
-    initial_wind, cm::NewtonCanopyConvergence; site, vapour_pressure_equation, soil_hydraulic_model,
+    initial_wind, cm::NonlinearCanopyConvergence; site, vapour_pressure_equation, soil_hydraulic_model,
 )
     (; environment_instant, zenith_angle, ground_temperature, ground_emissivity, ground_relative_humidity,
        leaf_water_potential) = inputs
@@ -85,7 +89,7 @@ function converge_canopy!(buffers, model::MultilayerCanopy, boundary_layer_model
     SciMLBase.reinit!(solver, state; p=parameters)
     SciMLBase.solve!(solver)
     SciMLBase.successful_retcode(solver.retcode) ||
-        @warn "NewtonCanopyConvergence did not converge" solver.retcode maxlog=5
+        @warn "NonlinearCanopyConvergence did not converge" solver.retcode maxlog=5
 
     # Leave buffers at the solution: the residual's own intermediates, with
     # the air profile at the solved state rather than its transport.
