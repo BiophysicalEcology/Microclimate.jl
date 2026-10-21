@@ -230,7 +230,6 @@ function atmospheric_surface_profile!(bl::MoninObukhov, buffers;
     roughness_height_temp = Obukhov_out.roughness_height_temperature
     convective_heat_flux = Obukhov_out.convective_heat_flux
     friction_velocity = Obukhov_out.friction_velocity
-    friction_velocity_raw = Obukhov_out.friction_velocity_raw
     ψ_h = Obukhov_out.ψ_h
     # See docstring: default anchors on z0/roughness_height_temp; temperature_anchor_height
     # switches to a direct two-point interpolation, ψ_h included at the anchor.
@@ -292,7 +291,6 @@ function atmospheric_surface_profile!(bl::MoninObukhov, buffers;
         relative_humidity,
         convective_heat_flux=u"W/m^2"(convective_heat_flux),
         friction_velocity,
-        friction_velocity_raw,  # temporary diagnostic field, pre-floor value; remove once GWW investigation concludes
         obukhov_length,
     )
 end
@@ -487,7 +485,7 @@ end
 
 # Scalar-roughness-ratio resistance, shared by the stable/neutral direct
 # branch (ψ_h=0) and the unstable iterative branch below.
-@inline function _scalar_roughness_resistance(ratio, κ, friction_velocity, z0, z, ψ_h)
+function _scalar_roughness_resistance(ratio, κ, friction_velocity, z0, z, ψ_h)
     zh = ratio * z0
     log_z_ratio_h = log(z / zh)
     log_ratio_h_corrected = max(log_z_ratio_h - ψ_h, 0.1 * log_z_ratio_h, 1.0e-6)
@@ -550,7 +548,7 @@ Stanton number for the roughness sublayer immediately above the surface,
 `0.62·Re*^-0.45` with roughness Reynolds number `Re* = z0·u*/ν` (form
 resembles Owen & Thomson (1963)) Not suitable for a canopy.
 """
-@inline function sublayer_stanton(z0, friction_velocity, kinematic_viscosity)
+function sublayer_stanton(z0, friction_velocity, kinematic_viscosity)
     roughness_reynolds_number = uconvert(NoUnits, z0 * friction_velocity / kinematic_viscosity)
     return 0.62 / roughness_reynolds_number^0.45
 end
@@ -629,7 +627,7 @@ bounds `ζ` but not `Φ_h` itself).
   Flux–profile relationships in the atmospheric surface layer.
   *Journal of the Atmospheric Sciences*, 28(2), 181–189.
 """
-@inline function calc_Φ_h(z, γ, obukhov_length)
+function calc_Φ_h(z, γ, obukhov_length)
     return calc_φ_m(z, γ, obukhov_length)^(-2)
 end
 
@@ -678,12 +676,12 @@ end
 
 # Numerical floor on |obukhov_length|, sign-preserving -- avoids ζ=z/L blowing
 # up ψ/Φ/bulk_stanton near L=0.
-@inline function _floor_obukhov_length(z, obukhov_length)
+function _floor_obukhov_length(z, obukhov_length)
     L_floor = z / 10.0
     return obukhov_length >= zero(obukhov_length) ? max(obukhov_length, L_floor) : min(obukhov_length, -L_floor)
 end
 
-@inline function calc_ψ_m(z, γ, obukhov_length, stable_beta)
+function calc_ψ_m(z, γ, obukhov_length, stable_beta)
     if obukhov_length < zero(obukhov_length)
         return calc_ψ_m(calc_φ_m(z, γ, obukhov_length))
     else
@@ -692,7 +690,7 @@ end
     end
 end
 
-@inline function calc_ψ_h(z, γ, obukhov_length, stable_beta, turbulent_prandtl_number)
+function calc_ψ_h(z, γ, obukhov_length, stable_beta, turbulent_prandtl_number)
     if obukhov_length < zero(obukhov_length)
         return calc_ψ_h(calc_φ_m(z, γ, obukhov_length))
     else
@@ -701,7 +699,7 @@ end
     end
 end
 
-@inline function calc_Φ_h(z, γ, obukhov_length, stable_Φ_h_coefficient, min_stable_Φ_h, max_stable_Φ_h)
+function calc_Φ_h(z, γ, obukhov_length, stable_Φ_h_coefficient, min_stable_Φ_h, max_stable_Φ_h)
     if obukhov_length < zero(obukhov_length)
         return calc_Φ_h(z, γ, obukhov_length)
     else
@@ -742,7 +740,6 @@ to. Converges to `±Inf` (neutral) as `ΔT → 0`.
     relative_error = 1.0
     count = 0
     just_above_zero = 1.0e-6
-    friction_velocity_raw = 0.0u"m/s"  # pre-min_friction_velocity-floor value, diagnostic only
     while relative_error > tol && count < max_iter
         count += 1
         ψ_m = calc_ψ_m(z, γ, obukhov_length, stable_beta)
@@ -750,8 +747,7 @@ to. Converges to `±Inf` (neutral) as `ΔT → 0`.
         log_z_ratio_i = log(z / z0)
         # Floor at a fraction of the neutral log term to avoid unstable friction_velocity
         log_ratio_corrected = max(log_z_ratio_i - ψ_m, 0.1 * log_z_ratio_i, just_above_zero)
-        friction_velocity_raw = κ * v_ref_height / log_ratio_corrected
-        friction_velocity = max(friction_velocity_raw, min_friction_velocity)
+        friction_velocity = max(κ * v_ref_height / log_ratio_corrected, min_friction_velocity)
         convective_heat_flux, roughness_height_temperature = _unstable_convective_heat_flux(thermal_roughness_model,
             ρ_cp, ΔT, friction_velocity, κ, z0, z, log_ratio_corrected, ψ_h, obukhov_length, kinematic_viscosity,
             reference_temp, surface_temp)
@@ -763,7 +759,6 @@ to. Converges to `±Inf` (neutral) as `ΔT → 0`.
     return (;
         obukhov_length=u"m"(obukhov_length),
         friction_velocity,
-        friction_velocity_raw,  # temporary diagnostic field, pre-floor value; remove once GWW investigation concludes
         ψ_h,
         convective_heat_flux=u"W/m^2"(convective_heat_flux),
         roughness_height_temperature,

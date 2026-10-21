@@ -18,7 +18,7 @@ function is_converged(c::IterationToleranceConvergence, iter, niter, T0, T0_prev
     iter <= 1 && return niter <= 1
     tol = ustrip(u"K", c.tolerance)
     max_change = 0.0
-    @inbounds for i in eachindex(T0, T0_prev)
+    for i in eachindex(T0, T0_prev)
         change = abs(ustrip(u"K", T0[i]) - ustrip(u"K", T0_prev[i]))
         change > max_change && (max_change = change)
     end

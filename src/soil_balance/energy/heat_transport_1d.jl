@@ -160,14 +160,14 @@ end
 
 # Ground shortwave fraction: NoCanopy uses `shade`; MultilayerCanopy substitutes
 # its hourly transmission ratio (see apply_canopy_overrides).
-@inline ground_shortwave_fraction(shade, ::Nothing) = 1.0 - shade
-@inline ground_shortwave_fraction(shade, transmission) = transmission
+ground_shortwave_fraction(shade, ::Nothing) = 1.0 - shade
+ground_shortwave_fraction(shade, transmission) = transmission
 
 # Ground longwave terms: NoCanopy passes the shade-based split through;
 # MultilayerCanopy supersedes it with its own converged incoming flux.
-@inline ground_longwave_terms(incoming, outgoing_coeff, shade_term, surface_emissivity, ::Nothing) =
+ground_longwave_terms(incoming, outgoing_coeff, shade_term, surface_emissivity, ::Nothing) =
     (incoming, outgoing_coeff, shade_term)
-@inline ground_longwave_terms(incoming, outgoing_coeff, shade_term, surface_emissivity, override) =
+ground_longwave_terms(incoming, outgoing_coeff, shade_term, surface_emissivity, override) =
     (override, σ * surface_emissivity, 0.0u"W/m^2")
 
 # Sub-canopy convection/evaporation boundary condition: NoCanopy uses the
@@ -176,10 +176,10 @@ end
 # and that layer's height as the reference level. roughness_height is
 # untouched in both cases — it's the soil surface's own micro-roughness,
 # unaffected by canopy above it.
-@inline ground_convection_conditions(air_temperature, wind_speed, relative_humidity, reference_height,
+ground_convection_conditions(air_temperature, wind_speed, relative_humidity, reference_height,
     ::Nothing, ::Nothing, ::Nothing, ::Nothing) =
     (air_temperature, wind_speed, relative_humidity, reference_height)
-@inline ground_convection_conditions(air_temperature, wind_speed, relative_humidity, reference_height,
+ground_convection_conditions(air_temperature, wind_speed, relative_humidity, reference_height,
     canopy_air_temperature, canopy_wind_speed, canopy_relative_humidity, canopy_reference_height) =
     (canopy_air_temperature, canopy_wind_speed, canopy_relative_humidity, canopy_reference_height)
 
@@ -190,9 +190,9 @@ end
 # ground_reference_height (the canopy's ground-most layer height) is often
 # too close to roughness_height for the log law to invert validly there
 # (see _MIN_LOGLAW_RATIO in monin_obukhov.jl).
-@inline ground_heat_vapor_flux(evaporation_model, ::Nothing, ::Nothing, ctx) =
+ground_heat_vapor_flux(evaporation_model, ::Nothing, ::Nothing, ctx) =
     surface_convection_evaporation(evaporation_model; ctx...)
-@inline function ground_heat_vapor_flux(evaporation_model, ground_heat_conductance, ground_vapor_conductance, ctx)
+function ground_heat_vapor_flux(evaporation_model, ground_heat_conductance, ground_vapor_conductance, ctx)
     convective_heat_flux = uconvert(u"W/m^2", ground_heat_conductance * (ctx.air_temperature - ctx.surface_temperature))
     Q_evaporation, _ = evaporation(evaporation_model;
         surface_temperature=u"K"(ctx.surface_temperature), air_temperature=u"K"(ctx.air_temperature),

@@ -133,7 +133,7 @@ function canopy_layer_geometry(layer_plant_area_index::AbstractVector, n_layers)
         throw(ArgumentError("plant_area_index vector must have one entry per canopy layer"))
     layer_plant_area_index_boundaries = similar(layer_plant_area_index, n_layers + 1)
     layer_plant_area_index_boundaries[1] = zero(eltype(layer_plant_area_index))
-    @inbounds for i in 1:n_layers
+    for i in 1:n_layers
         layer_plant_area_index_boundaries[i + 1] = layer_plant_area_index_boundaries[i] + layer_plant_area_index[i]
     end
     layer_plant_area_index_above = [layer_plant_area_index_boundaries[i] + layer_plant_area_index[i] / 2 for i in 1:n_layers]
@@ -153,7 +153,7 @@ function canopy_layer_heights(heights, canopy_height, n_layers; min_spacing=1.0e
         throw(ArgumentError("number of `heights` at or below `canopy_height` must equal n_layers"))
 
     layer_thickness = similar(layer_heights)
-    @inbounds for i in 1:(n_layers - 1)
+    for i in 1:(n_layers - 1)
         layer_thickness[i] = max(layer_heights[i] - layer_heights[i + 1], min_spacing)
     end
     layer_thickness[n_layers] = max(layer_heights[n_layers], min_spacing)  # bottom layer down to the ground (z=0)

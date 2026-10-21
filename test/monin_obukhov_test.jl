@@ -4,6 +4,8 @@ using Microclimate: calc_Obukhov_length, calc_ψ_m, calc_ψ_h, calc_Φ_h, calc_�
 using Unitful
 using Test
 
+include("helpers.jl")
+
 bl = MoninObukhov()
 z0 = 0.01u"m"
 z = 10.0u"m"
@@ -42,18 +44,15 @@ end
     end
 end
 
-@testset "calc_ψ_m/calc_ψ_h/calc_Φ_h: type-stable and non-allocating, both regimes" begin
+@testset "calc_ψ_m/calc_ψ_h/calc_Φ_h: type-stable and zero-allocation, both regimes" begin
     for L in (-5.0u"m", 5.0u"m", Inf * u"m")
         @inferred calc_ψ_m(z, bl.dyer_constant, L, bl.stable_beta)
         @inferred calc_ψ_h(z, bl.dyer_constant, L, bl.stable_beta, bl.turbulent_prandtl_number)
         @inferred calc_Φ_h(z, bl.dyer_constant, L, bl.stable_Φ_h_coefficient, bl.min_stable_Φ_h, bl.max_stable_Φ_h)
+        @test allocations(calc_ψ_m, z, bl.dyer_constant, L, bl.stable_beta) == 0
+        @test allocations(calc_ψ_h, z, bl.dyer_constant, L, bl.stable_beta, bl.turbulent_prandtl_number) == 0
+        @test allocations(calc_Φ_h, z, bl.dyer_constant, L, bl.stable_Φ_h_coefficient, bl.min_stable_Φ_h, bl.max_stable_Φ_h) == 0
     end
-    # Top-level script globals aren't concretely typed, so this threshold
-    # covers closure-capture noise, not the (independently verified, in a
-    # properly function-scoped benchmark) true zero-allocation behavior.
-    f() = calc_ψ_m(z, bl.dyer_constant, 5.0u"m", bl.stable_beta) + calc_ψ_h(z, bl.dyer_constant, -5.0u"m", bl.stable_beta, bl.turbulent_prandtl_number)
-    f()
-    @test (@allocated f()) < 1000
 end
 
 @testset "calc_Φ_h: stable branch increases with height, unstable branch decreases" begin
@@ -81,8 +80,8 @@ end
     heights = [0.5, 1.0, 2.0, 5.0, 10.0]u"m"
     buffers = allocate_profile(bl, heights)
     for (reference_temperature, zenith_angle) in (
-        (300.0u"K", 30.0u"°"),   # warm reference, daytime -- was previously forced unstable-only
-        (280.0u"K", 30.0u"°"),   # cold reference, daytime -- was previously forced neutral/stable
+        (300.0u"K", 30.0u"°"),   # warm reference, daytime
+        (280.0u"K", 30.0u"°"),   # cold reference, daytime
         (280.0u"K", 170.0u"°"),  # night, surface colder than reference (typical stable night)
         (300.0u"K", 170.0u"°"),  # night, surface *warmer* than reference (atypical, e.g. warm advection)
     )

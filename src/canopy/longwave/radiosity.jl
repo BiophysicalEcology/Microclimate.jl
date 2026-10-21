@@ -91,7 +91,7 @@ function canopy_longwave!(buffers, model::LayeredRadiosityExchange, leaf_emissiv
     site, environment_instant, vapour_pressure_equation, shade=0.0)   
 
     # optical coefficients of each canopy layer
-    @inbounds for i in 1:n
+    for i in 1:n
         interceptedᵢ = 1.0 - τ_d[i]
         scatteredᵢ = (1.0 - εₗ) * interceptedᵢ
         αᵢ = εₗ * interceptedᵢ
@@ -105,7 +105,7 @@ function canopy_longwave!(buffers, model::LayeredRadiosityExchange, leaf_emissiv
     Eₛ = εₛ * σ * Tₛ^4  # ground emission 
     R[n + 1] = 1.0 - εₛ
     S[n + 1] = Eₛ
-    @inbounds for i in n:-1:1
+    for i in n:-1:1
         Γ[i] = inv(1.0 - ρ[i] * R[i + 1])
         R[i] = ρ[i] + τ[i]^2 * Γ[i] * R[i + 1]
         S[i] = E[i] + τ[i] * S[i + 1] + τ[i] * Γ[i] * R[i + 1] * (ρ[i] * S[i + 1] + E[i])
@@ -114,14 +114,14 @@ function canopy_longwave!(buffers, model::LayeredRadiosityExchange, leaf_emissiv
     # sky-to-ground recovery sweep
 
     L_d[1] = sky.incoming_longwave
-    @inbounds for i in 1:n
+    for i in 1:n
         L_u[i] = R[i] * L_d[i] + S[i]
         L_d[i + 1] = Γ[i] * (τ[i] * L_d[i] + ρ[i] * S[i + 1] + E[i])
     end
 
     # ground boundary
     L_u[n + 1] = R[n + 1] * L_d[n + 1] + S[n + 1]
-    @inbounds for i in 1:n
+    for i in 1:n
         A[i] = εₗ * (1.0 - τ_d[i]) * (L_d[i] + L_u[i + 1])
     end
 

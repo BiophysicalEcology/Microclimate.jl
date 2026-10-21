@@ -15,7 +15,7 @@ incident rain, not a distinct (larger, near-vertical) drop stream. Wetness
 Rain-fall angle assumes drops track local wind instantaneously -- a
 trajectory approximation, not a physical drop model.
 """
-@kwdef struct LayeredRainInterception{C} <: AbstractCanopyInterceptionModel
+@kwdef struct LayeredRainInterception{C} <: AbstractStorageInterception
     leaf_water_storage_capacity::C = 0.1u"kg/m^2"
 end
 
@@ -41,7 +41,7 @@ function canopy_interception!(buffers, model::LayeredRainInterception, canopy_pr
     throughfall[1] = rainfall
 
     if rainfall <= 0.0u"kg/m^2"
-        @inbounds for i in 1:n_layers
+        for i in 1:n_layers
             throughfall[i + 1] = throughfall[i]
         end
         return (; ground_throughfall = throughfall[n_layers + 1])
@@ -49,7 +49,7 @@ function canopy_interception!(buffers, model::LayeredRainInterception, canopy_pr
 
     raindrop_fall_velocity = 3.78 * ustrip(u"kg/m^2", rainfall)^0.067 * u"m/s"
     capacity = model.leaf_water_storage_capacity
-    @inbounds for i in 1:n_layers
+    for i in 1:n_layers
         rain_zenith_angle = atan(ustrip(u"m/s", wind_speed[i]), ustrip(u"m/s", raindrop_fall_velocity)) * u"rad"
         _layer_rain_intercept!(leaf_surface_water, throughfall, i, rain_zenith_angle,
             canopy_projection_ratio, layer_plant_area_index[i], capacity)

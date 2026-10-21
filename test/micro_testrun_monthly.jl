@@ -181,30 +181,6 @@ wind_matrix = micro_out.profile.wind_speed
     @test all(isapprox.(micro_out.soil_temperature, u"K".(Matrix(soiltemps_nmr)); rtol=1e-1))
 end
 
-# Dew/frost diagnostic: this site/setup already reproduces NicheMapR closely
-# above (surface temp, RH, wind all within tolerance) -- so any dew/frost
-# mismatch here is attributable to GarrattSegalCondensation itself, not to
-# the general surface-energy-balance/discretization differences seen at the
-# Kimba site in MicroclimateTests.jl/dew_frost/ (coarse 10-node grid, large
-# daytime peak-temperature mismatch there).
-dew_nmr = collect(metout_nmr[:, 16])
-frost_nmr = collect(metout_nmr[:, 17])
-dew_julia = ustrip.(u"kg/m^2", micro_out.ground_dew)
-frost_julia = ustrip.(u"kg/m^2", micro_out.ground_frost)
-println("Dew/frost diagnostic (micro_testrun_monthly site):")
-println("  Julia dew events (>0): ", count(>(0), dew_julia), "  max: ", maximum(dew_julia; init=0.0))
-println("  NicheMapR dew events (>0): ", count(>(0), dew_nmr), "  max: ", maximum(dew_nmr; init=0.0))
-println("  Julia frost events (>0): ", count(>(0), frost_julia), "  max: ", maximum(frost_julia; init=0.0))
-println("  NicheMapR frost events (>0): ", count(>(0), frost_nmr), "  max: ", maximum(frost_nmr; init=0.0))
-soiltemp_surface_julia = ustrip.(u"°C", uconvert.(u"°C", micro_out.soil_temperature[:, 1]))
-soiltemp_surface_nmr = ustrip.(u"°C", soiltemps_nmr[:, 1])
-for i in eachindex(dew_julia)
-    j_dew, r_dew, j_frost, r_frost = dew_julia[i] > 0, dew_nmr[i] > 0, frost_julia[i] > 0, frost_nmr[i] > 0
-    if (j_dew != r_dew) || (j_frost != r_frost)
-        println("  i=$i  Julia dew=$(round(dew_julia[i];digits=4)) frost=$(round(frost_julia[i];digits=4))  NMR dew=$(round(dew_nmr[i];digits=4)) frost=$(round(frost_nmr[i];digits=4))  Tsurf: Julia=$(round(soiltemp_surface_julia[i];digits=2)) NMR=$(round(soiltemp_surface_nmr[i];digits=2))")
-    end
-end
-
 # Test init/solve! interface produces identical results to solve
 @testset "init and solve!" begin
     cache = init(problem)

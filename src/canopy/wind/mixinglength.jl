@@ -178,12 +178,12 @@ function _shape_based_canopy_wind_profile!(buffers, boundary_layer_model;
     canopy_top_relative_humidity = first(profile.relative_humidity)
 
     wind_speed = buffers.wind_speed
-    @inbounds for i in eachindex(wind_speed)
+    for i in eachindex(wind_speed)
         wind_speed[i] = buffers.wind_attenuation[i] * canopy_top_wind_speed
     end
 
     return (; canopy_top_wind_speed, canopy_top_air_temperature, canopy_top_relative_humidity,
-        friction_velocity=profile.friction_velocity, friction_velocity_raw=profile.friction_velocity_raw,
+        friction_velocity=profile.friction_velocity,
         obukhov_length=profile.obukhov_length)
 end
 

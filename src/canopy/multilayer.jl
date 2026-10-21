@@ -127,12 +127,14 @@ temperature, and the source terms other sub-models read/write.
 function allocate_canopy(model::MultilayerCanopy, heights, boundary_layer_model)
     n_layers = n_canopy_layers(model, heights)
     canopy_projection_ratio = model.leaf_parameters.canopy_projection_ratio
+    wind = allocate_wind(model.wind_model, model.canopy_height, model.plant_area_index, boundary_layer_model, heights, n_layers)
 
     return (;
         shortwave = allocate_shortwave(model.shortwave_model, model.canopy_height, model.plant_area_index, n_layers, canopy_projection_ratio),
         longwave = allocate_longwave(model.longwave_model, model.plant_area_index, n_layers, canopy_projection_ratio),
-        wind = allocate_wind(model.wind_model, model.canopy_height, model.plant_area_index, boundary_layer_model, heights, n_layers),
-        air_profile = allocate_air_profile(model.air_profile_model, model.canopy_height, model.plant_area_index, heights, n_layers, boundary_layer_model),
+        wind,
+        air_profile = allocate_air_profile(model.air_profile_model, model.canopy_height, wind.displacement_height,
+            model.plant_area_index, heights, n_layers, boundary_layer_model),
         interception = allocate_interception(model.interception_model, model.canopy_height, model.plant_area_index, heights, n_layers, boundary_layer_model),
         leaf = (;
             leaf_body = leaf_body(model.leaf_parameters.leaf_length, model.leaf_parameters.leaf_width, canopy_projection_ratio),
@@ -168,8 +170,8 @@ canopy_longwave!(buffers, model::MultilayerCanopy; kw...) =
 canopy_wind_profile!(buffers, model::MultilayerCanopy, boundary_layer_model; kw...) =
     canopy_wind_profile!(buffers.wind, model.wind_model, boundary_layer_model; kw...)
 
-canopy_air_profile!(buffers, model::MultilayerCanopy, boundary_layer_model; kw...) =
-    canopy_air_profile!(buffers.air_profile, model.air_profile_model, boundary_layer_model; kw...)
+canopy_air_profile!(buffers, model::MultilayerCanopy, boundary_layer_model, forcing; kw...) =
+    canopy_air_profile!(buffers.air_profile, model.air_profile_model, boundary_layer_model, forcing; kw...)
 
 canopy_interception!(buffers, model::MultilayerCanopy; kw...) =
     canopy_interception!(buffers.interception, model.interception_model, model.leaf_parameters.canopy_projection_ratio; kw...)
