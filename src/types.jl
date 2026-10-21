@@ -90,8 +90,7 @@ Exchange of water at the ground surface:
 - `condensation_model::AbstractCondensationModel` — ground dew/frost formation
   (`GarrattSegalCondensation()` default, `BulkTransferCondensation()`, or
   `NoCondensation()` to switch it off)
-- `max_surface_pool` — maximum water held on the soil surface (NicheMapR
-  `maxpool`); water above it is removed as `runoff`
+- `max_surface_pool` — maximum water held on the soil surface; water above it is removed as `runoff`
 """
 @kwdef struct SurfaceModel{EVM,CDM,MSP}
     evaporation_model::EVM = BulkTransferEvaporation()
