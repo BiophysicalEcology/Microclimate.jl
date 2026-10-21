@@ -11,8 +11,7 @@ using Unitful, UnitfulMoles
 using ModelParameters, DelimitedFiles
 using SpecialFunctions, StaticArrays
 using PolyLog: reli2
-using LinearAlgebra: Tridiagonal
-using LinearSolve: LinearProblem
+using LinearAlgebra: SymTridiagonal, ldlt!, ldiv!
 using NonlinearSolveFirstOrder: NewtonRaphson
 using NonlinearSolveQuasiNewton: Broyden
 using DifferentiationInterface: prepare_jacobian, jacobian!, Cache, Constant
