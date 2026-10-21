@@ -598,15 +598,27 @@ end
 
 
 """
-    ObukhovLength()
-    InverseObukhovLength()
+    AbstractStabilityVariable
 
-How atmospheric stability is represented: by the Obukhov length, or by its
-inverse. The inverse is zero rather than infinite at neutral, so it and its
-derivatives stay finite through neutral conditions.
+How atmospheric stability is represented: [`ObukhovLength`](@ref) or
+[`InverseObukhovLength`](@ref).
 """
 abstract type AbstractStabilityVariable end
+
+"""
+    ObukhovLength()
+
+Stability as the Obukhov length (m), infinite at neutral.
+"""
 struct ObukhovLength <: AbstractStabilityVariable end
+
+"""
+    InverseObukhovLength()
+
+Stability as the inverse Obukhov length (1/m). It is zero rather than
+infinite at neutral, so it and its derivatives stay finite through neutral
+conditions.
+"""
 struct InverseObukhovLength <: AbstractStabilityVariable end
 
 """
