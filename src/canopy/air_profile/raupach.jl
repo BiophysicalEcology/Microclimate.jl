@@ -1,6 +1,6 @@
 """
     RaupachLTheoryAirProfile(; ground_velocity_std_factor=0.25, canopy_top_velocity_std_factor=1.25,
-                              min_ground_resistance=10.0u"s/m", near_field_subdivisions=20,
+                              min_ground_resistance=10.0u"s/m",
                               far_field_mode=Val(:exact), max_lagrangian_timescale=200.0u"s")
 
 Raupach's (1989) localized near-field (LNF) Lagrangian in-canopy scalar
@@ -19,10 +19,9 @@ ground-most layer's turbulent resistance plus a quasi-laminar sublayer term
 (ground-local u★, Garratt et al. 1988's sublayer_stanton); `min_ground_resistance`
 is a final floor on that combined value, guarding against a runaway ground flux.
 
-The near-field kernel is singular at zero distanceso its self term is
-resolved by subdividing the source layer's own thickness into
-`near_field_subdivisions` sub-points and averaging the kernel over them.
-Raising `near_field_subdivisions` trades runtime for accuracy.
+The near-field kernel is singular at zero distance, so its self term is the
+kernel's exact average over the source layer's own thickness, from its
+closed-form integral.
 
 `T_L` (see `canopy_heat_vapor_transport!`) is `∝ 1/friction_velocity`
 and grows further under instability via `calc_Φ_h`, which can push `T_L`
@@ -54,11 +53,10 @@ alone) that :exact omits.
   concentrations to source distributions in vegetation canopies. *Quarterly
   Journal of the Royal Meteorological Society*, 115(487), 609-632.
 """
-@kwdef struct RaupachLTheoryAirProfile{GVSF,CVSF,GR,NS,FFM,MTL} <: AbstractCanopyAirProfileModel
+@kwdef struct RaupachLTheoryAirProfile{GVSF,CVSF,GR,FFM,MTL} <: AbstractCanopyAirProfileModel
     ground_velocity_std_factor::GVSF = 0.25
     canopy_top_velocity_std_factor::CVSF = 1.25
     min_ground_resistance::GR = 10.0u"s/m"
-    near_field_subdivisions::NS = 20
     far_field_mode::FFM = Val(:exact)
     max_lagrangian_timescale::MTL = 200.0u"s"
 end
@@ -161,34 +159,31 @@ function _raupach_kernel_weight(
     return _raupach_kernel_signed(ζd) + _raupach_kernel_signed(ζr)
 end
 
+# ∫₀^ζ kₙ(t) dt for ζ ≥ 0, from ∫ log(1 - exp(-t)) dt = Li₂(exp(-t)).
+function _raupach_kernel_integral(ζ)
+    e⁻ζ = exp(-ζ)
+    return _RAUPACH_KERNEL_C₁ * (reli2(e⁻ζ) - π^2 / 6) + _RAUPACH_KERNEL_C₂ * (1 - e⁻ζ)
+end
+
 # Self-term: the kernel is singular at zero distance, so a source layer's
-# contribution to a point within its own thickness can't use a single
-# point-source evaluation. Subdivides the layer into `subdivisions` sub-points
-# and averages — a plain midpoint quadrature of the singularity. Only the
-# direct-path term is ever near-singular; the reflected term isn't.
+# contribution to a point within its own thickness is the kernel's average
+# over that thickness, from its closed-form integral. The signed kernel is
+# odd, so its integral from zero is `_raupach_kernel_integral(|ζ|)` on either
+# side of the source.
 function _raupach_self_kernel_weight(evaluation_height, source_index,
-    layer_heights, layer_thickness, inv_near_field_length, subdivisions,)
+    layer_heights, layer_thickness, inv_near_field_length,)
 
     z = evaluation_height
     j = source_index
     z₀ = layer_heights[j]
     Δz = layer_thickness[j]
     λ⁻¹ = inv_near_field_length[j]
-    N = subdivisions
+    bottom = z₀ - Δz / 2
+    top = z₀ + Δz / 2
 
-    total = 0.0
-
-    for k in 1:N
-        zₖ = z₀ - Δz / 2 + Δz * (k - 0.5) / N
-        ζd_signed = (z - zₖ) * λ⁻¹
-        s = ζd_signed >= zero(ζd_signed) ? 1.0 : -1.0
-        ζd = max(abs(ζd_signed), 1.0e-9)
-        ζr = (z + zₖ) * λ⁻¹
-
-        total += s * _raupach_kernel(ζd) + _raupach_kernel_signed(ζr)
-    end
-
-    return total / N
+    direct = _raupach_kernel_integral(abs((z - bottom) * λ⁻¹)) - _raupach_kernel_integral(abs((z - top) * λ⁻¹))
+    reflected = _raupach_kernel_integral(abs((z + top) * λ⁻¹)) - _raupach_kernel_integral(abs((z + bottom) * λ⁻¹))
+    return (direct + reflected) / (Δz * λ⁻¹)
 end
 
 # :bulk's near-field kernel evaluates kn once (at the direct distance only)
@@ -216,22 +211,22 @@ end
 # height-coincidence check, since layer_heights[1] need not sit exactly at
 # canopy_height and the two criteria disagreeing double-counts/drops the
 # singular kernel inconsistently between near_field_top and near_field[1].
-function _raupach_top_kernel_weight(::Val{:exact}, i, canopy_height, layer_heights, layer_thickness, inv_near_field_length, subdivisions)
+function _raupach_top_kernel_weight(::Val{:exact}, i, canopy_height, layer_heights, layer_thickness, inv_near_field_length)
     return i == 1 ?
-        _raupach_self_kernel_weight(canopy_height, i, layer_heights, layer_thickness, inv_near_field_length, subdivisions) :
+        _raupach_self_kernel_weight(canopy_height, i, layer_heights, layer_thickness, inv_near_field_length) :
         _raupach_kernel_weight(canopy_height, i, layer_heights, inv_near_field_length)
 end
-function _raupach_top_kernel_weight(::Val{:bulk}, i, canopy_height, layer_heights, layer_thickness, inv_near_field_length, subdivisions)
+function _raupach_top_kernel_weight(::Val{:bulk}, i, canopy_height, layer_heights, layer_thickness, inv_near_field_length)
     return i == 1 ? 0.0 : _raupach_bulk_kernel_weight(canopy_height, i, layer_heights, inv_near_field_length)
 end
 
 # Near-field weight for one (eval layer i, source layer j) pair.
-function _raupach_pair_kernel_weight(::Val{:exact}, i, j, layer_heights, layer_thickness, inv_near_field_length, subdivisions)
+function _raupach_pair_kernel_weight(::Val{:exact}, i, j, layer_heights, layer_thickness, inv_near_field_length)
     return j == i ?
-        _raupach_self_kernel_weight(layer_heights[i], j, layer_heights, layer_thickness, inv_near_field_length, subdivisions) :
+        _raupach_self_kernel_weight(layer_heights[i], j, layer_heights, layer_thickness, inv_near_field_length) :
         _raupach_kernel_weight(layer_heights[i], j, layer_heights, inv_near_field_length)
 end
-function _raupach_pair_kernel_weight(::Val{:bulk}, i, j, layer_heights, layer_thickness, inv_near_field_length, subdivisions)
+function _raupach_pair_kernel_weight(::Val{:bulk}, i, j, layer_heights, layer_thickness, inv_near_field_length)
     return j == i ? 0.0 : _raupach_bulk_kernel_weight(layer_heights[i], j, layer_heights, inv_near_field_length)
 end
 
@@ -407,7 +402,6 @@ function canopy_heat_vapor_transport!(buffers, model::RaupachLTheoryAirProfile, 
         ground_velocity_std_factor,
         canopy_top_velocity_std_factor,
         min_ground_resistance,
-        near_field_subdivisions,
         max_lagrangian_timescale,
     ) = model
 
@@ -548,7 +542,6 @@ function canopy_heat_vapor_transport!(buffers, model::RaupachLTheoryAirProfile, 
             z,
             Δz,
             λ⁻¹,
-            near_field_subdivisions,
         )
 
         Cn_top_H += Hn_weight[j] * w
@@ -570,7 +563,6 @@ function canopy_heat_vapor_transport!(buffers, model::RaupachLTheoryAirProfile, 
                 z,
                 Δz,
                 λ⁻¹,
-                near_field_subdivisions,
             )
 
             Cn_H += Hn_weight[j] * w

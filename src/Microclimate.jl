@@ -10,6 +10,7 @@ using OrdinaryDiffEqAdamsBashforthMoulton: AB3, AB4, AB5, ABM32, ABM43, ABM54
 using Unitful, UnitfulMoles
 using ModelParameters, DelimitedFiles
 using SpecialFunctions, StaticArrays
+using PolyLog: reli2
 using LinearAlgebra: Tridiagonal
 using LinearSolve: LinearProblem
 using NonlinearSolveFirstOrder: NewtonRaphson
