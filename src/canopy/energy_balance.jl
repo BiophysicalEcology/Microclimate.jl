@@ -66,7 +66,7 @@ above-canopy wind/temperature profile, and rain interception are computed
 once per call (none depends on leaf temperature). Longwave, the in-canopy
 air profile, and per-layer leaf temperature are then solved together by
 [`converge_canopy!`](@ref), dispatching on `model.convergence_model`
-([`NewtonCanopyConvergence`](@ref)).
+([`NonlinearCanopyConvergence`](@ref)).
 
 A wetted leaf surface ([`wet_canopy_fraction`](@ref)) blends stomatal
 conductance toward [`WET_SURFACE_CONDUCTANCE`](@ref)
@@ -231,7 +231,7 @@ end
         initial_wind, convergence_model; site, vapour_pressure_equation, soil_hydraulic_model)
 
 Solve the hour's leaf/air-temperature state per `convergence_model`
-([`NewtonCanopyConvergence`](@ref)). `initial_wind` is the hour's
+([`NonlinearCanopyConvergence`](@ref)). `initial_wind` is the hour's
 [`canopy_wind_profile!`](@ref) result, whose canopy-top air temperature and
 humidity anchor the canopy-top boundary. Returns `(longwave_result,
 iterations, canopy_top_air_temperature, canopy_top_relative_humidity,

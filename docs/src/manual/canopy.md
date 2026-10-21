@@ -6,7 +6,7 @@ canopy. [`MultilayerCanopy`](@ref) resolves the canopy into layers (one per
 `MicroModel.atmosphere.heights` entry at or below `canopy_height`) and solves shortwave, longwave, 
 wind, air-profile, interception and leaf temperature sub-models per layer, each hour, 
 solving leaf temperature, air temperature, humidity and stability together with
-[`NewtonCanopyConvergence`](@ref), and converging the canopy against the soil surface temperature.
+[`NonlinearCanopyConvergence`](@ref), and converging the canopy against the soil surface temperature.
 
 The default wind model, [`ExponentialCanopyWindAttenuation`](@ref), requires at least
 10 canopy layers (it replaces the bottom tenth of the profile with a local log-law

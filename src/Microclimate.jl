@@ -61,7 +61,7 @@ export AbstractStomatalConductanceModel, PrescribedStomatalConductance,
 export AbstractLeafConvectionModel, ElaborateLeafConvection, SimpleLeafConvection
 export leaf_body
 export LeafEvaporationParameters
-export AbstractCanopyConvergenceModel, NewtonCanopyConvergence
+export AbstractCanopyConvergenceModel, NonlinearCanopyConvergence
 
 # Apparent heat capacity (latent-heat-of-fusion treatment in snow)
 export AbstractApparentHeatCapacity, BonacinaStep, TanhSmoothed, Gaussian, WestermannSigmoid
@@ -279,7 +279,7 @@ include("canopy/convergence/abstract.jl")
 include("canopy/multilayer.jl")
 include("canopy/energy_balance.jl")
 include("canopy/residual.jl")
-include("canopy/convergence/newton.jl")
+include("canopy/convergence/nonlinear.jl")
 
 # Top-level config, parameters, problem, state, buffers, and cache types
 include("types.jl")

@@ -9,7 +9,7 @@
                        leaf_parameters=LeafParameters(),
                        stomatal_model=PrescribedStomatalConductance(),
                        leaf_convection_model=ElaborateLeafConvection(),
-                       convergence_model=NewtonCanopyConvergence())
+                       convergence_model=NonlinearCanopyConvergence())
 
 Multi-layer canopy structure resolved by height. Splits the canopy into as
 many layers as there are `MicroModel.atmosphere.heights` entries at or below
@@ -55,7 +55,7 @@ Composes swappable sub-models the same way `MicroModel` composes
   [`SimpleLeafConvection`](@ref))
 - `convergence_model::AbstractCanopyConvergenceModel` — how the hourly
   leaf/air-temperature state is solved (default
-  [`NewtonCanopyConvergence`](@ref))
+  [`NonlinearCanopyConvergence`](@ref))
 
 Ground reflectance is not stored here — supplied to
 [`canopy_shortwave!`](@ref) by the caller (e.g. `Site.albedo`), matching how
@@ -74,7 +74,7 @@ other radiation models read albedo from their caller.
     leaf_parameters::LP = LeafParameters()
     stomatal_model::SM = PrescribedStomatalConductance()
     leaf_convection_model::LCM = ElaborateLeafConvection()
-    convergence_model::CVM = NewtonCanopyConvergence()
+    convergence_model::CVM = NonlinearCanopyConvergence()
 end
 
 """
@@ -96,7 +96,7 @@ function example_multilayer_canopy(;
     leaf_parameters = LeafParameters(),
     stomatal_model = PrescribedStomatalConductance(),
     leaf_convection_model = ElaborateLeafConvection(),
-    convergence_model = NewtonCanopyConvergence(),
+    convergence_model = NonlinearCanopyConvergence(),
 )
     MultilayerCanopy(;
         canopy_height, plant_area_index, woody_area_fraction, shortwave_model, longwave_model, wind_model,
