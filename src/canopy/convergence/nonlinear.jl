@@ -42,7 +42,7 @@ function allocate_canopy_convergence(convergence_model::NonlinearCanopyConvergen
         NonlinearFunction(canopy_nonlinear_residual!; jac=canopy_nonlinear_jacobian!, jac_prototype=zeros(n_state, n_state)),
         state, parameters)
     solver = SciMLBase.init(problem, convergence_model.algorithm; abstol=convergence_model.abstol, maxiters=convergence_model.maxiters)
-    return (; solver, parameters, forcing, state, residual)
+    return (; solver, parameters, forcing, state, residual, has_jacobian=Ref(false))
 end
 
 canopy_nonlinear_residual!(residual, state, parameters) =
@@ -60,7 +60,7 @@ function converge_canopy!(buffers, model::MultilayerCanopy, boundary_layer_model
     (; environment_instant, zenith_angle, ground_temperature, ground_emissivity, ground_relative_humidity,
        leaf_water_potential) = inputs
     (; atmospheric_pressure, reference_temperature, reference_wind_speed, reference_humidity) = environment_instant
-    (; solver, parameters, forcing, state, residual) = buffers.convergence
+    (; solver, parameters, forcing, state, residual, has_jacobian) = buffers.convergence
     (; leaf_temperature, sensible_heat_source, potential_evaporation_mass_flow, leaf_body) = buffers.leaf
     air = buffers.air_profile
     (; layer_transmission) = buffers.longwave
@@ -87,7 +87,11 @@ function converge_canopy!(buffers, model::MultilayerCanopy, boundary_layer_model
     state[3n_layers + 1] = ustrip(u"m^-1", initial_wind.inverse_obukhov_length)
 
     SciMLBase.reinit!(solver, state; p=parameters)
+    # reinit! resets the solver's Jacobian reuse; take the first step with the
+    # previous solve's Jacobian, and let the reuse policy refresh it from there.
+    has_jacobian[] && SciMLBase.step!(solver; recompute_jacobian=false)
     SciMLBase.solve!(solver)
+    has_jacobian[] = true
     SciMLBase.successful_retcode(solver.retcode) ||
         @warn "NonlinearCanopyConvergence did not converge" solver.retcode maxlog=5
 
