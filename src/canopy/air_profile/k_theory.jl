@@ -93,7 +93,7 @@ end
 function canopy_heat_vapor_transport!(buffers, ::KTheoryAirProfile, boundary_layer_model,
     forcing::CanopyAirProfileForcing; site, vapour_pressure_equation=GoffGratch(), ground_coupling,
 )
-    (; friction_velocity, wind_speed, canopy_top_air_temperature, canopy_top_relative_humidity, ground_temperature,
+    (; above_canopy_column, wind_speed, canopy_top_air_temperature, canopy_top_relative_humidity, ground_temperature,
        ground_relative_humidity, sensible_heat_source, evaporation_mass_flow, atmospheric_pressure) = forcing
     (;
         canopy_height, displacement_height, plant_area_index, layer_heights, layer_spacing, relative_eddy_diffusivity,
@@ -120,7 +120,7 @@ function canopy_heat_vapor_transport!(buffers, ::KTheoryAirProfile, boundary_lay
 
     h = canopy_height
     d₀ = displacement_height
-    uₛ = friction_velocity
+    uₛ = above_canopy_column.friction_velocity
     κ = boundary_layer_model.karman_constant
     p = atmospheric_pressure
 
@@ -145,7 +145,7 @@ function canopy_heat_vapor_transport!(buffers, ::KTheoryAirProfile, boundary_lay
 
     # Canopy-top eddy diffusivity
     ρcp = calc_ρ_cp(T_top)
-    K₀ = κ * uₛ * max(h - d₀, 1.0e-3u"m") # numerical floor, not a physical parameter
+    K₀ = κ * uₛ * max(h - d₀, 1.0e-3u"m") * above_canopy_column.enhancement # numerical floor, not a physical parameter
 
     # Boundary conductances g[0] (layer 1 <-> layer 2) .. g[n] (layer n <-> ground): heat in W/m^2/K;
     # vapor in m/s, with no ρ_cp, since a vapor-density gradient times K is already a mass flux

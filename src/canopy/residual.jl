@@ -134,9 +134,11 @@ function evaluate_canopy!(residual, state, buffers, model::MultilayerCanopy, bou
         vapour_pressure_equation).vapour_density
     initial_top_vapor_density = wet_air_properties(forcing.canopy_top_air_temperature, forcing.canopy_top_relative_humidity,
         atmospheric_pressure; vapour_pressure_equation).vapour_density
-    boundary = canopy_top_flux_boundary(boundary_layer_model, model.canopy_height, buffers.wind.displacement_height,
-        buffers.wind.roughness_length, buffers.wind.above_canopy_profile.heights[2], wind.friction_velocity,
-        wind.inverse_obukhov_length, sum(sensible_heat_source), sum(evaporation_mass_flow) / 1.0u"m^2",
+    column = AboveCanopyColumn(; canopy_height=model.canopy_height, displacement_height=buffers.wind.displacement_height,
+        roughness_length=buffers.wind.roughness_length, friction_velocity=wind.friction_velocity,
+        inverse_obukhov_length=wind.inverse_obukhov_length, enhancement=buffers.roughness_sublayer.enhancement)
+    boundary = canopy_top_flux_boundary(boundary_layer_model, column, buffers.wind.above_canopy_profile.heights[2],
+        sum(sensible_heat_source), sum(evaporation_mass_flow) / 1.0u"m^2",
         ground_temperature, ground_vapor_density, reference_temperature, reference_vapor_density,
         forcing.canopy_top_air_temperature, initial_top_vapor_density)
     in_bounds &= lo <= boundary.top_temperature <= hi
@@ -145,8 +147,7 @@ function evaluate_canopy!(residual, state, buffers, model::MultilayerCanopy, bou
         vapour_pressure_equation).vapour_density
     canopy_top_relative_humidity = clamp(boundary.top_vapour_density / top_saturation, 0.0, 1.0)
 
-    air_forcing = CanopyAirProfileForcing(; friction_velocity=wind.friction_velocity,
-        inverse_obukhov_length=wind.inverse_obukhov_length, wind_speed, canopy_top_air_temperature,
+    air_forcing = CanopyAirProfileForcing(; above_canopy_column=column, wind_speed, canopy_top_air_temperature,
         canopy_top_relative_humidity, ground_temperature, ground_relative_humidity, sensible_heat_source,
         evaporation_mass_flow, leaf_temperature, atmospheric_pressure)
     canopy_heat_vapor_transport!(air, model.air_profile_model, boundary_layer_model, air_forcing;

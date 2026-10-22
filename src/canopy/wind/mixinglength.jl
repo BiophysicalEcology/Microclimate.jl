@@ -192,8 +192,7 @@ function _shape_based_canopy_wind_profile!(buffers, boundary_layer_model;
 end
 
 """
-    canopy_top_flux_boundary(boundary_layer_model, canopy_height, displacement_height, roughness_length,
-                              reference_height, friction_velocity, inverse_obukhov_length,
+    canopy_top_flux_boundary(boundary_layer_model, column::AboveCanopyColumn, reference_height,
                               total_sensible_flux, total_latent_flux, ground_temperature, ground_vapour_density,
                               reference_temperature, reference_vapour_density, previous_top_temperature,
                               previous_top_vapour_density; max_resistance=2000.0u"s/m")
@@ -220,18 +219,18 @@ canopy conditions the algebraic steady state can then be physically
 unreachable in an hour. Damped exponentially toward
 `previous_top_temperature`/`previous_top_vapour_density` by that residence time.
 """
-function canopy_top_flux_boundary(boundary_layer_model, canopy_height, displacement_height, roughness_length,
-    reference_height, friction_velocity, inverse_obukhov_length,
+function canopy_top_flux_boundary(boundary_layer_model, column::AboveCanopyColumn, reference_height,
     total_sensible_flux, total_latent_flux, ground_temperature, ground_vapour_density,
     reference_temperature, reference_vapour_density, previous_top_temperature, previous_top_vapour_density;
     max_resistance=2000.0u"s/m",
 )
+    (; canopy_height, displacement_height, roughness_length, friction_velocity, inverse_obukhov_length, enhancement) = column
     κ = boundary_layer_model.karman_constant
     γ = boundary_layer_model.dyer_constant
-    z_top = max(canopy_height - displacement_height, 1.0e-3u"m")
+    z_top = _canopy_top_depth(column)
     z_ref = max(reference_height - displacement_height, 1.0e-3u"m")
 
-    ground_resistance = min(canopy_height / (κ * friction_velocity * z_top), max_resistance)
+    ground_resistance = min(canopy_height / (κ * friction_velocity * z_top * enhancement), max_resistance)
 
     log_ratio = log(z_ref / roughness_length)
     ψ_h = calc_ψ_h(stability_parameter(InverseObukhovLength(), z_ref, inverse_obukhov_length), γ,

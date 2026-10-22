@@ -356,7 +356,7 @@ _raupach_layer_ρ_cp(::Val{:bulk}, _ρ_cp, air_temperature_prev, i) = calc_ρ_cp
 function canopy_heat_vapor_transport!(buffers, model::RaupachLTheoryAirProfile, boundary_layer_model,
     forcing::CanopyAirProfileForcing; site, vapour_pressure_equation=GoffGratch(), ground_coupling,
 )
-    (; friction_velocity, inverse_obukhov_length, wind_speed, canopy_top_air_temperature, canopy_top_relative_humidity,
+    (; above_canopy_column, wind_speed, canopy_top_air_temperature, canopy_top_relative_humidity,
        ground_temperature, ground_relative_humidity, sensible_heat_source, evaporation_mass_flow,
        atmospheric_pressure) = forcing
     ground_roughness_height = site.roughness_height
@@ -391,7 +391,7 @@ function canopy_heat_vapor_transport!(buffers, model::RaupachLTheoryAirProfile, 
 
     h = canopy_height
     d = displacement_height
-    u★ = friction_velocity
+    u★ = above_canopy_column.friction_velocity
     H = sensible_heat_source
     E = evaporation_mass_flow
     p = atmospheric_pressure
@@ -455,22 +455,22 @@ function canopy_heat_vapor_transport!(buffers, model::RaupachLTheoryAirProfile, 
 # air_temperature[i] = T_top + far_field + ... is assembled, outside this function) — so the caller recovers
 #  C_f(z) = C_f(z_R) + (C_f(z) − C_f(z_R)) exactly as eq. 19a's rearranged form.
 
-    # Match K(h) = σw(h)²T_L to the above-canopy MOST diffusivity:
+    # Match K(h) = σw(h)²T_L to the above-canopy diffusivity, e times its MOST value:
     #
-    #   K(h) = κu★(h-d)/Φh
-    #   a₂ = κ(1-d/h)/(a₁²Φh)
+    #   K(h) = eκu★(h-d)/Φh
+    #   a₂ = eκ(1-d/h)/(a₁²Φh)
     #   T_L = min(a₂h/u★, T_L,max)
-    z★ = max(h - d, 1.0e-3u"m")
-
+    e = above_canopy_column.enhancement
     Φh = calc_Φ_h(
-        stability_parameter(InverseObukhovLength(), z★, inverse_obukhov_length),
+        stability_parameter(InverseObukhovLength(), canopy_top_stability_height(above_canopy_column),
+            above_canopy_column.inverse_obukhov_length),
         γ,
         boundary_layer_model.stable_Φ_h_coefficient,
         boundary_layer_model.min_stable_Φ_h,
         boundary_layer_model.max_stable_Φ_h,
     )
 
-    a₂ = κ * (1.0 - d / h) / (a₁^2 * Φh)
+    a₂ = κ * e * (1.0 - d / h) / (a₁^2 * Φh)
     TL = min(a₂ * h / u★, max_lagrangian_timescale)
 
     σw_mean = (a₁ + a₀) * u★ / 2

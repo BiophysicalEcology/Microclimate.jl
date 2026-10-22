@@ -1,5 +1,5 @@
 using Microclimate
-using Microclimate: CanopyAirProfileForcing, GroundExchangeForcing, allocate_air_profile, canopy_heat_vapor_transport!,
+using Microclimate: AboveCanopyColumn, CanopyAirProfileForcing, GroundExchangeForcing, allocate_air_profile, canopy_heat_vapor_transport!,
     wet_air_properties
 using Unitful
 using Test
@@ -23,7 +23,9 @@ mid_evaporation = [i == mid_layer ? 1.0e-3u"g/s" : 0.0u"g/s" for i in 1:n_layers
 
 forcing(; sensible_heat_source = no_heat, evaporation_mass_flow = no_evaporation,
     friction_velocity = 0.3u"m/s", ground_temperature = T) = CanopyAirProfileForcing(;
-    friction_velocity, inverse_obukhov_length = 0.0u"m^-1", wind_speed = fill(1.0u"m/s", n_layers),
+    above_canopy_column = AboveCanopyColumn(; canopy_height, displacement_height, roughness_length = 0.1u"m",
+        friction_velocity, inverse_obukhov_length = 0.0u"m^-1", enhancement = 1.0),
+    wind_speed = fill(1.0u"m/s", n_layers),
     canopy_top_air_temperature = T, canopy_top_relative_humidity = 0.5,
     ground_temperature, ground_relative_humidity = 0.5,
     sensible_heat_source, evaporation_mass_flow,

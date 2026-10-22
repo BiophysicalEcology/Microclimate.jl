@@ -1,5 +1,5 @@
 using Microclimate
-using Microclimate: canopy_top_flux_boundary
+using Microclimate: AboveCanopyColumn, canopy_top_flux_boundary
 using Unitful
 using Test
 
@@ -15,9 +15,11 @@ reference_vapour_density = 0.017u"kg/m^3"
 previous_top_temperature = 299.0u"K"
 previous_top_vapour_density = 0.0175u"kg/m^3"
 
+column(; friction_velocity, displacement = displacement_height) = AboveCanopyColumn(; canopy_height,
+    displacement_height = displacement, roughness_length, friction_velocity, inverse_obukhov_length = 0.0u"m^-1", enhancement = 1.0)
+
 @testset "canopy_top_flux_boundary: windy conditions barely damped" begin
-    result = canopy_top_flux_boundary(boundary_layer_model, canopy_height, displacement_height, roughness_length,
-        reference_height, 1.0u"m/s", 0.0u"m^-1",
+    result = canopy_top_flux_boundary(boundary_layer_model, column(; friction_velocity = 1.0u"m/s"), reference_height,
         50.0u"W/m^2", 1.0e-5u"kg/m^2/s", ground_temperature, ground_vapour_density,
         reference_temperature, reference_vapour_density, previous_top_temperature, previous_top_vapour_density)
 
@@ -30,8 +32,8 @@ end
     # Near-zero friction velocity pins resistances at max_resistance, so
     # residence time scales with z_top alone (only displacement_height
     # varies below) -- bigger z_top should damp closer to previous_top.
-    run(disp) = canopy_top_flux_boundary(boundary_layer_model, canopy_height, disp, roughness_length,
-        reference_height, 1.0e-4u"m/s", 0.0u"m^-1",
+    run(disp) = canopy_top_flux_boundary(boundary_layer_model,
+        column(; friction_velocity = 1.0e-4u"m/s", displacement = disp), reference_height,
         50.0u"W/m^2", 1.0e-5u"kg/m^2/s", ground_temperature, ground_vapour_density,
         reference_temperature, reference_vapour_density, previous_top_temperature, previous_top_vapour_density)
 
@@ -48,8 +50,7 @@ end
 @testset "canopy_top_flux_boundary: no-op when already at the steady state" begin
     # A steady state with zero flux and previous == reference/ground-consistent point should stay put
     # regardless of damping strength (target == anchor).
-    result = canopy_top_flux_boundary(boundary_layer_model, canopy_height, displacement_height, roughness_length,
-        reference_height, 1.0e-4u"m/s", 0.0u"m^-1",
+    result = canopy_top_flux_boundary(boundary_layer_model, column(; friction_velocity = 1.0e-4u"m/s"), reference_height,
         0.0u"W/m^2", 0.0u"kg/m^2/s", reference_temperature, reference_vapour_density,
         reference_temperature, reference_vapour_density, reference_temperature, reference_vapour_density)
 
