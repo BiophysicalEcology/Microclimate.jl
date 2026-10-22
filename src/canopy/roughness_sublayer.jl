@@ -15,18 +15,21 @@ struct NoRoughnessSublayer <: AbstractRoughnessSublayer end
 """
     canopy_top_enhancement(model::AbstractRoughnessSublayer, canopy_height, plant_area_index, ground_roughness_height, karman_constant)
 
-Ratio of the eddy diffusivity at canopy top to its Monin-Obukhov value.
+Ratio of the eddy diffusivity at canopy top to its Monin-Obukhov value in fully turbulent flow.
 """
 function canopy_top_enhancement end
 
 canopy_top_enhancement(::NoRoughnessSublayer, canopy_height, plant_area_index, ground_roughness_height, karman_constant) = 1.0
 
 """
-    CanopyTopMixingEnhancement(; max_enhancement=3.0, drag_coefficient=0.3, max_friction_velocity_ratio=0.3)
+    CanopyTopMixingEnhancement(; max_enhancement=3.0, drag_coefficient=0.3, max_friction_velocity_ratio=0.3,
+        transition_reynolds_number=1000.0)
 
 Canopy-top diffusivity `e = 1 + (max_enhancement - 1)·closure` times its Monin-Obukhov value,
 fading with height via [`stretched_height`](@ref). `closure` is how far `u★/U_h` has risen from
-bare ground toward `max_friction_velocity_ratio` (Raupach 1994).
+bare ground toward `max_friction_velocity_ratio` (Raupach 1994). Each hour the enhancement
+fades by `Re²/(Re² + transition_reynolds_number²)` with canopy Reynolds number `Re = U_h·h/ν`
+(0 switches the fade off).
 
 # References
 - Raupach, M. R. (1994). Simplified expressions for vegetation roughness length and zero-plane
@@ -34,10 +37,11 @@ bare ground toward `max_friction_velocity_ratio` (Raupach 1994).
 - Raupach, M. R., Finnigan, J. J., & Brunet, Y. (1996). Coherent eddies and turbulence in vegetation
   canopies: the mixing-layer analogy. *Boundary-Layer Meteorology*, 78, 351-382.
 """
-@kwdef struct CanopyTopMixingEnhancement{E,C,R} <: AbstractRoughnessSublayer
+@kwdef struct CanopyTopMixingEnhancement{E,C,R,T} <: AbstractRoughnessSublayer
     max_enhancement::E = 3.0
     drag_coefficient::C = 0.3
     max_friction_velocity_ratio::R = 0.3
+    transition_reynolds_number::T = 1000.0
 end
 
 function canopy_top_enhancement(model::CanopyTopMixingEnhancement, canopy_height, plant_area_index,
@@ -49,6 +53,23 @@ function canopy_top_enhancement(model::CanopyTopMixingEnhancement, canopy_height
     ratio = min(sqrt(bare^2 + drag_coefficient * plant_area_index / 2), max_friction_velocity_ratio)
     closure = (ratio - bare) / (max_friction_velocity_ratio - bare)
     return 1.0 + (max_enhancement - 1.0) * closure
+end
+
+"""
+    turbulent_enhancement(model::AbstractRoughnessSublayer, enhancement, canopy_height, canopy_top_wind_speed, kinematic_viscosity)
+
+The hour's canopy-top enhancement, from its fully turbulent value `enhancement`.
+"""
+function turbulent_enhancement end
+
+turbulent_enhancement(::NoRoughnessSublayer, enhancement, canopy_height, canopy_top_wind_speed, kinematic_viscosity) = enhancement
+
+function turbulent_enhancement(model::CanopyTopMixingEnhancement, enhancement, canopy_height, canopy_top_wind_speed,
+    kinematic_viscosity,
+)
+    reynolds_number = uconvert(NoUnits, canopy_top_wind_speed * canopy_height / kinematic_viscosity)
+    fade = reynolds_number^2 / (reynolds_number^2 + model.transition_reynolds_number^2)
+    return 1.0 + (enhancement - 1.0) * fade
 end
 
 """

@@ -62,6 +62,9 @@ end
     enhancement(model) = canopy_top_enhancement(model, canopy_height, 5.0, 0.004u"m", boundary_layer_model.karman_constant)
     @test enhancement(NoRoughnessSublayer()) == 1.0
     @test enhancement(CanopyTopMixingEnhancement()) ≈ 3.0
+    # Fades to 1 in slow flow over a short canopy
+    fade(u) = Microclimate.turbulent_enhancement(CanopyTopMixingEnhancement(), 3.0, 0.05u"m", u, 1.5e-5u"m^2/s")
+    @test fade(0.01u"m/s") < 1.1 && fade(5.0u"m/s") > 2.9
 
     column(e) = AboveCanopyColumn(; canopy_height, displacement_height, friction_velocity = 0.5u"m/s",
         inverse_obukhov_length = -0.01u"m^-1", enhancement = e)
