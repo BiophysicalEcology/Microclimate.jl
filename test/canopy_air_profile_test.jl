@@ -23,7 +23,7 @@ mid_evaporation = [i == mid_layer ? 1.0e-3u"g/s" : 0.0u"g/s" for i in 1:n_layers
 
 forcing(; sensible_heat_source = no_heat, evaporation_mass_flow = no_evaporation,
     friction_velocity = 0.3u"m/s", ground_temperature = T) = CanopyAirProfileForcing(;
-    above_canopy_column = AboveCanopyColumn(; canopy_height, displacement_height, roughness_length = 0.1u"m",
+    above_canopy_column = AboveCanopyColumn(; canopy_height, displacement_height,
         friction_velocity, inverse_obukhov_length = 0.0u"m^-1", enhancement = 1.0),
     wind_speed = fill(1.0u"m/s", n_layers),
     canopy_top_air_temperature = T, canopy_top_relative_humidity = 0.5,

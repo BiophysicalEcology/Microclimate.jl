@@ -6,7 +6,6 @@ using Test
 boundary_layer_model = MoninObukhov()
 canopy_height = 20.0u"m"
 displacement_height = 14.0u"m"
-roughness_length = 2.0u"m"
 reference_height = 45.0u"m"
 ground_temperature = 298.0u"K"
 reference_temperature = 300.0u"K"
@@ -16,7 +15,7 @@ previous_top_temperature = 299.0u"K"
 previous_top_vapour_density = 0.0175u"kg/m^3"
 
 column(; friction_velocity, displacement = displacement_height) = AboveCanopyColumn(; canopy_height,
-    displacement_height = displacement, roughness_length, friction_velocity, inverse_obukhov_length = 0.0u"m^-1", enhancement = 1.0)
+    displacement_height = displacement, friction_velocity, inverse_obukhov_length = 0.0u"m^-1", enhancement = 1.0)
 
 @testset "canopy_top_flux_boundary: windy conditions barely damped" begin
     result = canopy_top_flux_boundary(boundary_layer_model, column(; friction_velocity = 1.0u"m/s"), reference_height,
