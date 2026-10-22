@@ -40,7 +40,7 @@ Composes swappable sub-models the same way `MicroModel` composes
 - `ground_coupling::AbstractGroundCoupling` — ground resistance (default
   [`FloorTurbulence`](@ref); see also [`SakaguchiZeng2009`](@ref), [`ProfileGroundResistance`](@ref))
 - `roughness_sublayer::AbstractRoughnessSublayer` — mixing just above canopy top
-  (default [`NoRoughnessSublayer`](@ref))
+  (default [`CanopyTopMixingEnhancement`](@ref); [`NoRoughnessSublayer`](@ref) to switch it off)
 - `interception_model::AbstractCanopyInterceptionModel` — rain interception
   (default [`NoInterception`](@ref): off)
 - `condensation_model::AbstractCondensationModel` — leaf dew/frost formation
@@ -74,7 +74,7 @@ other radiation models read albedo from their caller.
     wind_model::WM = ExponentialCanopyWindAttenuation()
     air_profile_model::APM = RaupachLTheoryAirProfile()
     ground_coupling::GC = FloorTurbulence()
-    roughness_sublayer::RS = NoRoughnessSublayer()
+    roughness_sublayer::RS = CanopyTopMixingEnhancement()
     interception_model::IM = NoInterception()
     condensation_model::CDM = MonteithLeafCondensation()
     leaf_parameters::LP = LeafParameters()
@@ -98,7 +98,7 @@ function example_multilayer_canopy(;
     wind_model = ExponentialCanopyWindAttenuation(),
     air_profile_model = RaupachLTheoryAirProfile(),
     ground_coupling = FloorTurbulence(),
-    roughness_sublayer = NoRoughnessSublayer(),
+    roughness_sublayer = CanopyTopMixingEnhancement(),
     interception_model = NoInterception(),
     condensation_model = MonteithLeafCondensation(),
     leaf_parameters = LeafParameters(),
@@ -134,13 +134,17 @@ function allocate_canopy(model::MultilayerCanopy, heights, boundary_layer_model;
         "lowest canopy layer height ($lowest_layer_height) must be above the ground roughness height ($(site.roughness_height))"))
     canopy_projection_ratio = model.leaf_parameters.canopy_projection_ratio
     wind = allocate_wind(model.wind_model, model.canopy_height, model.plant_area_index, boundary_layer_model, heights, n_layers)
+    enhancement = canopy_top_enhancement(model.roughness_sublayer, model.canopy_height, sum(model.plant_area_index),
+        site.roughness_height, boundary_layer_model.karman_constant)
+    sublayer_top = wind.displacement_height + enhancement * (model.canopy_height - wind.displacement_height)
+    last(heights) < sublayer_top &&
+        @warn "Reference height $(last(heights)) is within the roughness sublayer (top ≈ $(round(u"m", sublayer_top; digits=1)))" maxlog=1
 
     buffers = (;
         shortwave = allocate_shortwave(model.shortwave_model, model.canopy_height, model.plant_area_index, n_layers, canopy_projection_ratio),
         longwave = allocate_longwave(model.longwave_model, model.plant_area_index, n_layers, canopy_projection_ratio),
         wind,
-        roughness_sublayer = (; enhancement=canopy_top_enhancement(model.roughness_sublayer, model.canopy_height,
-            sum(model.plant_area_index), site.roughness_height, boundary_layer_model.karman_constant)),
+        roughness_sublayer = (; enhancement),
         air_profile = allocate_air_profile(model.air_profile_model, model.canopy_height, wind.displacement_height,
             model.plant_area_index, heights, n_layers, boundary_layer_model),
         interception = allocate_interception(model.interception_model, model.canopy_height, model.plant_area_index, heights, n_layers, boundary_layer_model),

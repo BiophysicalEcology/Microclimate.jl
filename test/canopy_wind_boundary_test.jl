@@ -1,7 +1,9 @@
 using Microclimate
-using Microclimate: AboveCanopyColumn, canopy_top_flux_boundary
+using Microclimate: AboveCanopyColumn, canopy_top_enhancement, canopy_top_flux_boundary, column_heat_resistance
 using Unitful
 using Test
+
+include("helpers.jl")
 
 boundary_layer_model = MoninObukhov()
 canopy_height = 20.0u"m"
@@ -54,4 +56,17 @@ end
         reference_temperature, reference_vapour_density, reference_temperature, reference_vapour_density)
 
     @test ustrip(u"K", result.top_temperature) ≈ ustrip(u"K", reference_temperature) atol=1e-6
+end
+
+@testset "roughness sublayer" begin
+    enhancement(model) = canopy_top_enhancement(model, canopy_height, 5.0, 0.004u"m", boundary_layer_model.karman_constant)
+    @test enhancement(NoRoughnessSublayer()) == 1.0
+    @test enhancement(CanopyTopMixingEnhancement()) ≈ 3.0
+
+    column(e) = AboveCanopyColumn(; canopy_height, displacement_height, friction_velocity = 0.5u"m/s",
+        inverse_obukhov_length = -0.01u"m^-1", enhancement = e)
+    R(e, z₁, z₂) = column_heat_resistance(column(e), boundary_layer_model, z₁, z₂)
+    @test R(3.0, canopy_height, 30.0u"m") + R(3.0, 30.0u"m", reference_height) ≈ R(3.0, canopy_height, reference_height)
+    @test R(3.0, canopy_height, reference_height) < R(1.0, canopy_height, reference_height)
+    @test allocations(column_heat_resistance, column(3.0), boundary_layer_model, canopy_height, reference_height) == 0
 end
