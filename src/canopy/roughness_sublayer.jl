@@ -22,6 +22,36 @@ function canopy_top_enhancement end
 canopy_top_enhancement(::NoRoughnessSublayer, canopy_height, plant_area_index, ground_roughness_height, karman_constant) = 1.0
 
 """
+    CanopyTopMixingEnhancement(; max_enhancement=3.0, drag_coefficient=0.3, max_friction_velocity_ratio=0.3)
+
+Canopy-top diffusivity `e = 1 + (max_enhancement - 1)·closure` times its Monin-Obukhov value,
+fading with height via [`stretched_height`](@ref). `closure` is how far `u★/U_h` has risen from
+bare ground toward `max_friction_velocity_ratio` (Raupach 1994).
+
+# References
+- Raupach, M. R. (1994). Simplified expressions for vegetation roughness length and zero-plane
+  displacement as functions of canopy height and area index. *Boundary-Layer Meteorology*, 71, 211-216.
+- Raupach, M. R., Finnigan, J. J., & Brunet, Y. (1996). Coherent eddies and turbulence in vegetation
+  canopies: the mixing-layer analogy. *Boundary-Layer Meteorology*, 78, 351-382.
+"""
+@kwdef struct CanopyTopMixingEnhancement{E,C,R} <: AbstractRoughnessSublayer
+    max_enhancement::E = 3.0
+    drag_coefficient::C = 0.3
+    max_friction_velocity_ratio::R = 0.3
+end
+
+function canopy_top_enhancement(model::CanopyTopMixingEnhancement, canopy_height, plant_area_index,
+    ground_roughness_height, karman_constant,
+)
+    (; max_enhancement, drag_coefficient, max_friction_velocity_ratio) = model
+    bare = min(karman_constant / log(canopy_height / ground_roughness_height), max_friction_velocity_ratio)
+    bare >= max_friction_velocity_ratio && return float(max_enhancement)
+    ratio = min(sqrt(bare^2 + drag_coefficient * plant_area_index / 2), max_friction_velocity_ratio)
+    closure = (ratio - bare) / (max_friction_velocity_ratio - bare)
+    return 1.0 + (max_enhancement - 1.0) * closure
+end
+
+"""
     AboveCanopyColumn(; canopy_height, displacement_height, friction_velocity, inverse_obukhov_length, enhancement)
 
 The hour's air column above the canopy.
