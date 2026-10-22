@@ -58,12 +58,12 @@ Pairing [`MoistureResponsiveStomatalConductance`](@ref) with
 so leaf temperature, through stomatal closure:
 
 ```@example canopy_workflow
-config = MicroConfig(; soil_moisture_strategy = DynamicSoilMoisture())
+soil_moisture_strategy = DynamicSoilMoisture()
 n = length(Microclimate.DEFAULT_DEPTHS)
 
-wet_out = solve(example_microclimate_problem(; heights, canopy_model, config,
+wet_out = solve(example_microclimate_problem(; heights, canopy_model, soil_moisture_strategy,
     initial_soil_moisture = fill(0.35, n)))
-dry_out = solve(example_microclimate_problem(; heights, canopy_model, config,
+dry_out = solve(example_microclimate_problem(; heights, canopy_model, soil_moisture_strategy,
     initial_soil_moisture = fill(0.03, n)))
 
 wet_out.canopy.leaf_temperature != dry_out.canopy.leaf_temperature

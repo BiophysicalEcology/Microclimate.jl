@@ -32,13 +32,13 @@ environment_hourly = example_hourly_environment(days; elevation = site.elevation
 snow_model = SnowModel(; snow_temperature_threshold = 1.0u"°C")
 
 function run(; snow_model)
-    model = MicroModel(;
-        soil_properties_model = example_soil_properties_model(),
-        soil_hydraulic_model = example_soil_hydraulic_model(),
-        snow_model, depths,
+    soil = SoilModel(;
+        depths, profile = example_soil_profile(depths),
+        properties_model = example_soil_properties_model(),
+        hydraulic_model = example_soil_hydraulic_model(),
     )
+    model = MicroModel(; site, soil, snow = snow_model)
     inputs = MicroInputs(;
-        site, soil_profile = example_soil_profile(depths),
         environment_minmax, environment_daily, environment_hourly,
         initial_soil_temperature = fill(u"K"(2.0u"°C"), n),
         initial_soil_moisture = fill(0.2, n),
