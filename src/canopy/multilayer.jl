@@ -37,8 +37,8 @@ Composes swappable sub-models the same way `MicroModel` composes
 - `air_profile_model::AbstractCanopyAirProfileModel` — in-canopy air-
   temperature profile (default [`RaupachLTheoryAirProfile`](@ref); see also
   [`KTheoryAirProfile`](@ref))
-- `ground_coupling::AbstractGroundCoupling` — ground-to-lowest-layer
-  resistance (default [`ProfileGroundResistance`](@ref): the air-profile model's own)
+- `ground_coupling::AbstractGroundCoupling` — ground resistance (default
+  [`FloorTurbulence`](@ref); see also [`SakaguchiZeng2009`](@ref), [`ProfileGroundResistance`](@ref))
 - `interception_model::AbstractCanopyInterceptionModel` — rain interception
   (default [`NoInterception`](@ref): off)
 - `condensation_model::AbstractCondensationModel` — leaf dew/frost formation
@@ -71,7 +71,7 @@ other radiation models read albedo from their caller.
     longwave_model::LWM = LayeredRadiosityExchange()
     wind_model::WM = ExponentialCanopyWindAttenuation()
     air_profile_model::APM = RaupachLTheoryAirProfile()
-    ground_coupling::GC = ProfileGroundResistance()
+    ground_coupling::GC = FloorTurbulence()
     interception_model::IM = NoInterception()
     condensation_model::CDM = MonteithLeafCondensation()
     leaf_parameters::LP = LeafParameters()
@@ -94,7 +94,7 @@ function example_multilayer_canopy(;
     longwave_model = LayeredRadiosityExchange(),
     wind_model = ExponentialCanopyWindAttenuation(),
     air_profile_model = RaupachLTheoryAirProfile(),
-    ground_coupling = ProfileGroundResistance(),
+    ground_coupling = FloorTurbulence(),
     interception_model = NoInterception(),
     condensation_model = MonteithLeafCondensation(),
     leaf_parameters = LeafParameters(),
