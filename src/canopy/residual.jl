@@ -147,7 +147,8 @@ function evaluate_canopy!(residual, state, buffers, model::MultilayerCanopy, bou
         inverse_obukhov_length=wind.inverse_obukhov_length, wind_speed, canopy_top_air_temperature,
         canopy_top_relative_humidity, ground_temperature, ground_relative_humidity, sensible_heat_source,
         evaporation_mass_flow, leaf_temperature, atmospheric_pressure)
-    canopy_heat_vapor_transport!(air, model.air_profile_model, boundary_layer_model, air_forcing; site, vapour_pressure_equation)
+    canopy_heat_vapor_transport!(air, model.air_profile_model, boundary_layer_model, air_forcing;
+        site, vapour_pressure_equation, ground_coupling=model.ground_coupling)
 
     for i in 1:n_layers
         residual[n_layers + i] = ustrip(u"K", air.air_temperature_prev[i] - air.air_temperature[i])
