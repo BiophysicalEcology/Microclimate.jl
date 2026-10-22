@@ -134,9 +134,11 @@ function evaluate_canopy!(residual, state, buffers, model::MultilayerCanopy, bou
         vapour_pressure_equation).vapour_density
     initial_top_vapor_density = wet_air_properties(forcing.canopy_top_air_temperature, forcing.canopy_top_relative_humidity,
         atmospheric_pressure; vapour_pressure_equation).vapour_density
+    kinematic_viscosity = dry_air_properties(reference_temperature, atmospheric_pressure).kinematic_viscosity
+    enhancement = turbulent_enhancement(model.roughness_sublayer, buffers.roughness_sublayer.enhancement,
+        model.canopy_height, wind.canopy_top_wind_speed, kinematic_viscosity)
     column = AboveCanopyColumn(; canopy_height=model.canopy_height, displacement_height=buffers.wind.displacement_height,
-        friction_velocity=wind.friction_velocity, inverse_obukhov_length=wind.inverse_obukhov_length,
-        enhancement=buffers.roughness_sublayer.enhancement)
+        friction_velocity=wind.friction_velocity, inverse_obukhov_length=wind.inverse_obukhov_length, enhancement)
     boundary = canopy_top_flux_boundary(boundary_layer_model, column, buffers.wind.above_canopy_profile.heights[2],
         sum(sensible_heat_source), sum(evaporation_mass_flow) / 1.0u"m^2",
         ground_temperature, ground_vapor_density, reference_temperature, reference_vapor_density,
