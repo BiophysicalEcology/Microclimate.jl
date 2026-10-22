@@ -201,7 +201,7 @@ Canopy-top boundary temperature/vapour density: resistance-weighted from the
 whole canopy's own aggregated source flux (`total_sensible_flux`/
 `total_latent_flux`, per unit ground area, summed over every layer) plus a
 ground flux, referenced to `reference_temperature`/`reference_vapour_density`
-via the canopy-top-to-reference aerodynamic resistance. Ground-to-canopy-top
+via [`column_heat_resistance`](@ref) from canopy top to the reference height. Ground-to-canopy-top
 resistance uses a bulk top-of-canopy eddy diffusivity (same form as
 `_canopy_direct_conductances`'s `eddy_diffusivity_top`), not a specific
 `air_profile_model`'s own layered resistance -- this boundary is shared by
@@ -224,19 +224,12 @@ function canopy_top_flux_boundary(boundary_layer_model, column::AboveCanopyColum
     reference_temperature, reference_vapour_density, previous_top_temperature, previous_top_vapour_density;
     max_resistance=2000.0u"s/m",
 )
-    (; canopy_height, displacement_height, roughness_length, friction_velocity, inverse_obukhov_length, enhancement) = column
+    (; canopy_height, friction_velocity, enhancement) = column
     κ = boundary_layer_model.karman_constant
-    γ = boundary_layer_model.dyer_constant
     z_top = _canopy_top_depth(column)
-    z_ref = max(reference_height - displacement_height, 1.0e-3u"m")
 
     ground_resistance = min(canopy_height / (κ * friction_velocity * z_top * enhancement), max_resistance)
-
-    log_ratio = log(z_ref / roughness_length)
-    ψ_h = calc_ψ_h(stability_parameter(InverseObukhovLength(), z_ref, inverse_obukhov_length), γ,
-        boundary_layer_model.stable_beta, boundary_layer_model.turbulent_prandtl_number)
-    # TODO drop the log-ratio floor with the smooth ψ (#137)
-    top_resistance = min(max(log_ratio - ψ_h, 0.1 * log_ratio, 1.0e-6) / (κ * friction_velocity), max_resistance)
+    top_resistance = min(column_heat_resistance(column, boundary_layer_model, canopy_height, reference_height), max_resistance)
 
     # ρ_cp fixed from ambient data, not the solved top_temperature: calc_ρ_cp
     # ∝ 1/T, so tying it to the unknown would make the balance nonlinear again.
