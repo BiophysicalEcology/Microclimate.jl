@@ -32,7 +32,7 @@ canopy-top value `κ u* (canopy_height - displacement_height)`.
 struct KTheoryAirProfile <: AbstractCanopyAirProfileModel end
 
 function allocate_air_profile(::KTheoryAirProfile, canopy_height, displacement_height, plant_area_index, heights, n_layers, boundary_layer_model)
-    (; layer_thickness) = canopy_layer_heights(heights, canopy_height, n_layers)
+    (; layer_heights, layer_thickness) = canopy_layer_heights(heights, canopy_height, n_layers)
     Δz = layer_thickness
 
     (; layer_plant_area_index) = canopy_layer_geometry(plant_area_index, n_layers)
@@ -47,7 +47,7 @@ function allocate_air_profile(::KTheoryAirProfile, canopy_height, displacement_h
     d_v, ev_v, rhs_v = zeros(n_free), zeros(n_free - 1), zeros(n_free)
 
     return (;
-        canopy_height, displacement_height,
+        canopy_height, displacement_height, plant_area_index = sum(plant_area_index), layer_heights,
         layer_spacing = Δz, relative_eddy_diffusivity = K_relative,
         heat_diagonal = d, heat_off_diagonal = ev, heat_right_hand_side = rhs,
         vapor_diagonal = d_v, vapor_off_diagonal = ev_v, vapor_right_hand_side = rhs_v,
@@ -62,17 +62,24 @@ function allocate_air_profile(::KTheoryAirProfile, canopy_height, displacement_h
     )
 end
 
+# The profile's own ground conductances, or those from the coupling's resistances
+_ktheory_ground_conductances(::ProfileGroundResistance, g_ground, gᵥ_ground, ρcp, forcing) = (g_ground, gᵥ_ground)
+function _ktheory_ground_conductances(coupling::AbstractGroundCoupling, g_ground, gᵥ_ground, ρcp, forcing)
+    ground = ground_resistance(coupling, forcing)
+    return ρcp / ground.heat, 1 / ground.vapor
+end
+
 # Shared conductance-building loop for both the heat and vapor solves, over
 # the n_free = n_layers-1 free layers 2:n_layers. `scale` converts the raw
 # eddy-diffusivity/spacing ratio into the right flux law (ρ_cp for a heat
 # flux, 1 for a vapor-density flux already being a mass flux). `g_top` is the
 # conductance between the fixed layer-1 boundary and layer 2; `g_ground` the
-# conductance between the last free layer and the ground boundary.
+# conductance between the last free layer and the ground boundary, kept in `unit`.
 function _ktheory_conductances!(ev, relative_eddy_diffusivity, eddy_diffusivity_top, layer_spacing, scale, unit)
     n_free = length(ev) + 1
     g_top = ustrip(unit, scale * eddy_diffusivity_top * 0.5 *
         (relative_eddy_diffusivity[1] + relative_eddy_diffusivity[2]) / layer_spacing[1])
-    g_ground = ustrip(unit, scale * eddy_diffusivity_top * relative_eddy_diffusivity[n_free + 1] / layer_spacing[n_free + 1])
+    g_ground = uconvert(unit, scale * eddy_diffusivity_top * relative_eddy_diffusivity[n_free + 1] / layer_spacing[n_free + 1])
     for i in 1:(n_free - 1)
         eddy_diffusivity_boundary = eddy_diffusivity_top * 0.5 *
             (relative_eddy_diffusivity[i + 1] + relative_eddy_diffusivity[i + 2])
@@ -83,12 +90,12 @@ function _ktheory_conductances!(ev, relative_eddy_diffusivity, eddy_diffusivity_
 end
 
 function canopy_heat_vapor_transport!(buffers, ::KTheoryAirProfile, boundary_layer_model,
-    forcing::CanopyAirProfileForcing; site, vapour_pressure_equation=GoffGratch(),
+    forcing::CanopyAirProfileForcing; site, vapour_pressure_equation=GoffGratch(), ground_coupling=ProfileGroundResistance(),
 )
-    (; friction_velocity, canopy_top_air_temperature, canopy_top_relative_humidity, ground_temperature,
+    (; friction_velocity, wind_speed, canopy_top_air_temperature, canopy_top_relative_humidity, ground_temperature,
        ground_relative_humidity, sensible_heat_source, evaporation_mass_flow, atmospheric_pressure) = forcing
     (;
-        canopy_height, displacement_height, layer_spacing, relative_eddy_diffusivity,
+        canopy_height, displacement_height, plant_area_index, layer_heights, layer_spacing, relative_eddy_diffusivity,
         heat_diagonal, heat_off_diagonal, heat_right_hand_side,
         vapor_diagonal, vapor_off_diagonal, vapor_right_hand_side,
         heat_matrix, vapor_matrix,
@@ -139,44 +146,51 @@ function canopy_heat_vapor_transport!(buffers, ::KTheoryAirProfile, boundary_lay
     ρcp = calc_ρ_cp(T_top)
     K₀ = κ * uₛ * max(h - d₀, 1.0e-3u"m") # numerical floor, not a physical parameter
 
-    # Heat solve — boundary conductances g[0] (layer 1 <-> layer 2) .. g[n] (layer n <-> ground), W/m^2/K.
+    # Boundary conductances g[0] (layer 1 <-> layer 2) .. g[n] (layer n <-> ground): heat in W/m^2/K;
+    # vapor in m/s, with no ρ_cp, since a vapor-density gradient times K is already a mass flux
     g_top, g_ground = _ktheory_conductances!(ev, K̂, K₀, Δz, ρcp, u"W/m^2/K")
-    ground_heat_conductance[] = g_ground * u"W/m^2/K"
+    gᵥ_top, gᵥ_ground = _ktheory_conductances!(evᵥ, K̂, K₀, Δz, 1.0, u"m/s")
+    g_ground, gᵥ_ground = _ktheory_ground_conductances(ground_coupling, g_ground, gᵥ_ground, ρcp, GroundExchangeForcing(;
+        profile_heat_resistance=ρcp / g_ground, profile_vapor_resistance=1 / gᵥ_ground,
+        layer_height=layer_heights[n], wind_speed=wind_speed[n], roughness_height=site.roughness_height,
+        friction_velocity=uₛ, plant_area_index, air_temperature=(T_top + T_ground) / 2, atmospheric_pressure=p, karman_constant=κ))
+    ground_heat_conductance[] = g_ground
+    ground_vapor_conductance[] = gᵥ_ground
+
+    # Heat solve
 
     # Finite-volume flux balance per free layer: g₋(T₋ - Tᵢ) - g₊(Tᵢ - T₊) + Sₕᵢ = 0
     # Layer 1 and the ground provide the known boundary values.
     T₀ = ustrip(u"K", T[1])
     T_g = ustrip(u"K", T_ground)
+    g_g = ustrip(u"W/m^2/K", g_ground)
     for i in 1:n_free
         g₋ = i == 1      ? g_top    : ev[i - 1]
-        g₊ = i == n_free ? g_ground : ev[i]
+        g₊ = i == n_free ? g_g : ev[i]
         d[i] = -(g₋ + g₊)
         b[i] = -ustrip(u"W/m^2", Sₕ[i + 1])
     end
 
     b[1] -= g_top * T₀
-    b[n_free] -= g_ground * T_g
+    b[n_free] -= g_g * T_g
 
     ldiv!(ldlt!(heat_matrix), b)
     T[2:end] .= b .* u"K"
 
-    # Vapor-density solve — same diffusivity network, no ρ_cp (A vapor-density gradient multiplied by
-    # K already gives a mass flux, so g has units of piston velocity, m/s).
-    gᵥ_top, gᵥ_ground = _ktheory_conductances!(evᵥ, K̂, K₀, Δz, 1.0, u"m/s")
-    ground_vapor_conductance[] = gᵥ_ground * u"m/s"
-
+    # Vapor-density solve, on the same diffusivity network
     ρᵥ_ground = wet_air_properties(T_ground, RH_ground, p; vapour_pressure_equation).vapour_density
     ρᵥ₀ = ustrip(u"kg/m^3", ρᵥ_top)
     ρᵥ_g = ustrip(u"kg/m^3", ρᵥ_ground)
+    gᵥ_g = ustrip(u"m/s", gᵥ_ground)
     for i in 1:n_free
         g₋ = i == 1      ? gᵥ_top    : evᵥ[i - 1]
-        g₊ = i == n_free ? gᵥ_ground : evᵥ[i]
+        g₊ = i == n_free ? gᵥ_g : evᵥ[i]
         dᵥ[i] = -(g₋ + g₊)
         bᵥ[i] = -ustrip(u"kg/m^2/s", E[i + 1] / 1.0u"m^2",)
     end
 
     bᵥ[1] -= gᵥ_top * ρᵥ₀
-    bᵥ[n_free] -= gᵥ_ground * ρᵥ_g
+    bᵥ[n_free] -= gᵥ_g * ρᵥ_g
 
     ldiv!(ldlt!(vapor_matrix), bᵥ)
     ρᵥ[2:end] .= bᵥ .* u"kg/m^3"

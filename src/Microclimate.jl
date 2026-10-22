@@ -55,6 +55,7 @@ export AbstractCanopyShortwaveModel, TwoStreamRadiation
 export AbstractCanopyLongwaveModel, LayeredLongwaveExchange, AllPairsLongwaveExchange, LayeredRadiosityExchange
 export AbstractCanopyWindModel, MixingLengthCanopyWindAttenuation, ExponentialCanopyWindAttenuation
 export AbstractCanopyAirProfileModel, KTheoryAirProfile, RaupachLTheoryAirProfile
+export AbstractGroundCoupling, ProfileGroundResistance
 export AbstractCanopyInterceptionModel, NoInterception, LayeredRainInterception, VerticalRainInterception
 export LeafParameters
 export AbstractStomatalConductanceModel, PrescribedStomatalConductance,
@@ -258,6 +259,7 @@ include("canopy/wind/mixinglength.jl")
 include("canopy/wind/exponential.jl")
 
 include("canopy/air_profile/abstract.jl")
+include("canopy/air_profile/ground_coupling.jl")
 include("canopy/air_profile/k_theory.jl")
 include("canopy/air_profile/raupach.jl")
 

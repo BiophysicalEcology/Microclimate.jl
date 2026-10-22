@@ -94,6 +94,7 @@ function allocate_air_profile(model::RaupachLTheoryAirProfile, canopy_height, di
     return (;
         canopy_height,
         displacement_height,
+        plant_area_index = sum(plant_area_index),
         layer_heights = z,
         layer_thickness = Δz,
         vertical_velocity_std = σw,
@@ -334,13 +335,13 @@ _raupach_layer_ρ_cp(::Val{:exact}, ρ_cp, _air_temperature_prev, _i) = ρ_cp
 _raupach_layer_ρ_cp(::Val{:bulk}, _ρ_cp, air_temperature_prev, i) = calc_ρ_cp(air_temperature_prev[i])
 
 function canopy_heat_vapor_transport!(buffers, model::RaupachLTheoryAirProfile, boundary_layer_model,
-    forcing::CanopyAirProfileForcing; site, vapour_pressure_equation=GoffGratch(),
+    forcing::CanopyAirProfileForcing; site, vapour_pressure_equation=GoffGratch(), ground_coupling=ProfileGroundResistance(),
 )
     (; friction_velocity, inverse_obukhov_length, wind_speed, canopy_top_air_temperature, canopy_top_relative_humidity,
        ground_temperature, ground_relative_humidity, sensible_heat_source, evaporation_mass_flow,
        atmospheric_pressure) = forcing
     ground_roughness_height = site.roughness_height
-    (; canopy_height, displacement_height, layer_heights, layer_thickness, vertical_velocity_std, inv_near_field_length, eddy_diffusivity,
+    (; canopy_height, displacement_height, plant_area_index, layer_heights, layer_thickness, vertical_velocity_std, inv_near_field_length, eddy_diffusivity,
        layer_resistance, far_field_accum, far_field_accum_latent, resistance_from_top, resistance_to_ground,
        cumulative_sensible_below, sensible_near_field_weight, cumulative_latent_below, latent_near_field_weight,
        air_temperature, air_temperature_prev, vapor_density, vapor_density_prev,
@@ -479,8 +480,12 @@ function canopy_heat_vapor_transport!(buffers, model::RaupachLTheoryAirProfile, 
     R_sublayer_heat = 1.0 / (u★_ground * sublayer_stanton_number)
     R_sublayer_vapor = R_sublayer_heat / LEWIS_HEAT_TO_MASS_RATIO
 
-    Rg_heat = max(r[n] + R_sublayer_heat, min_ground_resistance)
-    Rg_vapor = max(r[n] + R_sublayer_vapor, min_ground_resistance)
+    ground = ground_resistance(ground_coupling, GroundExchangeForcing(;
+        profile_heat_resistance=r[n] + R_sublayer_heat, profile_vapor_resistance=r[n] + R_sublayer_vapor,
+        layer_height=z[n], wind_speed=wind_speed[n], roughness_height=z0_ground, friction_velocity=u★,
+        plant_area_index=plant_area_index, air_temperature=(Ttop + Tg) / 2, atmospheric_pressure=p, karman_constant=κ))
+    Rg_heat = max(ground.heat, min_ground_resistance)
+    Rg_vapor = max(ground.vapor, min_ground_resistance)
 
     # ρcp is volumetric heat capacity, with units J m⁻³ K⁻¹.
     # ρ_cp fixed from T_top/ground_temperature, not from the (possibly still
