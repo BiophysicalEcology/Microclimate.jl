@@ -1,5 +1,5 @@
 using Microclimate
-using Microclimate: allocate_longwave, canopy_longwave!, precompute_longwave_sky
+using Microclimate: allocate_longwave, canopy_longwave!, canopy_incoming_longwave, precompute_longwave_sky
 using Unitful
 using Test
 
@@ -21,7 +21,7 @@ leaf_emissivity = 0.97
     ground_emissivity = 0.95
 
     result = Microclimate.canopy_longwave!(buffers, model, leaf_emissivity;
-        leaf_temperature, ground_temperature, ground_emissivity, site, environment_instant=environment)
+        leaf_temperature, ground_temperature, ground_emissivity, incoming_longwave=canopy_incoming_longwave(model; site, environment_instant=environment))
 
     net_layers = sum(1:n_layers) do i
         buffers.absorbed_longwave[i] - 2.0 * leaf_emissivity * Microclimate.σ * u"K"(leaf_temperature[i])^4 * (1.0 - buffers.layer_transmission[i])
@@ -38,7 +38,7 @@ end
     hot_environment = merge(environment, (; reference_temperature = 320.0u"K", cloud_cover = 0.0))
 
     result = Microclimate.canopy_longwave!(buffers, model, leaf_emissivity;
-        leaf_temperature, ground_temperature, ground_emissivity, site, environment_instant=hot_environment)
+        leaf_temperature, ground_temperature, ground_emissivity, incoming_longwave=canopy_incoming_longwave(model; site, environment_instant=hot_environment))
 
     @test issorted(ustrip.(u"W/m^2", buffers.boundary_downward_longwave), rev=true)
     @test result.net_absorbed_longwave > 0.0u"W/m^2"
@@ -59,7 +59,7 @@ end
     leaf_temperature = fill(T_eq, n_layers)
 
     result = Microclimate.canopy_longwave!(buffers, model, 1.0;
-        leaf_temperature, ground_temperature=T_eq, ground_emissivity=1.0, site, environment_instant=environment)
+        leaf_temperature, ground_temperature=T_eq, ground_emissivity=1.0, incoming_longwave=canopy_incoming_longwave(model; site, environment_instant=environment))
 
     @test abs(ustrip(u"W/m^2", result.net_absorbed_longwave)) < 1e-6
 end
@@ -71,7 +71,7 @@ end
     ground_temperature = 285.0u"K"
 
     result = Microclimate.canopy_longwave!(ap_buffers, ap_model, leaf_emissivity;
-        leaf_temperature, ground_temperature, ground_emissivity=0.95, site, environment_instant=environment)
+        leaf_temperature, ground_temperature, ground_emissivity=0.95, incoming_longwave=canopy_incoming_longwave(ap_model; site, environment_instant=environment))
 
     @test all(>(0.0u"W/m^2"), ap_buffers.downward_longwave)
     @test all(>(0.0u"W/m^2"), ap_buffers.upward_longwave)
@@ -88,7 +88,7 @@ end
     single_model = AllPairsLongwaveExchange()
     single_buffers = Microclimate.allocate_longwave(single_model, total_pai, 1, canopy_projection_ratio)
     result = Microclimate.canopy_longwave!(single_buffers, single_model, 0.0;
-        leaf_temperature=[288.0u"K"], ground_temperature, ground_emissivity, site, environment_instant=environment)
+        leaf_temperature=[288.0u"K"], ground_temperature, ground_emissivity, incoming_longwave=canopy_incoming_longwave(single_model; site, environment_instant=environment))
 
     sky = Microclimate.precompute_longwave_sky(single_model.atmospheric_radiation_model;
         site, environment_instant=environment, shade=0.0)
@@ -108,7 +108,7 @@ end
         leaf_temperature = fill(T_eq, n_layers)
 
         result = Microclimate.canopy_longwave!(lr_buffers, lr_model, 1.0;
-            leaf_temperature, ground_temperature=T_eq, ground_emissivity=1.0, site, environment_instant=environment)
+            leaf_temperature, ground_temperature=T_eq, ground_emissivity=1.0, incoming_longwave=canopy_incoming_longwave(lr_model; site, environment_instant=environment))
 
         @test abs(ustrip(u"W/m^2", result.net_absorbed_longwave)) < 1e-6
         @test all(f -> abs(ustrip(u"W/m^2", f)) < 1e-6, lr_buffers.absorbed_longwave .- 2.0 .* Microclimate.σ .* T_eq^4 .* (1.0 .- lr_buffers.layer_transmission))
@@ -125,7 +125,7 @@ end
         leaf_temperature = fill(T_eq, n_layers)
 
         result = Microclimate.canopy_longwave!(lr_buffers, lr_model, 0.92;
-            leaf_temperature, ground_temperature=T_eq, ground_emissivity=0.9, site, environment_instant=environment)
+            leaf_temperature, ground_temperature=T_eq, ground_emissivity=0.9, incoming_longwave=canopy_incoming_longwave(lr_model; site, environment_instant=environment))
 
         @test abs(ustrip(u"W/m^2", result.net_absorbed_longwave)) < 1e-6
         @test all(f -> abs(ustrip(u"W/m^2", f)) < 1e-6, lr_buffers.boundary_upward_longwave .- Microclimate.σ .* T_eq^4)
@@ -141,7 +141,7 @@ end
             site, environment_instant=environment, shade=0.0)
 
         result = Microclimate.canopy_longwave!(lr_buffers, lr_model, leaf_emissivity;
-            leaf_temperature, ground_temperature, ground_emissivity, site, environment_instant=environment)
+            leaf_temperature, ground_temperature, ground_emissivity, incoming_longwave=canopy_incoming_longwave(lr_model; site, environment_instant=environment))
 
         total_leaf_emission = 2.0 * sum(1:n_layers) do i
             leaf_emissivity * (1.0 - lr_buffers.layer_transmission[i]) * Microclimate.σ * u"K"(leaf_temperature[i])^4
@@ -161,9 +161,9 @@ end
         ground_emissivity = 0.95
 
         result_radiosity = Microclimate.canopy_longwave!(lr_buffers, lr_model, 1.0;
-            leaf_temperature, ground_temperature, ground_emissivity, site, environment_instant=environment)
+            leaf_temperature, ground_temperature, ground_emissivity, incoming_longwave=canopy_incoming_longwave(lr_model; site, environment_instant=environment))
         result_sequential = Microclimate.canopy_longwave!(buffers, model, 1.0;
-            leaf_temperature, ground_temperature, ground_emissivity, site, environment_instant=environment)
+            leaf_temperature, ground_temperature, ground_emissivity, incoming_longwave=canopy_incoming_longwave(model; site, environment_instant=environment))
 
         @test ustrip.(u"W/m^2", lr_buffers.boundary_downward_longwave) ≈
               ustrip.(u"W/m^2", buffers.boundary_downward_longwave) atol=1e-9

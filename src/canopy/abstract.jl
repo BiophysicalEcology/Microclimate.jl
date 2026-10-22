@@ -7,7 +7,7 @@ Supertype for vegetation canopy models. [`NoCanopy`](@ref) (scalar shade fractio
 abstract type AbstractCanopyModel end
 
 """
-    allocate_canopy(model, heights, boundary_layer_model)
+    allocate_canopy(model, heights, boundary_layer_model; site, vapour_pressure_equation, soil_hydraulic_model)
 
 Pre-allocate a canopy model's per-layer buffers, sized to the sub-canopy
 portion of `heights`. Structural quantities depending only on `model`/
@@ -78,20 +78,22 @@ function canopy_shortwave! end
 
 """
     canopy_wind_profile!(buffers, model, boundary_layer_model; site, environment_instant,
-                          canopy_source_temperature, vapour_pressure_equation)
+                          canopy_source_temperature, vapour_pressure_equation, inverse_obukhov_length=nothing)
 
 Per-layer wind-speed profile through the canopy for the current hour;
 writes into `buffers`, returns `(; canopy_top_wind_speed,
-canopy_top_air_temperature, friction_velocity)`. Above canopy top this is
+canopy_top_air_temperature, canopy_top_relative_humidity, friction_velocity,
+inverse_obukhov_length, inverse_obukhov_length_update)`. Above canopy top this is
 `atmospheric_surface_profile!` with the canopy's displacement height and
 roughness length; below top, the wind-attenuation shape scales that
-boundary value down through the layers.
+boundary value down through the layers. Stability is iterated unless
+`inverse_obukhov_length` is given; `inverse_obukhov_length_update` is what
+the Obukhov relation gives back for it (see `atmospheric_surface_profile!`).
 """
 function canopy_wind_profile! end
 
 """
-    canopy_longwave!(buffers, model; leaf_temperature, ground_temperature, ground_emissivity,
-                      site, environment_instant, vapour_pressure_equation)
+    canopy_longwave!(buffers, model; leaf_temperature, ground_temperature, ground_emissivity, incoming_longwave)
 
 Layer-resolved longwave exchange (leaf emission/absorption plus sky/ground
 boundary terms) for the current hour; writes per-layer results into
@@ -104,6 +106,16 @@ top_of_canopy_upward`), not canopy-only absorption — sum the per-layer
 `absorbed_longwave` buffer for that.
 """
 function canopy_longwave! end
+
+"""
+    canopy_incoming_longwave(model; site, environment_instant, vapour_pressure_equation)
+
+Sky longwave arriving at the canopy top for the hour, from the longwave
+model's `atmospheric_radiation_model` ([`precompute_longwave_sky`](@ref),
+`shade=0`). Independent of canopy state, so computed once per hour and passed
+to [`canopy_longwave!`](@ref).
+"""
+function canopy_incoming_longwave end
 
 """
     canopy_layer_geometry(plant_area_index, n_layers)
@@ -131,22 +143,24 @@ function canopy_layer_geometry(layer_plant_area_index::AbstractVector, n_layers)
 end
 
 """
-    canopy_layer_heights(heights, canopy_height, n_layers; min_spacing=1.0e-3u"m")
+    canopy_layer_heights(heights, canopy_height, n_layers)
 
 Canopy layer node heights (top-to-bottom) and each layer's height thickness
-(distance to the next node, or to the ground for the bottom layer), floored
-at `min_spacing` (a node can legitimately sit exactly at `canopy_height`).
+(distance to the next node, or to the ground for the bottom layer). Throws
+unless the node heights are distinct and above the ground.
 """
-function canopy_layer_heights(heights, canopy_height, n_layers; min_spacing=1.0e-3u"m")
+function canopy_layer_heights(heights, canopy_height, n_layers)
     layer_heights = sort(heights[heights .<= canopy_height]; rev=true)
     length(layer_heights) == n_layers ||
         throw(ArgumentError("number of `heights` at or below `canopy_height` must equal n_layers"))
+    allunique(layer_heights) && last(layer_heights) > zero(last(layer_heights)) ||
+        throw(ArgumentError("canopy layer `heights` must be distinct and above the ground"))
 
     layer_thickness = similar(layer_heights)
     for i in 1:(n_layers - 1)
-        layer_thickness[i] = max(layer_heights[i] - layer_heights[i + 1], min_spacing)
+        layer_thickness[i] = layer_heights[i] - layer_heights[i + 1]
     end
-    layer_thickness[n_layers] = max(layer_heights[n_layers], min_spacing)  # bottom layer down to the ground (z=0)
+    layer_thickness[n_layers] = layer_heights[n_layers]  # bottom layer down to the ground (z=0)
     return (; layer_heights, layer_thickness)
 end
 

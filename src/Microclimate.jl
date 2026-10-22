@@ -10,8 +10,13 @@ using OrdinaryDiffEqAdamsBashforthMoulton: AB3, AB4, AB5, ABM32, ABM43, ABM54
 using Unitful, UnitfulMoles
 using ModelParameters, DelimitedFiles
 using SpecialFunctions, StaticArrays
-using LinearAlgebra: Tridiagonal
-using LinearSolve: LinearProblem
+using PolyLog: reli2
+using LinearAlgebra: SymTridiagonal, ldlt!, ldiv!
+using NonlinearSolveFirstOrder: NewtonRaphson
+using NonlinearSolveQuasiNewton: Broyden
+using DifferentiationInterface: prepare_jacobian, jacobian!, Cache, Constant
+using ADTypes: AutoEnzyme
+import Enzyme
 
 using FluidProperties: atmospheric_pressure, wet_air_properties, dry_air_properties, vapour_pressure
 using FluidProperties: enthalpy_of_vaporisation, molar_enthalpy_of_vaporisation, water_properties
@@ -21,10 +26,12 @@ using Unitful: °, rad, °C
 using Interpolations: AbstractInterpolation
 using SolarRadiation
 
+include("unitful.jl")
+
 # leaf convection/evaporation physics (src/canopy/energy_balance.jl); convection/
 # evaporation called as HeatExchange.convection/.evaporation to avoid name clashes
 import HeatExchange
-using HeatExchange: LeafEvaporationParameters, AtmosphericConditions, ScaledDimension, zbrent, Air
+using HeatExchange: LeafEvaporationParameters, AtmosphericConditions, ScaledDimension, Air
 using BiophysicalGeometry: Ellipsoid, Body, Naked
 
 
@@ -51,11 +58,10 @@ export AbstractCanopyInterceptionModel, NoInterception, LayeredRainInterception,
 export LeafParameters
 export AbstractStomatalConductanceModel, PrescribedStomatalConductance,
     MoistureResponsiveStomatalConductance
-export AbstractLeafTemperatureSolver, LinearizedLeafTemperature, RootFindLeafTemperature
 export AbstractLeafConvectionModel, ElaborateLeafConvection, SimpleLeafConvection
 export leaf_body
 export LeafEvaporationParameters
-export AbstractCanopyConvergenceModel, PicardCanopyConvergence
+export AbstractCanopyConvergenceModel, NonlinearCanopyConvergence
 
 # Apparent heat capacity (latent-heat-of-fusion treatment in snow)
 export AbstractApparentHeatCapacity, BonacinaStep, TanhSmoothed, Gaussian, WestermannSigmoid
@@ -267,15 +273,13 @@ include("canopy/stomatal_conductance/moisture_responsive.jl")
 
 include("canopy/leaf_temperature/parameters.jl")
 include("canopy/leaf_temperature/heat_balance.jl")
-include("canopy/leaf_temperature/abstract.jl")
-include("canopy/leaf_temperature/linearized.jl")
-include("canopy/leaf_temperature/root_find.jl")
 
 include("canopy/convergence/abstract.jl")
-include("canopy/convergence/picard.jl")
 
 include("canopy/multilayer.jl")
 include("canopy/energy_balance.jl")
+include("canopy/residual.jl")
+include("canopy/convergence/nonlinear.jl")
 
 # Top-level config, parameters, problem, state, buffers, and cache types
 include("types.jl")

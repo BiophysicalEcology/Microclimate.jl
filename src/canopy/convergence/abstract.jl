@@ -1,7 +1,7 @@
 """
     AbstractCanopyConvergenceModel
 
-How `canopy_energy_balance!` drives its per-hour leaf-temperature solve to
-convergence. See [`PicardCanopyConvergence`](@ref).
+How `canopy_energy_balance!` solves its per-hour leaf/air-temperature state.
+See [`NonlinearCanopyConvergence`](@ref).
 """
 abstract type AbstractCanopyConvergenceModel end

@@ -1,5 +1,5 @@
 using Microclimate
-using Microclimate: CanopyAirProfileForcing, allocate_air_profile, canopy_air_profile!
+using Microclimate: CanopyAirProfileForcing, allocate_air_profile, canopy_heat_vapor_transport!, wet_air_properties
 using Unitful
 using Test
 
@@ -22,24 +22,28 @@ mid_evaporation = [i == mid_layer ? 1.0e-3u"g/s" : 0.0u"g/s" for i in 1:n_layers
 
 forcing(; sensible_heat_source = no_heat, evaporation_mass_flow = no_evaporation,
     friction_velocity = 0.3u"m/s", ground_temperature = T) = CanopyAirProfileForcing(;
-    friction_velocity, obukhov_length = Inf * u"m", wind_speed = fill(1.0u"m/s", n_layers),
+    friction_velocity, inverse_obukhov_length = 0.0u"m^-1", wind_speed = fill(1.0u"m/s", n_layers),
     canopy_top_air_temperature = T, canopy_top_relative_humidity = 0.5,
     ground_temperature, ground_relative_humidity = 0.5,
     sensible_heat_source, evaporation_mass_flow,
     leaf_temperature = fill(T, n_layers), atmospheric_pressure = 101325.0u"Pa",
 )
 
-# Fresh buffers in the isothermal, vapour-free initial state (the Raupach
-# solve starts from the previous air state, and reseeds humidity from the
-# boundary conditions when vapour density is zero)
+top_vapor_density = wet_air_properties(T, 0.5, 101325.0u"Pa").vapour_density
+
+# Fresh buffers with the current air state isothermal at the boundary humidity
 function initial_buffers(model)
     buffers = allocate_air_profile(model, canopy_height, displacement_height, plant_area_index, heights, n_layers, boundary_layer_model)
-    fill!(buffers.air_temperature, T)
-    fill!(buffers.vapor_density, 0.0u"kg/m^3")
+    fill!(buffers.air_temperature_prev, T)
+    fill!(buffers.vapor_density_prev, top_vapor_density)
     return buffers
 end
 
-profile(model; kw...) = canopy_air_profile!(initial_buffers(model), model, boundary_layer_model, forcing(; kw...); site)
+function profile(model; kw...)
+    buffers = initial_buffers(model)
+    canopy_heat_vapor_transport!(buffers, model, boundary_layer_model, forcing(; kw...); site)
+    return buffers
+end
 
 # A single peak at (or next to) the source layer, everything else below it
 is_local_bump(values) = abs(argmax(values) - mid_layer) <= 1 && count(==(maximum(values)), values) == 1
@@ -48,7 +52,7 @@ is_local_bump(values) = abs(argmax(values) - mid_layer) <= 1 && count(==(maximum
     @testset "no forcing: uniform boundaries give a uniform profile" begin
         result = profile(model)
         @test all(t -> isapprox(t, T; atol = 1e-6u"K"), result.air_temperature)
-        @test all(rh -> isapprox(rh, 0.5; atol = 1e-6), result.relative_humidity)
+        @test all(v -> isapprox(v, top_vapor_density; rtol = 1e-6), result.vapor_density)
     end
 
     @testset "a mid-canopy heat source produces a local warm bump" begin
@@ -59,8 +63,8 @@ is_local_bump(values) = abs(argmax(values) - mid_layer) <= 1 && count(==(maximum
 
     @testset "a mid-canopy evaporative source produces a local humidity bump" begin
         result = profile(model; evaporation_mass_flow = mid_evaporation)
-        @test maximum(result.relative_humidity) > 0.5
-        @test is_local_bump(result.relative_humidity)
+        @test maximum(result.vapor_density) > top_vapor_density
+        @test is_local_bump(result.vapor_density)
     end
 
     @testset "stronger mixing flattens the same forcing" begin
@@ -73,7 +77,7 @@ is_local_bump(values) = abs(argmax(values) - mid_layer) <= 1 && count(==(maximum
         buffers = initial_buffers(model)
         hour_forcing = forcing(; sensible_heat_source = fill(10.0u"W/m^2", n_layers),
             evaporation_mass_flow = fill(1.0e-4u"g/s", n_layers), ground_temperature = 288.0u"K")
-        @test allocations(canopy_air_profile!, buffers, model, boundary_layer_model, hour_forcing; site) == 0
+        @test allocations(canopy_heat_vapor_transport!, buffers, model, boundary_layer_model, hour_forcing; site) == 0
     end
 end
 

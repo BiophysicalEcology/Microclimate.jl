@@ -4,8 +4,8 @@
 Steady first-order-closure (K-theory) in-canopy air-temperature and humidity
 profile: a tridiagonal diffusion balance (finite-volume discretisation of
 `d/dz(K dT/dz) = -S`, and separately `d/dz(K dρv/dz) = -Sv`) between each
-layer's leaf-supplied source and its neighbours, re-solved once per
-convergence-loop pass. Assumes in-canopy air reaches quasi-equilibrium within 
+layer's leaf-supplied source and its neighbours, re-solved at every canopy
+residual evaluation. Assumes in-canopy air reaches quasi-equilibrium within 
 an hour, unlike Raupach's (1989) transient Lagrangian near/far-field model.
 
 Layer 1's node sits exactly at `canopy_height` (`canopy_layer_heights`), 
@@ -15,9 +15,8 @@ diffusing from that fixed top value down to `ground_temperature`/
 `ground_relative_humidity` at the other end.
 
 Conductance network mirrors `SoilHeatTransport1D`'s `thermal_conductance`
-(eddy-diffusivity instead of thermal), solved via a `LinearSolve.jl` cache
-built once per buffer allocation and reused every call (`cache.A`/`cache.b`
-reassigned, `SciMLBase.solve!` re-factorizes only when `A` actually changed)
+(eddy-diffusivity instead of thermal). The balance is symmetric tridiagonal,
+factorized in place (`ldlt!`) in preallocated buffers each call.
 The humidity solve reuses the same diffusivity network and buffers as the
 temperature solve.
 
@@ -44,21 +43,19 @@ function allocate_air_profile(::KTheoryAirProfile, canopy_height, displacement_h
     # Layer 1 is a Dirichlet boundary (see docstring) -- only layers 2:n_layers
     # (n_free = n_layers-1 of them) are solved.
     n_free = n_layers - 1
-    dl, d, du, rhs = zeros(n_free - 1), zeros(n_free), zeros(n_free - 1), zeros(n_free)
-    dl_v, d_v, du_v, rhs_v = zeros(n_free - 1), zeros(n_free), zeros(n_free - 1), zeros(n_free)
-    heat_matrix = Tridiagonal(dl, d, du)
-    vapor_matrix = Tridiagonal(dl_v, d_v, du_v)
-    heat_cache = SciMLBase.init(LinearProblem(heat_matrix, rhs))
-    vapor_cache = SciMLBase.init(LinearProblem(vapor_matrix, rhs_v))
+    d, ev, rhs = zeros(n_free), zeros(n_free - 1), zeros(n_free)
+    d_v, ev_v, rhs_v = zeros(n_free), zeros(n_free - 1), zeros(n_free)
 
     return (;
         canopy_height, displacement_height,
         layer_spacing = Δz, relative_eddy_diffusivity = K_relative,
-        heat_lower_diagonal = dl, heat_diagonal = d, heat_upper_diagonal = du, heat_right_hand_side = rhs,
-        vapor_lower_diagonal = dl_v, vapor_diagonal = d_v, vapor_upper_diagonal = du_v, vapor_right_hand_side = rhs_v,
-        heat_matrix, vapor_matrix, heat_solver_cache = heat_cache, vapor_solver_cache = vapor_cache,
+        heat_diagonal = d, heat_off_diagonal = ev, heat_right_hand_side = rhs,
+        vapor_diagonal = d_v, vapor_off_diagonal = ev_v, vapor_right_hand_side = rhs_v,
+        heat_matrix = SymTridiagonal(d, ev), vapor_matrix = SymTridiagonal(d_v, ev_v),
         air_temperature = zeros(typeof(0.0u"K"), n_layers),
+        air_temperature_prev = zeros(typeof(0.0u"K"), n_layers),
         vapor_density = zeros(typeof(0.0u"kg/m^3"), n_layers),
+        vapor_density_prev = zeros(typeof(0.0u"kg/m^3"), n_layers),
         relative_humidity = zeros(n_layers),
         ground_heat_conductance = Ref(0.0u"W/m^2/K"),
         ground_vapor_conductance = Ref(0.0u"m/s"),
@@ -71,8 +68,8 @@ end
 # flux, 1 for a vapor-density flux already being a mass flux). `g_top` is the
 # conductance between the fixed layer-1 boundary and layer 2; `g_ground` the
 # conductance between the last free layer and the ground boundary.
-function _ktheory_conductances!(dl, du, relative_eddy_diffusivity, eddy_diffusivity_top, layer_spacing, scale, unit)
-    n_free = length(dl) + 1
+function _ktheory_conductances!(ev, relative_eddy_diffusivity, eddy_diffusivity_top, layer_spacing, scale, unit)
+    n_free = length(ev) + 1
     g_top = ustrip(unit, scale * eddy_diffusivity_top * 0.5 *
         (relative_eddy_diffusivity[1] + relative_eddy_diffusivity[2]) / layer_spacing[1])
     g_ground = ustrip(unit, scale * eddy_diffusivity_top * relative_eddy_diffusivity[n_free + 1] / layer_spacing[n_free + 1])
@@ -80,45 +77,38 @@ function _ktheory_conductances!(dl, du, relative_eddy_diffusivity, eddy_diffusiv
         eddy_diffusivity_boundary = eddy_diffusivity_top * 0.5 *
             (relative_eddy_diffusivity[i + 1] + relative_eddy_diffusivity[i + 2])
         g = ustrip(unit, scale * eddy_diffusivity_boundary / layer_spacing[i + 1])
-        dl[i] = g
-        du[i] = g
+        ev[i] = g
     end
     return g_top, g_ground
 end
 
-function canopy_air_profile!(buffers, ::KTheoryAirProfile, boundary_layer_model,
+function canopy_heat_vapor_transport!(buffers, ::KTheoryAirProfile, boundary_layer_model,
     forcing::CanopyAirProfileForcing; site, vapour_pressure_equation=GoffGratch(),
 )
     (; friction_velocity, canopy_top_air_temperature, canopy_top_relative_humidity, ground_temperature,
        ground_relative_humidity, sensible_heat_source, evaporation_mass_flow, atmospheric_pressure) = forcing
     (;
         canopy_height, displacement_height, layer_spacing, relative_eddy_diffusivity,
-        heat_lower_diagonal, heat_diagonal, heat_upper_diagonal, heat_right_hand_side,
-        vapor_lower_diagonal, vapor_diagonal, vapor_upper_diagonal, vapor_right_hand_side,
-        heat_matrix, vapor_matrix, heat_solver_cache, vapor_solver_cache,
-        air_temperature, vapor_density, relative_humidity,
+        heat_diagonal, heat_off_diagonal, heat_right_hand_side,
+        vapor_diagonal, vapor_off_diagonal, vapor_right_hand_side,
+        heat_matrix, vapor_matrix,
+        air_temperature, vapor_density,
         ground_heat_conductance, ground_vapor_conductance,
     ) = buffers
 
     Δz = layer_spacing
     K̂ = relative_eddy_diffusivity
 
-    dl = heat_lower_diagonal
     d  = heat_diagonal
-    du = heat_upper_diagonal
+    ev = heat_off_diagonal
     b  = heat_right_hand_side
 
-    dlᵥ = vapor_lower_diagonal
     dᵥ  = vapor_diagonal
-    duᵥ = vapor_upper_diagonal
+    evᵥ = vapor_off_diagonal
     bᵥ  = vapor_right_hand_side
-
-    heat_cache = heat_solver_cache
-    vapor_cache = vapor_solver_cache
 
     T = air_temperature
     ρᵥ = vapor_density
-    RH = relative_humidity
 
     h = canopy_height
     d₀ = displacement_height
@@ -150,7 +140,7 @@ function canopy_air_profile!(buffers, ::KTheoryAirProfile, boundary_layer_model,
     K₀ = κ * uₛ * max(h - d₀, 1.0e-3u"m") # numerical floor, not a physical parameter
 
     # Heat solve — boundary conductances g[0] (layer 1 <-> layer 2) .. g[n] (layer n <-> ground), W/m^2/K.
-    g_top, g_ground = _ktheory_conductances!(dl, du, K̂, K₀, Δz, ρcp, u"W/m^2/K")
+    g_top, g_ground = _ktheory_conductances!(ev, K̂, K₀, Δz, ρcp, u"W/m^2/K")
     ground_heat_conductance[] = g_ground * u"W/m^2/K"
 
     # Finite-volume flux balance per free layer: g₋(T₋ - Tᵢ) - g₊(Tᵢ - T₊) + Sₕᵢ = 0
@@ -158,8 +148,8 @@ function canopy_air_profile!(buffers, ::KTheoryAirProfile, boundary_layer_model,
     T₀ = ustrip(u"K", T[1])
     T_g = ustrip(u"K", T_ground)
     for i in 1:n_free
-        g₋ = i == 1      ? g_top    : dl[i - 1]
-        g₊ = i == n_free ? g_ground : dl[i]
+        g₋ = i == 1      ? g_top    : ev[i - 1]
+        g₊ = i == n_free ? g_ground : ev[i]
         d[i] = -(g₋ + g₊)
         b[i] = -ustrip(u"W/m^2", Sₕ[i + 1])
     end
@@ -167,22 +157,20 @@ function canopy_air_profile!(buffers, ::KTheoryAirProfile, boundary_layer_model,
     b[1] -= g_top * T₀
     b[n_free] -= g_ground * T_g
 
-    heat_cache.A = heat_matrix
-    heat_cache.b = b
-
-    T[2:end] .= SciMLBase.solve!(heat_cache).u .* u"K"
+    ldiv!(ldlt!(heat_matrix), b)
+    T[2:end] .= b .* u"K"
 
     # Vapor-density solve — same diffusivity network, no ρ_cp (A vapor-density gradient multiplied by
     # K already gives a mass flux, so g has units of piston velocity, m/s).
-    gᵥ_top, gᵥ_ground = _ktheory_conductances!(dlᵥ, duᵥ, K̂, K₀, Δz, 1.0, u"m/s")
+    gᵥ_top, gᵥ_ground = _ktheory_conductances!(evᵥ, K̂, K₀, Δz, 1.0, u"m/s")
     ground_vapor_conductance[] = gᵥ_ground * u"m/s"
 
     ρᵥ_ground = wet_air_properties(T_ground, RH_ground, p; vapour_pressure_equation).vapour_density
     ρᵥ₀ = ustrip(u"kg/m^3", ρᵥ_top)
     ρᵥ_g = ustrip(u"kg/m^3", ρᵥ_ground)
     for i in 1:n_free
-        g₋ = i == 1      ? gᵥ_top    : dlᵥ[i - 1]
-        g₊ = i == n_free ? gᵥ_ground : dlᵥ[i]
+        g₋ = i == 1      ? gᵥ_top    : evᵥ[i - 1]
+        g₊ = i == n_free ? gᵥ_ground : evᵥ[i]
         dᵥ[i] = -(g₋ + g₊)
         bᵥ[i] = -ustrip(u"kg/m^2/s", E[i + 1] / 1.0u"m^2",)
     end
@@ -190,16 +178,8 @@ function canopy_air_profile!(buffers, ::KTheoryAirProfile, boundary_layer_model,
     bᵥ[1] -= gᵥ_top * ρᵥ₀
     bᵥ[n_free] -= gᵥ_ground * ρᵥ_g
 
-    vapor_cache.A = vapor_matrix
-    vapor_cache.b = bᵥ
+    ldiv!(ldlt!(vapor_matrix), bᵥ)
+    ρᵥ[2:end] .= bᵥ .* u"kg/m^3"
 
-    ρᵥ[2:end] .= SciMLBase.solve!(vapor_cache).u .* u"kg/m^3"
-
-    # Diagnostic relative humidity
-    for i in 1:n
-        ρᵥ_sat = wet_air_properties(T[i], 1.0, p; vapour_pressure_equation).vapour_density
-        RH[i] = clamp(ρᵥ[i] / ρᵥ_sat, 0.0, 1.0)
-    end
-
-    return (; air_temperature = T, relative_humidity = RH,)
+    return nothing
 end

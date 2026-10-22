@@ -39,7 +39,7 @@ end
 """
     canopy_longwave!(buffers, model::LayeredLongwaveExchange, leaf_emissivity;
                       leaf_temperature, ground_temperature, ground_emissivity,
-                      site, environment_instant, vapour_pressure_equation=GoffGratch())
+                      incoming_longwave)
 
 Sequential top-down (sky → ground) then bottom-up (ground → sky) gap-fraction
 exchange, each pass `O(n_layers)`. with no matrix solve (non-reflecting
@@ -61,14 +61,12 @@ at any `leaf_emissivity`.
 """
 function canopy_longwave!(buffers, model::LayeredLongwaveExchange, leaf_emissivity;
     leaf_temperature, ground_temperature, ground_emissivity,
-    site, environment_instant, vapour_pressure_equation=GoffGratch(),
+    incoming_longwave,
 )
     (; layer_transmission, boundary_downward_longwave, boundary_upward_longwave, absorbed_longwave) = buffers
     n_layers = length(layer_transmission)
 
-    sky = precompute_longwave_sky(model.atmospheric_radiation_model;
-        site, environment_instant, vapour_pressure_equation, shade=0.0)
-    boundary_downward_longwave[1] = sky.incoming_longwave
+    boundary_downward_longwave[1] = incoming_longwave
     for i in 1:n_layers
         τ = layer_transmission[i]
         emission = leaf_emissivity * σ * u"K"(leaf_temperature[i])^4

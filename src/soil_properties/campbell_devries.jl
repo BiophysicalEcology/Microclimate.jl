@@ -129,13 +129,9 @@ function soil_properties(soil_properties_model::CampbelldeVriesSoilProperties;
     molar_density = water_vapour_molar_density_stp * (atmospheric_pressure / standard_pressure) * (273.15 / soil_temperature)
     vapor_enthalpy = molar_enthalpy_of_vaporisation(soil_temperature)
 
-    ################################################################
-    # This is some of the most expensive code in the package
-    # its inlined so most of the work in wet_air_properties is ignored
-    vapor_pressure = wet_air_properties(soil_temperature, 0.99, atmospheric_pressure; vapour_pressure_equation).vapour_pressure
-    vapor_pressure_minus = wet_air_properties(soil_temperature - 1u"K", 0.99, atmospheric_pressure; vapour_pressure_equation).vapour_pressure
-    vapor_pressure_plus = wet_air_properties(soil_temperature + 1u"K", 0.99, atmospheric_pressure; vapour_pressure_equation).vapour_pressure
-    ################################################################
+    vapor_pressure = vapour_pressure(vapour_pressure_equation, soil_temperature) * 0.99
+    vapor_pressure_minus = vapour_pressure(vapour_pressure_equation, soil_temperature - 1u"K") * 0.99
+    vapor_pressure_plus = vapour_pressure(vapour_pressure_equation, soil_temperature + 1u"K") * 0.99
 
     vapor_pressure_gradient = (vapor_pressure_plus - vapor_pressure_minus) / 2.0
 
