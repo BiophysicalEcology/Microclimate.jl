@@ -48,6 +48,33 @@ Leaf and air temperatures outside which [`evaluate_canopy!`](@ref) returns a NaN
 const CANOPY_TEMPERATURE_BOUNDS = (100.0u"K", 1000.0u"K")
 
 """
+    layer_leaf_balance(buffers, model::MultilayerCanopy, forcing::CanopyResidualForcing, layer, leaf_temperature;
+        vapour_pressure_equation)
+
+Layer `layer`'s `leaf_heat_balance` at `leaf_temperature`, from the air state and absorbed
+radiation in `buffers`, with its leaf area, as `(; balance, leaf_area)`.
+"""
+function layer_leaf_balance(buffers, model::MultilayerCanopy, forcing::CanopyResidualForcing, layer, leaf_temperature;
+    vapour_pressure_equation,
+)
+    (; atmospheric_pressure, leaf_water_potential, dry_conductance) = forcing
+    air = buffers.air_profile
+    air_temperature = air.air_temperature_prev[layer]
+    exchange_fraction = 1.0 - buffers.longwave.layer_transmission[layer]
+    layer_plant_area_index_boundaries = buffers.shortwave.layer_plant_area_index_boundaries
+    saturation = wet_air_properties(air_temperature, 1.0, atmospheric_pressure; vapour_pressure_equation).vapour_density
+    relative_humidity = clamp(air.vapor_density_prev[layer] / saturation, 0.0, 1.0)
+    leaf_area = 2.0 * exchange_fraction * 1.0u"m^2"
+    layer_pai = layer_plant_area_index_boundaries[layer + 1] - layer_plant_area_index_boundaries[layer]
+    aerodynamic_area = 2.0 * layer_pai * 1.0u"m^2"
+    conductance = blend_stomatal_conductance(dry_conductance, wet_canopy_fraction(model, buffers, layer))
+    balance = leaf_heat_balance(leaf_temperature, buffers.leaf.absorbed_radiation[layer], air_temperature, relative_humidity,
+        buffers.wind.wind_speed[layer], atmospheric_pressure, model.leaf_parameters.leaf_emissivity, conductance,
+        leaf_water_potential, buffers.leaf.leaf_body, leaf_area, model.leaf_convection_model; aerodynamic_area)
+    return (; balance, leaf_area)
+end
+
+"""
     evaluate_canopy!(residual, state, buffers, model, boundary_layer_model, forcing::CanopyResidualForcing;
         site, vapour_pressure_equation)
 
@@ -69,10 +96,10 @@ function evaluate_canopy!(residual, state, buffers, model::MultilayerCanopy, bou
     forcing::CanopyResidualForcing; site, vapour_pressure_equation,
 )
     (; atmospheric_pressure, reference_temperature, reference_wind_speed, reference_humidity, incoming_longwave,
-       ground_temperature, ground_emissivity, ground_relative_humidity, leaf_water_potential, dry_conductance) = forcing
-    (; leaf_temperature, sensible_heat_source, evaporation_mass_flow, absorbed_radiation, net_balance, leaf_body) = buffers.leaf
+       ground_temperature, ground_emissivity, ground_relative_humidity) = forcing
+    (; leaf_temperature, sensible_heat_source, evaporation_mass_flow, absorbed_radiation, net_balance) = buffers.leaf
     air = buffers.air_profile
-    (; absorbed_shortwave, layer_plant_area_index_boundaries) = buffers.shortwave
+    (; absorbed_shortwave) = buffers.shortwave
     (; absorbed_longwave, layer_transmission) = buffers.longwave
     n_layers = length(leaf_temperature)
 
@@ -110,17 +137,9 @@ function evaluate_canopy!(residual, state, buffers, model::MultilayerCanopy, bou
             residual[i] = ustrip(u"K", leaf_temperature[i] - air_temperature)
             continue
         end
-        saturation = wet_air_properties(air_temperature, 1.0, atmospheric_pressure; vapour_pressure_equation).vapour_density
-        relative_humidity = clamp(air.vapor_density_prev[i] / saturation, 0.0, 1.0)
-        leaf_area = 2.0 * exchange_fraction * 1.0u"m^2"
-        layer_pai = layer_plant_area_index_boundaries[i + 1] - layer_plant_area_index_boundaries[i]
-        aerodynamic_area = 2.0 * layer_pai * 1.0u"m^2"
         # absorbed_shortwave/absorbed_longwave are per unit ground area
         absorbed_radiation[i] = (absorbed_shortwave[i] + absorbed_longwave[i]) / (2.0 * exchange_fraction)
-        conductance = blend_stomatal_conductance(dry_conductance, wet_canopy_fraction(model, buffers, i))
-        balance = leaf_heat_balance(leaf_temperature[i], absorbed_radiation[i], air_temperature, relative_humidity,
-            wind_speed[i], atmospheric_pressure, model.leaf_parameters.leaf_emissivity, conductance,
-            leaf_water_potential, leaf_body, leaf_area, model.leaf_convection_model; aerodynamic_area)
+        (; balance, leaf_area) = layer_leaf_balance(buffers, model, forcing, i, leaf_temperature[i]; vapour_pressure_equation)
         sensible_heat_source[i] = balance.conv.convection_flow / 1.0u"m^2"
         evaporation_mass_flow[i] = balance.evap.transpiration_mass_flow
         net_balance[i] = balance.net
