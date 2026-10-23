@@ -63,9 +63,10 @@ function allocate_air_profile(::KTheoryAirProfile, canopy_height, displacement_h
 end
 
 # The profile's own ground conductances, or those from the coupling's resistances
-_ktheory_ground_conductances(::ProfileGroundResistance, g_ground, gᵥ_ground, ρcp, forcing) = (g_ground, gᵥ_ground)
-function _ktheory_ground_conductances(coupling::AbstractGroundCoupling, g_ground, gᵥ_ground, ρcp, forcing)
-    ground = ground_resistance(coupling, forcing)
+_ktheory_ground_conductances(::ProfileGroundResistance, boundary_layer_model, g_ground, gᵥ_ground, ρcp, forcing) =
+    (g_ground, gᵥ_ground)
+function _ktheory_ground_conductances(coupling::AbstractGroundCoupling, boundary_layer_model, g_ground, gᵥ_ground, ρcp, forcing)
+    ground = ground_resistance(coupling, boundary_layer_model, forcing)
     return ρcp / ground.heat, 1 / ground.vapor
 end
 
@@ -99,7 +100,7 @@ function canopy_heat_vapor_transport!(buffers, ::KTheoryAirProfile, boundary_lay
         heat_diagonal, heat_off_diagonal, heat_right_hand_side,
         vapor_diagonal, vapor_off_diagonal, vapor_right_hand_side,
         heat_matrix, vapor_matrix,
-        air_temperature, vapor_density,
+        air_temperature, air_temperature_prev, vapor_density,
         ground_heat_conductance, ground_vapor_conductance,
     ) = buffers
 
@@ -150,10 +151,11 @@ function canopy_heat_vapor_transport!(buffers, ::KTheoryAirProfile, boundary_lay
     # vapor in m/s, with no ρ_cp, since a vapor-density gradient times K is already a mass flux
     g_top, g_ground = _ktheory_conductances!(ev, K̂, K₀, Δz, ρcp, u"W/m^2/K")
     gᵥ_top, gᵥ_ground = _ktheory_conductances!(evᵥ, K̂, K₀, Δz, 1.0, u"m/s")
-    g_ground, gᵥ_ground = _ktheory_ground_conductances(ground_coupling, g_ground, gᵥ_ground, ρcp, GroundExchangeForcing(;
-        profile_heat_resistance=ρcp / g_ground, profile_vapor_resistance=1 / gᵥ_ground,
-        layer_height=layer_heights[n], wind_speed=wind_speed[n], roughness_height=site.roughness_height,
-        friction_velocity=uₛ, plant_area_index, air_temperature=(T_top + T_ground) / 2, atmospheric_pressure=p, karman_constant=κ))
+    g_ground, gᵥ_ground = _ktheory_ground_conductances(ground_coupling, boundary_layer_model, g_ground, gᵥ_ground, ρcp,
+        GroundExchangeForcing(; profile_heat_resistance=ρcp / g_ground, profile_vapor_resistance=1 / gᵥ_ground,
+            layer_height=layer_heights[n], wind_speed=wind_speed[n], layer_air_temperature=air_temperature_prev[n],
+            ground_temperature=T_ground, roughness_height=site.roughness_height, friction_velocity=uₛ, plant_area_index,
+            atmospheric_pressure=p))
     ground_heat_conductance[] = g_ground
     ground_vapor_conductance[] = gᵥ_ground
 

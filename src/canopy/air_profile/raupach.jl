@@ -480,10 +480,10 @@ function canopy_heat_vapor_transport!(buffers, model::RaupachLTheoryAirProfile, 
     R_sublayer_heat = 1.0 / (u★_ground * sublayer_stanton_number)
     R_sublayer_vapor = R_sublayer_heat / LEWIS_HEAT_TO_MASS_RATIO
 
-    ground = ground_resistance(ground_coupling, GroundExchangeForcing(;
+    ground = ground_resistance(ground_coupling, boundary_layer_model, GroundExchangeForcing(;
         profile_heat_resistance=r[n] + R_sublayer_heat, profile_vapor_resistance=r[n] + R_sublayer_vapor,
-        layer_height=z[n], wind_speed=wind_speed[n], roughness_height=z0_ground, friction_velocity=u★,
-        plant_area_index=plant_area_index, air_temperature=(Ttop + Tg) / 2, atmospheric_pressure=p, karman_constant=κ))
+        layer_height=z[n], wind_speed=wind_speed[n], layer_air_temperature=T₀[n], ground_temperature=Tg,
+        roughness_height=z0_ground, friction_velocity=u★, plant_area_index, atmospheric_pressure=p))
     Rg_heat = max(ground.heat, min_ground_resistance)
     Rg_vapor = max(ground.vapor, min_ground_resistance)
 
