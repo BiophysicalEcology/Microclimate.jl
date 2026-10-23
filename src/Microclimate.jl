@@ -284,6 +284,7 @@ include("canopy/convergence/abstract.jl")
 include("canopy/multilayer.jl")
 include("canopy/energy_balance.jl")
 include("canopy/residual.jl")
+include("canopy/convergence/common.jl")
 include("canopy/convergence/nonlinear.jl")
 
 # Top-level config, parameters, problem, state, buffers, and cache types
