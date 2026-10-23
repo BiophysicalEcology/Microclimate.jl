@@ -71,6 +71,11 @@ end
     _, newton = solve_canopy(newton_model, canopy_inputs(newton_model))
     _, anderson = solve_canopy(anderson_model, canopy_inputs(anderson_model))
     @test maximum(abs, newton.leaf.leaf_temperature .- anderson.leaf.leaf_temperature) < 0.01u"K"
+    # One pass can't settle, so the hour falls back to Newton
+    fallback_model = Microclimate.example_multilayer_canopy(; canopy_height, plant_area_index,
+        convergence_model = AndersonCanopyConvergence(; maxiters = 1))
+    _, fallback = solve_canopy(fallback_model, canopy_inputs(fallback_model))
+    @test maximum(abs, newton.leaf.leaf_temperature .- fallback.leaf.leaf_temperature) < 1.0e-6u"K"
     @test allocations(canopy_energy_balance!, anderson, anderson_model, boundary_layer_model,
         canopy_inputs(anderson_model); site) == 0
 end
