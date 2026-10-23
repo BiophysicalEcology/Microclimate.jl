@@ -1,6 +1,6 @@
 using Microclimate
 using Microclimate: CanopyAirProfileForcing, GroundExchangeForcing, allocate_air_profile, canopy_heat_vapor_transport!,
-    ground_resistance, wet_air_properties
+    wet_air_properties
 using Unitful
 using Test
 
@@ -85,10 +85,11 @@ is_local_bump(values) = abs(argmax(values) - mid_layer) <= 1 && count(==(maximum
 end
 
 @testset "ground_resistance" begin
-    ground_forcing(; friction_velocity = 0.3u"m/s", plant_area_index = 3.0) = GroundExchangeForcing(;
+    ground_forcing(; friction_velocity = 0.3u"m/s", plant_area_index = 3.0, ground_temperature = T) = GroundExchangeForcing(;
         profile_heat_resistance = 100.0u"s/m", profile_vapor_resistance = 100.0u"s/m", layer_height = 0.1u"m",
-        wind_speed = 0.1u"m/s", roughness_height = 0.01u"m", friction_velocity, plant_area_index,
-        air_temperature = T, atmospheric_pressure = 101325.0u"Pa", karman_constant = 0.41)
+        wind_speed = 0.1u"m/s", layer_air_temperature = T, ground_temperature, roughness_height = 0.01u"m",
+        friction_velocity, plant_area_index, atmospheric_pressure = 101325.0u"Pa")
+    ground_resistance(coupling, forcing) = Microclimate.ground_resistance(coupling, boundary_layer_model, forcing)
     @test ground_resistance(ProfileGroundResistance(), ground_forcing()) == (; heat = 100.0u"s/m", vapor = 100.0u"s/m")
     for coupling in (FloorTurbulence(), SakaguchiZeng2009())
         @test ground_resistance(coupling, ground_forcing(; friction_velocity = 1.0u"m/s")).heat <
@@ -96,6 +97,10 @@ end
     end
     # Free convection keeps the floor coupled in calm air
     @test isfinite(ground_resistance(FloorTurbulence(), ground_forcing(; friction_velocity = 0.0u"m/s")).heat)
+    # A warm floor under cooler air is more strongly coupled; a cold one less
+    @test ground_resistance(FloorTurbulence(), ground_forcing(; ground_temperature = T + 5.0u"K")).heat <
+          ground_resistance(FloorTurbulence(), ground_forcing()).heat <
+          ground_resistance(FloorTurbulence(), ground_forcing(; ground_temperature = T - 5.0u"K")).heat
     # Dense canopy: Sakaguchi & Zeng's 1/(0.004 u★)
     @test ground_resistance(SakaguchiZeng2009(), ground_forcing(; plant_area_index = 50.0)).heat ≈ 1 / (0.004 * 0.3u"m/s")
 end
