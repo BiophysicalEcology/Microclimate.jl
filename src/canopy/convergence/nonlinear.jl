@@ -38,12 +38,7 @@ function allocate_canopy_convergence(convergence_model::NonlinearCanopyConvergen
 )
     n_state = canopy_state_length(buffers)
     n_layers = length(buffers.leaf.leaf_temperature)
-    forcing = Ref(CanopyResidualForcing(;
-        atmospheric_pressure=101325.0u"Pa", reference_temperature=288.0u"K", reference_wind_speed=1.0u"m/s",
-        reference_humidity=0.5, incoming_longwave=300.0u"W/m^2", ground_temperature=288.0u"K",
-        ground_emissivity=0.95, ground_relative_humidity=0.5, leaf_water_potential=0.0u"J/kg",
-        dry_conductance=stomatal_conductance(model.stomatal_model, 0.0u"°", 0.0u"J/kg", soil_hydraulic_model),
-        canopy_top_air_temperature=288.0u"K", canopy_top_relative_humidity=0.5))
+    forcing = Ref(initial_residual_forcing(model, soil_hydraulic_model))
     state = vcat(fill(288.0, 2n_layers), fill(5.0, n_layers), 0.0)
     residual = zeros(n_state)
     (; backend) = convergence_model

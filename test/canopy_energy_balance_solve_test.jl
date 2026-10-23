@@ -81,6 +81,17 @@ end
     end
 end
 
+@testset "AndersonCanopyConvergence matches the Newton solve" begin
+    newton_model = canopy()
+    anderson_model = Microclimate.example_multilayer_canopy(; canopy_height, plant_area_index,
+        convergence_model = AndersonCanopyConvergence(; tolerance = 0.001u"K"))
+    _, newton = solve_canopy(newton_model, canopy_inputs(newton_model))
+    _, anderson = solve_canopy(anderson_model, canopy_inputs(anderson_model))
+    @test maximum(abs, newton.leaf.leaf_temperature .- anderson.leaf.leaf_temperature) < 0.01u"K"
+    @test allocations(canopy_energy_balance!, anderson, anderson_model, boundary_layer_model,
+        canopy_inputs(anderson_model); site) == 0
+end
+
 @testset "uniform vector plant_area_index matches the equivalent scalar" begin
     scalar_model = canopy()
     vector_model = canopy(; plant_area_index = fill(plant_area_index / 10, 10))

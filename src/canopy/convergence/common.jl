@@ -1,3 +1,11 @@
+# Placeholder hourly forcing that fixes the solver cache's types
+initial_residual_forcing(model, soil_hydraulic_model) = CanopyResidualForcing(;
+    atmospheric_pressure=101325.0u"Pa", reference_temperature=288.0u"K", reference_wind_speed=1.0u"m/s",
+    reference_humidity=0.5, incoming_longwave=300.0u"W/m^2", ground_temperature=288.0u"K",
+    ground_emissivity=0.95, ground_relative_humidity=0.5, leaf_water_potential=0.0u"J/kg",
+    dry_conductance=stomatal_conductance(model.stomatal_model, 0.0u"°", 0.0u"J/kg", soil_hydraulic_model),
+    canopy_top_air_temperature=288.0u"K", canopy_top_relative_humidity=0.5)
+
 """
     canopy_hour_setup!(state, forcing::Ref, buffers, model::MultilayerCanopy, inputs::CanopyEnergyBalanceInputs,
         initial_wind; site, vapour_pressure_equation, soil_hydraulic_model)
