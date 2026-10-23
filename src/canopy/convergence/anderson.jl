@@ -1,19 +1,24 @@
 """
-    AndersonCanopyConvergence(; tolerance=0.1u"K", history=5, damping=1.0, maxiters=100)
+    AndersonCanopyConvergence(; tolerance=0.1u"K", history=5, damping=1.0, maxiters=100,
+        fallback=NonlinearCanopyConvergence(), fallback_threshold=10.0)
 
 Jacobian-free solve of [`evaluate_canopy!`](@ref) by Anderson-accelerated fixed-point passes:
 air and vapor from their transport, each leaf from a Newton step on its own balance.
-Stops when no temperature changes by more than `tolerance`; else keeps the steadiest pass.
+Stops when no temperature changes by more than `tolerance`; else keeps the steadiest pass,
+or solves the hour with `fallback` if that pass is more than `fallback_threshold`
+tolerances from settled.
 
 # References
 - Walker, H. F., & Ni, P. (2011). Anderson acceleration for fixed-point iterations.
   *SIAM Journal on Numerical Analysis*, 49(4), 1715-1735.
 """
-@kwdef struct AndersonCanopyConvergence{T,D} <: AbstractCanopyConvergenceModel
+@kwdef struct AndersonCanopyConvergence{T,D,F,FT} <: AbstractCanopyConvergenceModel
     tolerance::T = 0.1u"K"
     history::Int = 5
     damping::D = 1.0
     maxiters::Int = 100
+    fallback::F = NonlinearCanopyConvergence()
+    fallback_threshold::FT = 10.0
 end
 
 function allocate_canopy_convergence(convergence_model::AndersonCanopyConvergence, buffers, model, boundary_layer_model;
@@ -28,7 +33,9 @@ function allocate_canopy_convergence(convergence_model::AndersonCanopyConvergenc
         state=zeros(n_state), residual=zeros(n_state), mapped=zeros(n_state), step=zeros(n_state),
         best=zeros(n_state), previous_mapped=zeros(n_state), previous_step=zeros(n_state),
         mapped_differences=zeros(n_state, m), step_differences=zeros(n_state, m),
-        normal_matrix=zeros(m, m), normal_rhs=zeros(m), scale)
+        normal_matrix=zeros(m, m), normal_rhs=zeros(m), scale,
+        fallback=allocate_canopy_convergence(convergence_model.fallback, buffers, model, boundary_layer_model;
+            site, vapour_pressure_equation, soil_hydraulic_model))
 end
 
 # One fixed-point pass: `mapped` from `state`
@@ -139,8 +146,12 @@ function converge_canopy!(buffers, model::MultilayerCanopy, boundary_layer_model
             state[i] = max(state[i], 0.0)
         end
     end
-    best_change <= tolerance ||
-        @warn "AndersonCanopyConvergence did not converge; keeping the steadiest pass" best_change maxlog=5
+    if best_change > cm.fallback_threshold * tolerance
+        fallback_buffers = merge(buffers, (; convergence=buffers.convergence.fallback))
+        result = converge_canopy!(fallback_buffers, model, boundary_layer_model, inputs, initial_wind, cm.fallback;
+            site, vapour_pressure_equation, soil_hydraulic_model)
+        return Base.setindex(result, iterations + result[2], 2)
+    end
     copyto!(state, best)
     return canopy_solution!(residual, state, buffers, model, boundary_layer_model, forcing[], inputs, iterations;
         site, vapour_pressure_equation, soil_hydraulic_model)
