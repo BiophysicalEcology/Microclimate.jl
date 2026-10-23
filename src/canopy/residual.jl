@@ -139,10 +139,16 @@ function evaluate_canopy!(residual, state, buffers, model::MultilayerCanopy, bou
         model.canopy_height, wind.canopy_top_wind_speed, kinematic_viscosity)
     column = AboveCanopyColumn(; canopy_height=model.canopy_height, displacement_height=buffers.wind.displacement_height,
         friction_velocity=wind.friction_velocity, inverse_obukhov_length=wind.inverse_obukhov_length, enhancement)
+    floor = ground_resistance(model.ground_coupling, boundary_layer_model, GroundExchangeForcing(;
+        profile_heat_resistance=0.0u"s/m", profile_vapor_resistance=0.0u"s/m",
+        layer_height=buffers.wind.ground_layer_height, wind_speed=wind_speed[n_layers],
+        layer_air_temperature=air.air_temperature_prev[n_layers], ground_temperature,
+        roughness_height=site.roughness_height, friction_velocity=wind.friction_velocity,
+        plant_area_index=buffers.air_profile.plant_area_index, atmospheric_pressure))
     boundary = canopy_top_flux_boundary(boundary_layer_model, column, buffers.wind.above_canopy_profile.heights[2],
         sum(sensible_heat_source), sum(evaporation_mass_flow) / 1.0u"m^2",
         ground_temperature, ground_vapor_density, reference_temperature, reference_vapor_density,
-        forcing.canopy_top_air_temperature, initial_top_vapor_density)
+        forcing.canopy_top_air_temperature, initial_top_vapor_density; floor_resistance=floor.heat)
     in_bounds &= lo <= boundary.top_temperature <= hi
     canopy_top_air_temperature = clamp(boundary.top_temperature, lo, hi)
     top_saturation = wet_air_properties(canopy_top_air_temperature, 1.0, atmospheric_pressure;
