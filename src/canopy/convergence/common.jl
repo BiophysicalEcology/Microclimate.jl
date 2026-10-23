@@ -21,7 +21,7 @@ function canopy_hour_setup!(state, forcing::Ref, buffers, model::MultilayerCanop
     (; atmospheric_pressure, reference_temperature, reference_wind_speed, reference_humidity) = environment_instant
     leaf_temperature = buffers.leaf.leaf_temperature
     air = buffers.air_profile
-    n_layers = length(leaf_temperature)
+    rows = canopy_state_rows(length(leaf_temperature))
 
     forcing[] = CanopyResidualForcing(; atmospheric_pressure, reference_temperature, reference_wind_speed,
         reference_humidity, ground_temperature, ground_emissivity, ground_relative_humidity, leaf_water_potential,
@@ -35,12 +35,12 @@ function canopy_hour_setup!(state, forcing::Ref, buffers, model::MultilayerCanop
         fill!(air.vapor_density, wet_air_properties(initial_wind.canopy_top_air_temperature,
             initial_wind.canopy_top_relative_humidity, atmospheric_pressure; vapour_pressure_equation).vapour_density)
     end
-    for i in 1:n_layers
-        state[i] = ustrip(u"K", leaf_temperature[i])
-        state[n_layers + i] = ustrip(u"K", air.air_temperature[i])
-        state[2n_layers + i] = ustrip(u"g/m^3", air.vapor_density[i])
+    for i in eachindex(leaf_temperature)
+        state[rows.leaf_temperature[i]] = ustrip(u"K", leaf_temperature[i])
+        state[rows.air_temperature[i]] = ustrip(u"K", air.air_temperature[i])
+        state[rows.vapor_density[i]] = ustrip(u"g/m^3", air.vapor_density[i])
     end
-    state[3n_layers + 1] = ustrip(u"m^-1", initial_wind.inverse_obukhov_length)
+    state[rows.inverse_obukhov_length] = ustrip(u"m^-1", initial_wind.inverse_obukhov_length)
     return state
 end
 
@@ -59,8 +59,6 @@ function canopy_solution!(residual, state, buffers, model::MultilayerCanopy, bou
     (; atmospheric_pressure) = inputs.environment_instant
     (; leaf_temperature, potential_evaporation_mass_flow, leaf_body) = buffers.leaf
     air = buffers.air_profile
-    (; layer_transmission) = buffers.longwave
-    (; layer_plant_area_index_boundaries) = buffers.shortwave
     n_layers = length(leaf_temperature)
 
     # Leave buffers at the solution: the residual's own intermediates, with
@@ -76,13 +74,11 @@ function canopy_solution!(residual, state, buffers, model::MultilayerCanopy, bou
 
         # Unstressed (water_potential=0) reference transpiration, for a
         # soil-hydraulics demand term — not the leaf's own energy balance.
-        exchange_fraction = 1.0 - layer_transmission[i]
+        (; exchange_fraction, aerodynamic_area) = layer_leaf_areas(buffers, i)
         if iszero(exchange_fraction)
             potential_evaporation_mass_flow[i] = zero(potential_evaporation_mass_flow[i])
             continue
         end
-        layer_pai = layer_plant_area_index_boundaries[i + 1] - layer_plant_area_index_boundaries[i]
-        aerodynamic_area = 2.0 * layer_pai * 1.0u"m^2"
         conv = leaf_convection(model.leaf_convection_model, leaf_body, aerodynamic_area, air.air_temperature[i],
             leaf_temperature[i], buffers.wind.wind_speed[i], atmospheric_pressure)
         atmos = AtmosphericConditions(air.relative_humidity[i], buffers.wind.wind_speed[i], atmospheric_pressure)

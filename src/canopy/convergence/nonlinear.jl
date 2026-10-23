@@ -132,12 +132,11 @@ function converge_canopy!(buffers, model::MultilayerCanopy, boundary_layer_model
         if !SciMLBase.successful_retcode(fallback_solver.retcode)
             reference_vapor_density = ustrip(u"g/m^3", wet_air_properties(reference_temperature, reference_humidity,
                 atmospheric_pressure; vapour_pressure_equation).vapour_density)
-            for i in 1:n_layers
-                state[i] = ustrip(u"K", reference_temperature)
-                state[n_layers + i] = ustrip(u"K", reference_temperature)
-                state[2n_layers + i] = reference_vapor_density
-            end
-            state[3n_layers + 1] = 0.0
+            rows = canopy_state_rows(n_layers)
+            state[rows.leaf_temperature] .= ustrip(u"K", reference_temperature)
+            state[rows.air_temperature] .= ustrip(u"K", reference_temperature)
+            state[rows.vapor_density] .= reference_vapor_density
+            state[rows.inverse_obukhov_length] = 0.0
             SciMLBase.reinit!(fallback_solver, state; p=parameters)
             SciMLBase.solve!(fallback_solver)
             iterations += fallback_solver.stats.nsteps

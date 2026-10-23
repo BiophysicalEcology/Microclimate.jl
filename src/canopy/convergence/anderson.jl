@@ -44,20 +44,22 @@ function canopy_fixed_point!(mapped, residual, state, buffers, model, boundary_l
 )
     evaluate_canopy!(residual, state, buffers, model, boundary_layer_model, forcing; site, vapour_pressure_equation)
     (; leaf_temperature, net_balance) = buffers.leaf
-    n_layers = length(leaf_temperature)
+    rows = canopy_state_rows(length(leaf_temperature))
     δ = 0.1u"K"
-    for i in 1:n_layers
+    for i in eachindex(leaf_temperature)
         slope = 1.0
-        if !iszero(1.0 - buffers.longwave.layer_transmission[i])
+        if !iszero(layer_leaf_areas(buffers, i).exchange_fraction)
             (; balance, leaf_area) = layer_leaf_balance(buffers, model, forcing, i, leaf_temperature[i] + δ;
                 vapour_pressure_equation)
             # Net balance falls as the leaf warms
             slope = min(ustrip(u"W/m^2/K", (balance.net - net_balance[i]) / (δ * leaf_area)), -1.0)
             slope = -slope
         end
-        mapped[i] = state[i] + residual[i] / slope
+        j = rows.leaf_temperature[i]
+        mapped[j] = state[j] + residual[j] / slope
     end
-    for j in (n_layers + 1):length(state)
+    # Air, vapor and stability rows already read state minus transport
+    for j in first(rows.air_temperature):rows.inverse_obukhov_length
         mapped[j] = state[j] - residual[j]
     end
     return mapped
@@ -68,7 +70,7 @@ function converge_canopy!(buffers, model::MultilayerCanopy, boundary_layer_model
 )
     (; forcing, state, residual, mapped, step, best, previous_mapped, previous_step, mapped_differences,
        step_differences, normal_matrix, normal_rhs, scale) = buffers.convergence
-    n_layers = length(buffers.leaf.leaf_temperature)
+    rows = canopy_state_rows(length(buffers.leaf.leaf_temperature))
     canopy_hour_setup!(state, forcing, buffers, model, inputs, initial_wind;
         site, vapour_pressure_equation, soil_hydraulic_model)
 
@@ -139,10 +141,10 @@ function converge_canopy!(buffers, model::MultilayerCanopy, boundary_layer_model
             end
             state[j] = next
         end
-        for i in 1:2n_layers
+        for i in first(rows.leaf_temperature):last(rows.air_temperature)
             state[i] = clamp(state[i], lo, hi)
         end
-        for i in (2n_layers + 1):3n_layers
+        for i in rows.vapor_density
             state[i] = max(state[i], 0.0)
         end
     end

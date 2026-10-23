@@ -41,6 +41,28 @@ and vapor density (g/m³) per layer, then the inverse Obukhov length (1/m).
 canopy_state_length(buffers) = 3 * length(buffers.leaf.leaf_temperature) + 1
 
 """
+    canopy_state_rows(n_layers)
+
+Index ranges of the canopy state vector, as
+`(; leaf_temperature, air_temperature, vapor_density, inverse_obukhov_length)`.
+"""
+canopy_state_rows(n_layers) = (; leaf_temperature=1:n_layers, air_temperature=(n_layers + 1):2n_layers,
+    vapor_density=(2n_layers + 1):3n_layers, inverse_obukhov_length=3n_layers + 1)
+
+"""
+    layer_leaf_areas(buffers, layer)
+
+Layer `layer`'s radiative exchange fraction `1 - τ`, and its two-sided leaf area (from
+`1 - τ`) and aerodynamic area (from plant area index), as `(; exchange_fraction, leaf_area, aerodynamic_area)`.
+"""
+function layer_leaf_areas(buffers, layer)
+    exchange_fraction = 1.0 - buffers.longwave.layer_transmission[layer]
+    boundaries = buffers.shortwave.layer_plant_area_index_boundaries
+    layer_pai = boundaries[layer + 1] - boundaries[layer]
+    return (; exchange_fraction, leaf_area=2.0 * exchange_fraction * 1.0u"m^2", aerodynamic_area=2.0 * layer_pai * 1.0u"m^2")
+end
+
+"""
     CANOPY_TEMPERATURE_BOUNDS
 
 Leaf, air and canopy-top temperatures outside which [`evaluate_canopy!`](@ref)
@@ -68,13 +90,9 @@ function layer_leaf_balance(buffers, model::MultilayerCanopy, forcing::CanopyRes
     (; atmospheric_pressure, leaf_water_potential, dry_conductance) = forcing
     air = buffers.air_profile
     air_temperature = air.air_temperature_prev[layer]
-    exchange_fraction = 1.0 - buffers.longwave.layer_transmission[layer]
-    layer_plant_area_index_boundaries = buffers.shortwave.layer_plant_area_index_boundaries
+    (; leaf_area, aerodynamic_area) = layer_leaf_areas(buffers, layer)
     saturation = wet_air_properties(air_temperature, 1.0, atmospheric_pressure; vapour_pressure_equation).vapour_density
     relative_humidity = clamp(air.vapor_density_prev[layer] / saturation, 0.0, 1.0)
-    leaf_area = 2.0 * exchange_fraction * 1.0u"m^2"
-    layer_pai = layer_plant_area_index_boundaries[layer + 1] - layer_plant_area_index_boundaries[layer]
-    aerodynamic_area = 2.0 * layer_pai * 1.0u"m^2"
     conductance = blend_stomatal_conductance(dry_conductance, wet_canopy_fraction(model, buffers, layer))
     balance = leaf_heat_balance(leaf_temperature, buffers.leaf.absorbed_radiation[layer], air_temperature, relative_humidity,
         buffers.wind.wind_speed[layer], atmospheric_pressure, model.leaf_parameters.leaf_emissivity, conductance,
@@ -108,16 +126,17 @@ function evaluate_canopy!(residual, state, buffers, model::MultilayerCanopy, bou
     (; leaf_temperature, sensible_heat_source, evaporation_mass_flow, absorbed_radiation, net_balance) = buffers.leaf
     air = buffers.air_profile
     (; absorbed_shortwave) = buffers.shortwave
-    (; absorbed_longwave, layer_transmission) = buffers.longwave
+    (; absorbed_longwave) = buffers.longwave
     n_layers = length(leaf_temperature)
+    rows = canopy_state_rows(n_layers)
 
     # Evaluate out-of-bounds states at the bounds; their residual is NaN
     lo, hi = CANOPY_TEMPERATURE_BOUNDS
     in_bounds = true
     for i in 1:n_layers
-        leaf = state[i] * u"K"
-        air_temperature = state[n_layers + i] * u"K"
-        vapor_density = state[2n_layers + i] * u"g/m^3"
+        leaf = state[rows.leaf_temperature[i]] * u"K"
+        air_temperature = state[rows.air_temperature[i]] * u"K"
+        vapor_density = state[rows.vapor_density[i]] * u"g/m^3"
         in_bounds &= lo <= leaf <= hi && lo <= air_temperature <= hi && vapor_density >= zero(vapor_density)
         leaf_temperature[i] = clamp(leaf, lo, hi)
         air.air_temperature_prev[i] = clamp(air_temperature, lo, hi)
@@ -127,22 +146,20 @@ function evaluate_canopy!(residual, state, buffers, model::MultilayerCanopy, bou
     environment_instant = (; atmospheric_pressure, reference_temperature, reference_wind_speed, reference_humidity)
     wind = canopy_wind_profile!(buffers, model, boundary_layer_model;
         site, environment_instant, canopy_source_temperature=leaf_temperature[1], vapour_pressure_equation,
-        inverse_obukhov_length=state[3n_layers + 1] * u"m^-1")
+        inverse_obukhov_length=state[rows.inverse_obukhov_length] * u"m^-1")
     wind_speed = buffers.wind.wind_speed
     longwave_result = canopy_longwave!(buffers, model;
         leaf_temperature, ground_temperature, ground_emissivity, incoming_longwave)
 
     for i in 1:n_layers
         air_temperature = air.air_temperature_prev[i]
-        # Radiative exchange area is the layer's interception fraction (1-τ);
-        # aerodynamic exchange scales with leaf surface (PAI). 2.0 = both sides.
-        exchange_fraction = 1.0 - layer_transmission[i]
+        (; exchange_fraction) = layer_leaf_areas(buffers, i)
         if iszero(exchange_fraction)
             sensible_heat_source[i] = zero(sensible_heat_source[i])
             evaporation_mass_flow[i] = zero(evaporation_mass_flow[i])
             absorbed_radiation[i] = zero(absorbed_radiation[i])
             net_balance[i] = zero(net_balance[i])
-            residual[i] = ustrip(u"K", leaf_temperature[i] - air_temperature)
+            residual[rows.leaf_temperature[i]] = ustrip(u"K", leaf_temperature[i] - air_temperature)
             continue
         end
         # absorbed_shortwave/absorbed_longwave are per unit ground area
@@ -151,7 +168,7 @@ function evaluate_canopy!(residual, state, buffers, model::MultilayerCanopy, bou
         sensible_heat_source[i] = balance.conv.convection_flow / 1.0u"m^2"
         evaporation_mass_flow[i] = balance.evap.transpiration_mass_flow
         net_balance[i] = balance.net
-        residual[i] = ustrip(u"W/m^2", balance.net / leaf_area)
+        residual[rows.leaf_temperature[i]] = ustrip(u"W/m^2", balance.net / leaf_area)
     end
 
     reference_vapor_density = wet_air_properties(reference_temperature, reference_humidity, atmospheric_pressure;
@@ -187,10 +204,10 @@ function evaluate_canopy!(residual, state, buffers, model::MultilayerCanopy, bou
         site, vapour_pressure_equation, ground_coupling=model.ground_coupling)
 
     for i in 1:n_layers
-        residual[n_layers + i] = ustrip(u"K", air.air_temperature_prev[i] - air.air_temperature[i])
-        residual[2n_layers + i] = state[2n_layers + i] - ustrip(u"g/m^3", air.vapor_density[i])
+        residual[rows.air_temperature[i]] = ustrip(u"K", air.air_temperature_prev[i] - air.air_temperature[i])
+        residual[rows.vapor_density[i]] = state[rows.vapor_density[i]] - ustrip(u"g/m^3", air.vapor_density[i])
     end
-    residual[3n_layers + 1] = ustrip(u"m^-1", wind.inverse_obukhov_length - wind.inverse_obukhov_length_update)
+    residual[rows.inverse_obukhov_length] = ustrip(u"m^-1", wind.inverse_obukhov_length - wind.inverse_obukhov_length_update)
     in_bounds || fill!(residual, NaN)
 
     return (; longwave_result, canopy_top_air_temperature, canopy_top_relative_humidity,
