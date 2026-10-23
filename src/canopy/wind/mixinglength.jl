@@ -225,30 +225,39 @@ function canopy_top_flux_boundary(boundary_layer_model, column::AboveCanopyColum
     floor_resistance=0.0u"s/m", max_resistance=2000.0u"s/m",
 )
     (; canopy_height, friction_velocity, enhancement) = column
+
+    # Mathematical aliases
+    h = canopy_height
+    u★ = friction_velocity
+    e = enhancement
     κ = boundary_layer_model.karman_constant
+    H = total_sensible_flux
+    E = total_latent_flux
+    T_g = ground_temperature
+    ρᵥ_g = ground_vapour_density
+    T_r = reference_temperature
+    ρᵥ_r = reference_vapour_density
+    T_prev = previous_top_temperature
+    ρᵥ_prev = previous_top_vapour_density
+    R_max = max_resistance
     z_top = _canopy_top_depth(column)
 
-    ground_resistance = min(canopy_height / (κ * friction_velocity * z_top * enhancement) + floor_resistance, max_resistance)
-    top_resistance = min(column_heat_resistance(column, boundary_layer_model, canopy_height, reference_height), max_resistance)
+    R_g = min(h / (κ * u★ * z_top * e) + floor_resistance, R_max)
+    R_t = min(column_heat_resistance(column, boundary_layer_model, h, reference_height), R_max)
 
     # ρ_cp fixed from ambient data, not the solved top_temperature: calc_ρ_cp
     # ∝ 1/T, so tying it to the unknown would make the balance nonlinear again.
-    ρ_cp = calc_ρ_cp((reference_temperature + ground_temperature) / 2)
+    ρ_cp = calc_ρ_cp((T_r + T_g) / 2)
 
     # Closed-form solution of the linear balance:
-    #   Tt = Tr + (H + (ρcp/Rg)(Tg-Tt)) Rt/ρcp   =>   Tt(1+Rt/Rg) = Tr + H·Rt/ρcp + (Rt/Rg)Tg
+    #   T_t = T_r + (H + (ρcp/R_g)(T_g - T_t)) R_t/ρcp   =>   T_t(1 + R_t/R_g) = T_r + H·R_t/ρcp + (R_t/R_g)T_g
     # and the analogous vapour-density equation.
-    Rtg = top_resistance / ground_resistance
-    undamped_top_temperature = (reference_temperature + total_sensible_flux * top_resistance / ρ_cp + Rtg * ground_temperature) / (1.0 + Rtg)
-    undamped_top_vapour_density = (reference_vapour_density + total_latent_flux * top_resistance + Rtg * ground_vapour_density) / (1.0 + Rtg)
-    top_temperature = undamped_top_temperature
-    top_vapour_density = undamped_top_vapour_density
+    Rtg = R_t / R_g
+    T_t = (T_r + H * R_t / ρ_cp + Rtg * T_g) / (1.0 + Rtg)
+    ρᵥ_t = (ρᵥ_r + E * R_t + Rtg * ρᵥ_g) / (1.0 + Rtg)
 
-    # Residence time of a z_top-deep column via top_resistance; can exceed an
-    # hour under calm conditions (see docstring).
-    τ = z_top * top_resistance
-    physical_weight = 1.0 - exp(-ustrip(u"s", CANOPY_TIMESTEP) / ustrip(u"s", τ))
-    top_temperature = previous_top_temperature + (top_temperature - previous_top_temperature) * physical_weight
-    top_vapour_density = previous_top_vapour_density + (top_vapour_density - previous_top_vapour_density) * physical_weight
-    return (; top_temperature, top_vapour_density)
+    # Residence time of a z_top-deep column via R_t; can exceed an hour under calm conditions (see docstring).
+    τ = z_top * R_t
+    w = 1.0 - exp(-ustrip(u"s", CANOPY_TIMESTEP) / ustrip(u"s", τ))
+    return (; top_temperature=T_prev + (T_t - T_prev) * w, top_vapour_density=ρᵥ_prev + (ρᵥ_t - ρᵥ_prev) * w)
 end
