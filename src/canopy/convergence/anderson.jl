@@ -1,11 +1,9 @@
 """
     AndersonCanopyConvergence(; tolerance=0.1u"K", history=5, damping=1.0, maxiters=100)
 
-Solves the hourly canopy residual ([`evaluate_canopy!`](@ref)) by Anderson-accelerated
-fixed-point passes (Walker & Ni 2011), without a Jacobian. Each pass takes air, vapor
-density and stability from their transport, and each leaf temperature from one Newton
-step on its own energy balance. Stops once no temperature changes by more than
-`tolerance` between passes; otherwise keeps the steadiest pass.
+Jacobian-free solve of [`evaluate_canopy!`](@ref) by Anderson-accelerated fixed-point passes:
+air and vapor from their transport, each leaf from a Newton step on its own balance.
+Stops when no temperature changes by more than `tolerance`; else keeps the steadiest pass.
 
 # References
 - Walker, H. F., & Ni, P. (2011). Anderson acceleration for fixed-point iterations.
@@ -24,7 +22,7 @@ function allocate_canopy_convergence(convergence_model::AndersonCanopyConvergenc
     n_state = canopy_state_length(buffers)
     n_layers = length(buffers.leaf.leaf_temperature)
     m = convergence_model.history
-    # Rows weighted to comparable sizes: K, g/m³, and 1/m times 100 m
+    # Row weights: K, g/m³, and 1/m × 100 m
     scale = vcat(ones(3n_layers), 100.0)
     return (; forcing=Ref(initial_residual_forcing(model, soil_hydraulic_model)),
         state=zeros(n_state), residual=zeros(n_state), mapped=zeros(n_state), step=zeros(n_state),
@@ -46,7 +44,7 @@ function canopy_fixed_point!(mapped, residual, state, buffers, model, boundary_l
         if !iszero(1.0 - buffers.longwave.layer_transmission[i])
             (; balance, leaf_area) = layer_leaf_balance(buffers, model, forcing, i, leaf_temperature[i] + δ;
                 vapour_pressure_equation)
-            # Net balance falls as the leaf warms; guard a non-negative slope
+            # Net balance falls as the leaf warms
             slope = min(ustrip(u"W/m^2/K", (balance.net - net_balance[i]) / (δ * leaf_area)), -1.0)
             slope = -slope
         end

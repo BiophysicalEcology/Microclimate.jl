@@ -147,8 +147,7 @@ function canopy_heat_vapor_transport!(buffers, ::KTheoryAirProfile, boundary_lay
     ρcp = calc_ρ_cp(T_top)
     K₀ = κ * uₛ * max(h - d₀, 1.0e-3u"m") * above_canopy_column.enhancement # numerical floor, not a physical parameter
 
-    # Boundary conductances g[0] (layer 1 <-> layer 2) .. g[n] (layer n <-> ground): heat in W/m^2/K;
-    # vapor in m/s, with no ρ_cp, since a vapor-density gradient times K is already a mass flux
+    # Boundary conductances, layer 1↔2 to layer n↔ground: heat W/m²/K, vapor m/s
     g_top, g_ground = _ktheory_conductances!(ev, K̂, K₀, Δz, ρcp, u"W/m^2/K")
     gᵥ_top, gᵥ_ground = _ktheory_conductances!(evᵥ, K̂, K₀, Δz, 1.0, u"m/s")
     g_ground, gᵥ_ground = _ktheory_ground_conductances(ground_coupling, boundary_layer_model, g_ground, gᵥ_ground, ρcp,

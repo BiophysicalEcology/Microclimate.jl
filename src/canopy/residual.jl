@@ -51,8 +51,7 @@ const CANOPY_TEMPERATURE_BOUNDS = (100.0u"K", 1000.0u"K")
     layer_leaf_balance(buffers, model::MultilayerCanopy, forcing::CanopyResidualForcing, layer, leaf_temperature;
         vapour_pressure_equation)
 
-Layer `layer`'s `leaf_heat_balance` at `leaf_temperature`, from the air state and absorbed
-radiation in `buffers`, with its leaf area, as `(; balance, leaf_area)`.
+Layer `layer`'s `leaf_heat_balance` at `leaf_temperature`, as `(; balance, leaf_area)`.
 """
 function layer_leaf_balance(buffers, model::MultilayerCanopy, forcing::CanopyResidualForcing, layer, leaf_temperature;
     vapour_pressure_equation,
