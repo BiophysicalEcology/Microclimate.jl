@@ -48,11 +48,22 @@ function canopy_top_enhancement(model::CanopyTopMixingEnhancement, canopy_height
     ground_roughness_height, karman_constant,
 )
     (; max_enhancement, drag_coefficient, max_friction_velocity_ratio) = model
-    bare = min(karman_constant / log(canopy_height / ground_roughness_height), max_friction_velocity_ratio)
-    bare >= max_friction_velocity_ratio && return float(max_enhancement)
-    ratio = min(sqrt(bare^2 + drag_coefficient * plant_area_index / 2), max_friction_velocity_ratio)
-    closure = (ratio - bare) / (max_friction_velocity_ratio - bare)
-    return 1.0 + (max_enhancement - 1.0) * closure
+
+    # Mathematical aliases
+    h = canopy_height
+    z₀ = ground_roughness_height
+    PAI = plant_area_index
+    κ = karman_constant
+    e_max = max_enhancement
+    C_R = drag_coefficient
+    γ_max = max_friction_velocity_ratio
+
+    # u★/U_h over bare ground, then with the canopy (Raupach 1994)
+    γ_bare = min(κ / log(h / z₀), γ_max)
+    γ_bare >= γ_max && return float(e_max)
+    γ = min(sqrt(γ_bare^2 + C_R * PAI / 2), γ_max)
+    closure = (γ - γ_bare) / (γ_max - γ_bare)
+    return 1.0 + (e_max - 1.0) * closure
 end
 
 """
@@ -67,9 +78,16 @@ turbulent_enhancement(::NoRoughnessSublayer, enhancement, canopy_height, canopy_
 function turbulent_enhancement(model::CanopyTopMixingEnhancement, enhancement, canopy_height, canopy_top_wind_speed,
     kinematic_viscosity,
 )
-    reynolds_number = uconvert(NoUnits, canopy_top_wind_speed * canopy_height / kinematic_viscosity)
-    fade = reynolds_number^2 / (reynolds_number^2 + model.transition_reynolds_number^2)
-    return 1.0 + (enhancement - 1.0) * fade
+    # Mathematical aliases
+    e = enhancement
+    h = canopy_height
+    U_h = canopy_top_wind_speed
+    ν = kinematic_viscosity
+    Re_t = model.transition_reynolds_number
+
+    Re = uconvert(NoUnits, U_h * h / ν)
+    fade = Re^2 / (Re^2 + Re_t^2)
+    return 1.0 + (e - 1.0) * fade
 end
 
 """
@@ -102,8 +120,10 @@ Height above the displacement height at which Monin-Obukhov theory is applied:
 `½(z′ + √(z′² + b²))`, `b = (h - d)√(e² - 1)`.
 """
 function stretched_height(column::AboveCanopyColumn, z)
-    z′ = max(z - column.displacement_height, 1.0e-3u"m")
-    b = _canopy_top_depth(column) * sqrt(max(column.enhancement^2 - 1.0, 0.0))
+    d = column.displacement_height
+    e = column.enhancement
+    z′ = max(z - d, 1.0e-3u"m")
+    b = _canopy_top_depth(column) * sqrt(max(e^2 - 1.0, 0.0))
     return (z′ + sqrt(z′^2 + b^2)) / 2
 end
 
@@ -118,11 +138,17 @@ Turbulent heat resistance between two heights at or above canopy top.
 """
 function column_heat_resistance(column::AboveCanopyColumn, boundary_layer_model, lower_height, upper_height)
     (; friction_velocity, inverse_obukhov_length) = column
+
+    # Mathematical aliases
+    u★ = friction_velocity
+    L⁻¹ = inverse_obukhov_length
+    κ = boundary_layer_model.karman_constant
+
     s₁ = stretched_height(column, lower_height)
     s₂ = stretched_height(column, upper_height)
-    log_ratio = log(s₂ / s₁)
-    ψ₁ = _column_ψ_h(boundary_layer_model, s₁, inverse_obukhov_length)
-    ψ₂ = _column_ψ_h(boundary_layer_model, s₂, inverse_obukhov_length)
+    ln_s = log(s₂ / s₁)
+    ψ₁ = _column_ψ_h(boundary_layer_model, s₁, L⁻¹)
+    ψ₂ = _column_ψ_h(boundary_layer_model, s₂, L⁻¹)
     # TODO drop the log-ratio floor with the smooth ψ (#137)
-    return max(log_ratio - ψ₂ + ψ₁, 0.1 * log_ratio, 1.0e-6) / (boundary_layer_model.karman_constant * friction_velocity)
+    return max(ln_s - ψ₂ + ψ₁, 0.1 * ln_s, 1.0e-6) / (κ * u★)
 end

@@ -188,7 +188,7 @@ function canopy_heat_vapor_transport!(buffers, ::KTheoryAirProfile, boundary_lay
         g₋ = i == 1      ? gᵥ_top    : evᵥ[i - 1]
         g₊ = i == n_free ? gᵥ_g : evᵥ[i]
         dᵥ[i] = -(g₋ + g₊)
-        bᵥ[i] = -ustrip(u"kg/m^2/s", E[i + 1] / 1.0u"m^2",)
+        bᵥ[i] = -ustrip(u"kg/m^2/s", E[i + 1] / 1.0u"m^2")
     end
 
     bᵥ[1] -= gᵥ_top * ρᵥ₀
