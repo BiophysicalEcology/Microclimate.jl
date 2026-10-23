@@ -47,23 +47,30 @@ ground_resistance(::ProfileGroundResistance, boundary_layer_model, forcing::Grou
     (; heat=forcing.profile_heat_resistance, vapor=forcing.profile_vapor_resistance)
 
 """
-    FloorTurbulence(; floor_velocity_ratio=0.2, free_convection_velocity=0.04u"m/s")
+    FloorTurbulence(; gust_decay=4.18, leaf_drag_coefficient=0.25, shelter_factor=0.4,
+        free_convection_velocity=0.04u"m/s")
 
 Log-law plus sublayer ([`sublayer_stanton`](@ref)) resistance with floor velocity
-`u_g = √((floor_velocity_ratio·u★)² + free_convection_velocity²)`. The log-law takes
+`u_g = √((r·u★)² + free_convection_velocity²)`, sheltered by the foliage above:
+`r = exp(-gust_decay·leaf_drag_coefficient·PAI/(1 + shelter_factor·PAI))` (Massman & Weil 1999). The log-law takes
 Monin-Obukhov stability from the floor's bulk Richardson number: `ζ = Ri` unstable,
 `ζ = Ri/(1 - β·Ri)` stable (Dyer 1974).
 """
-@kwdef struct FloorTurbulence{R,U} <: AbstractGroundCoupling
-    floor_velocity_ratio::R = 0.2
+@kwdef struct FloorTurbulence{G,C,S,U} <: AbstractGroundCoupling
+    gust_decay::G = 4.18
+    leaf_drag_coefficient::C = 0.25
+    shelter_factor::S = 0.4
     free_convection_velocity::U = 0.04u"m/s"
 end
 
 function ground_resistance(coupling::FloorTurbulence, boundary_layer_model, forcing::GroundExchangeForcing)
-    (; layer_height, layer_air_temperature, ground_temperature, roughness_height, friction_velocity, atmospheric_pressure) = forcing
+    (; layer_height, layer_air_temperature, ground_temperature, roughness_height, friction_velocity, plant_area_index,
+       atmospheric_pressure) = forcing
     (; karman_constant, dyer_constant, stable_beta, turbulent_prandtl_number) = boundary_layer_model
+    (; gust_decay, leaf_drag_coefficient, shelter_factor, free_convection_velocity) = coupling
     air_temperature = _mean_air_temperature(forcing)
-    u_g = sqrt((coupling.floor_velocity_ratio * friction_velocity)^2 + coupling.free_convection_velocity^2)
+    ratio = exp(-gust_decay * leaf_drag_coefficient * plant_area_index / (1 + shelter_factor * plant_area_index))
+    u_g = sqrt((ratio * friction_velocity)^2 + free_convection_velocity^2)
     kinematic_viscosity = dry_air_properties(air_temperature, atmospheric_pressure).kinematic_viscosity
 
     richardson_number = uconvert(NoUnits,
