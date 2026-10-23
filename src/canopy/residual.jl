@@ -60,8 +60,7 @@ _canopy_top_floor_resistance(coupling::AbstractGroundCoupling, boundary_layer_mo
     layer_leaf_balance(buffers, model::MultilayerCanopy, forcing::CanopyResidualForcing, layer, leaf_temperature;
         vapour_pressure_equation)
 
-Layer `layer`'s `leaf_heat_balance` at `leaf_temperature`, from the air state and absorbed
-radiation in `buffers`, with its leaf area, as `(; balance, leaf_area)`.
+Layer `layer`'s `leaf_heat_balance` at `leaf_temperature`, as `(; balance, leaf_area)`.
 """
 function layer_leaf_balance(buffers, model::MultilayerCanopy, forcing::CanopyResidualForcing, layer, leaf_temperature;
     vapour_pressure_equation,
