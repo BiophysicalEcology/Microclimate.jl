@@ -1125,20 +1125,11 @@ function converge_canopy_soil_hour!(ode_integrator, hour_index, hour_T0_ode, csc
     ground_temperature = ground_temperature0
     local overrides, T0, T_snow
     for iter in 1:niter
-        overrides = apply_canopy_overrides(canopy_model, canopy_buffers;
-            boundary_layer_model, site, vapour_pressure_equation, soil_hydraulic_model, environment_instant, ground_temperature,
-            ground_emissivity, ground_relative_humidity, canopy_source_temperature,
-            rainfall, direct_horizontal_irradiance, diffuse_horizontal_irradiance,
-            ground_reflectance=albedo, leaf_water_potential)
-        set_hourly_inputs!(ode_integrator, HourlySoilEnergyInputs(;
-            depths=ode_depths, environment_instant, soil_wetness, longwave_sky, albedo, Q_freeze, snow_state,
-            ground_shortwave_transmission=overrides.ground_shortwave_transmission,
-            ground_incoming_longwave=overrides.ground_incoming_longwave,
-            ground_wind_speed=overrides.ground_wind_speed, ground_air_temperature=overrides.ground_air_temperature,
-            ground_air_relative_humidity=overrides.ground_air_relative_humidity,
-            ground_reference_height=overrides.ground_reference_height,
-            ground_heat_conductance=overrides.ground_heat_conductance, ground_vapor_conductance=overrides.ground_vapor_conductance,
-        ))
+        overrides = _canopy_soil_pass!(ode_integrator, canopy_model, canopy_buffers, ground_temperature;
+            canopy_source_temperature, ode_depths, soil_wetness, longwave_sky, albedo, Q_freeze, snow_state,
+            boundary_layer_model, site, vapour_pressure_equation, soil_hydraulic_model, environment_instant,
+            ground_emissivity, ground_relative_humidity, rainfall, leaf_water_potential,
+            direct_horizontal_irradiance, diffuse_horizontal_irradiance)
         _maybe_reinit_integrator!(ode_integrator, hour_T0_ode, (hour_index - 1) * 60.0u"minute"; reset_dt=false)
         T_result = step_to_hour!(ode_integrator, hour_index)
         T_snow, T0 = split_ode_state(snow_model, T_result)
@@ -1147,6 +1138,88 @@ function converge_canopy_soil_hour!(ode_integrator, hour_index, hour_T0_ode, csc
         ground_temperature = relaxation * new_ground_temperature + (1 - relaxation) * ground_temperature
         converged && break
     end
+    return (; overrides, T0, T_snow)
+end
+
+# Solve the canopy at `ground_temperature` and hand its ground overrides to the soil ODE
+function _canopy_soil_pass!(ode_integrator, canopy_model, canopy_buffers, ground_temperature;
+    canopy_source_temperature, ode_depths, soil_wetness, longwave_sky, albedo, Q_freeze, snow_state,
+    boundary_layer_model, site, vapour_pressure_equation, soil_hydraulic_model, environment_instant,
+    ground_emissivity, ground_relative_humidity, rainfall, leaf_water_potential,
+    direct_horizontal_irradiance, diffuse_horizontal_irradiance,
+)
+    overrides = apply_canopy_overrides(canopy_model, canopy_buffers;
+        boundary_layer_model, site, vapour_pressure_equation, soil_hydraulic_model, environment_instant, ground_temperature,
+        ground_emissivity, ground_relative_humidity, canopy_source_temperature,
+        rainfall, direct_horizontal_irradiance, diffuse_horizontal_irradiance,
+        ground_reflectance=albedo, leaf_water_potential)
+    set_hourly_inputs!(ode_integrator, HourlySoilEnergyInputs(;
+        depths=ode_depths, environment_instant, soil_wetness, longwave_sky, albedo, Q_freeze, snow_state,
+        ground_shortwave_transmission=overrides.ground_shortwave_transmission,
+        ground_incoming_longwave=overrides.ground_incoming_longwave,
+        ground_wind_speed=overrides.ground_wind_speed, ground_air_temperature=overrides.ground_air_temperature,
+        ground_air_relative_humidity=overrides.ground_air_relative_humidity,
+        ground_reference_height=overrides.ground_reference_height,
+        ground_heat_conductance=overrides.ground_heat_conductance, ground_vapor_conductance=overrides.ground_vapor_conductance,
+    ))
+    return overrides
+end
+
+# End-of-hour temperatures of the top `K` soil nodes from one backward-Euler step, with the soil
+# ODE's own right-hand side and the nodes below held at their start-of-hour values
+function _predict_top_temperatures(p, hour_T0_ode::SVector{N}, guess::SVector{K}, t_end;
+    Δt=60.0u"minute", δ=0.01u"K",
+) where {N,K}
+    with_top(T) = SVector{N}(ntuple(i -> i <= K ? T[i] : hour_T0_ode[i], Val(N)))
+    function top_rates(T)
+        derivatives = soil_energy_balance(with_top(T), p, t_end)
+        return SVector{K}(ntuple(i -> ustrip(u"K/minute", derivatives[i]), Val(K)))
+    end
+    T_start = SVector{K}(ntuple(i -> hour_T0_ode[i], Val(K)))
+    dt = ustrip(u"minute", Δt)
+    T = guess
+    rates = top_rates(T)
+    # Chord iteration: the Jacobian at the guess, reused for every step
+    columns = ntuple(Val(K)) do column
+        perturbed = top_rates(T + SVector{K}(ntuple(i -> i == column ? δ : zero(δ), Val(K))))
+        SVector{K}(ntuple(row -> (row == column) / dt - (perturbed[row] - rates[row]) / ustrip(u"K", δ), Val(K)))
+    end
+    jacobian = hcat(columns...)
+    for _ in 1:10
+        residual = ustrip.(u"K", T - T_start) ./ dt - rates
+        step = clamp.(jacobian \ residual, -10.0, 10.0) .* u"K"
+        T -= step
+        maximum(abs, step) < 1.0e-3u"K" && break
+        rates = top_rates(T)
+    end
+    return T
+end
+
+function converge_canopy_soil_hour!(ode_integrator, hour_index, hour_T0_ode, csc::SurfaceNodePrediction,
+    canopy_model, canopy_buffers, snow_model; snow_present, relaxation=1.0, kw...,
+)
+    # Snow columns keep the iterated coupling
+    if snow_present || _n_snow(snow_model) > 0
+        iterated = IterationToleranceConvergence(; csc.tolerance, max_iterations_per_day=csc.max_iterations)
+        return converge_canopy_soil_hour!(ode_integrator, hour_index, hour_T0_ode, iterated,
+            canopy_model, canopy_buffers, snow_model; snow_present, relaxation, kw...)
+    end
+    (; ground_temperature0) = values(kw)
+    pass_kw = Base.structdiff(values(kw), NamedTuple{(:ground_temperature0,)})
+    t_end = hour_index * 60.0u"minute"
+    ground_temperature = ground_temperature0
+    top = Base.setindex(SVector{3}(ntuple(i -> hour_T0_ode[i], Val(3))), ground_temperature, 1)
+    local overrides
+    for _ in 1:csc.max_iterations
+        overrides = _canopy_soil_pass!(ode_integrator, canopy_model, canopy_buffers, ground_temperature; pass_kw...)
+        top = _predict_top_temperatures(ode_integrator.p, hour_T0_ode, top, t_end)
+        settled = abs(top[1] - ground_temperature) < csc.tolerance
+        ground_temperature = top[1]
+        settled && break
+    end
+    _maybe_reinit_integrator!(ode_integrator, hour_T0_ode, (hour_index - 1) * 60.0u"minute"; reset_dt=false)
+    T_result = step_to_hour!(ode_integrator, hour_index)
+    T_snow, T0 = split_ode_state(snow_model, T_result)
     return (; overrides, T0, T_snow)
 end
 

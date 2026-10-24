@@ -83,7 +83,7 @@ export AbstractFrozenConductivity, NoFrozenConductivity, BloomsburgWangFrozenCon
 export AbstractSoilMoistureStrategy, PrescribedSoilMoisture, DynamicSoilMoisture
 
 # Convergence strategies
-export AbstractSoilTemperatureConvergence, FixedIterationConvergence, IterationToleranceConvergence
+export AbstractSoilTemperatureConvergence, FixedIterationConvergence, IterationToleranceConvergence, SurfaceNodePrediction
 
 # Time modes
 export AbstractTimeMode, NonConsecutiveDayMode, ConsecutiveDayMode
@@ -191,6 +191,7 @@ include("inputs/hourly_timeseries.jl")
 include("soil_temperature_convergence/abstract.jl")
 include("soil_temperature_convergence/fixed.jl")
 include("soil_temperature_convergence/tolerance.jl")
+include("soil_temperature_convergence/surface_node.jl")
 
 # Time mode
 include("time_mode/abstract.jl")
