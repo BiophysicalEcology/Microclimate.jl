@@ -26,10 +26,9 @@ canopy_top_enhancement(::NoRoughnessSublayer, canopy_height, plant_area_index, g
         transition_reynolds_number=1000.0)
 
 Canopy-top diffusivity `e = 1 + (max_enhancement - 1)·closure` times its Monin-Obukhov value,
-fading with height via [`stretched_height`](@ref). `closure` is how far `u★/U_h` has risen from
-bare ground toward `max_friction_velocity_ratio` (Raupach 1994). Each hour the enhancement
-fades by `Re²/(Re² + transition_reynolds_number²)` with canopy Reynolds number `Re = U_h·h/ν`
-(0 switches the fade off).
+fading with height via [`stretched_height`](@ref); `closure` is how far `u★/U_h` has risen from
+bare ground to `max_friction_velocity_ratio` (Raupach 1994). Scaled hourly by
+`Re²/(Re² + transition_reynolds_number²)`, `Re = U_h·h/ν`.
 
 # References
 - Raupach, M. R. (1994). Simplified expressions for vegetation roughness length and zero-plane
