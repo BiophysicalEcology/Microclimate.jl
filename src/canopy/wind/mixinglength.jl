@@ -192,18 +192,17 @@ function _shape_based_canopy_wind_profile!(buffers, boundary_layer_model;
 end
 
 """
-    canopy_top_flux_boundary(boundary_layer_model, canopy_height, displacement_height, roughness_length,
-                              reference_height, friction_velocity, inverse_obukhov_length,
+    canopy_top_flux_boundary(boundary_layer_model, column::AboveCanopyColumn, reference_height,
                               total_sensible_flux, total_latent_flux, ground_temperature, ground_vapour_density,
                               reference_temperature, reference_vapour_density, previous_top_temperature,
-                              previous_top_vapour_density; max_resistance=2000.0u"s/m")
+                              previous_top_vapour_density; floor_resistance=0.0u"s/m", max_resistance=2000.0u"s/m")
 
 Canopy-top boundary temperature/vapour density: resistance-weighted from the
 whole canopy's own aggregated source flux (`total_sensible_flux`/
 `total_latent_flux`, per unit ground area, summed over every layer) plus a
 ground flux, referenced to `reference_temperature`/`reference_vapour_density`
-via the canopy-top-to-reference aerodynamic resistance. Ground-to-canopy-top
-resistance uses a bulk top-of-canopy eddy diffusivity (same form as
+via [`column_heat_resistance`](@ref) from canopy top to the reference height. Ground-to-canopy-top
+resistance is `floor_resistance` plus a bulk top-of-canopy eddy diffusivity (same form as
 `_canopy_direct_conductances`'s `eddy_diffusivity_top`), not a specific
 `air_profile_model`'s own layered resistance -- this boundary is shared by
 every `air_profile_model`. With `ρ_cp` and both resistances fixed (not
@@ -220,43 +219,45 @@ canopy conditions the algebraic steady state can then be physically
 unreachable in an hour. Damped exponentially toward
 `previous_top_temperature`/`previous_top_vapour_density` by that residence time.
 """
-function canopy_top_flux_boundary(boundary_layer_model, canopy_height, displacement_height, roughness_length,
-    reference_height, friction_velocity, inverse_obukhov_length,
+function canopy_top_flux_boundary(boundary_layer_model, column::AboveCanopyColumn, reference_height,
     total_sensible_flux, total_latent_flux, ground_temperature, ground_vapour_density,
     reference_temperature, reference_vapour_density, previous_top_temperature, previous_top_vapour_density;
-    max_resistance=2000.0u"s/m",
+    floor_resistance=0.0u"s/m", max_resistance=2000.0u"s/m",
 )
+    (; canopy_height, friction_velocity, enhancement) = column
+
+    # Mathematical aliases
+    h = canopy_height
+    u★ = friction_velocity
+    e = enhancement
     κ = boundary_layer_model.karman_constant
-    γ = boundary_layer_model.dyer_constant
-    z_top = max(canopy_height - displacement_height, 1.0e-3u"m")
-    z_ref = max(reference_height - displacement_height, 1.0e-3u"m")
+    H = total_sensible_flux
+    E = total_latent_flux
+    T_g = ground_temperature
+    ρᵥ_g = ground_vapour_density
+    T_r = reference_temperature
+    ρᵥ_r = reference_vapour_density
+    T_prev = previous_top_temperature
+    ρᵥ_prev = previous_top_vapour_density
+    R_max = max_resistance
+    z_top = _canopy_top_depth(column)
 
-    ground_resistance = min(canopy_height / (κ * friction_velocity * z_top), max_resistance)
-
-    log_ratio = log(z_ref / roughness_length)
-    ψ_h = calc_ψ_h(stability_parameter(InverseObukhovLength(), z_ref, inverse_obukhov_length), γ,
-        boundary_layer_model.stable_beta, boundary_layer_model.turbulent_prandtl_number)
-    # TODO drop the log-ratio floor with the smooth ψ (#137)
-    top_resistance = min(max(log_ratio - ψ_h, 0.1 * log_ratio, 1.0e-6) / (κ * friction_velocity), max_resistance)
+    R_g = min(h / (κ * u★ * z_top * e) + floor_resistance, R_max)
+    R_t = min(column_heat_resistance(column, boundary_layer_model, h, reference_height), R_max)
 
     # ρ_cp fixed from ambient data, not the solved top_temperature: calc_ρ_cp
     # ∝ 1/T, so tying it to the unknown would make the balance nonlinear again.
-    ρ_cp = calc_ρ_cp((reference_temperature + ground_temperature) / 2)
+    ρ_cp = calc_ρ_cp((T_r + T_g) / 2)
 
     # Closed-form solution of the linear balance:
-    #   Tt = Tr + (H + (ρcp/Rg)(Tg-Tt)) Rt/ρcp   =>   Tt(1+Rt/Rg) = Tr + H·Rt/ρcp + (Rt/Rg)Tg
+    #   T_t = T_r + (H + (ρcp/R_g)(T_g - T_t)) R_t/ρcp   =>   T_t(1 + R_t/R_g) = T_r + H·R_t/ρcp + (R_t/R_g)T_g
     # and the analogous vapour-density equation.
-    Rtg = top_resistance / ground_resistance
-    undamped_top_temperature = (reference_temperature + total_sensible_flux * top_resistance / ρ_cp + Rtg * ground_temperature) / (1.0 + Rtg)
-    undamped_top_vapour_density = (reference_vapour_density + total_latent_flux * top_resistance + Rtg * ground_vapour_density) / (1.0 + Rtg)
-    top_temperature = undamped_top_temperature
-    top_vapour_density = undamped_top_vapour_density
+    Rtg = R_t / R_g
+    T_t = (T_r + H * R_t / ρ_cp + Rtg * T_g) / (1.0 + Rtg)
+    ρᵥ_t = (ρᵥ_r + E * R_t + Rtg * ρᵥ_g) / (1.0 + Rtg)
 
-    # Residence time of a z_top-deep column via top_resistance; can exceed an
-    # hour under calm conditions (see docstring).
-    τ = z_top * top_resistance
-    physical_weight = 1.0 - exp(-ustrip(u"s", CANOPY_TIMESTEP) / ustrip(u"s", τ))
-    top_temperature = previous_top_temperature + (top_temperature - previous_top_temperature) * physical_weight
-    top_vapour_density = previous_top_vapour_density + (top_vapour_density - previous_top_vapour_density) * physical_weight
-    return (; top_temperature, top_vapour_density)
+    # Residence time of a z_top-deep column via R_t; can exceed an hour under calm conditions (see docstring).
+    τ = z_top * R_t
+    w = 1.0 - exp(-ustrip(u"s", CANOPY_TIMESTEP) / ustrip(u"s", τ))
+    return (; top_temperature=T_prev + (T_t - T_prev) * w, top_vapour_density=ρᵥ_prev + (ρᵥ_t - ρᵥ_prev) * w)
 end
