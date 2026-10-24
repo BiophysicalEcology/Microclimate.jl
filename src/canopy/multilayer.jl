@@ -37,6 +37,8 @@ Composes swappable sub-models the same way `MicroModel` composes
 - `air_profile_model::AbstractCanopyAirProfileModel` — in-canopy air-
   temperature profile (default [`RaupachLTheoryAirProfile`](@ref); see also
   [`KTheoryAirProfile`](@ref))
+- `ground_coupling::AbstractGroundCoupling` — ground resistance (default
+  [`FloorTurbulence`](@ref); see also [`SakaguchiZeng2009`](@ref), [`ProfileGroundResistance`](@ref))
 - `interception_model::AbstractCanopyInterceptionModel` — rain interception
   (default [`NoInterception`](@ref): off)
 - `condensation_model::AbstractCondensationModel` — leaf dew/frost formation
@@ -61,7 +63,7 @@ Ground reflectance is not stored here — supplied to
 [`canopy_shortwave!`](@ref) by the caller (e.g. `Site.albedo`), matching how
 other radiation models read albedo from their caller.
 """
-@kwdef struct MultilayerCanopy{H,PAI,WAF,RM,LWM,WM,APM,IM,CDM,LP,SM,LCM,CVM} <: AbstractCanopyModel
+@kwdef struct MultilayerCanopy{H,PAI,WAF,RM,LWM,WM,APM,GC,IM,CDM,LP,SM,LCM,CVM} <: AbstractCanopyModel
     canopy_height::H
     plant_area_index::PAI
     woody_area_fraction::WAF = 0.0
@@ -69,6 +71,7 @@ other radiation models read albedo from their caller.
     longwave_model::LWM = LayeredRadiosityExchange()
     wind_model::WM = ExponentialCanopyWindAttenuation()
     air_profile_model::APM = RaupachLTheoryAirProfile()
+    ground_coupling::GC = FloorTurbulence()
     interception_model::IM = NoInterception()
     condensation_model::CDM = MonteithLeafCondensation()
     leaf_parameters::LP = LeafParameters()
@@ -91,6 +94,7 @@ function example_multilayer_canopy(;
     longwave_model = LayeredRadiosityExchange(),
     wind_model = ExponentialCanopyWindAttenuation(),
     air_profile_model = RaupachLTheoryAirProfile(),
+    ground_coupling = FloorTurbulence(),
     interception_model = NoInterception(),
     condensation_model = MonteithLeafCondensation(),
     leaf_parameters = LeafParameters(),
@@ -100,7 +104,7 @@ function example_multilayer_canopy(;
 )
     MultilayerCanopy(;
         canopy_height, plant_area_index, woody_area_fraction, shortwave_model, longwave_model, wind_model,
-        air_profile_model, interception_model, condensation_model, leaf_parameters, stomatal_model,
+        air_profile_model, ground_coupling, interception_model, condensation_model, leaf_parameters, stomatal_model,
         leaf_convection_model, convergence_model,
     )
 end
