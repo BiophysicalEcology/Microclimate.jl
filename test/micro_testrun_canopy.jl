@@ -68,3 +68,13 @@ end
     # leaf_water_potential warms the leaf — see canopy_energy_balance_picard_test.jl).
     @test wet_output.canopy.leaf_temperature != dry_output.canopy.leaf_temperature
 end
+
+@testset "SurfaceNodePrediction tracks the iterated canopy-soil coupling" begin
+    canopy_model = example_multilayer_canopy(; canopy_height = 1.0u"m", plant_area_index = 2.0)
+    run(coupling) = solve(example_microclimate_problem(; heights, canopy_model,
+        config = MicroConfig(; canopy_soil_convergence = coupling)))
+    predicted = run(SurfaceNodePrediction())
+    iterated = run(IterationToleranceConvergence(; tolerance = 0.1u"K", max_iterations_per_day = 80))
+    difference = ustrip.(u"K", predicted.soil_temperature[:, 1] .- iterated.soil_temperature[:, 1])
+    @test sqrt(sum(abs2, difference) / length(difference)) < 0.3
+end
