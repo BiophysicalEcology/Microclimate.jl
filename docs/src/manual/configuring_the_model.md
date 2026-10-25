@@ -49,27 +49,33 @@ exactly this kind of comparison.
 
 ## `MicroModel`
 
-[`MicroModel`](@ref) is the constant-across-runs description of the simulation:
-solver spatio-temporal scheme (`hours`, `depths`, `heights`) and one model per 
-physical process. Not all slots have alternatives at present but the idea is to allow
-a community of developers to build new functionality over time where needed. 
+[`MicroModel`](@ref) is the constant-across-runs description of the simulation: the
+site, and one model per part of the system, each holding its own sub-models. Not all
+slots have alternatives at present but the idea is to allow a community of developers to
+build new functionality over time where needed.
 
-| Slot | Default | Alternatives |
+| Slot | Holds | Default |
 |:---|:---|:---|
-| `soil_properties_model` | — (required) | [`CampbelldeVriesSoilProperties`](@ref) |
-| `soil_hydraulic_model` | — (required) | [`CampbellSoilHydraulics`](@ref) |
-| `radiation` | [`RadiationModel`](@ref) | bundles solar/longwave/shortwave sub-models |
-| `snow_model` | [`NoSnow`](@ref) | [`SnowModel`](@ref) |
-| `vapour_pressure_equation` | `GoffGratch` | `Teten`, `Huang` (from FluidProperties.jl) |
-| `boundary_layer_model` | [`MoninObukhov`](@ref) | |
-| `evaporation_model` | [`BulkTransferEvaporation`](@ref) | |
-| `condensation_model` | [`GarrattSegalCondensation`](@ref) | [`BulkTransferCondensation`](@ref), [`NoCondensation`](@ref) |
-| `soil_energy_model` | [`SoilHeatTransport1D`](@ref) | |
-| `canopy_model` | [`NoCanopy`](@ref) | [`MultilayerCanopy`](@ref) |
-| `config` | [`MicroConfig`](@ref) | iteration/data-delivery strategy |
+| `hours` | hours of the day solved | 0–23 |
+| `site` | [`Site`](@ref): location, terrain, albedo, roughness | — (required) |
+| `soil` | [`SoilModel`](@ref): `depths`, `profile`, `properties_model`, `hydraulic_model`, `energy_model`, `moisture_strategy` | — (required) |
+| `surface` | [`SurfaceModel`](@ref): `evaporation_model`, `condensation_model`, `max_surface_pool` | `SurfaceModel()` |
+| `atmosphere` | [`AtmosphereModel`](@ref): `heights`, `radiation`, `boundary_layer_model` | `AtmosphereModel()` |
+| `snow` | [`NoSnow`](@ref) or [`SnowModel`](@ref) | `NoSnow()` |
+| `canopy` | [`NoCanopy`](@ref) or [`MultilayerCanopy`](@ref) | `NoCanopy()` |
+| `vapour_pressure_equation` | `GoffGratch`, `Teten` or `Huang` (from FluidProperties.jl) | `GoffGratch()` |
+| `config` | [`MicroConfig`](@ref): iteration and data delivery | `MicroConfig()` |
 
+The soil's `properties_model` ([`CampbelldeVriesSoilProperties`](@ref)) and
+`hydraulic_model` ([`CampbellSoilHydraulics`](@ref)) are required; its `energy_model`
+defaults to [`SoilHeatTransport1D`](@ref) and its `moisture_strategy` to
+[`PrescribedSoilMoisture`](@ref) (from `environment_daily`), with
+[`DynamicSoilMoisture`](@ref) solving it from rainfall. The surface's
+`condensation_model` defaults to [`GarrattSegalCondensation`](@ref), with
+[`BulkTransferCondensation`](@ref) and [`NoCondensation`](@ref) as alternatives.
 `radiation`'s own three slots (`solar_radiation_model`, `longwave_model`,
-`shortwave_model`) are documented in [Radiation](radiation.md).
+`shortwave_model`) are documented in [Radiation](radiation.md), and the canopy's in
+[Canopy](canopy.md).
 
 ## `MicroConfig`
 
@@ -83,10 +89,11 @@ model, separate from the physical-process choices above:
   per-day iteration count instead; for [`ConsecutiveDayMode`](@ref) it only applies
   on day 1, and only if `spinup_first_day=true`.
 - `rainfall_schedule` — [`DailyRainfall`](@ref) or [`HourlyRainfall`](@ref)
-- `soil_moisture_strategy` — [`PrescribedSoilMoisture`](@ref) (from
-  `environment_daily`) or [`DynamicSoilMoisture`](@ref) (solved from rainfall)
-- `canopy_soil_convergence`, `canopy_soil_relaxation` — the per-hour Picard iteration
-  between the canopy solve and the soil-heat ODE
+- `canopy_soil_convergence` — how the canopy and soil-heat ODE are coupled each hour:
+  [`IterationToleranceConvergence`](@ref) (the default) iterates them to agreement;
+  [`SurfaceNodePrediction`](@ref) integrates the soil once per hour
+  (see [Canopy](canopy.md#Solving-each-hour))
+- `canopy_soil_relaxation` — under-relaxation of the iterated coupling
 
 ## How the pieces fit together each hour
 
@@ -95,14 +102,16 @@ with different aspects converging in different ways via different algorithsm:
 
 - **Soil temperature** is an ODE system ([`SoilHeatTransport1D`](@ref), handed
   to a SciML integrator) — continuous within the hour, not a single explicit step.
-- **Canopy**, when present, is jointly converged against that same ODE each hour:
-  the canopy-soil iteration repeatedly (a) solves the canopy's shortwave,
-  longwave, wind and leaf-temperature state ([`NonlinearCanopyConvergence`](@ref)) for the current guess of ground
-  temperature, (b) feeds the resulting ground-surface boundary condition into the
-  soil ODE and advances it through the hour, (c) compares the new ground temperature
-  to the previous guess, and repeats until `canopy_soil_convergence` is satisfied (or
-  its iteration limit is hit). So canopy and soil *temperature* are jointly iterated
-  to a mutually consistent state each hour.
+- **Canopy**, when present, is jointly converged against that same ODE each hour.
+  With [`IterationToleranceConvergence`](@ref) the canopy-soil iteration repeatedly
+  (a) solves the canopy's shortwave, longwave, wind and leaf-temperature state (with
+  the canopy's `convergence_model`) for the current guess of ground temperature,
+  (b) feeds the resulting ground-surface boundary condition into the soil ODE and
+  advances it through the hour, (c) compares the new ground temperature to the
+  previous guess, and repeats until `canopy_soil_convergence` is satisfied (or its
+  iteration limit is hit). [`SurfaceNodePrediction`](@ref) instead predicts the
+  surface temperature between canopy solves and integrates the ODE once. Either way,
+  canopy and soil *temperature* reach a mutually consistent state each hour.
 - **Soil moisture**, ground dew/frost, and snow growth/melt are then computed once
   per hour, downstream of that hour's already-converged temperature — not solved
   simultaneously with it. Soil moisture in particular assumes the current hour's
