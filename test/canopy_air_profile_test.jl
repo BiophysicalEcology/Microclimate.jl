@@ -26,7 +26,7 @@ forcing(; sensible_heat_source = no_heat, evaporation_mass_flow = no_evaporation
     above_canopy_column = AboveCanopyColumn(; canopy_height, displacement_height,
         friction_velocity, inverse_obukhov_length = 0.0u"m^-1", enhancement = 1.0),
     wind_speed = fill(1.0u"m/s", n_layers),
-    canopy_top_air_temperature = T, canopy_top_relative_humidity = 0.5,
+    canopy_top_air_temperature = T, canopy_top_vapor_density = top_vapor_density,
     ground_temperature, ground_relative_humidity = 0.5,
     sensible_heat_source, evaporation_mass_flow,
     leaf_temperature = fill(T, n_layers), atmospheric_pressure = 101325.0u"Pa",

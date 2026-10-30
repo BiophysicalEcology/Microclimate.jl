@@ -356,7 +356,7 @@ _raupach_layer_ρ_cp(::Val{:bulk}, _ρ_cp, air_temperature_prev, i) = calc_ρ_cp
 function canopy_heat_vapor_transport!(buffers, model::RaupachLTheoryAirProfile, boundary_layer_model,
     forcing::CanopyAirProfileForcing; site, vapour_pressure_equation=GoffGratch(), ground_coupling,
 )
-    (; above_canopy_column, wind_speed, canopy_top_air_temperature, canopy_top_relative_humidity,
+    (; above_canopy_column, wind_speed, canopy_top_air_temperature, canopy_top_vapor_density,
        ground_temperature, ground_relative_humidity, sensible_heat_source, evaporation_mass_flow,
        atmospheric_pressure) = forcing
     ground_roughness_height = site.roughness_height
@@ -397,7 +397,7 @@ function canopy_heat_vapor_transport!(buffers, model::RaupachLTheoryAirProfile, 
     p = atmospheric_pressure
 
     Ttop = canopy_top_air_temperature
-    RHtop = canopy_top_relative_humidity
+    ρv_top = canopy_top_vapor_density
     Tg = ground_temperature
     RHg = ground_relative_humidity
 
@@ -410,13 +410,6 @@ function canopy_heat_vapor_transport!(buffers, model::RaupachLTheoryAirProfile, 
     length(E) == n || throw(
         ArgumentError("evaporation_mass_flow must have one entry per canopy layer"),
     )
-
-    ρv_top = wet_air_properties(
-        Ttop,
-        RHtop,
-        p;
-        vapour_pressure_equation,
-    ).vapour_density
 
     (;
         ground_velocity_std_factor,
