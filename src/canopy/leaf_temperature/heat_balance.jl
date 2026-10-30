@@ -48,12 +48,20 @@ Selects the Nusselt correlation `leaf_convection` uses.
 abstract type AbstractLeafConvectionModel end
 
 """
-    ElaborateLeafConvection()
+    ElaborateLeafConvection(; temperature_difference_model=SmoothTemperatureDifference(0.1u"K"))
 
 Combined free+forced convection, shape-dispatched via the leaf's
 oblate-ellipsoid geometry (`HeatExchange.ShapeCorrelation`). Default.
+
+`temperature_difference_model` is how free convection takes `|T_leaf - T_air|`
+(a `HeatExchange.TemperatureDifferenceModel`). With the exact `|ΔT|`, free
+convection, and so evaporation, has a cusp at `T_leaf = T_air`, and the canopy
+solve can stall on the wrong side of it. Rounding `|ΔT|` over 0.1 K removes the
+cusp, well inside the free-convection correlation's uncertainty.
 """
-struct ElaborateLeafConvection <: AbstractLeafConvectionModel end
+@kwdef struct ElaborateLeafConvection{T<:TemperatureDifferenceModel} <: AbstractLeafConvectionModel
+    temperature_difference_model::T = SmoothTemperatureDifference(0.1u"K")
+end
 
 """
     SimpleLeafConvection()
@@ -67,11 +75,16 @@ struct SimpleLeafConvection <: AbstractLeafConvectionModel end
 _convection_correlation(::ElaborateLeafConvection) = HeatExchange.ShapeCorrelation()
 _convection_correlation(::SimpleLeafConvection) = HeatExchange.SimpleForcedCorrelation()
 
+# SimpleLeafConvection has no free convection, so no |ΔT|
+_temperature_difference_model(convection_model::ElaborateLeafConvection) = convection_model.temperature_difference_model
+_temperature_difference_model(::SimpleLeafConvection) = ExactTemperatureDifference()
+
 # Boundary-layer heat/mass transfer coefficients for one leaf layer.
 leaf_convection(convection_model, body, leaf_area, air_temperature, leaf_temperature, wind_speed, atmospheric_pressure) =
     HeatExchange.convection(; body, area=leaf_area, air_temperature, surface_temperature=leaf_temperature,
         wind_speed, atmospheric_pressure, fluid=Air(), characteristic_dimension_formula=LEAF_CHARACTERISTIC_DIMENSION,
-        correlation=_convection_correlation(convection_model))
+        correlation=_convection_correlation(convection_model),
+        temperature_difference_model=_temperature_difference_model(convection_model))
 
 """
     leaf_heat_balance(leaf_temperature, absorbed_radiation, air_temperature, relative_humidity,
