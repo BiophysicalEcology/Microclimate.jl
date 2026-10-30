@@ -32,7 +32,8 @@ include("unitful.jl")
 # leaf convection/evaporation physics (src/canopy/energy_balance.jl); convection/
 # evaporation called as HeatExchange.convection/.evaporation to avoid name clashes
 import HeatExchange
-using HeatExchange: LeafEvaporationParameters, AtmosphericConditions, ScaledDimension, Air
+using HeatExchange: LeafEvaporationParameters, AtmosphericConditions, ScaledDimension, Air,
+    TemperatureDifferenceModel, ExactTemperatureDifference, SmoothTemperatureDifference
 using BiophysicalGeometry: Ellipsoid, Body, Naked
 
 
@@ -61,7 +62,8 @@ export AbstractCanopyInterceptionModel, NoInterception, LayeredRainInterception,
 export LeafParameters
 export AbstractStomatalConductanceModel, PrescribedStomatalConductance,
     MoistureResponsiveStomatalConductance
-export AbstractLeafConvectionModel, ElaborateLeafConvection, SimpleLeafConvection
+export AbstractLeafConvectionModel, ElaborateLeafConvection, SimpleLeafConvection,
+    ExactTemperatureDifference, SmoothTemperatureDifference
 export leaf_body
 export LeafEvaporationParameters
 export AbstractCanopyConvergenceModel, NonlinearCanopyConvergence, AndersonCanopyConvergence

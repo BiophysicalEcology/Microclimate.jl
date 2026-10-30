@@ -35,3 +35,18 @@ end
     closed_balance = reallocated_sensible + out.evap.evaporation_heat_flow + out.emitted_longwave
     @test ustrip(u"W", closed_balance) ≈ ustrip(u"W", Rabs * 1.0u"m^2") atol=1e-9
 end
+
+@testset "leaf_heat_balance is smooth through T_leaf = T_air" begin
+    net(Tleaf, convection_model) = Microclimate.leaf_heat_balance(Tleaf, 300.0u"W/m^2", air_temperature, relative_humidity,
+        0.1u"m/s", atmospheric_pressure, leaf_emissivity, stomatal_conductance, leaf_water_potential, body, 1.0u"m^2",
+        convection_model).net
+    # Slopes just below and just above T_air
+    δ = 1.0e-3u"K"
+    slopes(convection_model) = (net(air_temperature - δ, convection_model) - net(air_temperature - 2δ, convection_model),
+        net(air_temperature + 2δ, convection_model) - net(air_temperature + δ, convection_model)) ./ δ
+    below, above = slopes(ElaborateLeafConvection())
+    @test below ≈ above rtol = 0.01
+    # The exact |ΔT| has a cusp there
+    exact_below, exact_above = slopes(ElaborateLeafConvection(; temperature_difference_model = ExactTemperatureDifference()))
+    @test abs(exact_above - exact_below) > 100 * abs(above - below)
+end
