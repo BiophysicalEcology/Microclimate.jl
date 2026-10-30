@@ -24,11 +24,19 @@ end
 
 mean_leaf_temperature(buffers) = sum(buffers.leaf.leaf_temperature) / length(buffers.leaf.leaf_temperature)
 
+# Every residual row within the tolerance for its kind
+function residual_within_tolerance(buffers)
+    (; residual, parameters) = buffers.convergence
+    return all(eachindex(residual)) do row
+        abs(residual[row]) <= Microclimate.canopy_row_tolerance(parameters[].tolerances, buffers, row)
+    end
+end
+
 @testset "midday: residual solved, physically reasonable" begin
     model = canopy()
     result, buffers = solve_canopy(model, canopy_inputs(model))
     @test result.iterations < model.convergence_model.maxiters
-    @test maximum(abs, buffers.convergence.residual) < 1e-6
+    @test residual_within_tolerance(buffers)
     @test all(t -> 250.0u"K" < t < 340.0u"K", buffers.leaf.leaf_temperature)
     @test all(isfinite, buffers.air_profile.air_temperature)
     @test result.net_absorbed_shortwave > 0.0u"W/m^2"
@@ -45,7 +53,7 @@ end
         ground_temperature = 280.0u"K")
     night = canopy_energy_balance!(buffers, model, boundary_layer_model, night_inputs; site)
     @test night.net_absorbed_shortwave == 0.0u"W/m^2"
-    @test maximum(abs, buffers.convergence.residual) < 1e-6
+    @test residual_within_tolerance(buffers)
     @test all(t -> 250.0u"K" < t < 310.0u"K", buffers.leaf.leaf_temperature)
 end
 

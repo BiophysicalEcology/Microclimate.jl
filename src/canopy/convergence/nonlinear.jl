@@ -1,6 +1,8 @@
 """
     NonlinearCanopyConvergence(; algorithm=NewtonRaphson(), fallback_algorithm=NewtonRaphson(; linesearch=BackTracking()),
-        abstol=1e-8, maxiters=50, backend=AutoEnzyme(; mode=Enzyme.set_runtime_activity(Enzyme.Forward)))
+        leaf_balance_tolerance=2e-5u"W/m^2", air_temperature_tolerance=1e-6u"K",
+        vapor_density_tolerance=1e-6u"g/m^3", inverse_obukhov_length_tolerance=1e-8u"m^-1",
+        maxiters=50, backend=AutoEnzyme(; mode=Enzyme.set_runtime_activity(Enzyme.Forward)))
 
 Solves the hourly canopy residual ([`evaluate_canopy!`](@ref)) for leaf and
 air temperature, vapor density and inverse Obukhov length together, with a
@@ -8,16 +10,24 @@ NonlinearSolve `algorithm` and the residual's Jacobian from `backend`
 through DifferentiationInterface. The solver cache is built once by
 `allocate_canopy` and re-initialized each hour.
 
+The solve converges when every residual row is within the tolerance for its kind:
+leaf energy balance, air temperature, vapor density and inverse Obukhov length.
+The leaf row of a layer without leaf area is a temperature, so it takes
+`air_temperature_tolerance`.
+
 `algorithm` is any in-place NonlinearSolve algorithm, e.g. `NewtonRaphson()`
 or `Broyden(; init_jacobian=Val(:true_jacobian))` to compute the Jacobian
 once per hour. When it fails, `fallback_algorithm` is tried from the previous
 hour's solution, then from the reference conditions; its line search shortens
 steps that leave [`CANOPY_TEMPERATURE_BOUNDS`](@ref). If that fails too, it errors.
 """
-@kwdef struct NonlinearCanopyConvergence{A,F,T,B} <: AbstractCanopyConvergenceModel
+@kwdef struct NonlinearCanopyConvergence{A,F,LB,AT,VD,IL,B} <: AbstractCanopyConvergenceModel
     algorithm::A = NewtonRaphson()
     fallback_algorithm::F = NewtonRaphson(; linesearch=BackTracking())
-    abstol::T = 1e-8
+    leaf_balance_tolerance::LB = 2e-5u"W/m^2"
+    air_temperature_tolerance::AT = 1e-6u"K"
+    vapor_density_tolerance::VD = 1e-6u"g/m^3"
+    inverse_obukhov_length_tolerance::IL = 1e-8u"m^-1"
     maxiters::Int = 50
     # TODO drop set_runtime_activity with the reference-height pin in atmospheric_surface_profile! (#137)
     backend::B = AutoEnzyme(; mode=Enzyme.set_runtime_activity(Enzyme.Forward))
@@ -40,22 +50,56 @@ function allocate_canopy_convergence(convergence_model::NonlinearCanopyConvergen
     cache = Cache(buffers)
     constants = Constant((model, boundary_layer_model, forcing, site, vapour_pressure_equation))
     preparation = prepare_jacobian(canopy_residual!, residual, backend, state, cache, constants)
-    parameters = Ref((; buffers, cache, constants, preparation, backend, residual))
+    # In the state's units (see canopy_state_length)
+    tolerances = (; leaf_balance=ustrip(u"W/m^2", convergence_model.leaf_balance_tolerance),
+        air_temperature=ustrip(u"K", convergence_model.air_temperature_tolerance),
+        vapor_density=ustrip(u"g/m^3", convergence_model.vapor_density_tolerance),
+        inverse_obukhov_length=ustrip(u"m^-1", convergence_model.inverse_obukhov_length_tolerance))
+    parameters = Ref((; buffers, cache, constants, preparation, backend, residual, tolerances))
     problem = NonlinearProblem(
         NonlinearFunction(canopy_nonlinear_residual!; jac=canopy_nonlinear_jacobian!, jac_prototype=zeros(n_state, n_state)),
         state, parameters)
-    (; abstol, maxiters) = convergence_model
-    solver = SciMLBase.init(problem, convergence_model.algorithm; abstol, maxiters)
-    fallback_solver = SciMLBase.init(problem, convergence_model.fallback_algorithm; abstol, maxiters)
+    # The solver sees each row over its tolerance, so 1 is every row within tolerance
+    (; maxiters) = convergence_model
+    solver = SciMLBase.init(problem, convergence_model.algorithm; abstol=1.0, maxiters)
+    fallback_solver = SciMLBase.init(problem, convergence_model.fallback_algorithm; abstol=1.0, maxiters)
     return (; solver, fallback_solver, parameters, forcing, state, warm_start=similar(state), residual, has_jacobian=Ref(false))
 end
 
-canopy_nonlinear_residual!(residual, state, parameters) =
-    canopy_residual!(residual, state, parameters[].buffers, parameters[].constants.data)
+# The tolerance of residual row `row`, in the state's units
+function canopy_row_tolerance(tolerances, buffers, row)
+    n_layers = length(buffers.leaf.leaf_temperature)
+    if row <= n_layers
+        # A layer without leaf area gives T_leaf - T_air
+        iszero(1.0 - buffers.longwave.layer_transmission[row]) && return tolerances.air_temperature
+        return tolerances.leaf_balance
+    elseif row <= 2n_layers
+        return tolerances.air_temperature
+    elseif row <= 3n_layers
+        return tolerances.vapor_density
+    else
+        return tolerances.inverse_obukhov_length
+    end
+end
+
+function canopy_nonlinear_residual!(residual, state, parameters)
+    (; buffers, constants, tolerances) = parameters[]
+    canopy_residual!(residual, state, buffers, constants.data)
+    for row in eachindex(residual)
+        residual[row] /= canopy_row_tolerance(tolerances, buffers, row)
+    end
+    return nothing
+end
 
 function canopy_nonlinear_jacobian!(jacobian, state, parameters)
-    (; buffers, cache, constants, preparation, backend, residual) = parameters[]
+    (; buffers, cache, constants, preparation, backend, residual, tolerances) = parameters[]
     jacobian!(canopy_residual!, residual, jacobian, preparation, backend, state, cache, constants)
+    for row in axes(jacobian, 1)
+        tolerance = canopy_row_tolerance(tolerances, buffers, row)
+        for column in axes(jacobian, 2)
+            jacobian[row, column] /= tolerance
+        end
+    end
     return nothing
 end
 
