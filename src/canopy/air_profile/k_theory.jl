@@ -93,7 +93,7 @@ end
 function canopy_heat_vapor_transport!(buffers, ::KTheoryAirProfile, boundary_layer_model,
     forcing::CanopyAirProfileForcing; site, vapour_pressure_equation=GoffGratch(), ground_coupling,
 )
-    (; above_canopy_column, wind_speed, canopy_top_air_temperature, canopy_top_relative_humidity, ground_temperature,
+    (; above_canopy_column, wind_speed, canopy_top_air_temperature, canopy_top_vapor_density, ground_temperature,
        ground_relative_humidity, sensible_heat_source, evaporation_mass_flow, atmospheric_pressure) = forcing
     (;
         plant_area_index, layer_heights, layer_spacing, relative_eddy_diffusivity,
@@ -123,7 +123,7 @@ function canopy_heat_vapor_transport!(buffers, ::KTheoryAirProfile, boundary_lay
     p = atmospheric_pressure
 
     T_top = canopy_top_air_temperature
-    RH_top = canopy_top_relative_humidity
+    ρᵥ_top = canopy_top_vapor_density
     T_ground = ground_temperature
     RH_ground = ground_relative_humidity
 
@@ -138,7 +138,6 @@ function canopy_heat_vapor_transport!(buffers, ::KTheoryAirProfile, boundary_lay
 
     # Fixed canopy-top boundary (Dirichlet boundary)
     T[1] = T_top
-    ρᵥ_top = wet_air_properties(T_top, RH_top, p; vapour_pressure_equation).vapour_density
     ρᵥ[1] = ρᵥ_top
 
     # Canopy-top eddy diffusivity

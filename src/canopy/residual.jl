@@ -191,14 +191,17 @@ function evaluate_canopy!(residual, state, buffers, model::MultilayerCanopy, bou
         sum(sensible_heat_source), sum(evaporation_mass_flow) / 1.0u"m^2",
         ground_temperature, ground_vapor_density, reference_temperature, reference_vapor_density,
         forcing.canopy_top_air_temperature, initial_top_vapor_density; floor_resistance=floor)
-    in_bounds &= lo <= boundary.top_temperature <= hi
+    in_bounds &= lo <= boundary.top_temperature <= hi && boundary.top_vapour_density >= zero(boundary.top_vapour_density)
     canopy_top_air_temperature = clamp(boundary.top_temperature, lo, hi)
+    # The profile takes the vapor density itself: a relative humidity clamped to 1
+    # would drop any supersaturated vapor from the water balance
+    canopy_top_vapor_density = max(boundary.top_vapour_density, zero(boundary.top_vapour_density))
     top_saturation = wet_air_properties(canopy_top_air_temperature, 1.0, atmospheric_pressure;
         vapour_pressure_equation).vapour_density
-    canopy_top_relative_humidity = clamp(boundary.top_vapour_density / top_saturation, 0.0, 1.0)
+    canopy_top_relative_humidity = clamp(canopy_top_vapor_density / top_saturation, 0.0, 1.0)
 
     air_forcing = CanopyAirProfileForcing(; above_canopy_column=column, wind_speed, canopy_top_air_temperature,
-        canopy_top_relative_humidity, ground_temperature, ground_relative_humidity, sensible_heat_source,
+        canopy_top_vapor_density, ground_temperature, ground_relative_humidity, sensible_heat_source,
         evaporation_mass_flow, leaf_temperature, atmospheric_pressure)
     canopy_heat_vapor_transport!(air, model.air_profile_model, boundary_layer_model, air_forcing;
         site, vapour_pressure_equation, ground_coupling=model.ground_coupling)
