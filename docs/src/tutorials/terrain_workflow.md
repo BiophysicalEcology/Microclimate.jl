@@ -15,15 +15,16 @@ using Microclimate, Unitful, CairoMakie
 
 site = example_site()
 soil_profile = example_soil_profile()
-model = MicroModel(;
-    soil_properties_model = example_soil_properties_model(),
-    soil_hydraulic_model = example_soil_hydraulic_model(),
+soil = SoilModel(;
+    profile = soil_profile,
+    properties_model = example_soil_properties_model(),
+    hydraulic_model = example_soil_hydraulic_model(),
 )
-depths = model.depths
+depths = soil.depths
 
 function run_at(site)
+    model = MicroModel(; site, soil)
     inputs = MicroInputs(;
-        site, soil_profile,
         environment_minmax = example_monthly_weather(),
         environment_daily = example_daily_environment(),
         environment_hourly = example_hourly_environment(),

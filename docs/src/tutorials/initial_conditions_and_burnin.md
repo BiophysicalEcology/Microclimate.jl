@@ -19,10 +19,10 @@ whatever June's simulation produced.
 using Microclimate, Unitful, CairoMakie
 
 n = length(Microclimate.DEFAULT_DEPTHS)
-config = MicroConfig(; soil_moisture_strategy = DynamicSoilMoisture())
+soil_moisture_strategy = DynamicSoilMoisture()
 
-wet_start = solve(example_microclimate_problem(; config, initial_soil_moisture = fill(0.35, n)))
-dry_start = solve(example_microclimate_problem(; config, initial_soil_moisture = fill(0.05, n)))
+wet_start = solve(example_microclimate_problem(; soil_moisture_strategy, initial_soil_moisture = fill(0.35, n)))
+dry_start = solve(example_microclimate_problem(; soil_moisture_strategy, initial_soil_moisture = fill(0.05, n)))
 
 # December (the 12th representative day) is identical either way -- the very
 # different starting moisture never had a chance to persist between months.
@@ -122,18 +122,19 @@ environment_minmax = DailyMinMaxEnvironment(; forcings = minmax_forcings(;
 ))
 
 consecutive_inputs = MicroInputs(;
-    site, soil_profile = example_soil_profile(),
     environment_minmax,
     environment_daily = example_daily_environment(days; rainfall = fill(0.0u"kg/m^2", length(days))),
     environment_hourly = example_hourly_environment(days),
     initial_soil_temperature = fill(u"K"(-2.0u"°C"), n),
     initial_soil_moisture = fill(0.35, n),
 )
-model = MicroModel(;
-    soil_properties_model = example_soil_properties_model(),
-    soil_hydraulic_model = example_soil_hydraulic_model(),
-    config,
+soil = SoilModel(;
+    profile = example_soil_profile(),
+    properties_model = example_soil_properties_model(),
+    hydraulic_model = example_soil_hydraulic_model(),
+    moisture_strategy = soil_moisture_strategy,
 )
+model = MicroModel(; site, soil)
 daily_out = solve(MicroProblem(model, consecutive_inputs; days,
     time_mode = ConsecutiveDayMode(; spinup_first_day = true)))
 
