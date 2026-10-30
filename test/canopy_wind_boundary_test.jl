@@ -58,6 +58,17 @@ end
     @test ustrip(u"K", result.top_temperature) ≈ ustrip(u"K", reference_temperature) atol=1e-6
 end
 
+@testset "canopy_top_flux_boundary: vapour takes the floor's vapour resistance" begin
+    boundary(floor_resistance) = canopy_top_flux_boundary(boundary_layer_model, column(; friction_velocity = 0.3u"m/s"),
+        reference_height, 0.0u"W/m^2", 0.0u"kg/m^2/s", ground_temperature, ground_vapour_density,
+        reference_temperature, reference_vapour_density, previous_top_temperature, previous_top_vapour_density;
+        floor_resistance)
+    heat_only = boundary((; heat = 50.0u"s/m", vapor = 0.0u"s/m"))
+    both = boundary((; heat = 50.0u"s/m", vapor = 50.0u"s/m"))
+    @test heat_only.top_temperature == both.top_temperature
+    @test heat_only.top_vapour_density != both.top_vapour_density
+end
+
 @testset "roughness sublayer" begin
     enhancement(model) = canopy_top_enhancement(model, canopy_height, 5.0, 0.004u"m", boundary_layer_model.karman_constant)
     @test enhancement(NoRoughnessSublayer()) == 1.0
@@ -65,6 +76,12 @@ end
     # Fades to 1 in slow flow over a short canopy
     fade(u) = Microclimate.turbulent_enhancement(CanopyTopMixingEnhancement(), 3.0, 0.05u"m", u, 1.5e-5u"m^2/s")
     @test fade(0.01u"m/s") < 1.1 && fade(5.0u"m/s") > 2.9
+    # A canopy barely above the ground roughness closes no gap
+    @test canopy_top_enhancement(CanopyTopMixingEnhancement(), 0.05u"m", 5.0, 0.02u"m",
+        boundary_layer_model.karman_constant) == 1.0
+    # No fade, even in still air
+    @test Microclimate.turbulent_enhancement(CanopyTopMixingEnhancement(; transition_reynolds_number = 0.0), 3.0,
+        0.05u"m", 0.0u"m/s", 1.5e-5u"m^2/s") == 3.0
 
     column(e) = AboveCanopyColumn(; canopy_height, displacement_height, friction_velocity = 0.5u"m/s",
         inverse_obukhov_length = -0.01u"m^-1", enhancement = e)

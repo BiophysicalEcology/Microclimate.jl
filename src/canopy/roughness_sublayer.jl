@@ -60,7 +60,8 @@ function canopy_top_enhancement(model::CanopyTopMixingEnhancement, canopy_height
 
     # u★/U_h over bare ground, then with the canopy (Raupach 1994)
     γ_bare = min(κ / log(h / z₀), γ_max)
-    γ_bare >= γ_max && return float(e_max)
+    # Bare ground already at the maximum ratio: the canopy closes no gap
+    γ_bare >= γ_max && return 1.0
     γ = min(sqrt(γ_bare^2 + C_R * PAI / 2), γ_max)
     closure = (γ - γ_bare) / (γ_max - γ_bare)
     return 1.0 + (e_max - 1.0) * closure
@@ -85,6 +86,7 @@ function turbulent_enhancement(model::CanopyTopMixingEnhancement, enhancement, c
     ν = kinematic_viscosity
     Re_t = model.transition_reynolds_number
 
+    iszero(Re_t) && return e
     Re = uconvert(NoUnits, U_h * h / ν)
     fade = Re^2 / (Re^2 + Re_t^2)
     return 1.0 + (e - 1.0) * fade
@@ -105,13 +107,6 @@ end
 
 # Canopy top above the displacement height, floored
 _canopy_top_depth(column::AboveCanopyColumn) = max(column.canopy_height - column.displacement_height, 1.0e-3u"m")
-
-"""
-    canopy_top_stability_height(column::AboveCanopyColumn)
-
-Height above the displacement height at which stability is evaluated for canopy-top mixing.
-"""
-canopy_top_stability_height(column::AboveCanopyColumn) = (1.0 + column.enhancement) / 2 * _canopy_top_depth(column)
 
 """
     stretched_height(column::AboveCanopyColumn, z)

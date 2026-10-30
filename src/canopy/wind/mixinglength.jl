@@ -195,14 +195,15 @@ end
     canopy_top_flux_boundary(boundary_layer_model, column::AboveCanopyColumn, reference_height,
                               total_sensible_flux, total_latent_flux, ground_temperature, ground_vapour_density,
                               reference_temperature, reference_vapour_density, previous_top_temperature,
-                              previous_top_vapour_density; floor_resistance=0.0u"s/m", max_resistance=2000.0u"s/m")
+                              previous_top_vapour_density; floor_resistance=(; heat=0.0u"s/m", vapor=0.0u"s/m"),
+                              max_resistance=2000.0u"s/m")
 
 Canopy-top boundary temperature/vapour density: resistance-weighted from the
 whole canopy's own aggregated source flux (`total_sensible_flux`/
 `total_latent_flux`, per unit ground area, summed over every layer) plus a
 ground flux, referenced to `reference_temperature`/`reference_vapour_density`
 via [`column_heat_resistance`](@ref) from canopy top to the reference height. Ground-to-canopy-top
-resistance is `floor_resistance` plus a bulk top-of-canopy eddy diffusivity (same form as
+resistance is `floor_resistance` (`(; heat, vapor)`) plus a bulk top-of-canopy eddy diffusivity (same form as
 `_canopy_direct_conductances`'s `eddy_diffusivity_top`), not a specific
 `air_profile_model`'s own layered resistance -- this boundary is shared by
 every `air_profile_model`. With `ρ_cp` and both resistances fixed (not
@@ -222,7 +223,7 @@ unreachable in an hour. Damped exponentially toward
 function canopy_top_flux_boundary(boundary_layer_model, column::AboveCanopyColumn, reference_height,
     total_sensible_flux, total_latent_flux, ground_temperature, ground_vapour_density,
     reference_temperature, reference_vapour_density, previous_top_temperature, previous_top_vapour_density;
-    floor_resistance=0.0u"s/m", max_resistance=2000.0u"s/m",
+    floor_resistance=(; heat=0.0u"s/m", vapor=0.0u"s/m"), max_resistance=2000.0u"s/m",
 )
     (; canopy_height, friction_velocity, enhancement) = column
 
@@ -242,7 +243,9 @@ function canopy_top_flux_boundary(boundary_layer_model, column::AboveCanopyColum
     R_max = max_resistance
     z_top = _canopy_top_depth(column)
 
-    R_g = min(h / (κ * u★ * z_top * e) + floor_resistance, R_max)
+    R_canopy = h / (κ * u★ * z_top * e)
+    R_g = min(R_canopy + floor_resistance.heat, R_max)
+    R_gᵥ = min(R_canopy + floor_resistance.vapor, R_max)
     R_t = min(column_heat_resistance(column, boundary_layer_model, h, reference_height), R_max)
 
     # ρ_cp fixed from ambient data, not the solved top_temperature: calc_ρ_cp
@@ -253,8 +256,9 @@ function canopy_top_flux_boundary(boundary_layer_model, column::AboveCanopyColum
     #   T_t = T_r + (H + (ρcp/R_g)(T_g - T_t)) R_t/ρcp   =>   T_t(1 + R_t/R_g) = T_r + H·R_t/ρcp + (R_t/R_g)T_g
     # and the analogous vapour-density equation.
     Rtg = R_t / R_g
+    Rtgᵥ = R_t / R_gᵥ
     T_t = (T_r + H * R_t / ρ_cp + Rtg * T_g) / (1.0 + Rtg)
-    ρᵥ_t = (ρᵥ_r + E * R_t + Rtg * ρᵥ_g) / (1.0 + Rtg)
+    ρᵥ_t = (ρᵥ_r + E * R_t + Rtgᵥ * ρᵥ_g) / (1.0 + Rtgᵥ)
 
     # Residence time of a z_top-deep column via R_t; can exceed an hour under calm conditions (see docstring).
     τ = z_top * R_t

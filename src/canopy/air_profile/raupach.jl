@@ -462,7 +462,7 @@ function canopy_heat_vapor_transport!(buffers, model::RaupachLTheoryAirProfile, 
     #   T_L = min(a₂h/u★, T_L,max)
     e = above_canopy_column.enhancement
     Φh = calc_Φ_h(
-        stability_parameter(InverseObukhovLength(), canopy_top_stability_height(above_canopy_column),
+        stability_parameter(InverseObukhovLength(), stretched_height(above_canopy_column, h),
             above_canopy_column.inverse_obukhov_length),
         γ,
         boundary_layer_model.stable_Φ_h_coefficient,
