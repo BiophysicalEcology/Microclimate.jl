@@ -12,7 +12,7 @@ through DifferentiationInterface. The solver cache is built once by
 or `Broyden(; init_jacobian=Val(:true_jacobian))` to compute the Jacobian
 once per hour. When it fails, `fallback_algorithm` is tried from the previous
 hour's solution, then from the reference conditions; its line search shortens
-steps that leave [`CANOPY_TEMPERATURE_BOUNDS`](@ref).
+steps that leave [`CANOPY_TEMPERATURE_BOUNDS`](@ref). If that fails too, it errors.
 """
 @kwdef struct NonlinearCanopyConvergence{A,F,T,B} <: AbstractCanopyConvergenceModel
     algorithm::A = NewtonRaphson()
@@ -93,15 +93,18 @@ function converge_canopy!(buffers, model::MultilayerCanopy, boundary_layer_model
 
     copyto!(warm_start, state)
     SciMLBase.reinit!(solver, state; p=parameters)
+    iterations = 0
     # First step with the previous hour's Jacobian; restart with a fresh one if it fails
     if has_jacobian[]
         SciMLBase.step!(solver; recompute_jacobian=false)
-        solver.retcode == SciMLBase.ReturnCode.Default || SciMLBase.successful_retcode(solver.retcode) ||
+        if !(solver.retcode == SciMLBase.ReturnCode.Default || SciMLBase.successful_retcode(solver.retcode))
+            iterations += solver.stats.nsteps
             SciMLBase.reinit!(solver, state; p=parameters)
+        end
     end
     SciMLBase.solve!(solver)
-    has_jacobian[] = true
-    iterations = solver.stats.nsteps
+    has_jacobian[] = SciMLBase.successful_retcode(solver.retcode)
+    iterations += solver.stats.nsteps
     if SciMLBase.successful_retcode(solver.retcode)
         copyto!(state, solver.u)
     else
@@ -121,9 +124,11 @@ function converge_canopy!(buffers, model::MultilayerCanopy, boundary_layer_model
             SciMLBase.reinit!(fallback_solver, state; p=parameters)
             SciMLBase.solve!(fallback_solver)
             iterations += fallback_solver.stats.nsteps
-            SciMLBase.successful_retcode(fallback_solver.retcode) ||
-                @warn "NonlinearCanopyConvergence did not converge" fallback_solver.retcode maxlog=5
         end
+        SciMLBase.successful_retcode(fallback_solver.retcode) ||
+            error("NonlinearCanopyConvergence did not converge from the previous hour or the reference conditions: ",
+                fallback_solver.retcode, " (reference temperature ", reference_temperature, ", wind ", reference_wind_speed,
+                ", ground temperature ", ground_temperature, ", zenith angle ", zenith_angle, ")")
         copyto!(state, fallback_solver.u)
     end
 

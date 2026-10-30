@@ -43,7 +43,8 @@ canopy_state_length(buffers) = 3 * length(buffers.leaf.leaf_temperature) + 1
 """
     CANOPY_TEMPERATURE_BOUNDS
 
-Leaf and air temperatures outside which [`evaluate_canopy!`](@ref) returns a NaN residual.
+Leaf, air and canopy-top temperatures outside which [`evaluate_canopy!`](@ref)
+returns a NaN residual, as it does for negative vapor density.
 """
 const CANOPY_TEMPERATURE_BOUNDS = (100.0u"K", 1000.0u"K")
 
@@ -83,7 +84,7 @@ function evaluate_canopy!(residual, state, buffers, model::MultilayerCanopy, bou
         leaf = state[i] * u"K"
         air_temperature = state[n_layers + i] * u"K"
         vapor_density = state[2n_layers + i] * u"g/m^3"
-        in_bounds &= lo <= leaf <= hi && lo <= air_temperature <= hi
+        in_bounds &= lo <= leaf <= hi && lo <= air_temperature <= hi && vapor_density >= zero(vapor_density)
         leaf_temperature[i] = clamp(leaf, lo, hi)
         air.air_temperature_prev[i] = clamp(air_temperature, lo, hi)
         air.vapor_density_prev[i] = max(vapor_density, zero(vapor_density))
@@ -138,6 +139,7 @@ function evaluate_canopy!(residual, state, buffers, model::MultilayerCanopy, bou
         wind.inverse_obukhov_length, sum(sensible_heat_source), sum(evaporation_mass_flow) / 1.0u"m^2",
         ground_temperature, ground_vapor_density, reference_temperature, reference_vapor_density,
         forcing.canopy_top_air_temperature, initial_top_vapor_density)
+    in_bounds &= lo <= boundary.top_temperature <= hi
     canopy_top_air_temperature = clamp(boundary.top_temperature, lo, hi)
     top_saturation = wet_air_properties(canopy_top_air_temperature, 1.0, atmospheric_pressure;
         vapour_pressure_equation).vapour_density

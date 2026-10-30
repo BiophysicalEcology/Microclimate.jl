@@ -56,6 +56,15 @@ end
     @test leaf_temperature(-1.0e6u"J/kg") > leaf_temperature(0.0u"J/kg")
 end
 
+@testset "failed solve errors" begin
+    model = Microclimate.example_multilayer_canopy(; canopy_height, plant_area_index,
+        convergence_model = NonlinearCanopyConvergence(; maxiters = 1))
+    buffers = allocate(model)
+    @test_throws r"did not converge" canopy_energy_balance!(buffers, model, boundary_layer_model,
+        canopy_inputs(model); site)
+    @test !buffers.convergence.has_jacobian[]
+end
+
 @testset "zero allocations" begin
     for plant_area_index in (plant_area_index, fill(plant_area_index / 10, 10), [0.6, 0.5, 0.45, 0.4, 0.35, 0.3, 0.2, 0.15, 0.1, 0.05])
         model = canopy(; plant_area_index)
