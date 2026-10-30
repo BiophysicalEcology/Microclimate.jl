@@ -91,7 +91,7 @@ function _ktheory_conductances!(ev, relative_eddy_diffusivity, eddy_diffusivity_
 end
 
 function canopy_heat_vapor_transport!(buffers, ::KTheoryAirProfile, boundary_layer_model,
-    forcing::CanopyAirProfileForcing; site, vapour_pressure_equation=GoffGratch(), ground_coupling=ProfileGroundResistance(),
+    forcing::CanopyAirProfileForcing; site, vapour_pressure_equation=GoffGratch(), ground_coupling,
 )
     (; friction_velocity, wind_speed, canopy_top_air_temperature, canopy_top_relative_humidity, ground_temperature,
        ground_relative_humidity, sensible_heat_source, evaporation_mass_flow, atmospheric_pressure) = forcing
@@ -152,8 +152,7 @@ function canopy_heat_vapor_transport!(buffers, ::KTheoryAirProfile, boundary_lay
     g_top, g_ground = _ktheory_conductances!(ev, K̂, K₀, Δz, ρcp, u"W/m^2/K")
     gᵥ_top, gᵥ_ground = _ktheory_conductances!(evᵥ, K̂, K₀, Δz, 1.0, u"m/s")
     g_ground, gᵥ_ground = _ktheory_ground_conductances(ground_coupling, boundary_layer_model, g_ground, gᵥ_ground, ρcp,
-        GroundExchangeForcing(; profile_heat_resistance=ρcp / g_ground, profile_vapor_resistance=1 / gᵥ_ground,
-            layer_height=layer_heights[n], wind_speed=wind_speed[n], layer_air_temperature=air_temperature_prev[n],
+        GroundExchangeForcing(; layer_height=layer_heights[n], wind_speed=wind_speed[n], layer_air_temperature=air_temperature_prev[n],
             ground_temperature=T_ground, roughness_height=site.roughness_height, friction_velocity=uₛ, plant_area_index,
             atmospheric_pressure=p))
     ground_heat_conductance[] = g_ground

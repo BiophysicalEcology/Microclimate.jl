@@ -43,7 +43,7 @@ end
 
 """
     canopy_heat_vapor_transport!(buffers, model, boundary_layer_model, forcing::CanopyAirProfileForcing;
-                              site, vapour_pressure_equation=GoffGratch(), ground_coupling=ProfileGroundResistance())
+                              site, vapour_pressure_equation=GoffGratch(), ground_coupling)
 
 The model's physical map from leaf sources and boundary values to the
 in-canopy air temperature and vapour density, written into

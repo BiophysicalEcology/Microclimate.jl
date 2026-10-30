@@ -9,21 +9,19 @@ abstract type AbstractGroundCoupling end
 """
     ProfileGroundResistance()
 
-The air-profile model's own ground resistance.
+The air-profile model's own ground resistance, computed inside its
+`canopy_heat_vapor_transport!` rather than by [`ground_resistance`](@ref).
 """
 struct ProfileGroundResistance <: AbstractGroundCoupling end
 
 """
-    GroundExchangeForcing(; profile_heat_resistance, profile_vapor_resistance, layer_height, wind_speed,
-        layer_air_temperature, ground_temperature, roughness_height, friction_velocity, plant_area_index,
-        atmospheric_pressure)
+    GroundExchangeForcing(; layer_height, wind_speed, layer_air_temperature, ground_temperature,
+        roughness_height, friction_velocity, plant_area_index, atmospheric_pressure)
 
 Inputs to [`ground_resistance`](@ref). `friction_velocity` is canopy-top;
 `layer_height`, `wind_speed` and `layer_air_temperature` are the lowest layer's.
 """
-@kwdef struct GroundExchangeForcing{RH,RV,Z,U,TL,TG,Z0,UF,PAI,P}
-    profile_heat_resistance::RH
-    profile_vapor_resistance::RV
+@kwdef struct GroundExchangeForcing{Z,U,TL,TG,Z0,UF,PAI,P}
     layer_height::Z
     wind_speed::U
     layer_air_temperature::TL
@@ -37,12 +35,21 @@ end
 """
     ground_resistance(coupling::AbstractGroundCoupling, boundary_layer_model, forcing::GroundExchangeForcing)
 
-Ground-to-lowest-layer resistance as `(; heat, vapor)`.
+Ground-to-lowest-layer resistance as `(; heat, vapor)`, for every coupling
+but [`ProfileGroundResistance`](@ref).
 """
 function ground_resistance end
 
-ground_resistance(::ProfileGroundResistance, boundary_layer_model, forcing::GroundExchangeForcing) =
-    (; heat=forcing.profile_heat_resistance, vapor=forcing.profile_vapor_resistance)
+"""
+    sublayer_resistance(roughness_height, friction_velocity, kinematic_viscosity)
+
+Quasi-laminar ground sublayer resistance as `(; heat, vapor)`, from
+[`sublayer_stanton`](@ref), with vapor through the Lewis factor.
+"""
+function sublayer_resistance(roughness_height, friction_velocity, kinematic_viscosity)
+    heat = 1 / (friction_velocity * sublayer_stanton(roughness_height, friction_velocity, kinematic_viscosity))
+    return (; heat, vapor=heat / LEWIS_HEAT_TO_MASS_RATIO)
+end
 
 """
     FloorTurbulence(; gust_decay=4.18, leaf_drag_coefficient=0.25, shelter_factor=0.4,
@@ -92,9 +99,8 @@ function ground_resistance(coupling::FloorTurbulence, boundary_layer_model, forc
     ln_z = log(z / z₀)
     # TODO drop the log-ratio floor with the smooth ψ (#137)
     turbulent_resistance = max(ln_z - ψ_z + ψ_z₀, 0.1 * ln_z) / (κ * u_g)
-    sublayer_resistance = 1 / (u_g * sublayer_stanton(z₀, u_g, ν))
-    return (; heat=turbulent_resistance + sublayer_resistance,
-        vapor=turbulent_resistance + sublayer_resistance / LEWIS_HEAT_TO_MASS_RATIO)
+    sublayer = sublayer_resistance(z₀, u_g, ν)
+    return (; heat=turbulent_resistance + sublayer.heat, vapor=turbulent_resistance + sublayer.vapor)
 end
 
 """
