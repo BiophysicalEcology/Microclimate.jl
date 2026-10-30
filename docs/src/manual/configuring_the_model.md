@@ -109,9 +109,10 @@ with different aspects converging in different ways via different algorithsm:
   (b) feeds the resulting ground-surface boundary condition into the soil ODE and
   advances it through the hour, (c) compares the new ground temperature to the
   previous guess, and repeats until `canopy_soil_convergence` is satisfied (or its
-  iteration limit is hit). [`SurfaceNodePrediction`](@ref) instead predicts the
-  surface temperature between canopy solves and integrates the ODE once. Either way,
-  canopy and soil *temperature* reach a mutually consistent state each hour.
+  iteration limit is hit), so canopy and soil *temperature* reach a mutually
+  consistent state each hour. [`SurfaceNodePrediction`](@ref) instead predicts the
+  surface temperature between canopy solves and integrates the ODE once; the canopy
+  then sees the predicted, not the integrated, end-of-hour surface temperature.
 - **Soil moisture**, ground dew/frost, and snow growth/melt are then computed once
   per hour, downstream of that hour's already-converged temperature — not solved
   simultaneously with it. Soil moisture in particular assumes the current hour's

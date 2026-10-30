@@ -1165,17 +1165,19 @@ function _canopy_soil_pass!(ode_integrator, canopy_model, canopy_buffers, ground
     return overrides
 end
 
-# End-of-hour temperatures of the top `K` soil nodes from one backward-Euler step, with the soil
-# ODE's own right-hand side and the nodes below held at their start-of-hour values
-function _predict_top_temperatures(p, hour_T0_ode::SVector{N}, guess::SVector{K}, t_end;
-    Δt=60.0u"minute", δ=0.01u"K",
+# End-of-hour temperatures of the `K` ODE nodes from `first_node` (the soil surface) from one
+# backward-Euler step, with the soil ODE's own right-hand side and every other node held at its
+# start-of-hour value
+function _predict_top_temperatures(p, hour_T0_ode::SVector{N}, guess::SVector{K}, first_node, t_end, Δt;
+    δ=0.01u"K",
 ) where {N,K}
-    with_top(T) = SVector{N}(ntuple(i -> i <= K ? T[i] : hour_T0_ode[i], Val(N)))
+    offset = first_node - 1
+    with_top(T) = SVector{N}(ntuple(i -> offset < i <= offset + K ? T[i - offset] : hour_T0_ode[i], Val(N)))
     function top_rates(T)
         derivatives = soil_energy_balance(with_top(T), p, t_end)
-        return SVector{K}(ntuple(i -> ustrip(u"K/minute", derivatives[i]), Val(K)))
+        return SVector{K}(ntuple(i -> ustrip(u"K/minute", derivatives[offset + i]), Val(K)))
     end
-    T_start = SVector{K}(ntuple(i -> hour_T0_ode[i], Val(K)))
+    T_start = SVector{K}(ntuple(i -> hour_T0_ode[offset + i], Val(K)))
     dt = ustrip(u"minute", Δt)
     T = guess
     rates = top_rates(T)
@@ -1198,26 +1200,29 @@ end
 function converge_canopy_soil_hour!(ode_integrator, hour_index, hour_T0_ode, csc::SurfaceNodePrediction,
     canopy_model, canopy_buffers, snow_model; snow_present, relaxation=1.0, kw...,
 )
-    # Snow columns keep the iterated coupling
-    if snow_present || _n_snow(snow_model) > 0
+    # Hours with snow keep the iterated coupling
+    if snow_present
         iterated = IterationToleranceConvergence(; csc.tolerance, max_iterations_per_day=csc.max_iterations)
         return converge_canopy_soil_hour!(ode_integrator, hour_index, hour_T0_ode, iterated,
             canopy_model, canopy_buffers, snow_model; snow_present, relaxation, kw...)
     end
     (; ground_temperature0) = values(kw)
     pass_kw = Base.structdiff(values(kw), NamedTuple{(:ground_temperature0,)})
-    t_end = hour_index * 60.0u"minute"
+    hour = 60.0u"minute"
+    t_end = hour_index * hour
+    # Without snow, the soil surface follows the inactive snow nodes
+    first_node = _n_snow(snow_model) + 1
     ground_temperature = ground_temperature0
-    top = Base.setindex(SVector{3}(ntuple(i -> hour_T0_ode[i], Val(3))), ground_temperature, 1)
+    top = SVector{3}(ntuple(i -> i == 1 ? ground_temperature : hour_T0_ode[first_node + i - 1], Val(3)))
     local overrides
     for _ in 1:csc.max_iterations
         overrides = _canopy_soil_pass!(ode_integrator, canopy_model, canopy_buffers, ground_temperature; pass_kw...)
-        top = _predict_top_temperatures(ode_integrator.p, hour_T0_ode, top, t_end)
+        top = _predict_top_temperatures(ode_integrator.p, hour_T0_ode, top, first_node, t_end, hour)
         settled = abs(top[1] - ground_temperature) < csc.tolerance
         ground_temperature = top[1]
         settled && break
     end
-    _maybe_reinit_integrator!(ode_integrator, hour_T0_ode, (hour_index - 1) * 60.0u"minute"; reset_dt=false)
+    _maybe_reinit_integrator!(ode_integrator, hour_T0_ode, t_end - hour; reset_dt=false)
     T_result = step_to_hour!(ode_integrator, hour_index)
     T_snow, T0 = split_ode_state(snow_model, T_result)
     return (; overrides, T0, T_snow)
