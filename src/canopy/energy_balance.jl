@@ -116,8 +116,6 @@ function canopy_energy_balance!(buffers, model::MultilayerCanopy, boundary_layer
     leaf_frost_formed = buffers.leaf.leaf_frost_formed
     leaf_body = buffers.leaf.leaf_body
     (; wind_speed) = buffers.wind
-    (; layer_plant_area_index_boundaries) = buffers.shortwave
-    (; layer_transmission) = buffers.longwave
     atmospheric_pressure = environment_instant.atmospheric_pressure
     n_layers = length(leaf_temperature)
 
@@ -173,10 +171,7 @@ function canopy_energy_balance!(buffers, model::MultilayerCanopy, boundary_layer
         # independent reservoirs, so the only physically-consistent mass
         # is actual_mass, already fixed by _cap_wet_surface_evaporation and
         # tied to evaporation_mass_flow/sensible_heat_source above.
-        exchange_fraction = 1.0 - layer_transmission[layer]
-        leaf_area = 2.0 * exchange_fraction * 1.0u"m^2"
-        layer_pai = layer_plant_area_index_boundaries[layer + 1] - layer_plant_area_index_boundaries[layer]
-        aerodynamic_area = 2.0 * layer_pai * 1.0u"m^2"
+        (; leaf_area, aerodynamic_area) = layer_leaf_areas(buffers, layer)
         conv = leaf_convection(model.leaf_convection_model, leaf_body, aerodynamic_area, air_temperature[layer],
             leaf_temp, wind_speed[layer], atmospheric_pressure)
         dew_frost_energy_flux = condensation_energy_flux(model.condensation_model;

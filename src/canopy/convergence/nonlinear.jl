@@ -63,14 +63,14 @@ end
 
 # The tolerance of residual row `row`, in the state's units
 function canopy_row_tolerance(tolerances, buffers, row)
-    n_layers = length(buffers.leaf.leaf_temperature)
-    if row <= n_layers
+    rows = canopy_state_rows(length(buffers.leaf.leaf_temperature))
+    if row in rows.leaf_temperature
         # A layer without leaf area gives T_leaf - T_air
-        iszero(1.0 - buffers.longwave.layer_transmission[row]) && return tolerances.air_temperature
+        iszero(layer_leaf_areas(buffers, row).exchange_fraction) && return tolerances.air_temperature
         return tolerances.leaf_balance
-    elseif row <= 2n_layers
+    elseif row in rows.air_temperature
         return tolerances.air_temperature
-    elseif row <= 3n_layers
+    elseif row in rows.vapor_density
         return tolerances.vapor_density
     else
         return tolerances.inverse_obukhov_length
@@ -143,8 +143,9 @@ function converge_canopy!(buffers, model::MultilayerCanopy, boundary_layer_model
         end
         SciMLBase.successful_retcode(fallback_solver.retcode) ||
             error("NonlinearCanopyConvergence did not converge from the previous hour or the reference conditions: ",
-                fallback_solver.retcode, " (reference temperature ", reference_temperature, ", wind ", reference_wind_speed,
-                ", ground temperature ", ground_temperature, ", zenith angle ", zenith_angle, ")")
+                fallback_solver.retcode, " (reference temperature ", reference_temperature,
+                ", wind ", inputs.environment_instant.reference_wind_speed,
+                ", ground temperature ", inputs.ground_temperature, ", zenith angle ", inputs.zenith_angle, ")")
         copyto!(state, fallback_solver.u)
     end
 

@@ -95,6 +95,17 @@ end
     @test maximum(abs, newton.leaf.leaf_temperature .- fallback.leaf.leaf_temperature) < 1.0e-6u"K"
     @test allocations(canopy_energy_balance!, anderson, anderson_model, boundary_layer_model,
         canopy_inputs(anderson_model); site) == 0
+    # A layer without leaf area maps its leaf to the layer's air temperature
+    gappy_model = Microclimate.example_multilayer_canopy(; canopy_height,
+        plant_area_index = [0.6, 0.5, 0.0, 0.4, 0.35, 0.3, 0.2, 0.15, 0.1, 0.05],
+        convergence_model = AndersonCanopyConvergence())
+    _, gappy = solve_canopy(gappy_model, canopy_inputs(gappy_model))
+    (; state, residual, mapped, forcing) = gappy.convergence
+    rows = Microclimate.canopy_state_rows(10)
+    state[rows.leaf_temperature[3]] += 1.0
+    Microclimate.canopy_fixed_point!(mapped, residual, state, gappy, gappy_model, boundary_layer_model, forcing[];
+        site, vapour_pressure_equation = Microclimate.GoffGratch())
+    @test mapped[rows.leaf_temperature[3]] ≈ state[rows.air_temperature[3]]
 end
 
 @testset "uniform vector plant_area_index matches the equivalent scalar" begin
