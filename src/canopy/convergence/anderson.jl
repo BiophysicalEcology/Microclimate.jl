@@ -54,8 +54,7 @@ function canopy_fixed_point!(mapped, residual, state, buffers, model, boundary_l
             mapped[j] = state[j] - residual[j]
             continue
         end
-        (; balance, leaf_area) = layer_leaf_balance(buffers, model, forcing, i, leaf_temperature[i] + δ;
-            vapour_pressure_equation)
+        (; balance, leaf_area) = layer_leaf_balance(buffers, model, forcing, i, leaf_temperature[i] + δ)
         # Net balance falls as the leaf warms
         slope = -min(ustrip(u"W/m^2/K", (balance.net - net_balance[i]) / (δ * leaf_area)), -1.0)
         mapped[j] = state[j] + residual[j] / slope

@@ -81,7 +81,7 @@ function canopy_solution!(residual, state, buffers, model::MultilayerCanopy, bou
         end
         conv = leaf_convection(model.leaf_convection_model, leaf_body, aerodynamic_area, air.air_temperature[i],
             leaf_temperature[i], buffers.wind.wind_speed[i], atmospheric_pressure)
-        atmos = AtmosphericConditions(air.relative_humidity[i], buffers.wind.wind_speed[i], atmospheric_pressure)
+        atmos = VapourDensityAtmosphericConditions(air.vapor_density[i], buffers.wind.wind_speed[i], atmospheric_pressure)
         potential_evaporation_mass_flow[i] = HeatExchange.evaporation(unstressed_dry_conductance,
             conv.mass_transfer_coefficient, atmos, aerodynamic_area, leaf_temperature[i], air.air_temperature[i];
             water_potential=0.0u"J/kg").transpiration_mass_flow

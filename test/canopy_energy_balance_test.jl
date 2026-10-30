@@ -11,6 +11,7 @@ stomatal_conductance = LeafEvaporationParameters(;
 )
 air_temperature = 293.0u"K"
 relative_humidity = 0.5
+air_vapor_density = Microclimate.wet_air_properties(air_temperature, relative_humidity, 101325.0u"Pa").vapour_density
 wind_speed = 1.0u"m/s"
 atmospheric_pressure = 101325.0u"Pa"
 leaf_emissivity = 0.97
@@ -27,7 +28,7 @@ end
     # Far from the equilibrium leaf temperature, so out.net is a real nonzero residual.
     Rabs = 300.0u"W/m^2"
     Tleaf = air_temperature + 40.0u"K"
-    out = Microclimate.leaf_heat_balance(Tleaf, Rabs, air_temperature, relative_humidity,
+    out = Microclimate.leaf_heat_balance(Tleaf, Rabs, air_temperature, air_vapor_density,
         wind_speed, atmospheric_pressure, leaf_emissivity, stomatal_conductance, leaf_water_potential, body, 1.0u"m^2")
     @test abs(out.net) > 1.0u"W"
 
@@ -37,7 +38,7 @@ end
 end
 
 @testset "leaf_heat_balance is smooth through T_leaf = T_air" begin
-    net(Tleaf, convection_model) = Microclimate.leaf_heat_balance(Tleaf, 300.0u"W/m^2", air_temperature, relative_humidity,
+    net(Tleaf, convection_model) = Microclimate.leaf_heat_balance(Tleaf, 300.0u"W/m^2", air_temperature, air_vapor_density,
         0.1u"m/s", atmospheric_pressure, leaf_emissivity, stomatal_conductance, leaf_water_potential, body, 1.0u"m^2",
         convection_model).net
     # Slopes just below and just above T_air

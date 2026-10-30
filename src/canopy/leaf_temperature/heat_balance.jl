@@ -87,7 +87,7 @@ leaf_convection(convection_model, body, leaf_area, air_temperature, leaf_tempera
         temperature_difference_model=_temperature_difference_model(convection_model))
 
 """
-    leaf_heat_balance(leaf_temperature, absorbed_radiation, air_temperature, relative_humidity,
+    leaf_heat_balance(leaf_temperature, absorbed_radiation, air_temperature, air_vapor_density,
                        wind_speed, atmospheric_pressure, leaf_emissivity, stomatal_conductance,
                        leaf_water_potential, body, leaf_area, convection_model; aerodynamic_area=leaf_area)
 
@@ -99,13 +99,15 @@ to); `aerodynamic_area` scales convection/evaporation (the leaf's actual
 exchange surface). They differ for a canopy layer, where radiative exchange
 saturates with self-shading `(1-e^{-K·PAI})` but aerodynamic exchange keeps
 scaling with actual leaf area (`PAI`); default matches for a standalone leaf.
+`air_vapor_density` is the air's own vapor density, so supersaturated air
+condenses onto the leaf rather than passing through a relative humidity clamped to 1.
 """
-function leaf_heat_balance(leaf_temperature, absorbed_radiation, air_temperature, relative_humidity,
+function leaf_heat_balance(leaf_temperature, absorbed_radiation, air_temperature, air_vapor_density,
     wind_speed, atmospheric_pressure, leaf_emissivity, stomatal_conductance, leaf_water_potential,
     body, leaf_area, convection_model=ElaborateLeafConvection(); aerodynamic_area=leaf_area,
 )
     conv = leaf_convection(convection_model, body, aerodynamic_area, air_temperature, leaf_temperature, wind_speed, atmospheric_pressure)
-    atmos = AtmosphericConditions(relative_humidity, wind_speed, atmospheric_pressure)
+    atmos = VapourDensityAtmosphericConditions(air_vapor_density, wind_speed, atmospheric_pressure)
     evap = HeatExchange.evaporation(stomatal_conductance, conv.mass_transfer_coefficient, atmos, aerodynamic_area,
         leaf_temperature, air_temperature; water_potential=leaf_water_potential)
 
