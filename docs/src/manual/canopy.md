@@ -5,7 +5,8 @@ how radiation, wind, temperature and humidity change with height through a
 canopy. [`MultilayerCanopy`](@ref) resolves the canopy into layers (one per 
 `MicroModel.atmosphere.heights` entry at or below `canopy_height`) and solves shortwave, longwave, 
 wind, air-profile, interception and leaf temperature sub-models per layer, each hour, 
-converging the canopy against the soil surface temperature with [`PicardCanopyConvergence`](@ref).
+solving leaf temperature, air temperature, humidity and stability together with
+[`NonlinearCanopyConvergence`](@ref), and converging the canopy against the soil surface temperature.
 
 The default wind model, [`ExponentialCanopyWindAttenuation`](@ref), requires at least
 10 canopy layers (it replaces the bottom tenth of the profile with a local log-law
@@ -39,9 +40,8 @@ The literature sources for each sub-model are as follows:
   [`NoInterception`](@ref) switches it off (the `MultilayerCanopy` default).
 - **Leaf temperature**: solved by
   [HeatExchange.jl](https://github.com/BiophysicalEcology/HeatExchange.jl) — not by
-  Microclimate.jl itself. [`LinearizedLeafTemperature`](@ref) and
-  [`RootFindLeafTemperature`](@ref) (`src/canopy/leaf_temperature/`) both call through
-  to HeatExchange.jl's `convection`/`evaporation` (shape-specific Nusselt
+  Microclimate.jl itself. The leaf energy balance (`src/canopy/leaf_temperature/`)
+  calls through to HeatExchange.jl's `convection`/`evaporation` (shape-specific Nusselt
   correlations, water-potential-driven surface humidity via the Kelvin equation,
   Campbell's (1990) leaf-angle-dependent aerodynamic width); see HeatExchange.jl's own
   docs for the underlying equations.

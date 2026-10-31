@@ -1,6 +1,6 @@
 using Microclimate
-using Microclimate: calc_Obukhov_length, calc_ψ_m, calc_ψ_h, calc_Φ_h, calc_ρ_cp, atmospheric_surface_profile!, allocate_profile,
-    dry_air_properties
+using Microclimate: calc_Obukhov_length, monin_obukhov_iteration, ObukhovLength, InverseObukhovLength, stability_parameter,
+    calc_ψ_m, calc_ψ_h, calc_Φ_h, calc_ρ_cp, atmospheric_surface_profile!, allocate_profile, dry_air_properties
 using Unitful
 using Test
 
@@ -12,17 +12,23 @@ z = 10.0u"m"
 ρcpTκg = u"J*s^2/m^4"(6.003e-8u"cal*minute^2/cm^4")
 atmospheric_pressure = 101325.0u"Pa"
 
-function obukhov(dT)  # dT = reference_temp - surface_temp
+function iteration_arguments(dT)  # dT = reference_temp - surface_temp
     reference_temp = 293.15u"K"
     surface_temp = reference_temp - dT
     ΔT = reference_temp - surface_temp
     mean_temp = (reference_temp + surface_temp) / 2
     ρ_cp = calc_ρ_cp(mean_temp)
     kinematic_viscosity = dry_air_properties(mean_temp, atmospheric_pressure).kinematic_viscosity
-    return calc_Obukhov_length(reference_temp, surface_temp, 2.0u"m/s", z0, z, ρcpTκg, bl.karman_constant, ΔT, ρ_cp, kinematic_viscosity;
-        γ=bl.dyer_constant, stable_beta=bl.stable_beta, turbulent_prandtl_number=bl.turbulent_prandtl_number,
-        initial_obukhov_length=-0.3u"m")
+    return (reference_temp, surface_temp, 2.0u"m/s", z0, z, ρcpTκg, bl.karman_constant, ΔT, ρ_cp, kinematic_viscosity)
 end
+stability_keywords = (; γ=bl.dyer_constant, stable_beta=bl.stable_beta, turbulent_prandtl_number=bl.turbulent_prandtl_number)
+
+obukhov(dT) = calc_Obukhov_length(iteration_arguments(dT)...; stability_keywords..., initial_obukhov_length=-0.3u"m")
+inverse_obukhov(dT) = monin_obukhov_iteration(InverseObukhovLength(), iteration_arguments(dT)...; stability_keywords...,
+    initial_value=inv(-0.3u"m"))
+
+# Stability parameter at the reference height for an Obukhov length
+ζ(obukhov_length) = stability_parameter(ObukhovLength(), z, obukhov_length)
 
 @testset "calc_Obukhov_length: sign and continuity across the stable/unstable transition" begin
     unstable = obukhov(-2.0u"K")  # surface warmer than reference
@@ -44,22 +50,34 @@ end
     end
 end
 
+@testset "inverse Obukhov length iteration matches the Obukhov length iteration" begin
+    for dT in (-3.0u"K", -1.0u"K", -0.25u"K", 0.25u"K", 1.0u"K", 3.0u"K")
+        direct = obukhov(dT)
+        inverse = inverse_obukhov(dT)
+        @test isapprox(ζ(direct.obukhov_length), stability_parameter(InverseObukhovLength(), z, inverse.value); atol = 0.05)
+        @test isapprox(direct.friction_velocity, inverse.friction_velocity; rtol = 0.01)
+        @test isapprox(direct.convective_heat_flux, inverse.convective_heat_flux; rtol = 0.01, atol = 0.1u"W/m^2")
+    end
+    # Neutral: finite, and the stability parameter converges to zero
+    @test isapprox(stability_parameter(InverseObukhovLength(), z, inverse_obukhov(0.0u"K").value), 0.0; atol = 0.01)
+end
+
 @testset "calc_ψ_m/calc_ψ_h/calc_Φ_h: type-stable and zero-allocation, both regimes" begin
     for L in (-5.0u"m", 5.0u"m", Inf * u"m")
-        @inferred calc_ψ_m(z, bl.dyer_constant, L, bl.stable_beta)
-        @inferred calc_ψ_h(z, bl.dyer_constant, L, bl.stable_beta, bl.turbulent_prandtl_number)
-        @inferred calc_Φ_h(z, bl.dyer_constant, L, bl.stable_Φ_h_coefficient, bl.min_stable_Φ_h, bl.max_stable_Φ_h)
-        @test allocations(calc_ψ_m, z, bl.dyer_constant, L, bl.stable_beta) == 0
-        @test allocations(calc_ψ_h, z, bl.dyer_constant, L, bl.stable_beta, bl.turbulent_prandtl_number) == 0
-        @test allocations(calc_Φ_h, z, bl.dyer_constant, L, bl.stable_Φ_h_coefficient, bl.min_stable_Φ_h, bl.max_stable_Φ_h) == 0
+        @inferred calc_ψ_m(ζ(L), bl.dyer_constant, bl.stable_beta)
+        @inferred calc_ψ_h(ζ(L), bl.dyer_constant, bl.stable_beta, bl.turbulent_prandtl_number)
+        @inferred calc_Φ_h(ζ(L), bl.dyer_constant, bl.stable_Φ_h_coefficient, bl.min_stable_Φ_h, bl.max_stable_Φ_h)
+        @test allocations(calc_ψ_m, ζ(L), bl.dyer_constant, bl.stable_beta) == 0
+        @test allocations(calc_ψ_h, ζ(L), bl.dyer_constant, bl.stable_beta, bl.turbulent_prandtl_number) == 0
+        @test allocations(calc_Φ_h, ζ(L), bl.dyer_constant, bl.stable_Φ_h_coefficient, bl.min_stable_Φ_h, bl.max_stable_Φ_h) == 0
     end
 end
 
 @testset "calc_Φ_h: stable branch increases with height, unstable branch decreases" begin
     # Φ_h = 1 at neutral; stable Φ_h > 1 (suppressed mixing), unstable Φ_h < 1 (enhanced).
-    @test calc_Φ_h(z, bl.dyer_constant, Inf * u"m", bl.stable_Φ_h_coefficient, bl.min_stable_Φ_h, bl.max_stable_Φ_h) == 1.0
-    @test calc_Φ_h(z, bl.dyer_constant, 5.0u"m", bl.stable_Φ_h_coefficient, bl.min_stable_Φ_h, bl.max_stable_Φ_h) > 1.0
-    @test calc_Φ_h(z, bl.dyer_constant, -5.0u"m", bl.stable_Φ_h_coefficient, bl.min_stable_Φ_h, bl.max_stable_Φ_h) < 1.0
+    @test calc_Φ_h(ζ(Inf * u"m"), bl.dyer_constant, bl.stable_Φ_h_coefficient, bl.min_stable_Φ_h, bl.max_stable_Φ_h) == 1.0
+    @test calc_Φ_h(ζ(5.0u"m"), bl.dyer_constant, bl.stable_Φ_h_coefficient, bl.min_stable_Φ_h, bl.max_stable_Φ_h) > 1.0
+    @test calc_Φ_h(ζ(-5.0u"m"), bl.dyer_constant, bl.stable_Φ_h_coefficient, bl.min_stable_Φ_h, bl.max_stable_Φ_h) < 1.0
 end
 
 @testset "calc_Φ_h: stable branch stays bounded even for very small L (calm, strongly-stable)" begin
@@ -68,7 +86,7 @@ end
     # T_L by orders of magnitude -- R's own dphih (sensibleheat.R) is a
     # saturating form for exactly this reason, matched here.
     for L in (10.0u"m", 1.0u"m", 0.1u"m", 0.01u"m", 0.0001u"m")
-        Φ_h = calc_Φ_h(z, bl.dyer_constant, L, bl.stable_Φ_h_coefficient, bl.min_stable_Φ_h, bl.max_stable_Φ_h)
+        Φ_h = calc_Φ_h(ζ(L), bl.dyer_constant, bl.stable_Φ_h_coefficient, bl.min_stable_Φ_h, bl.max_stable_Φ_h)
         @test bl.min_stable_Φ_h <= Φ_h <= bl.max_stable_Φ_h
     end
 end

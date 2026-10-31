@@ -42,7 +42,7 @@ implementing the existing interface, not a rewrite. It also makes model *choices
 cheap to interrogate: because Julia's multiple dispatch selects behaviour from the
 argument types rather than from branches inside one function, comparing "what changes
 if I use `MatricFluxPotentialAlgorithm` instead of `MatricPotentialAlgorithm`" or
-"what does `RootFindLeafTemperature` predict versus `LinearizedLeafTemperature`" is a
+"what does `KTheoryAirProfile` predict versus `RaupachLTheoryAirProfile`" is a
 one-line change to a `MicroModel`/`MicroConfig`, not a fork of the simulation.
 [Soil hydraulics algorithms](../tutorials/soil_hydraulics_algorithms.md) demonstrates
 exactly this kind of comparison.
@@ -81,8 +81,7 @@ model, separate from the physical-process choices above:
   depends on `MicroProblem.time_mode`: for [`NonConsecutiveDayMode`](@ref) (the
   default) it's ignored — that mode's own `iterations_per_day` field sets the
   per-day iteration count instead; for [`ConsecutiveDayMode`](@ref) it only applies
-  on day 1, and only if `spinup_first_day=true`. It's also reused, independently, by
-  the canopy's own [`PicardCanopyConvergence`](@ref).
+  on day 1, and only if `spinup_first_day=true`.
 - `rainfall_schedule` — [`DailyRainfall`](@ref) or [`HourlyRainfall`](@ref)
 - `soil_moisture_strategy` — [`PrescribedSoilMoisture`](@ref) (from
   `environment_daily`) or [`DynamicSoilMoisture`](@ref) (solved from rainfall)
@@ -97,8 +96,8 @@ with different aspects converging in different ways via different algorithsm:
 - **Soil temperature** is an ODE system ([`SoilHeatTransport1D`](@ref), handed
   to a SciML integrator) — continuous within the hour, not a single explicit step.
 - **Canopy**, when present, is jointly converged against that same ODE each hour:
-  [`PicardCanopyConvergence`](@ref) repeatedly (a) solves the canopy's shortwave,
-  longwave, wind and leaf-temperature state for the current guess of ground
+  the canopy-soil iteration repeatedly (a) solves the canopy's shortwave,
+  longwave, wind and leaf-temperature state ([`NonlinearCanopyConvergence`](@ref)) for the current guess of ground
   temperature, (b) feeds the resulting ground-surface boundary condition into the
   soil ODE and advances it through the hour, (c) compares the new ground temperature
   to the previous guess, and repeats until `canopy_soil_convergence` is satisfied (or

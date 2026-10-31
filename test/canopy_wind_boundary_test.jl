@@ -17,7 +17,7 @@ previous_top_vapour_density = 0.0175u"kg/m^3"
 
 @testset "canopy_top_flux_boundary: windy conditions barely damped" begin
     result = canopy_top_flux_boundary(boundary_layer_model, canopy_height, displacement_height, roughness_length,
-        reference_height, 1.0u"m/s", Inf * u"m",
+        reference_height, 1.0u"m/s", 0.0u"m^-1",
         50.0u"W/m^2", 1.0e-5u"kg/m^2/s", ground_temperature, ground_vapour_density,
         reference_temperature, reference_vapour_density, previous_top_temperature, previous_top_vapour_density)
 
@@ -31,7 +31,7 @@ end
     # residence time scales with z_top alone (only displacement_height
     # varies below) -- bigger z_top should damp closer to previous_top.
     run(disp) = canopy_top_flux_boundary(boundary_layer_model, canopy_height, disp, roughness_length,
-        reference_height, 1.0e-4u"m/s", Inf * u"m",
+        reference_height, 1.0e-4u"m/s", 0.0u"m^-1",
         50.0u"W/m^2", 1.0e-5u"kg/m^2/s", ground_temperature, ground_vapour_density,
         reference_temperature, reference_vapour_density, previous_top_temperature, previous_top_vapour_density)
 
@@ -49,7 +49,7 @@ end
     # A steady state with zero flux and previous == reference/ground-consistent point should stay put
     # regardless of damping strength (target == anchor).
     result = canopy_top_flux_boundary(boundary_layer_model, canopy_height, displacement_height, roughness_length,
-        reference_height, 1.0e-4u"m/s", Inf * u"m",
+        reference_height, 1.0e-4u"m/s", 0.0u"m^-1",
         0.0u"W/m^2", 0.0u"kg/m^2/s", reference_temperature, reference_vapour_density,
         reference_temperature, reference_vapour_density, reference_temperature, reference_vapour_density)
 
