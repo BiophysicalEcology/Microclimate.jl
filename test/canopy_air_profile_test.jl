@@ -1,5 +1,6 @@
 using Microclimate
-using Microclimate: CanopyAirProfileForcing, allocate_air_profile, canopy_heat_vapor_transport!, wet_air_properties
+using Microclimate: CanopyAirProfileForcing, GroundExchangeForcing, allocate_air_profile, canopy_heat_vapor_transport!,
+    wet_air_properties
 using Unitful
 using Test
 
@@ -39,16 +40,20 @@ function initial_buffers(model)
     return buffers
 end
 
-function profile(model; kw...)
+function coupled_profile(model, ground_coupling; kw...)
     buffers = initial_buffers(model)
-    canopy_heat_vapor_transport!(buffers, model, boundary_layer_model, forcing(; kw...); site)
+    canopy_heat_vapor_transport!(buffers, model, boundary_layer_model, forcing(; kw...); site, ground_coupling)
     return buffers
 end
 
 # A single peak at (or next to) the source layer, everything else below it
 is_local_bump(values) = abs(argmax(values) - mid_layer) <= 1 && count(==(maximum(values)), values) == 1
 
-@testset "$(nameof(typeof(model)))" for model in (KTheoryAirProfile(), RaupachLTheoryAirProfile())
+ground_couplings = (ProfileGroundResistance(), FloorTurbulence(), SakaguchiZeng2009())
+
+@testset "$(nameof(typeof(model))), $(nameof(typeof(ground_coupling)))" for model in
+        (KTheoryAirProfile(), RaupachLTheoryAirProfile()), ground_coupling in ground_couplings
+    profile(model; kw...) = coupled_profile(model, ground_coupling; kw...)
     @testset "no forcing: uniform boundaries give a uniform profile" begin
         result = profile(model)
         @test all(t -> isapprox(t, T; atol = 1e-6u"K"), result.air_temperature)
@@ -77,12 +82,32 @@ is_local_bump(values) = abs(argmax(values) - mid_layer) <= 1 && count(==(maximum
         buffers = initial_buffers(model)
         hour_forcing = forcing(; sensible_heat_source = fill(10.0u"W/m^2", n_layers),
             evaporation_mass_flow = fill(1.0e-4u"g/s", n_layers), ground_temperature = 288.0u"K")
-        @test allocations(canopy_heat_vapor_transport!, buffers, model, boundary_layer_model, hour_forcing; site) == 0
+        @test allocations(canopy_heat_vapor_transport!, buffers, model, boundary_layer_model, hour_forcing;
+            site, ground_coupling) == 0
     end
 end
 
+@testset "ground_resistance" begin
+    ground_forcing(; friction_velocity = 0.3u"m/s", plant_area_index = 3.0, ground_temperature = T) = GroundExchangeForcing(;
+        layer_height = 0.1u"m", wind_speed = 0.1u"m/s", layer_air_temperature = T, ground_temperature, roughness_height = 0.01u"m",
+        friction_velocity, plant_area_index, atmospheric_pressure = 101325.0u"Pa")
+    ground_resistance(coupling, forcing) = Microclimate.ground_resistance(coupling, boundary_layer_model, forcing)
+    for coupling in (FloorTurbulence(), SakaguchiZeng2009())
+        @test ground_resistance(coupling, ground_forcing(; friction_velocity = 1.0u"m/s")).heat <
+              ground_resistance(coupling, ground_forcing()).heat
+    end
+    # Free convection keeps the floor coupled in calm air
+    @test isfinite(ground_resistance(FloorTurbulence(), ground_forcing(; friction_velocity = 0.0u"m/s")).heat)
+    # A warm floor under cooler air is more strongly coupled; a cold one less
+    @test ground_resistance(FloorTurbulence(), ground_forcing(; ground_temperature = T + 5.0u"K")).heat <
+          ground_resistance(FloorTurbulence(), ground_forcing()).heat <
+          ground_resistance(FloorTurbulence(), ground_forcing(; ground_temperature = T - 5.0u"K")).heat
+    # Dense canopy: Sakaguchi & Zeng's 1/(0.004 u★)
+    @test ground_resistance(SakaguchiZeng2009(), ground_forcing(; plant_area_index = 50.0)).heat ≈ 1 / (0.004 * 0.3u"m/s")
+end
+
 @testset "KTheoryAirProfile: diffusion decays monotonically away from a source" begin
-    result = profile(KTheoryAirProfile(); sensible_heat_source = mid_heat)
+    result = coupled_profile(KTheoryAirProfile(), ProfileGroundResistance(); sensible_heat_source = mid_heat)
     peak = argmax(result.air_temperature)
     @test issorted(result.air_temperature[1:peak])
     @test issorted(result.air_temperature[peak:end]; rev = true)
