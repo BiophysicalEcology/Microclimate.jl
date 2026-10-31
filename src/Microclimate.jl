@@ -14,7 +14,7 @@ using PolyLog: reli2
 using LinearAlgebra: SymTridiagonal, Symmetric, cholesky!, issuccess, ldlt!, ldiv!
 using NonlinearSolveFirstOrder: NewtonRaphson
 using NonlinearSolveQuasiNewton: Broyden
-using DifferentiationInterface: prepare_jacobian, jacobian!, Cache, Constant
+using DifferentiationInterface: prepare_jacobian, jacobian!, prepare_derivative, derivative, Cache, Constant
 using ADTypes: AutoEnzyme
 import Enzyme
 

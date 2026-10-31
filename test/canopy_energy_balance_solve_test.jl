@@ -26,9 +26,9 @@ mean_leaf_temperature(buffers) = sum(buffers.leaf.leaf_temperature) / length(buf
 
 # Every residual row within the tolerance for its kind
 function residual_within_tolerance(buffers)
-    (; residual, parameters) = buffers.convergence
+    (; residual, tolerances) = buffers.convergence
     return all(eachindex(residual)) do row
-        abs(residual[row]) <= Microclimate.canopy_row_tolerance(parameters[].tolerances, buffers, row)
+        abs(residual[row]) <= Microclimate.canopy_row_tolerance(tolerances, buffers, row)
     end
 end
 
@@ -84,15 +84,16 @@ end
 @testset "AndersonCanopyConvergence matches the Newton solve" begin
     newton_model = canopy()
     anderson_model = Microclimate.example_multilayer_canopy(; canopy_height, plant_area_index,
-        convergence_model = AndersonCanopyConvergence(; tolerance = 0.001u"K"))
+        convergence_model = AndersonCanopyConvergence())
     _, newton = solve_canopy(newton_model, canopy_inputs(newton_model))
     _, anderson = solve_canopy(anderson_model, canopy_inputs(anderson_model))
-    @test maximum(abs, newton.leaf.leaf_temperature .- anderson.leaf.leaf_temperature) < 0.01u"K"
-    # One pass can't settle, so the hour falls back to Newton
-    fallback_model = Microclimate.example_multilayer_canopy(; canopy_height, plant_area_index,
+    @test residual_within_tolerance(anderson)
+    @test maximum(abs, newton.leaf.leaf_temperature .- anderson.leaf.leaf_temperature) < 1.0e-4u"K"
+    # One pass can't converge
+    failing_model = Microclimate.example_multilayer_canopy(; canopy_height, plant_area_index,
         convergence_model = AndersonCanopyConvergence(; maxiters = 1))
-    _, fallback = solve_canopy(fallback_model, canopy_inputs(fallback_model))
-    @test maximum(abs, newton.leaf.leaf_temperature .- fallback.leaf.leaf_temperature) < 1.0e-6u"K"
+    @test_throws r"did not converge" canopy_energy_balance!(allocate(failing_model), failing_model,
+        boundary_layer_model, canopy_inputs(failing_model); site)
     @test allocations(canopy_energy_balance!, anderson, anderson_model, boundary_layer_model,
         canopy_inputs(anderson_model); site) == 0
     # A layer without leaf area maps its leaf to the layer's air temperature

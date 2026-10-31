@@ -42,11 +42,7 @@ function allocate_canopy_convergence(convergence_model::NonlinearCanopyConvergen
     cache = Cache(buffers)
     constants = Constant((model, boundary_layer_model, forcing, site, vapour_pressure_equation))
     preparation = prepare_jacobian(canopy_residual!, residual, backend, state, cache, constants)
-    # In the state's units (see canopy_state_length)
-    tolerances = (; leaf_balance=ustrip(u"W/m^2", convergence_model.leaf_balance_tolerance),
-        air_temperature=ustrip(u"K", convergence_model.air_temperature_tolerance),
-        vapor_density=ustrip(u"g/m^3", convergence_model.vapor_density_tolerance),
-        inverse_obukhov_length=ustrip(u"m^-1", convergence_model.inverse_obukhov_length_tolerance))
+    tolerances = canopy_tolerances(convergence_model)
     parameters = Ref((; buffers, cache, constants, preparation, backend, residual, tolerances))
     problem = NonlinearProblem(
         NonlinearFunction(canopy_nonlinear_residual!; jac=canopy_nonlinear_jacobian!, jac_prototype=zeros(n_state, n_state)),
@@ -54,23 +50,7 @@ function allocate_canopy_convergence(convergence_model::NonlinearCanopyConvergen
     # The solver sees each row over its tolerance, so 1 is every row within tolerance
     (; maxiters) = convergence_model
     solver = SciMLBase.init(problem, convergence_model.algorithm; abstol=1.0, maxiters)
-    return (; solver, parameters, forcing, state, residual, has_jacobian=Ref(false))
-end
-
-# The tolerance of residual row `row`, in the state's units
-function canopy_row_tolerance(tolerances, buffers, row)
-    rows = canopy_state_rows(length(buffers.leaf.leaf_temperature))
-    if row in rows.leaf_temperature
-        # A layer without leaf area gives T_leaf - T_air
-        iszero(layer_leaf_areas(buffers, row).exchange_fraction) && return tolerances.air_temperature
-        return tolerances.leaf_balance
-    elseif row in rows.air_temperature
-        return tolerances.air_temperature
-    elseif row in rows.vapor_density
-        return tolerances.vapor_density
-    else
-        return tolerances.inverse_obukhov_length
-    end
+    return (; solver, parameters, forcing, tolerances, state, residual, has_jacobian=Ref(false))
 end
 
 function canopy_nonlinear_residual!(residual, state, parameters)
@@ -115,11 +95,7 @@ function converge_canopy!(buffers, model::MultilayerCanopy, boundary_layer_model
     SciMLBase.solve!(solver)
     has_jacobian[] = SciMLBase.successful_retcode(solver.retcode)
     iterations += solver.stats.nsteps
-    SciMLBase.successful_retcode(solver.retcode) ||
-        error("NonlinearCanopyConvergence did not converge: ", solver.retcode,
-            " (reference temperature ", inputs.environment_instant.reference_temperature,
-            ", wind ", inputs.environment_instant.reference_wind_speed,
-            ", ground temperature ", inputs.ground_temperature, ", zenith angle ", inputs.zenith_angle, ")")
+    SciMLBase.successful_retcode(solver.retcode) || canopy_convergence_error(cm, solver.retcode, inputs)
     copyto!(state, solver.u)
 
     return canopy_solution!(residual, state, buffers, model, boundary_layer_model, forcing[], inputs, iterations;
