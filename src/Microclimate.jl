@@ -11,7 +11,7 @@ using Unitful, UnitfulMoles
 using ModelParameters, DelimitedFiles
 using SpecialFunctions, StaticArrays
 using PolyLog: reli2
-using LinearAlgebra: SymTridiagonal, ldlt!, ldiv!
+using LinearAlgebra: SymTridiagonal, Symmetric, cholesky!, issuccess, ldlt!, ldiv!
 using NonlinearSolveFirstOrder: NewtonRaphson
 using LineSearch: BackTracking
 using NonlinearSolveQuasiNewton: Broyden
@@ -64,7 +64,7 @@ export AbstractStomatalConductanceModel, PrescribedStomatalConductance,
 export AbstractLeafConvectionModel, ElaborateLeafConvection, SimpleLeafConvection
 export leaf_body
 export LeafEvaporationParameters
-export AbstractCanopyConvergenceModel, NonlinearCanopyConvergence
+export AbstractCanopyConvergenceModel, NonlinearCanopyConvergence, AndersonCanopyConvergence
 
 # Apparent heat capacity (latent-heat-of-fusion treatment in snow)
 export AbstractApparentHeatCapacity, BonacinaStep, TanhSmoothed, Gaussian, WestermannSigmoid
@@ -284,7 +284,9 @@ include("canopy/convergence/abstract.jl")
 include("canopy/multilayer.jl")
 include("canopy/energy_balance.jl")
 include("canopy/residual.jl")
+include("canopy/convergence/common.jl")
 include("canopy/convergence/nonlinear.jl")
+include("canopy/convergence/anderson.jl")
 
 # Top-level config, parameters, problem, state, buffers, and cache types
 include("types.jl")
