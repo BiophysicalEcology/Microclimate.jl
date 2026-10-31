@@ -70,6 +70,10 @@ microclimate model. *Ecography* 40(5): 664–674.
 
 Linacre E (1992) *Climate Data and Resources*. Routledge.
 
+Massman WJ, Weil JC (1999) An analytical one-dimensional second-order closure model of
+turbulence statistics and the Lagrangian time scale within and above plant canopies of
+arbitrary structure. *Boundary-Layer Meteorology* 91: 81–107.
+
 Maxwell EL (1987) *A Quasi-Physical Model for Converting Hourly Global Horizontal to
 Direct Normal Insolation*. Technical Report SERI/TR-215-3087, Solar Energy Research
 Institute, Golden, CO.
@@ -94,7 +98,18 @@ the NOAA/FAA/NCAR winter precipitation test bed. *Bulletin of the American
 Meteorological Society* 93(6): 811–829.
 [doi:10.1175/BAMS-D-11-00052.1](https://doi.org/10.1175/BAMS-D-11-00052.1)
 
+Raupach MR (1994) Simplified expressions for vegetation roughness length and zero-plane
+displacement as functions of canopy height and area index. *Boundary-Layer Meteorology*
+71: 211–216.
+
+Raupach MR, Finnigan JJ, Brunet Y (1996) Coherent eddies and turbulence in vegetation
+canopies: the mixing-layer analogy. *Boundary-Layer Meteorology* 78: 351–382.
+
 Rozenberg GV (1966) *Twilight: A Study in Atmospheric Optics*. Plenum Press.
+
+Sakaguchi K, Zeng X (2009) Effects of soil wetness, plant litter, and under-canopy
+atmospheric stability on ground evaporation in the Community Land Model (CLM3.5).
+*Journal of Geophysical Research* 114: D01107.
 
 Sellers PJ (1985) Canopy reflectance, photosynthesis and transpiration. *International
 Journal of Remote Sensing* 6(8): 1335–1372.
@@ -103,6 +118,9 @@ Journal of Remote Sensing* 6(8): 1335–1372.
 Sturm M, Taras B, Liston GE, Derksen C, Jonas T, Lea J (2010) Estimating snow water
 equivalent using snow depth data and climate classes. *Journal of Hydrometeorology*
 11(6): 1380–1394. [doi:10.1175/2010JHM1202.1](https://doi.org/10.1175/2010JHM1202.1)
+
+Walker HF, Ni P (2011) Anderson acceleration for fixed-point iterations. *SIAM Journal on
+Numerical Analysis* 49(4): 1715–1735.
 
 Westermann S, Boike J, Langer M, Schuler TV, Etzelmüller B (2011) Modelling the
 impact of wintertime rain events on the thermal regime of permafrost. *The

@@ -4,9 +4,9 @@ A single scalar `shade` fraction ([`NoCanopy`](@ref), the default) cannot repres
 how radiation, wind, temperature and humidity change with height through a
 canopy. [`MultilayerCanopy`](@ref) resolves the canopy into layers (one per 
 `MicroModel.atmosphere.heights` entry at or below `canopy_height`) and solves shortwave, longwave, 
-wind, air-profile, interception and leaf temperature sub-models per layer, each hour, 
-solving leaf temperature, air temperature, humidity and stability together with
-[`NonlinearCanopyConvergence`](@ref), and converging the canopy against the soil surface temperature.
+wind, air-profile, interception and leaf temperature sub-models per layer, each hour,
+solving leaf temperature, air temperature, humidity and stability together and coupling
+the canopy to the soil (see [Solving each hour](#Solving-each-hour)).
 
 The default wind model, [`ExponentialCanopyWindAttenuation`](@ref), requires at least
 10 canopy layers (it replaces the bottom tenth of the profile with a local log-law
@@ -33,6 +33,17 @@ The literature sources for each sub-model are as follows:
   near-field/far-field scheme (its `:bulk` formulation option matches micropoint's 
   `LangrangianOne` closely); [`KTheoryAirProfile`](@ref) is a simpler K-theory diffusion
   alternative.
+- **Ground coupling** (`ground_coupling`): the resistance to heat and vapour between the
+  soil surface and the lowest canopy layer, used by either air-profile model.
+  [`FloorTurbulence`](@ref) (the default) adds a sublayer resistance to a
+  stability-corrected log law, with the floor wind sheltered by the foliage above
+  (Massman and Weil 1999). [`ProfileGroundResistance`](@ref) uses the air-profile model's
+  own resistance; [`SakaguchiZeng2009`](@ref) blends bare-soil and dense-canopy transfer
+  coefficients by plant area index.
+- **Roughness sublayer** (`roughness_sublayer`): [`CanopyTopMixingEnhancement`](@ref) (the
+  default) raises turbulent diffusivity just above the canopy above its Monin-Obukhov value,
+  fading with height (Raupach 1994; Raupach et al. 1996). [`NoRoughnessSublayer`](@ref)
+  applies Monin-Obukhov theory down to the canopy top.
 - **Rain interception**: [`LayeredRainInterception`](@ref) reuses micropoint's
   `rainintercept` drop-velocity formula (``3.78 \cdot rainfall^{0.067}``) in conjunction
   with the leaf-angle extinction machinery note above for shortwave radiation;
@@ -97,6 +108,26 @@ energy/aerodynamic split — a thin leaf has negligible heat storage, so there's
 ground-heat-flux analogue term, matching Garratt and Segal's (1988) own omission of
 that term for canopy dew.
 
+## Solving each hour
+
+The canopy state (leaf and air temperature, vapour density and stability in every
+layer) is solved each hour by the canopy's `convergence_model`:
+
+- [`NonlinearCanopyConvergence`](@ref) (the default): Newton's method on the whole coupled
+  system, with an automatic-differentiation Jacobian.
+- [`AndersonCanopyConvergence`](@ref): Jacobian-free fixed-point passes with Anderson
+  acceleration, usually faster. Hours it can't settle fall back to
+  `NonlinearCanopyConvergence`.
+
+Canopy and soil are coupled through `MicroConfig.canopy_soil_convergence`:
+
+- [`IterationToleranceConvergence`](@ref) (the default) alternates canopy solves with
+  integrations of the soil-temperature ODE through the hour, until the ground temperature
+  stops changing.
+- [`SurfaceNodePrediction`](@ref) integrates the soil once per hour. Between canopy solves
+  it predicts the end-of-hour surface temperature from a backward-Euler step of the top
+  soil nodes, which is several times faster. Hours with snow use the iterated coupling.
+
 ## Assembling a canopy
 
 ```@example canopy
@@ -104,6 +135,18 @@ using Microclimate, Unitful
 
 canopy_model = example_multilayer_canopy()
 canopy_model.canopy_height, canopy_model.shortwave_model, canopy_model.longwave_model
+```
+
+Any sub-model can be swapped by keyword, and the canopy-soil coupling is set in
+[`MicroConfig`](@ref):
+
+```@example canopy
+canopy_model = example_multilayer_canopy(;
+    ground_coupling = ProfileGroundResistance(),
+    convergence_model = AndersonCanopyConvergence(),
+)
+config = MicroConfig(; canopy_soil_convergence = SurfaceNodePrediction())
+canopy_model.ground_coupling, config.canopy_soil_convergence
 ```
 
 [`plant_area_index_from_density`](@ref) builds a per-layer plant area index from a
