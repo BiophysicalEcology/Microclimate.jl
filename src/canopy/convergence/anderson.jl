@@ -1,25 +1,28 @@
 """
-    AndersonCanopyConvergence(; tolerance=0.1u"K", history=5, damping=1.0, maxiters=100,
-        fallback=NonlinearCanopyConvergence(), fallback_threshold=10.0)
+    AndersonCanopyConvergence(; leaf_balance_tolerance=2e-5u"W/m^2", air_temperature_tolerance=1e-6u"K",
+        vapor_density_tolerance=1e-6u"g/m^3", inverse_obukhov_length_tolerance=1e-8u"m^-1",
+        history=5, damping=1.0, maxiters=100, backend=AutoEnzyme(; mode=Enzyme.Forward))
 
 Jacobian-free solve of [`evaluate_canopy!`](@ref) by Anderson-accelerated fixed-point passes:
-air and vapor from their transport, each leaf from a Newton step on its own balance.
-Stops when no pass changes a temperature (K), vapor density (g/m³) or 100 m × inverse
-Obukhov length by more than `tolerance`; else keeps the steadiest pass,
-or solves the hour with `fallback` if that pass is more than `fallback_threshold`
-tolerances from settled.
+air and vapor from their transport, each leaf from a Newton step on its own balance,
+with the balance's derivative from `backend` through DifferentiationInterface.
+
+Converges when every residual row is within the tolerance for its kind, as for
+[`NonlinearCanopyConvergence`](@ref), and errors if it doesn't within `maxiters` passes.
 
 # References
 - Walker, H. F., & Ni, P. (2011). Anderson acceleration for fixed-point iterations.
   *SIAM Journal on Numerical Analysis*, 49(4), 1715-1735.
 """
-@kwdef struct AndersonCanopyConvergence{T,D,F,FT} <: AbstractCanopyConvergenceModel
-    tolerance::T = 0.1u"K"
+@kwdef struct AndersonCanopyConvergence{LB,AT,VD,IL,D,B} <: AbstractCanopyConvergenceModel
+    leaf_balance_tolerance::LB = 2e-5u"W/m^2"
+    air_temperature_tolerance::AT = 1e-6u"K"
+    vapor_density_tolerance::VD = 1e-6u"g/m^3"
+    inverse_obukhov_length_tolerance::IL = 1e-8u"m^-1"
     history::Int = 5
     damping::D = 1.0
     maxiters::Int = 100
-    fallback::F = NonlinearCanopyConvergence()
-    fallback_threshold::FT = 10.0
+    backend::B = AutoEnzyme(; mode=Enzyme.Forward)
 end
 
 function allocate_canopy_convergence(convergence_model::AndersonCanopyConvergence, buffers, model, boundary_layer_model;
@@ -28,36 +31,45 @@ function allocate_canopy_convergence(convergence_model::AndersonCanopyConvergenc
     n_state = canopy_state_length(buffers)
     n_layers = length(buffers.leaf.leaf_temperature)
     m = convergence_model.history
-    # Row weights: K, g/m³, and 1/m × 100 m
-    scale = vcat(ones(3n_layers), 100.0)
-    return (; forcing=Ref(initial_residual_forcing(model, soil_hydraulic_model)),
-        state=zeros(n_state), initial=zeros(n_state), residual=zeros(n_state), mapped=zeros(n_state), step=zeros(n_state),
-        best=zeros(n_state), previous_mapped=zeros(n_state), previous_step=zeros(n_state),
+    rows = canopy_state_rows(n_layers)
+    tolerances = canopy_tolerances(convergence_model)
+    # Each pass's step over its tolerance; a leaf step is a temperature
+    scale = map(1:n_state) do row
+        row in rows.leaf_temperature ? 1 / tolerances.air_temperature : 1 / canopy_row_tolerance(tolerances, buffers, row)
+    end
+    forcing = Ref(initial_residual_forcing(model, soil_hydraulic_model))
+    (; backend) = convergence_model
+    leaf_preparation = prepare_derivative(layer_leaf_balance_density, backend, 288.0,
+        Constant(buffers), Constant(model), Constant(forcing[]), Constant(1))
+    return (; forcing, tolerances, leaf_buffers=buffers, leaf_preparation, backend,
+        state=zeros(n_state), residual=zeros(n_state), mapped=zeros(n_state), step=zeros(n_state),
+        previous_mapped=zeros(n_state), previous_step=zeros(n_state),
         mapped_differences=zeros(n_state, m), step_differences=zeros(n_state, m),
-        normal_matrix=zeros(m, m), normal_rhs=zeros(m), scale,
-        fallback=allocate_canopy_convergence(convergence_model.fallback, buffers, model, boundary_layer_model;
-            site, vapour_pressure_equation, soil_hydraulic_model))
+        normal_matrix=zeros(m, m), normal_rhs=zeros(m), scale)
+end
+
+# Layer `layer`'s leaf energy balance per unit leaf area (W/m²) at `leaf_temperature` (K)
+function layer_leaf_balance_density(leaf_temperature, buffers, model, forcing, layer)
+    (; balance, leaf_area) = layer_leaf_balance(buffers, model, forcing, layer, leaf_temperature * u"K")
+    return ustrip(u"W/m^2", balance.net / leaf_area)
 end
 
 # One fixed-point pass: `mapped` from `state`
 function canopy_fixed_point!(mapped, residual, state, buffers, model, boundary_layer_model, forcing;
     site, vapour_pressure_equation,
 )
+    (; leaf_buffers, leaf_preparation, backend) = buffers.convergence
     evaluate_canopy!(residual, state, buffers, model, boundary_layer_model, forcing; site, vapour_pressure_equation)
-    (; leaf_temperature, net_balance) = buffers.leaf
-    rows = canopy_state_rows(length(leaf_temperature))
-    δ = 0.1u"K"
-    for i in eachindex(leaf_temperature)
-        j = rows.leaf_temperature[i]
+    rows = canopy_state_rows(length(buffers.leaf.leaf_temperature))
+    for (i, j) in enumerate(rows.leaf_temperature)
         if iszero(layer_leaf_areas(buffers, i).exchange_fraction)
             # The residual is T_leaf - T_air: the leaf takes the air temperature
             mapped[j] = state[j] - residual[j]
             continue
         end
-        (; balance, leaf_area) = layer_leaf_balance(buffers, model, forcing, i, leaf_temperature[i] + δ)
-        # Net balance falls as the leaf warms
-        slope = -min(ustrip(u"W/m^2/K", (balance.net - net_balance[i]) / (δ * leaf_area)), -1.0)
-        mapped[j] = state[j] + residual[j] / slope
+        slope = derivative(layer_leaf_balance_density, leaf_preparation, backend, state[j],
+            Constant(leaf_buffers), Constant(model), Constant(forcing), Constant(i))
+        mapped[j] = state[j] - residual[j] / slope
     end
     # Air, vapor and stability rows already read state minus transport
     for j in first(rows.air_temperature):rows.inverse_obukhov_length
@@ -69,36 +81,29 @@ end
 function converge_canopy!(buffers, model::MultilayerCanopy, boundary_layer_model, inputs::CanopyEnergyBalanceInputs,
     initial_wind, cm::AndersonCanopyConvergence; site, vapour_pressure_equation, soil_hydraulic_model,
 )
-    (; forcing, state, initial, residual, mapped, step, best, previous_mapped, previous_step, mapped_differences,
+    (; forcing, tolerances, state, residual, mapped, step, previous_mapped, previous_step, mapped_differences,
        step_differences, normal_matrix, normal_rhs, scale) = buffers.convergence
     rows = canopy_state_rows(length(buffers.leaf.leaf_temperature))
     canopy_hour_setup!(state, forcing, buffers, model, inputs, initial_wind;
         site, vapour_pressure_equation, soil_hydraulic_model)
-    copyto!(initial, state)
 
-    tolerance =ustrip(u"K", cm.tolerance)
     β = cm.damping
     m = cm.history
     lo, hi = ustrip.(u"K", CANOPY_TEMPERATURE_BOUNDS)
     stored = 0
     oldest = 1
-    best_change = Inf
-    iterations = 0
     for k in 1:cm.maxiters
-        iterations = k
         canopy_fixed_point!(mapped, residual, state, buffers, model, boundary_layer_model, forcing[];
             site, vapour_pressure_equation)
-        change = 0.0
+        all(isfinite, mapped) || canopy_convergence_error(cm, SciMLBase.ReturnCode.Unstable, inputs)
+        converged = all(eachindex(residual)) do row
+            abs(residual[row]) <= canopy_row_tolerance(tolerances, buffers, row)
+        end
+        converged && return canopy_solution!(residual, state, buffers, model, boundary_layer_model, forcing[],
+            inputs, k; site, vapour_pressure_equation, soil_hydraulic_model)
         for j in eachindex(step)
             step[j] = mapped[j] - state[j]
-            change = max(change, abs(step[j]) * scale[j])
         end
-        isfinite(change) || break
-        if change < best_change
-            best_change = change
-            copyto!(best, mapped)
-        end
-        (change <= tolerance || k == cm.maxiters) && break
 
         if k > 1
             # Fill free columns, then overwrite the oldest
@@ -158,20 +163,5 @@ function converge_canopy!(buffers, model::MultilayerCanopy, boundary_layer_model
             state[i] = max(state[i], 0.0)
         end
     end
-    if best_change > cm.fallback_threshold * tolerance
-        # The fallback warm-starts from the buffers: put back the previous hour's state
-        air = buffers.air_profile
-        for i in eachindex(buffers.leaf.leaf_temperature)
-            buffers.leaf.leaf_temperature[i] = initial[rows.leaf_temperature[i]] * u"K"
-            air.air_temperature[i] = initial[rows.air_temperature[i]] * u"K"
-            air.vapor_density[i] = initial[rows.vapor_density[i]] * u"g/m^3"
-        end
-        fallback_buffers = merge(buffers, (; convergence=buffers.convergence.fallback))
-        result = converge_canopy!(fallback_buffers, model, boundary_layer_model, inputs, initial_wind, cm.fallback;
-            site, vapour_pressure_equation, soil_hydraulic_model)
-        return Base.setindex(result, iterations + result[2], 2)
-    end
-    copyto!(state, best)
-    return canopy_solution!(residual, state, buffers, model, boundary_layer_model, forcing[], inputs, iterations;
-        site, vapour_pressure_equation, soil_hydraulic_model)
+    canopy_convergence_error(cm, SciMLBase.ReturnCode.MaxIters, inputs)
 end

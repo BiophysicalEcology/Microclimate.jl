@@ -1,5 +1,5 @@
 """
-    NonlinearCanopyConvergence(; algorithm=NewtonRaphson(), fallback_algorithm=NewtonRaphson(; linesearch=BackTracking()),
+    NonlinearCanopyConvergence(; algorithm=NewtonRaphson(),
         leaf_balance_tolerance=2e-5u"W/m^2", air_temperature_tolerance=1e-6u"K",
         vapor_density_tolerance=1e-6u"g/m^3", inverse_obukhov_length_tolerance=1e-8u"m^-1",
         maxiters=50, backend=AutoEnzyme(; mode=Enzyme.set_runtime_activity(Enzyme.Forward)))
@@ -17,13 +17,10 @@ The leaf row of a layer without leaf area is a temperature, so it takes
 
 `algorithm` is any in-place NonlinearSolve algorithm, e.g. `NewtonRaphson()`
 or `Broyden(; init_jacobian=Val(:true_jacobian))` to compute the Jacobian
-once per hour. When it fails, `fallback_algorithm` is tried from the previous
-hour's solution, then from the reference conditions; its line search shortens
-steps that leave [`CANOPY_TEMPERATURE_BOUNDS`](@ref). If that fails too, it errors.
+once per hour. The solve starts from the previous hour's solution, and errors if it fails.
 """
-@kwdef struct NonlinearCanopyConvergence{A,F,LB,AT,VD,IL,B} <: AbstractCanopyConvergenceModel
+@kwdef struct NonlinearCanopyConvergence{A,LB,AT,VD,IL,B} <: AbstractCanopyConvergenceModel
     algorithm::A = NewtonRaphson()
-    fallback_algorithm::F = NewtonRaphson(; linesearch=BackTracking())
     leaf_balance_tolerance::LB = 2e-5u"W/m^2"
     air_temperature_tolerance::AT = 1e-6u"K"
     vapor_density_tolerance::VD = 1e-6u"g/m^3"
@@ -45,11 +42,7 @@ function allocate_canopy_convergence(convergence_model::NonlinearCanopyConvergen
     cache = Cache(buffers)
     constants = Constant((model, boundary_layer_model, forcing, site, vapour_pressure_equation))
     preparation = prepare_jacobian(canopy_residual!, residual, backend, state, cache, constants)
-    # In the state's units (see canopy_state_length)
-    tolerances = (; leaf_balance=ustrip(u"W/m^2", convergence_model.leaf_balance_tolerance),
-        air_temperature=ustrip(u"K", convergence_model.air_temperature_tolerance),
-        vapor_density=ustrip(u"g/m^3", convergence_model.vapor_density_tolerance),
-        inverse_obukhov_length=ustrip(u"m^-1", convergence_model.inverse_obukhov_length_tolerance))
+    tolerances = canopy_tolerances(convergence_model)
     parameters = Ref((; buffers, cache, constants, preparation, backend, residual, tolerances))
     problem = NonlinearProblem(
         NonlinearFunction(canopy_nonlinear_residual!; jac=canopy_nonlinear_jacobian!, jac_prototype=zeros(n_state, n_state)),
@@ -57,24 +50,7 @@ function allocate_canopy_convergence(convergence_model::NonlinearCanopyConvergen
     # The solver sees each row over its tolerance, so 1 is every row within tolerance
     (; maxiters) = convergence_model
     solver = SciMLBase.init(problem, convergence_model.algorithm; abstol=1.0, maxiters)
-    fallback_solver = SciMLBase.init(problem, convergence_model.fallback_algorithm; abstol=1.0, maxiters)
-    return (; solver, fallback_solver, parameters, forcing, state, warm_start=similar(state), residual, has_jacobian=Ref(false))
-end
-
-# The tolerance of residual row `row`, in the state's units
-function canopy_row_tolerance(tolerances, buffers, row)
-    rows = canopy_state_rows(length(buffers.leaf.leaf_temperature))
-    if row in rows.leaf_temperature
-        # A layer without leaf area gives T_leaf - T_air
-        iszero(layer_leaf_areas(buffers, row).exchange_fraction) && return tolerances.air_temperature
-        return tolerances.leaf_balance
-    elseif row in rows.air_temperature
-        return tolerances.air_temperature
-    elseif row in rows.vapor_density
-        return tolerances.vapor_density
-    else
-        return tolerances.inverse_obukhov_length
-    end
+    return (; solver, parameters, forcing, tolerances, state, residual, has_jacobian=Ref(false))
 end
 
 function canopy_nonlinear_residual!(residual, state, parameters)
@@ -101,14 +77,11 @@ end
 function converge_canopy!(buffers, model::MultilayerCanopy, boundary_layer_model, inputs::CanopyEnergyBalanceInputs,
     initial_wind, cm::NonlinearCanopyConvergence; site, vapour_pressure_equation, soil_hydraulic_model,
 )
-    (; atmospheric_pressure, reference_temperature, reference_humidity) = inputs.environment_instant
-    (; solver, fallback_solver, parameters, forcing, state, warm_start, residual, has_jacobian) = buffers.convergence
-    n_layers = length(buffers.leaf.leaf_temperature)
+    (; solver, parameters, forcing, state, residual, has_jacobian) = buffers.convergence
 
     canopy_hour_setup!(state, forcing, buffers, model, inputs, initial_wind;
         site, vapour_pressure_equation, soil_hydraulic_model)
 
-    copyto!(warm_start, state)
     SciMLBase.reinit!(solver, state; p=parameters)
     iterations = 0
     # First step with the previous hour's Jacobian; restart with a fresh one if it fails
@@ -122,32 +95,8 @@ function converge_canopy!(buffers, model::MultilayerCanopy, boundary_layer_model
     SciMLBase.solve!(solver)
     has_jacobian[] = SciMLBase.successful_retcode(solver.retcode)
     iterations += solver.stats.nsteps
-    if SciMLBase.successful_retcode(solver.retcode)
-        copyto!(state, solver.u)
-    else
-        # Fallback from the warm start, then from the reference conditions
-        SciMLBase.reinit!(fallback_solver, warm_start; p=parameters)
-        SciMLBase.solve!(fallback_solver)
-        iterations += fallback_solver.stats.nsteps
-        if !SciMLBase.successful_retcode(fallback_solver.retcode)
-            reference_vapor_density = ustrip(u"g/m^3", wet_air_properties(reference_temperature, reference_humidity,
-                atmospheric_pressure; vapour_pressure_equation).vapour_density)
-            rows = canopy_state_rows(n_layers)
-            state[rows.leaf_temperature] .= ustrip(u"K", reference_temperature)
-            state[rows.air_temperature] .= ustrip(u"K", reference_temperature)
-            state[rows.vapor_density] .= reference_vapor_density
-            state[rows.inverse_obukhov_length] = 0.0
-            SciMLBase.reinit!(fallback_solver, state; p=parameters)
-            SciMLBase.solve!(fallback_solver)
-            iterations += fallback_solver.stats.nsteps
-        end
-        SciMLBase.successful_retcode(fallback_solver.retcode) ||
-            error("NonlinearCanopyConvergence did not converge from the previous hour or the reference conditions: ",
-                fallback_solver.retcode, " (reference temperature ", reference_temperature,
-                ", wind ", inputs.environment_instant.reference_wind_speed,
-                ", ground temperature ", inputs.ground_temperature, ", zenith angle ", inputs.zenith_angle, ")")
-        copyto!(state, fallback_solver.u)
-    end
+    SciMLBase.successful_retcode(solver.retcode) || canopy_convergence_error(cm, solver.retcode, inputs)
+    copyto!(state, solver.u)
 
     return canopy_solution!(residual, state, buffers, model, boundary_layer_model, forcing[], inputs, iterations;
         site, vapour_pressure_equation, soil_hydraulic_model)
