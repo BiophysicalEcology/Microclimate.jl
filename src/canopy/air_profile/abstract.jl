@@ -17,19 +17,18 @@ Pre-allocate and precompute the structural buffers a model needs.
 function allocate_air_profile end
 
 """
-    CanopyAirProfileForcing(; friction_velocity, inverse_obukhov_length, wind_speed,
+    CanopyAirProfileForcing(; above_canopy_column, wind_speed,
         canopy_top_air_temperature, canopy_top_relative_humidity, ground_temperature,
         ground_relative_humidity, sensible_heat_source, evaporation_mass_flow,
         leaf_temperature, atmospheric_pressure)
 
 Forcing and state for one [`canopy_heat_vapor_transport!`](@ref) call: the
-above-canopy turbulence, the canopy-top and ground boundary values, and the
+[`AboveCanopyColumn`](@ref), the canopy-top and ground boundary values, and the
 per-layer leaf sources and temperatures of the current canopy state. Every
 air-profile model receives the same forcing and reads the fields it needs.
 """
-@kwdef struct CanopyAirProfileForcing{FV,OL,WS,TT,TRH,GT,GRH,SH,EM,LT,P}
-    friction_velocity::FV
-    inverse_obukhov_length::OL
+@kwdef struct CanopyAirProfileForcing{AC,WS,TT,TRH,GT,GRH,SH,EM,LT,P}
+    above_canopy_column::AC
     wind_speed::WS
     canopy_top_air_temperature::TT
     canopy_top_relative_humidity::TRH

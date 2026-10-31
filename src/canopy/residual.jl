@@ -48,6 +48,14 @@ returns a NaN residual, as it does for negative vapor density.
 """
 const CANOPY_TEMPERATURE_BOUNDS = (100.0u"K", 1000.0u"K")
 
+# Floor resistance on the canopy-top boundary's ground path. The profile's own
+# ground resistance is only known inside its transport, so ProfileGroundResistance
+# adds none.
+_canopy_top_floor_resistance(::ProfileGroundResistance, boundary_layer_model, forcing::GroundExchangeForcing) =
+    (; heat=0.0u"s/m", vapor=0.0u"s/m")
+_canopy_top_floor_resistance(coupling::AbstractGroundCoupling, boundary_layer_model, forcing::GroundExchangeForcing) =
+    ground_resistance(coupling, boundary_layer_model, forcing)
+
 """
     evaluate_canopy!(residual, state, buffers, model, boundary_layer_model, forcing::CanopyResidualForcing;
         site, vapour_pressure_equation)
@@ -134,19 +142,27 @@ function evaluate_canopy!(residual, state, buffers, model::MultilayerCanopy, bou
         vapour_pressure_equation).vapour_density
     initial_top_vapor_density = wet_air_properties(forcing.canopy_top_air_temperature, forcing.canopy_top_relative_humidity,
         atmospheric_pressure; vapour_pressure_equation).vapour_density
-    boundary = canopy_top_flux_boundary(boundary_layer_model, model.canopy_height, buffers.wind.displacement_height,
-        buffers.wind.roughness_length, buffers.wind.above_canopy_profile.heights[2], wind.friction_velocity,
-        wind.inverse_obukhov_length, sum(sensible_heat_source), sum(evaporation_mass_flow) / 1.0u"m^2",
+    kinematic_viscosity = dry_air_properties(reference_temperature, atmospheric_pressure).kinematic_viscosity
+    enhancement = turbulent_enhancement(model.roughness_sublayer, buffers.roughness_sublayer.enhancement,
+        model.canopy_height, wind.canopy_top_wind_speed, kinematic_viscosity)
+    column = AboveCanopyColumn(; canopy_height=model.canopy_height, displacement_height=buffers.wind.displacement_height,
+        friction_velocity=wind.friction_velocity, inverse_obukhov_length=wind.inverse_obukhov_length, enhancement)
+    floor = _canopy_top_floor_resistance(model.ground_coupling, boundary_layer_model, GroundExchangeForcing(;
+        layer_height=buffers.wind.ground_layer_height, wind_speed=wind_speed[n_layers],
+        layer_air_temperature=air.air_temperature_prev[n_layers], ground_temperature,
+        roughness_height=site.roughness_height, friction_velocity=wind.friction_velocity,
+        plant_area_index=buffers.air_profile.plant_area_index, atmospheric_pressure))
+    boundary = canopy_top_flux_boundary(boundary_layer_model, column, buffers.wind.above_canopy_profile.heights[2],
+        sum(sensible_heat_source), sum(evaporation_mass_flow) / 1.0u"m^2",
         ground_temperature, ground_vapor_density, reference_temperature, reference_vapor_density,
-        forcing.canopy_top_air_temperature, initial_top_vapor_density)
+        forcing.canopy_top_air_temperature, initial_top_vapor_density; floor_resistance=floor)
     in_bounds &= lo <= boundary.top_temperature <= hi
     canopy_top_air_temperature = clamp(boundary.top_temperature, lo, hi)
     top_saturation = wet_air_properties(canopy_top_air_temperature, 1.0, atmospheric_pressure;
         vapour_pressure_equation).vapour_density
     canopy_top_relative_humidity = clamp(boundary.top_vapour_density / top_saturation, 0.0, 1.0)
 
-    air_forcing = CanopyAirProfileForcing(; friction_velocity=wind.friction_velocity,
-        inverse_obukhov_length=wind.inverse_obukhov_length, wind_speed, canopy_top_air_temperature,
+    air_forcing = CanopyAirProfileForcing(; above_canopy_column=column, wind_speed, canopy_top_air_temperature,
         canopy_top_relative_humidity, ground_temperature, ground_relative_humidity, sensible_heat_source,
         evaporation_mass_flow, leaf_temperature, atmospheric_pressure)
     canopy_heat_vapor_transport!(air, model.air_profile_model, boundary_layer_model, air_forcing;
