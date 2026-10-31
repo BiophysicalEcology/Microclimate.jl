@@ -41,6 +41,14 @@ and vapor density (g/m³) per layer, then the inverse Obukhov length (1/m).
 canopy_state_length(buffers) = 3 * length(buffers.leaf.leaf_temperature) + 1
 
 """
+    CANOPY_TEMPERATURE_BOUNDS
+
+Leaf, air and canopy-top temperatures outside which [`evaluate_canopy!`](@ref)
+returns a NaN residual, as it does for negative vapor density.
+"""
+const CANOPY_TEMPERATURE_BOUNDS = (100.0u"K", 1000.0u"K")
+
+"""
     evaluate_canopy!(residual, state, buffers, model, boundary_layer_model, forcing::CanopyResidualForcing;
         site, vapour_pressure_equation)
 
@@ -69,10 +77,17 @@ function evaluate_canopy!(residual, state, buffers, model::MultilayerCanopy, bou
     (; absorbed_longwave, layer_transmission) = buffers.longwave
     n_layers = length(leaf_temperature)
 
+    # Evaluate out-of-bounds states at the bounds; their residual is NaN
+    lo, hi = CANOPY_TEMPERATURE_BOUNDS
+    in_bounds = true
     for i in 1:n_layers
-        leaf_temperature[i] = state[i] * u"K"
-        air.air_temperature_prev[i] = state[n_layers + i] * u"K"
-        air.vapor_density_prev[i] = state[2n_layers + i] * u"g/m^3"
+        leaf = state[i] * u"K"
+        air_temperature = state[n_layers + i] * u"K"
+        vapor_density = state[2n_layers + i] * u"g/m^3"
+        in_bounds &= lo <= leaf <= hi && lo <= air_temperature <= hi && vapor_density >= zero(vapor_density)
+        leaf_temperature[i] = clamp(leaf, lo, hi)
+        air.air_temperature_prev[i] = clamp(air_temperature, lo, hi)
+        air.vapor_density_prev[i] = max(vapor_density, zero(vapor_density))
     end
 
     environment_instant = (; atmospheric_pressure, reference_temperature, reference_wind_speed, reference_humidity)
@@ -124,7 +139,8 @@ function evaluate_canopy!(residual, state, buffers, model::MultilayerCanopy, bou
         wind.inverse_obukhov_length, sum(sensible_heat_source), sum(evaporation_mass_flow) / 1.0u"m^2",
         ground_temperature, ground_vapor_density, reference_temperature, reference_vapor_density,
         forcing.canopy_top_air_temperature, initial_top_vapor_density)
-    canopy_top_air_temperature = boundary.top_temperature
+    in_bounds &= lo <= boundary.top_temperature <= hi
+    canopy_top_air_temperature = clamp(boundary.top_temperature, lo, hi)
     top_saturation = wet_air_properties(canopy_top_air_temperature, 1.0, atmospheric_pressure;
         vapour_pressure_equation).vapour_density
     canopy_top_relative_humidity = clamp(boundary.top_vapour_density / top_saturation, 0.0, 1.0)
@@ -137,9 +153,10 @@ function evaluate_canopy!(residual, state, buffers, model::MultilayerCanopy, bou
 
     for i in 1:n_layers
         residual[n_layers + i] = ustrip(u"K", air.air_temperature_prev[i] - air.air_temperature[i])
-        residual[2n_layers + i] = ustrip(u"g/m^3", air.vapor_density_prev[i] - air.vapor_density[i])
+        residual[2n_layers + i] = state[2n_layers + i] - ustrip(u"g/m^3", air.vapor_density[i])
     end
     residual[3n_layers + 1] = ustrip(u"m^-1", wind.inverse_obukhov_length - wind.inverse_obukhov_length_update)
+    in_bounds || fill!(residual, NaN)
 
     return (; longwave_result, canopy_top_air_temperature, canopy_top_relative_humidity,
         friction_velocity=wind.friction_velocity, inverse_obukhov_length=wind.inverse_obukhov_length)

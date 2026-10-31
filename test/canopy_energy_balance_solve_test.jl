@@ -24,11 +24,19 @@ end
 
 mean_leaf_temperature(buffers) = sum(buffers.leaf.leaf_temperature) / length(buffers.leaf.leaf_temperature)
 
+# Every residual row within the tolerance for its kind
+function residual_within_tolerance(buffers)
+    (; residual, parameters) = buffers.convergence
+    return all(eachindex(residual)) do row
+        abs(residual[row]) <= Microclimate.canopy_row_tolerance(parameters[].tolerances, buffers, row)
+    end
+end
+
 @testset "midday: residual solved, physically reasonable" begin
     model = canopy()
     result, buffers = solve_canopy(model, canopy_inputs(model))
     @test result.iterations < model.convergence_model.maxiters
-    @test maximum(abs, buffers.convergence.residual) < 1e-6
+    @test residual_within_tolerance(buffers)
     @test all(t -> 250.0u"K" < t < 340.0u"K", buffers.leaf.leaf_temperature)
     @test all(isfinite, buffers.air_profile.air_temperature)
     @test result.net_absorbed_shortwave > 0.0u"W/m^2"
@@ -45,7 +53,7 @@ end
         ground_temperature = 280.0u"K")
     night = canopy_energy_balance!(buffers, model, boundary_layer_model, night_inputs; site)
     @test night.net_absorbed_shortwave == 0.0u"W/m^2"
-    @test maximum(abs, buffers.convergence.residual) < 1e-6
+    @test residual_within_tolerance(buffers)
     @test all(t -> 250.0u"K" < t < 310.0u"K", buffers.leaf.leaf_temperature)
 end
 
@@ -54,6 +62,15 @@ end
     leaf_temperature(leaf_water_potential) = mean_leaf_temperature(last(solve_canopy(model,
         canopy_inputs(model; reference_temperature = 298.0u"K", ground_temperature = 295.0u"K", leaf_water_potential))))
     @test leaf_temperature(-1.0e6u"J/kg") > leaf_temperature(0.0u"J/kg")
+end
+
+@testset "failed solve errors" begin
+    model = Microclimate.example_multilayer_canopy(; canopy_height, plant_area_index,
+        convergence_model = NonlinearCanopyConvergence(; maxiters = 1))
+    buffers = allocate(model)
+    @test_throws r"did not converge" canopy_energy_balance!(buffers, model, boundary_layer_model,
+        canopy_inputs(model); site)
+    @test !buffers.convergence.has_jacobian[]
 end
 
 @testset "zero allocations" begin

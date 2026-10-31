@@ -13,6 +13,7 @@ using SpecialFunctions, StaticArrays
 using PolyLog: reli2
 using LinearAlgebra: SymTridiagonal, ldlt!, ldiv!
 using NonlinearSolveFirstOrder: NewtonRaphson
+using LineSearch: BackTracking
 using NonlinearSolveQuasiNewton: Broyden
 using DifferentiationInterface: prepare_jacobian, jacobian!, Cache, Constant
 using ADTypes: AutoEnzyme
