@@ -22,7 +22,7 @@ end
 function example_soil_profile(depths=DEFAULT_DEPTHS;
     bulk_density = 1.3u"Mg/m^3",
     mineral_density = 2.560u"Mg/m^3",
-    mineral_conductivity = 1.25u"W/m/K",
+    mineral_conductivity = 2.5u"W/m/K", # NicheMapR micro_global default (Thcond)
     mineral_heat_capacity = 870.0u"J/kg/K",
     hydraulics = example_campbell_hydraulic_profile(depths),
 )
