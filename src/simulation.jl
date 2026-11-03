@@ -458,7 +458,6 @@ function solve_soil!(cache::MicroCache)
     (; convergence, rainfall_schedule) = config
     time_mode = mp.time_mode
     (; campbell_b_parameter, air_entry_water_potential) = soil_profile.hydraulics
-    (; bulk_density, mineral_density, mineral_conductivity, mineral_heat_capacity) = soil_profile
 
     ndays = length(days)
     nhours = length(hours)
@@ -506,8 +505,7 @@ function solve_soil!(cache::MicroCache)
         buffers.soil_properties
     end
     update_soil_properties!(output, soil_prop_view, soil_properties_model;
-        soil_temperature=soil_temperatures, soil_moisture, bulk_density, mineral_density,
-        mineral_conductivity, mineral_heat_capacity,
+        soil_temperature=soil_temperatures, soil_moisture, soil_profile,
         atmospheric_pressure=101325.0u"Pa", step=1
     )
 
@@ -518,7 +516,7 @@ function solve_soil!(cache::MicroCache)
     # the deep boundary, set elsewhere).
     soil_saturation_moisture = buffers.soil_water_balance.saturation_water_content
     for i in eachindex(soil_moisture)
-        soil_saturation_moisture[i] = 1.0 - bulk_density[i] / mineral_density[i]
+        soil_saturation_moisture[i] = 1.0 - soil_profile.bulk_density[i] / soil_profile.mineral_density[i]
         output.soil_water_potential[1, i] =
             air_entry_water_potential[i] * (soil_saturation_moisture[i] / soil_moisture[i]) ^ campbell_b_parameter[i]
     end
@@ -682,8 +680,7 @@ function solve_soil!(cache::MicroCache)
                     longwave_model, vapour_pressure_equation)
                 output.sky_temperature[day_init_step] = longwave_sky.sky_temperature
                 update_soil_properties!(output, soil_prop_view, soil_properties_model;
-                    soil_temperature=soil_temperatures, soil_moisture, bulk_density, mineral_density,
-                    mineral_conductivity, mineral_heat_capacity,
+                    soil_temperature=soil_temperatures, soil_moisture, soil_profile,
                     atmospheric_pressure=output.pressure[day_init_step],
                     step=day_init_step, vapour_pressure_equation,
                 )
@@ -965,8 +962,7 @@ function solve_soil!(cache::MicroCache)
                     update_soil_water!(output, soil_moisture, infil_out, output_step)
                     environment_instant = get_instant(environment_day, environment_hourly, output, soil_moisture, output_step)
                     update_soil_properties!(output, soil_prop_view, soil_properties_model;
-                        soil_temperature=soil_temperatures, soil_moisture, bulk_density, mineral_density,
-                        mineral_conductivity, mineral_heat_capacity,
+                        soil_temperature=soil_temperatures, soil_moisture, soil_profile,
                         atmospheric_pressure=environment_instant.atmospheric_pressure, step=output_step, vapour_pressure_equation
                     )
                     _ground_heat_flux!(output, output_step, depths)

@@ -7,7 +7,7 @@ is the only implementation.
 abstract type AbstractSoilProperties end
 
 """
-    soil_properties(soil_properties_model; atmospheric_pressure, soil_temperature, soil_moisture, bulk_density, mineral_density, mineral_conductivity, mineral_heat_capacity, vapour_pressure_equation)
+    soil_properties(soil_properties_model; atmospheric_pressure, soil_temperature, soil_moisture, bulk_density, mineral_density, mineral_conductivity, mineral_heat_capacity, de_vries_shape_factor, vapour_pressure_equation)
 
 Scalar bulk-property computation for one soil layer. Every variant must
 accept the listed kwargs and return
@@ -22,10 +22,7 @@ function soil_properties end
 # `soil_properties` method and the variant's `maybegetindex` accessor.
 function soil_properties!(buffers::NamedTuple, soil_properties_model::AbstractSoilProperties;
     atmospheric_pressure::Quantity, soil_temperature::AbstractVector, soil_moisture::AbstractVector,
-    bulk_density::AbstractVector,
-    mineral_density::AbstractVector,
-    mineral_conductivity::AbstractVector,
-    mineral_heat_capacity::AbstractVector,
+    soil_profile,
     vapour_pressure_equation=GoffGratch(),
 )
     num_layers = length(soil_temperature)
@@ -38,10 +35,11 @@ function soil_properties!(buffers::NamedTuple, soil_properties_model::AbstractSo
             atmospheric_pressure,
             soil_temperature = soil_temperature[i],
             soil_moisture = soil_moisture[i],
-            bulk_density = bulk_density[i],
-            mineral_density = mineral_density[i],
-            mineral_conductivity = mineral_conductivity[i],
-            mineral_heat_capacity = mineral_heat_capacity[i],
+            bulk_density = soil_profile.bulk_density[i],
+            mineral_density = soil_profile.mineral_density[i],
+            mineral_conductivity = soil_profile.mineral_conductivity[i],
+            mineral_heat_capacity = soil_profile.mineral_heat_capacity[i],
+            de_vries_shape_factor = soil_profile.de_vries_shape_factor[i],
             vapour_pressure_equation,
         )
         bulk_thermal_conductivity[i] = result.bulk_thermal_conductivity

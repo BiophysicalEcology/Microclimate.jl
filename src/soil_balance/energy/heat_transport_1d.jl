@@ -86,7 +86,7 @@ function soil_node_properties(p, node, temperature, atmospheric_pressure, vapour
         atmospheric_pressure, soil_temperature=temperature, soil_moisture=p.soil_moisture[node],
         bulk_density=profile.bulk_density[node], mineral_density=profile.mineral_density[node],
         mineral_conductivity=profile.mineral_conductivity[node], mineral_heat_capacity=profile.mineral_heat_capacity[node],
-        vapour_pressure_equation,
+        de_vries_shape_factor=profile.de_vries_shape_factor[node], vapour_pressure_equation,
     )
     return (;
         bulk_thermal_conductivity=uconvert(u"W/m/K", properties.bulk_thermal_conductivity),
