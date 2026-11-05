@@ -48,12 +48,20 @@ Selects the Nusselt correlation `leaf_convection` uses.
 abstract type AbstractLeafConvectionModel end
 
 """
-    ElaborateLeafConvection()
+    ElaborateLeafConvection(; temperature_difference_model=SmoothTemperatureDifference(0.1u"K"))
 
 Combined free+forced convection, shape-dispatched via the leaf's
 oblate-ellipsoid geometry (`HeatExchange.ShapeCorrelation`). Default.
+
+`temperature_difference_model` is how free convection takes `|T_leaf - T_air|`
+(a `HeatExchange.TemperatureDifferenceModel`). With the exact `|ΔT|`, free
+convection, and so evaporation, has a cusp at `T_leaf = T_air`, and the canopy
+solve can stall on the wrong side of it. Rounding `|ΔT|` over 0.1 K removes the
+cusp, well inside the free-convection correlation's uncertainty.
 """
-struct ElaborateLeafConvection <: AbstractLeafConvectionModel end
+@kwdef struct ElaborateLeafConvection{T<:TemperatureDifferenceModel} <: AbstractLeafConvectionModel
+    temperature_difference_model::T = SmoothTemperatureDifference(0.1u"K")
+end
 
 """
     SimpleLeafConvection()
@@ -67,28 +75,19 @@ struct SimpleLeafConvection <: AbstractLeafConvectionModel end
 _convection_correlation(::ElaborateLeafConvection) = HeatExchange.ShapeCorrelation()
 _convection_correlation(::SimpleLeafConvection) = HeatExchange.SimpleForcedCorrelation()
 
+# SimpleLeafConvection has no free convection, so no |ΔT|
+_temperature_difference_model(convection_model::ElaborateLeafConvection) = convection_model.temperature_difference_model
+_temperature_difference_model(::SimpleLeafConvection) = ExactTemperatureDifference()
+
 # Boundary-layer heat/mass transfer coefficients for one leaf layer.
 leaf_convection(convection_model, body, leaf_area, air_temperature, leaf_temperature, wind_speed, atmospheric_pressure) =
     HeatExchange.convection(; body, area=leaf_area, air_temperature, surface_temperature=leaf_temperature,
         wind_speed, atmospheric_pressure, fluid=Air(), characteristic_dimension_formula=LEAF_CHARACTERISTIC_DIMENSION,
-        correlation=_convection_correlation(convection_model))
-
-# HeatExchange.evaporation, flux-clamped. Shared by leaf_heat_balance and
-# LinearizedLeafTemperature's perturbation -- both must clamp identically.
-function _clamped_leaf_evaporation(stomatal_conductance, mass_transfer_coefficient, atmos, leaf_area,
-    leaf_temperature, air_temperature, leaf_water_potential,
-)
-    evap = HeatExchange.evaporation(stomatal_conductance, mass_transfer_coefficient, atmos, leaf_area,
-        leaf_temperature, air_temperature; water_potential=leaf_water_potential)
-    latent_heat_vaporisation = enthalpy_of_vaporisation(air_temperature)
-    max_transpiration_mass_flow = uconvert(u"g/s", 500.0u"W/m^2" * leaf_area / latent_heat_vaporisation)
-    transpiration_mass_flow = clamp(evap.transpiration_mass_flow, -max_transpiration_mass_flow, max_transpiration_mass_flow)
-    evaporation_heat_flow = uconvert(u"W", transpiration_mass_flow * latent_heat_vaporisation)
-    return (; evap..., transpiration_mass_flow, evaporation_heat_flow)
-end
+        correlation=_convection_correlation(convection_model),
+        temperature_difference_model=_temperature_difference_model(convection_model))
 
 """
-    leaf_heat_balance(leaf_temperature, absorbed_radiation, air_temperature, relative_humidity,
+    leaf_heat_balance(leaf_temperature, absorbed_radiation, air_temperature, air_vapor_density,
                        wind_speed, atmospheric_pressure, leaf_emissivity, stomatal_conductance,
                        leaf_water_potential, body, leaf_area, convection_model; aerodynamic_area=leaf_area)
 
@@ -100,15 +99,17 @@ to); `aerodynamic_area` scales convection/evaporation (the leaf's actual
 exchange surface). They differ for a canopy layer, where radiative exchange
 saturates with self-shading `(1-e^{-K·PAI})` but aerodynamic exchange keeps
 scaling with actual leaf area (`PAI`); default matches for a standalone leaf.
+`air_vapor_density` is the air's own vapor density, so supersaturated air
+condenses onto the leaf rather than passing through a relative humidity clamped to 1.
 """
-function leaf_heat_balance(leaf_temperature, absorbed_radiation, air_temperature, relative_humidity,
+function leaf_heat_balance(leaf_temperature, absorbed_radiation, air_temperature, air_vapor_density,
     wind_speed, atmospheric_pressure, leaf_emissivity, stomatal_conductance, leaf_water_potential,
     body, leaf_area, convection_model=ElaborateLeafConvection(); aerodynamic_area=leaf_area,
 )
     conv = leaf_convection(convection_model, body, aerodynamic_area, air_temperature, leaf_temperature, wind_speed, atmospheric_pressure)
-    atmos = AtmosphericConditions(relative_humidity, wind_speed, atmospheric_pressure)
-    evap = _clamped_leaf_evaporation(stomatal_conductance, conv.mass_transfer_coefficient, atmos, aerodynamic_area,
-        leaf_temperature, air_temperature, leaf_water_potential)
+    atmos = AtmosphericConditions(; vapour_density=air_vapor_density, wind_speed, atmospheric_pressure)
+    evap = HeatExchange.evaporation(stomatal_conductance, conv.mass_transfer_coefficient, atmos, aerodynamic_area,
+        leaf_temperature, air_temperature; water_potential=leaf_water_potential)
 
     emitted_longwave = leaf_emissivity * σ * leaf_temperature^4 * leaf_area
     net = absorbed_radiation * leaf_area - emitted_longwave - conv.convection_flow - evap.evaporation_heat_flow

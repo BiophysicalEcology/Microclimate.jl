@@ -1,11 +1,6 @@
 """
     RaupachLTheoryAirProfile(; ground_velocity_std_factor=0.25, canopy_top_velocity_std_factor=1.25,
-                              min_ground_resistance=10.0u"s/m", relaxation=0.7,
-                              aitken_omega_min=0.02, aitken_omega_max=0.8,
-                              aitken_weight_bottom=0.05, aitken_weight_top=0.8,
-                              aitken_bottom_emphasis=10.0, near_field_subdivisions=20,
-                              max_lagrangian_timescale=200.0u"s", max_air_temperature_deviation=40.0u"K",
-                              bulk_temperature_margin=2.0u"K")
+                              far_field_mode=Val(:exact), max_lagrangian_timescale=200.0u"s")
 
 Raupach's (1989) localized near-field (LNF) Lagrangian in-canopy scalar
 transport model: each layer's temperature and humidity is the sum of a
@@ -18,26 +13,15 @@ every layer's concentration depends on every other layer's source directly.
 `ground_velocity_std_factor`/`canopy_top_velocity_std_factor` (Raupach's
 `a0`/`a1`) set the vertical velocity standard deviation profile: `σ_w(z) =
 (a1+a0)/2·u* + (a1-a0)/2·u*·cos(π(1 - z/h))`, minimum at the ground
-(`a0·u*`), maximum at canopy top (`a1·u*`). Ground resistance is the
-ground-most layer's turbulent resistance plus a quasi-laminar sublayer term
-(ground-local u★, Garratt et al. 1988's sublayer_stanton); `min_ground_resistance`
-is a final floor on that combined value, guarding against a runaway ground flux.
+(`a0·u*`), maximum at canopy top (`a1·u*`). The ground resistance is the ground-most
+layer's turbulent resistance plus a quasi-laminar sublayer term (ground-local u★,
+Garratt et al. 1988's sublayer_stanton).
 
-The near-field kernel is singular at zero distanceso its self term is
-resolved by subdividing the source layer's own thickness into
-`near_field_subdivisions` sub-points and averaging the kernel over them.
-Raising `near_field_subdivisions` trades runtime for accuracy.
+The near-field kernel is singular at zero distance, so its self term is the
+kernel's exact average over the source layer's own thickness, from its
+closed-form integral.
 
-The recursive dependence of Fg (ground flux) on the air_temperature it helps 
-solve and the potential runaway that causes for a tall/dense canopy is handled
-with adaptive Aitken Δ²-acceleration: `omega` s relearned each pass from
-the residual history, clamped to `[aitken_omega_min, aitken_omega_max]`, and 
-weighted to under-relax hardest at the ground (`aitken_weight_bottom`) and 
-lightest at canopy top (`aitken_weight_top`); `aitken_bottom_emphasis` weights 
-ground-proximate residuals more heavily in the omega fit. `relaxation` seeds 
-the first pass, before there's a residual history.
-
-`T_L` (see `canopy_air_profile!`'s own derivation) is `∝ 1/friction_velocity`
+`T_L` (see `canopy_heat_vapor_transport!`) is `∝ 1/friction_velocity`
 and grows further under instability via `calc_Φ_h`, which can push `T_L`
 (and the near-field kernel's `ζ = distance/(σ_w·T_L)` argument) toward
 physically implausible eddy-turnover-time values under calm/unstable
@@ -51,8 +35,8 @@ which come from Raupach (1989).
 `far_field_mode` selects between two self-consistent formulations of both
 the far-field and near-field terms. `Val(:exact)` (default) follows Raupach 
 (1989) exactly, using eq. 19a's integral, and near-field is eq. 37's 
-separately-signed kernel evaluation with a coincident self term resolved
-by subdivision quadrature. `Val(:bulk)` is an alternate formulation used in 
+separately-signed kernel evaluation with the self term from the kernel's
+closed-form integral. `Val(:bulk)` is an alternate formulation used in 
 the micropoint model: far-field is the flux *at* the query layer times the total
 resistance from that layer to the top (or to the ground, for the ground
 flux), recomputed per layer, not the per-layer integral; near-field
@@ -67,33 +51,17 @@ alone) that :exact omits.
   concentrations to source distributions in vegetation canopies. *Quarterly
   Journal of the Royal Meteorological Society*, 115(487), 609-632.
 """
-@kwdef struct RaupachLTheoryAirProfile{GVSF,CVSF,GR,RL,OMIN,OMAX,WBOT,WTOP,BETA,NS,FFM,MTL,MAD,BTM} <: AbstractCanopyAirProfileModel
+@kwdef struct RaupachLTheoryAirProfile{GVSF,CVSF,FFM,MTL} <: AbstractCanopyAirProfileModel
     ground_velocity_std_factor::GVSF = 0.25
     canopy_top_velocity_std_factor::CVSF = 1.25
-    min_ground_resistance::GR = 10.0u"s/m"
-    relaxation::RL = 0.7
-    aitken_omega_min::OMIN = 0.02
-    aitken_omega_max::OMAX = 0.8
-    aitken_weight_bottom::WBOT = 0.05
-    aitken_weight_top::WTOP = 0.8
-    aitken_bottom_emphasis::BETA = 10.0
-    near_field_subdivisions::NS = 20
     far_field_mode::FFM = Val(:exact)
     max_lagrangian_timescale::MTL = 200.0u"s"
-    max_air_temperature_deviation::MAD = 40.0u"K"
-    bulk_temperature_margin::BTM = 2.0u"K"
 end
 
 function allocate_air_profile(model::RaupachLTheoryAirProfile, canopy_height, displacement_height, plant_area_index, heights, n_layers, boundary_layer_model)
     geometry = canopy_layer_heights(heights, canopy_height, n_layers)
     z = geometry.layer_heights
     Δz = geometry.layer_thickness
-
-    ω₀ = clamp(
-        Float64(model.relaxation),
-        model.aitken_omega_min,
-        model.aitken_omega_max,
-    )
 
     σw = zeros(typeof(0.0u"m/s"), n_layers)
     λ⁻¹ = zeros(typeof(1.0 / (1.0u"m/s" * 1.0u"s")), n_layers)
@@ -145,39 +113,28 @@ function allocate_air_profile(model::RaupachLTheoryAirProfile, canopy_height, di
         vapor_density_prev = ρv_prev,
         relative_humidity = RH,
 
-        aitken_omega = Ref(ω₀),
-        aitken_omega_latent = Ref(ω₀),
-        aitken_have_prev = Ref(false),
-        aitken_have_prev_latent = Ref(false),
-        aitken_residual_prev = zeros(typeof(0.0u"K"), n_layers),
-        aitken_residual_prev_latent = zeros(typeof(0.0u"kg/m^3"), n_layers),
-
         ground_heat_conductance = Ref(0.0u"W/m^2/K"),
         ground_vapor_conductance = Ref(0.0u"m/s"),
     )
 end
 
-# Raupach (1989), eq. 34:
-#   kₙ(ζ) ≈ c₁ log(1 - exp(-ζ)) + c₂ exp(-ζ),  ζ > 0
+# Raupach (1989), eq. 34, with ζ the source distance over σw·T_L:
+#   kₙ(ζ) ≈ c₁ log(1 - exp(-|ζ|)) + c₂ exp(-|ζ|)
 # The constants satisfy ∫₀^∞ kₙ(ζ)dζ = 1/2.
 const _RAUPACH_KERNEL_C₁ = -1 / sqrt(2π)
 const _RAUPACH_KERNEL_C₂ = 0.5 - π^2 / (6sqrt(2π))
 
 function _raupach_kernel(ζ)
-    e⁻ζ = exp(-ζ)
+    e⁻ζ = exp(-abs(ζ))
     return _RAUPACH_KERNEL_C₁ * log1p(-e⁻ζ) + _RAUPACH_KERNEL_C₂ * e⁻ζ
 end
 
-# Odd extension: kₙ(-ζ) = -kₙ(ζ); eq. 34 gives it for ζ>0 only).
-_raupach_kernel_signed(ζ) =
-    ζ >= zero(ζ) ? _raupach_kernel(ζ) : -_raupach_kernel(-ζ)
-
-# Eq. 37: Cn = ∫ [S(z0)/σw(z0)] · [kn{(z-z0)/λ} + kn{(z+z0)/λ}] dz0 
 # Raupach (1989), eq. 37:
 #   Cₙ(z) = ∫ S(z₀)/σw(z₀) [kₙ((z-z₀)/λ) + kₙ((z+z₀)/λ)] dz₀
-# — direct-path and reflected (ground image-source) terms each get their own 
-# kernel evaluation. `source_idx` indexes into
-# `layer_heights`/`layer_thickness`/`inv_near_field_length`.
+# — direct-path and reflected (ground image-source) terms. With
+# eᵢ = exp(-zλ⁻¹) and e₀ = exp(-z₀λ⁻¹), the reflected term's exponential is
+# eᵢe₀ and the direct term's is eᵢ/e₀ or e₀/eᵢ, so the pair takes one exp
+# and one log.
 function _raupach_kernel_weight(
     evaluation_height,
     source_index,
@@ -189,40 +146,40 @@ function _raupach_kernel_weight(
     z₀ = layer_heights[j]
     λ⁻¹ = inv_near_field_length[j]
 
-    ζd = (z - z₀) * λ⁻¹
-    ζr = (z + z₀) * λ⁻¹
+    eᵢ = exp(-z * λ⁻¹)
+    e₀ = exp(-z₀ * λ⁻¹)
+    direct = z > z₀ ? eᵢ / e₀ : e₀ / eᵢ
+    reflected = eᵢ * e₀
+    return _RAUPACH_KERNEL_C₁ * log((1 - direct) * (1 - reflected)) + _RAUPACH_KERNEL_C₂ * (direct + reflected)
+end
 
-    return _raupach_kernel_signed(ζd) + _raupach_kernel_signed(ζr)
+# ∫₀^ζ kₙ(t) dt for ζ ≥ 0, from ∫ log(1 - exp(-t)) dt = Li₂(exp(-t)).
+function _raupach_kernel_integral(ζ)
+    e⁻ζ = exp(-ζ)
+    return _RAUPACH_KERNEL_C₁ * (reli2(e⁻ζ) - π^2 / 6) + _RAUPACH_KERNEL_C₂ * (1 - e⁻ζ)
 end
 
 # Self-term: the kernel is singular at zero distance, so a source layer's
-# contribution to a point within its own thickness can't use a single
-# point-source evaluation. Subdivides the layer into `subdivisions` sub-points
-# and averages — a plain midpoint quadrature of the singularity. Only the
-# direct-path term is ever near-singular; the reflected term isn't.
+# contribution to a point within its own thickness is the kernel's average
+# over that thickness, from its closed-form integral. The kernel is even, so
+# a point inside the layer sums the integrals to either edge, and a point
+# outside it takes their difference.
 function _raupach_self_kernel_weight(evaluation_height, source_index,
-    layer_heights, layer_thickness, inv_near_field_length, subdivisions,)
+    layer_heights, layer_thickness, inv_near_field_length,)
 
     z = evaluation_height
     j = source_index
     z₀ = layer_heights[j]
     Δz = layer_thickness[j]
     λ⁻¹ = inv_near_field_length[j]
-    N = subdivisions
+    bottom = z₀ - Δz / 2
+    top = z₀ + Δz / 2
 
-    total = 0.0
-
-    for k in 1:N
-        zₖ = z₀ - Δz / 2 + Δz * (k - 0.5) / N
-        ζd_signed = (z - zₖ) * λ⁻¹
-        s = ζd_signed >= zero(ζd_signed) ? 1.0 : -1.0
-        ζd = max(abs(ζd_signed), 1.0e-9)
-        ζr = (z + zₖ) * λ⁻¹
-
-        total += s * _raupach_kernel(ζd) + _raupach_kernel_signed(ζr)
-    end
-
-    return total / N
+    to_bottom = _raupach_kernel_integral(abs((z - bottom) * λ⁻¹))
+    to_top = _raupach_kernel_integral(abs((top - z) * λ⁻¹))
+    direct = bottom <= z <= top ? to_bottom + to_top : abs(to_bottom - to_top)
+    reflected = _raupach_kernel_integral((z + top) * λ⁻¹) - _raupach_kernel_integral((z + bottom) * λ⁻¹)
+    return (direct + reflected) / (Δz * λ⁻¹)
 end
 
 # :bulk's near-field kernel evaluates kn once (at the direct distance only)
@@ -241,7 +198,7 @@ function _raupach_bulk_kernel_weight(evaluation_height,
     ζd = (z - z₀) * λ⁻¹
     ζr = (z + z₀) * λ⁻¹
 
-    return _raupach_kernel(abs(ζd)) * (ζd + ζr)
+    return _raupach_kernel(ζd) * (ζd + ζr)
 end
 
 # Top-boundary near-field weight for source layer i, dispatched on
@@ -250,100 +207,37 @@ end
 # height-coincidence check, since layer_heights[1] need not sit exactly at
 # canopy_height and the two criteria disagreeing double-counts/drops the
 # singular kernel inconsistently between near_field_top and near_field[1].
-function _raupach_top_kernel_weight(::Val{:exact}, i, canopy_height, layer_heights, layer_thickness, inv_near_field_length, subdivisions)
+function _raupach_top_kernel_weight(::Val{:exact}, i, canopy_height, layer_heights, layer_thickness, inv_near_field_length)
     return i == 1 ?
-        _raupach_self_kernel_weight(canopy_height, i, layer_heights, layer_thickness, inv_near_field_length, subdivisions) :
+        _raupach_self_kernel_weight(canopy_height, i, layer_heights, layer_thickness, inv_near_field_length) :
         _raupach_kernel_weight(canopy_height, i, layer_heights, inv_near_field_length)
 end
-function _raupach_top_kernel_weight(::Val{:bulk}, i, canopy_height, layer_heights, layer_thickness, inv_near_field_length, subdivisions)
+function _raupach_top_kernel_weight(::Val{:bulk}, i, canopy_height, layer_heights, layer_thickness, inv_near_field_length)
     return i == 1 ? 0.0 : _raupach_bulk_kernel_weight(canopy_height, i, layer_heights, inv_near_field_length)
 end
 
 # Near-field weight for one (eval layer i, source layer j) pair.
-function _raupach_pair_kernel_weight(::Val{:exact}, i, j, layer_heights, layer_thickness, inv_near_field_length, subdivisions)
+function _raupach_pair_kernel_weight(::Val{:exact}, i, j, layer_heights, layer_thickness, inv_near_field_length)
     return j == i ?
-        _raupach_self_kernel_weight(layer_heights[i], j, layer_heights, layer_thickness, inv_near_field_length, subdivisions) :
+        _raupach_self_kernel_weight(layer_heights[i], j, layer_heights, layer_thickness, inv_near_field_length) :
         _raupach_kernel_weight(layer_heights[i], j, layer_heights, inv_near_field_length)
 end
-function _raupach_pair_kernel_weight(::Val{:bulk}, i, j, layer_heights, layer_thickness, inv_near_field_length, subdivisions)
+function _raupach_pair_kernel_weight(::Val{:bulk}, i, j, layer_heights, layer_thickness, inv_near_field_length)
     return j == i ? 0.0 : _raupach_bulk_kernel_weight(layer_heights[i], j, layer_heights, inv_near_field_length)
-end
-
-# Weighted Aitken Δ²-acceleration.
-# `newv` holds the raw unrelaxed solve on entry, the blended result on exit.
-# `unit` strips units for the (dimensionless) omega fit only.
-function _aitken_relax!(newv, oldv, layer_heights, canopy_height, omega_ref, have_prev_ref, residual_prev,
-    omega_min, omega_max, weight_bottom, weight_top, bottom_emphasis, unit)
-    x = newv
-    x₀ = oldv
-    z = layer_heights
-    h = canopy_height
-
-    ωref = omega_ref
-    have_prev = have_prev_ref
-    r_prev = residual_prev
-
-    ωmin = omega_min
-    ωmax = omega_max
-    w₀ = weight_bottom
-    w₁ = weight_top
-    β = bottom_emphasis
-
-    n = length(x)
-    Δw = w₁ - w₀
-
-    if !have_prev[]
-        ω = clamp(ωref[], ωmin, ωmax)
-
-        for i in 1:n
-            r = x[i] - x₀[i]
-            wz = w₀ + Δw * (z[i] / h)^2
-            r_prev[i] = r
-            x[i] = x₀[i] + ω * wz * r
-        end
-
-        ωref[] = ω
-        have_prev[] = true
-        return nothing
-    end
-
-    numerator = 0.0
-    denominator = 0.0
-
-    for i in 1:n
-        r = x[i] - x₀[i]
-        Δr = r - r_prev[i]
-        ξ = 1.0 - z[i] / h
-        w = 1.0 + β * ξ^2
-
-        numerator += w * ustrip(unit, r_prev[i]) * ustrip(unit, Δr)
-        denominator += w * ustrip(unit, Δr)^2
-    end
-
-    ω = denominator > 0.0 ? -ωref[] * numerator / denominator : ωref[]
-    ω = clamp(ω, ωmin, ωmax)
-
-    for i in 1:n
-        r = x[i] - x₀[i]
-        wz = w₀ + Δw * (z[i] / h)^2
-        r_prev[i] = r
-        x[i] = x₀[i] + ω * wz * r
-    end
-
-    ωref[] = ω
-    return nothing
 end
 
 # Eq. 19a: Cf(z)-Cf(zR) = ∫[z,zR] F(z')/Kf(z') dz' -- each layer's own local
 # flux over its own local resistance, summed; not one flux value times the
-# total resistance across the range. Fg is a single ground flux, evaluated
-# once from the ground-most layer.
+# total resistance across the range. Fg is a single ground flux. The bottom layer's
+# concentration is its offset (canopy top plus near field) plus Fg across the
+# in-canopy resistance R = Σr, so Fg solves through the ground resistance and R in
+# series, from the ground to that offset: the same solution as Fg from the bottom
+# layer's own concentration, without feeding that back through Fg.
 function _raupach_far_field!(::Val{:exact}, far_field_accum, far_field_accum_latent, _resistance_from_top, _resistance_to_ground,
     cumulative_sensible_below, cumulative_latent_below, layer_resistance, _layer_thickness,
-    ground_temperature, ground_vapor_density, air_temperature_prev, vapor_density_prev,
-    ground_resistance_heat, ground_resistance_vapor, ρ_cp, n)
+    ground_temperature, ground_vapor_density, _air_temperature_prev, _vapor_density_prev,
+    ground_resistance_heat, ground_resistance_vapor, ρ_cp, n; bottom_offset_heat, bottom_offset_vapor)
 
-    # Same values as ground_heat_conductance/ground_vapor_conductance -- keeps soil/canopy flux consistent.
     Cff_H = far_field_accum
     Cff_v = far_field_accum_latent
     H_below = cumulative_sensible_below
@@ -352,14 +246,19 @@ function _raupach_far_field!(::Val{:exact}, far_field_accum, far_field_accum_lat
 
     Tg = ground_temperature
     ρv_g = ground_vapor_density
-    T₀ = air_temperature_prev
-    ρv₀ = vapor_density_prev
     Rg_H = ground_resistance_heat
     Rg_v = ground_resistance_vapor
     ρcp = ρ_cp
 
-    Fg = ρcp * (Tg - T₀[n]) / Rg_H
-    Eg = (ρv_g - ρv₀[n]) / Rg_v
+    R = sum(r)
+    offset_H = bottom_offset_heat
+    offset_v = bottom_offset_vapor
+    for i in 1:n
+        offset_H += H_below[i] * r[i]
+        offset_v += E_below[i] * r[i]
+    end
+    Fg = (ρcp * Tg - offset_H) / (Rg_H + R)
+    Eg = (ρv_g - offset_v) / (Rg_v + R)
 
     Cff_H[1] = (H_below[1] + Fg) * r[1]
     Cff_v[1] = (E_below[1] + Eg) * r[1]
@@ -385,7 +284,7 @@ end
 function _raupach_far_field!(::Val{:bulk}, far_field_accum, far_field_accum_latent, resistance_from_top, resistance_to_ground,
     cumulative_sensible_below, cumulative_latent_below, layer_resistance, _layer_thickness,
     ground_temperature, ground_vapor_density, air_temperature_prev, vapor_density_prev,
-    _ground_resistance_heat, ground_resistance_vapor, _ρ_cp, n)
+    _ground_resistance_heat, ground_resistance_vapor, _ρ_cp, n; _...)
 
     Cff_H = far_field_accum
     Cff_v = far_field_accum_latent
@@ -437,54 +336,17 @@ _raupach_near_field_scale(::Val{:bulk}, n) = 1.0 + 0.894 * exp(-0.01386 * n) + 9
 _raupach_layer_ρ_cp(::Val{:exact}, ρ_cp, _air_temperature_prev, _i) = ρ_cp
 _raupach_layer_ρ_cp(::Val{:bulk}, _ρ_cp, air_temperature_prev, i) = calc_ρ_cp(air_temperature_prev[i])
 
-# :exact's backstop is ±max_air_temperature_deviation around T_top/ground_temperature.
-# :bulk matches micropoint's tmn/tmx exactly: ±bulk_temperature_margin around
-# T_top/ground_temperature, widened (not margined) to cover leaf_temperature's own range.
-_raupach_temperature_bounds(::Val{:exact}, T_top, ground_temperature, leaf_temperature, max_air_temperature_deviation, bulk_temperature_margin) =
-    (min(T_top, ground_temperature) - max_air_temperature_deviation, max(T_top, ground_temperature) + max_air_temperature_deviation)
-function _raupach_temperature_bounds(::Val{:bulk}, T_top, ground_temperature, leaf_temperature, max_air_temperature_deviation, bulk_temperature_margin)
-    leaf_lo, leaf_hi = extrema(leaf_temperature)
-    bound_lo = min(min(T_top, ground_temperature) - bulk_temperature_margin, leaf_lo)
-    bound_hi = max(max(T_top, ground_temperature) + bulk_temperature_margin, leaf_hi)
-    return (bound_lo, bound_hi)
-end
-
-# :bulk bounds the canopy-top boundary to the fixed ambient data,
-# reference_temperature/ground_temperature ± bulk_temperature_margin. Not widened
-# by leaf_temperature as the interior bound is: leaf temperature is clamped
-# relative to air temperature, so under a calm/cold-air runaway it collapses
-# in lockstep, and a leaf-widened floor would collapse with it.
-clamp_canopy_top_air_temperature(model::RaupachLTheoryAirProfile, canopy_top_air_temperature, reference_temperature, ground_temperature) =
-    _clamp_canopy_top_air_temperature(model.far_field_mode, model.bulk_temperature_margin,
-        canopy_top_air_temperature, reference_temperature, ground_temperature)
-_clamp_canopy_top_air_temperature(::Val{:exact}, margin, canopy_top_air_temperature, reference_temperature, ground_temperature) =
-    canopy_top_air_temperature
-_clamp_canopy_top_air_temperature(::Val{:bulk}, margin, canopy_top_air_temperature, reference_temperature, ground_temperature) =
-    clamp(canopy_top_air_temperature,
-        min(reference_temperature, ground_temperature) - margin, max(reference_temperature, ground_temperature) + margin)
-
-# Drops the Aitken residual history, not omega -- omega is a learned-good
-# relaxation rate, worth keeping as next day's starting guess; the residual
-# itself is meaningless carried from an unrelated previous day.
-function reset_air_profile_scratch!(::RaupachLTheoryAirProfile, buffers)
-    buffers.aitken_have_prev[] = false
-    buffers.aitken_have_prev_latent[] = false
-    return nothing
-end
-
-function canopy_air_profile!(buffers, model::RaupachLTheoryAirProfile, boundary_layer_model,
+function canopy_heat_vapor_transport!(buffers, model::RaupachLTheoryAirProfile, boundary_layer_model,
     forcing::CanopyAirProfileForcing; site, vapour_pressure_equation=GoffGratch(),
 )
-    (; friction_velocity, obukhov_length, wind_speed, canopy_top_air_temperature, canopy_top_relative_humidity,
+    (; friction_velocity, inverse_obukhov_length, wind_speed, canopy_top_air_temperature, canopy_top_vapor_density,
        ground_temperature, ground_relative_humidity, sensible_heat_source, evaporation_mass_flow,
-       leaf_temperature, atmospheric_pressure) = forcing
+       atmospheric_pressure) = forcing
     ground_roughness_height = site.roughness_height
     (; canopy_height, displacement_height, layer_heights, layer_thickness, vertical_velocity_std, inv_near_field_length, eddy_diffusivity,
        layer_resistance, far_field_accum, far_field_accum_latent, resistance_from_top, resistance_to_ground,
        cumulative_sensible_below, sensible_near_field_weight, cumulative_latent_below, latent_near_field_weight,
-       air_temperature, air_temperature_prev, vapor_density, vapor_density_prev, relative_humidity,
-       aitken_omega, aitken_omega_latent, aitken_have_prev, aitken_have_prev_latent,
-       aitken_residual_prev, aitken_residual_prev_latent,
+       air_temperature, air_temperature_prev, vapor_density, vapor_density_prev,
        ground_heat_conductance, ground_vapor_conductance) = buffers
 
     # Mathematical aliases used within the implementation.
@@ -509,7 +371,6 @@ function canopy_air_profile!(buffers, model::RaupachLTheoryAirProfile, boundary_
     T₀ = air_temperature_prev
     ρv = vapor_density
     ρv₀ = vapor_density_prev
-    RH = relative_humidity
 
     h = canopy_height
     d = displacement_height
@@ -519,7 +380,7 @@ function canopy_air_profile!(buffers, model::RaupachLTheoryAirProfile, boundary_
     p = atmospheric_pressure
 
     Ttop = canopy_top_air_temperature
-    RHtop = canopy_top_relative_humidity
+    ρv_top = canopy_top_vapor_density
     Tg = ground_temperature
     RHg = ground_relative_humidity
 
@@ -533,40 +394,15 @@ function canopy_air_profile!(buffers, model::RaupachLTheoryAirProfile, boundary_
         ArgumentError("evaporation_mass_flow must have one entry per canopy layer"),
     )
 
-    ρv_top = wet_air_properties(
-        Ttop,
-        RHtop,
-        p;
-        vapour_pressure_equation,
-    ).vapour_density
-
-    # Preserve the previous Picard iterate.
-    T₀ .= T
-
-    if all(iszero, ρv)
-        fill!(ρv, ρv_top)
-    end
-
-    ρv₀ .= ρv
-
     (;
         ground_velocity_std_factor,
         canopy_top_velocity_std_factor,
-        min_ground_resistance,
-        aitken_omega_min,
-        aitken_omega_max,
-        aitken_weight_bottom,
-        aitken_weight_top,
-        aitken_bottom_emphasis,
-        near_field_subdivisions,
         max_lagrangian_timescale,
-        max_air_temperature_deviation,
     ) = model
 
     # Raupach's notation.
     a₀ = ground_velocity_std_factor
     a₁ = canopy_top_velocity_std_factor
-    γ = boundary_layer_model.dyer_constant
     κ = boundary_layer_model.karman_constant
 
 # Eq. 18 (K_f = σ_w²·T_L) → eddy_diffusivity[i]. T_L is Raupach's Lagrangian integral timescale, computed once above this function 
@@ -599,16 +435,8 @@ function canopy_air_profile!(buffers, model::RaupachLTheoryAirProfile, boundary_
     #   a₂ = κ(1-d/h)/(a₁²Φh)
     #   T_L = min(a₂h/u★, T_L,max)
     z★ = max(h - d, 1.0e-3u"m")
-
-    Φh = isfinite(obukhov_length) ?
-        calc_Φ_h(
-            z★,
-            γ,
-            obukhov_length,
-            boundary_layer_model.stable_Φ_h_coefficient,
-            boundary_layer_model.min_stable_Φ_h,
-            boundary_layer_model.max_stable_Φ_h,
-        ) : 1.0
+    Φh = calc_Φ_h(boundary_layer_model.stability_functions,
+        stability_parameter(InverseObukhovLength(), z★, inverse_obukhov_length))
 
     a₂ = κ * (1.0 - d / h) / (a₁^2 * Φh)
     TL = min(a₂ * h / u★, max_lagrangian_timescale)
@@ -626,21 +454,14 @@ function canopy_air_profile!(buffers, model::RaupachLTheoryAirProfile, boundary_
         En_weight[i] = (E[i] / 1.0u"m^2") / σw
     end
 
-    # Ground resistance = turbulent (r[n]) + quasi-laminar sublayer, in
-    # series (sublayer_stanton, same machinery as the bare-ground MOST
-    # profile). Sublayer uses a ground-local u★ (log-law on wind_speed[n]
-    # against ground_roughness_height, not canopy-top u★/roughness). Heat
-    # and vapor sublayer resistances split via the existing Lewis factor.
-    z0_ground = ground_roughness_height
-    log_ratio_ground = max(log(z[n] / z0_ground), 0.1 * log(z[n] / z0_ground), 1.0e-6)
-    u★_ground = κ * wind_speed[n] / log_ratio_ground
+    # Ground resistance = turbulent (r[n]) + quasi-laminar sublayer, in series. The
+    # sublayer uses a ground-local u★ (log law on wind_speed[n] against
+    # ground_roughness_height; allocate_canopy checks z[n] is above that roughness).
+    u★_ground = κ * wind_speed[n] / log(z[n] / ground_roughness_height)
     kinematic_viscosity = dry_air_properties((Ttop + Tg) / 2, p).kinematic_viscosity
-    sublayer_stanton_number = sublayer_stanton(z0_ground, u★_ground, kinematic_viscosity)
-    R_sublayer_heat = 1.0 / (u★_ground * sublayer_stanton_number)
-    R_sublayer_vapor = R_sublayer_heat / LEWIS_HEAT_TO_MASS_RATIO
-
-    Rg_heat = max(r[n] + R_sublayer_heat, min_ground_resistance)
-    Rg_vapor = max(r[n] + R_sublayer_vapor, min_ground_resistance)
+    sublayer_heat_resistance = 1.0 / (u★_ground * sublayer_stanton(ground_roughness_height, u★_ground, kinematic_viscosity))
+    Rg_heat = r[n] + sublayer_heat_resistance
+    Rg_vapor = r[n] + sublayer_heat_resistance / LEWIS_HEAT_TO_MASS_RATIO
 
     # ρcp is volumetric heat capacity, with units J m⁻³ K⁻¹.
     # ρ_cp fixed from T_top/ground_temperature, not from the (possibly still
@@ -663,76 +484,28 @@ function canopy_air_profile!(buffers, model::RaupachLTheoryAirProfile, boundary_
 
     ρv_g = wet_air_properties(Tg, RHg, p; vapour_pressure_equation,).vapour_density
 
-    _raupach_far_field!(
-        model.far_field_mode,
-        Cff_H,
-        Cff_v,
-        Rtop,
-        Rground,
-        H_below,
-        E_below,
-        r,
-        Δz,
-        Tg,
-        ρv_g,
-        T₀,
-        ρv₀,
-        Rg_heat,
-        Rg_vapor,
-        ρcp,
-        n,
-    )
-
     μ = _raupach_near_field_scale(model.far_field_mode, n)
 
     # Near-field concentration at the canopy top, subtracted from every
-    # layer's own near-field term below. Layers whose height is (numerically)
-    # coincident with canopy_height use the subdivided self kernel; every
-    # other layer uses a single point-source evaluation. Heat and vapor share
-    # one kernel evaluation per layer (same turbulence field).
-
+    # layer's own near-field term below. Heat and vapor share one kernel
+    # evaluation per layer (same turbulence field).
     Cn_top_H = zero(eltype(Cff_H))
     Cn_top_v = zero(ρv_top)
-    
     for j in 1:n
-        w = _raupach_top_kernel_weight(
-            model.far_field_mode,
-            j,
-            h,
-            z,
-            Δz,
-            λ⁻¹,
-            near_field_subdivisions,
-        )
-
+        w = _raupach_top_kernel_weight(model.far_field_mode, j, h, z, Δz, λ⁻¹)
         Cn_top_H += Hn_weight[j] * w
         Cn_top_v += En_weight[j] * w
     end
-
     Cn_top_H *= μ
     Cn_top_v *= μ
 
+    bottom = _raupach_near_field(model.far_field_mode, n, z, Δz, λ⁻¹, Hn_weight, En_weight, μ)
+    _raupach_far_field!(model.far_field_mode, Cff_H, Cff_v, Rtop, Rground, H_below, E_below, r, Δz,
+        Tg, ρv_g, T₀, ρv₀, Rg_heat, Rg_vapor, ρcp, n;
+        bottom_offset_heat=Ttop * ρcp + bottom.heat - Cn_top_H, bottom_offset_vapor=ρv_top + bottom.vapor - Cn_top_v)
+
     for i in 1:n
-        Cn_H = zero(Cn_top_H)
-        Cn_v = zero(ρv_top)
-
-        for j in 1:n
-            w = _raupach_pair_kernel_weight(
-                model.far_field_mode,
-                i,
-                j,
-                z,
-                Δz,
-                λ⁻¹,
-                near_field_subdivisions,
-            )
-
-            Cn_H += Hn_weight[j] * w
-            Cn_v += En_weight[j] * w
-        end
-
-        Cn_H *= μ
-        Cn_v *= μ
+        Cn = _raupach_near_field(model.far_field_mode, i, z, Δz, λ⁻¹, Hn_weight, En_weight, μ)
 
         # Heat: T₀ is an absolute temperature baseline, not a concentration;
         # ρcp converts the source-driven perturbation (a volumetric
@@ -740,84 +513,23 @@ function canopy_air_profile!(buffers, model::RaupachLTheoryAirProfile, boundary_
         ρcpᵢ = _raupach_layer_ρ_cp(model.far_field_mode, ρcp, T₀, i)
 
         # ΔT = energy-density perturbation / volumetric heat capacity.
-        T[i] = Ttop + (Cff_H[i] + Cn_H - Cn_top_H) / ρcpᵢ
+        T[i] = Ttop + (Cff_H[i] + Cn.heat - Cn_top_H) / ρcpᵢ
 
         # Vapor terms already have concentration units, kg m⁻³.
-        ρv[i] = ρv_top + Cff_v[i] + Cn_v - Cn_top_v
+        ρv[i] = ρv_top + Cff_v[i] + Cn.vapor - Cn_top_v
     end
 
-    # Aitken needs the whole residual vector to fit omega, so this is a
-    # separate pass over the raw solve above, not folded into that loop.
-    _aitken_relax!(
-        T,
-        T₀,
-        z,
-        h,
-        aitken_omega,
-        aitken_have_prev,
-        aitken_residual_prev,
-        aitken_omega_min,
-        aitken_omega_max,
-        aitken_weight_bottom,
-        aitken_weight_top,
-        aitken_bottom_emphasis,
-        u"K",
-    )
+    return nothing
+end
 
-    _aitken_relax!(
-        ρv,
-        ρv₀,
-        z,
-        h,
-        aitken_omega_latent,
-        aitken_have_prev_latent,
-        aitken_residual_prev_latent,
-        aitken_omega_min,
-        aitken_omega_max,
-        aitken_weight_bottom,
-        aitken_weight_top,
-        aitken_bottom_emphasis,
-        u"kg/m^3",
-    )
-
-    # Absolute backstop anchored to T_top/ground_temperature -- leaf
-    # temperature is clamped only relative to this array, so without an
-    # absolute bound here the two can climb together, unanchored.
-    Tlo, Thi = _raupach_temperature_bounds(
-        model.far_field_mode,
-        Ttop,
-        Tg,
-        leaf_temperature,
-        max_air_temperature_deviation,
-        model.bulk_temperature_margin,
-    )
-
-    for i in 1:n
-        T[i] = clamp(T[i], Tlo, Thi)
+# Near-field heat and vapor concentration at layer i from every layer's source
+function _raupach_near_field(far_field_mode, i, z, Δz, λ⁻¹, Hn_weight, En_weight, μ)
+    heat = zero(eltype(Hn_weight))
+    vapor = zero(eltype(En_weight))
+    for j in eachindex(Hn_weight)
+        w = _raupach_pair_kernel_weight(far_field_mode, i, j, z, Δz, λ⁻¹)
+        heat += Hn_weight[j] * w
+        vapor += En_weight[j] * w
     end
-
-    all(isfinite, T) || throw(
-        DomainError(T, "RaupachLTheoryAirProfile produced a non-finite air temperature"),
-    )
-
-    all(isfinite, ρv) || throw(
-        DomainError(ρv, "RaupachLTheoryAirProfile produced a non-finite vapor density"),
-    )
-
-    for i in 1:n
-        ρv_sat = wet_air_properties(
-            T[i],
-            1.0,
-            p;
-            vapour_pressure_equation,
-        ).vapour_density
-
-        RH[i] = clamp(ρv[i] / ρv_sat, 0.0, 1.0)
-    end
-
-    return (;
-        air_temperature = T,
-        relative_humidity = RH,
-    )
-
+    return (; heat=μ * heat, vapor=μ * vapor)
 end

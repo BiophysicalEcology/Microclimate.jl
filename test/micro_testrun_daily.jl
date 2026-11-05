@@ -54,7 +54,7 @@ site = Site(;
     roughness_height = microinput[:RUF] * 1.0u"m",
     atmospheric_pressure = atmospheric_pressure(microinput[:ALTT] * 1.0u"m"),
 )
-boundary_layer_model = MoninObukhov(; karman_constant=0.4, dyer_constant=16.0)
+boundary_layer_model = MoninObukhov(; karman_constant=0.4)
 
 mineral_conductivity = (CSV.File("$testdir/data/init_daily/soilprop.csv")[1, 1][4]) * 1.0u"W/m/K" # soil minerals thermal conductivity (W/mC)
 mineral_heat_capacity = (CSV.File("$testdir/data/init_daily/soilprop.csv")[1, 1][5]) * 1.0u"J/kg/K" # soil minerals specific heat (J/kg-K)

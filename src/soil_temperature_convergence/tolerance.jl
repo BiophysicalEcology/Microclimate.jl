@@ -2,8 +2,8 @@
     IterationToleranceConvergence(; tolerance, max_iterations_per_day)
 
 Iterate until the max state change between passes is below `tolerance`, or
-`max_iterations_per_day` passes have run. Generic -- used by both
-`MicroConfig.convergence` and `PicardCanopyConvergence.convergence`.
+`max_iterations_per_day` passes have run. Used by `MicroConfig.convergence`
+and `MicroConfig.canopy_soil_convergence`.
 """
 @kwdef struct IterationToleranceConvergence{T} <: AbstractSoilTemperatureConvergence
     tolerance::T

@@ -93,7 +93,7 @@ site = Site(;
     roughness_height = RUF,
     atmospheric_pressure = atmospheric_pressure(ELEVATION),
 )
-boundary_layer_model = MoninObukhov(; karman_constant=0.4, dyer_constant=16.0)
+boundary_layer_model = MoninObukhov(; karman_constant=0.4)
 
 # ── Soil models ──────────────────────────────────────────────────────────────
 soil_properties_model = CampbelldeVriesSoilProperties(;

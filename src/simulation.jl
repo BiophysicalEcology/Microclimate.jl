@@ -259,7 +259,7 @@ function CommonSolve.init(mp::MicroProblem)
         allocate_soil_water_balance(soil_hydraulic_model, num_soil_nodes),
         snow_scratch,
         allocate_interpolation_scratch(environment_minmax),
-        allocate_canopy(canopy_model, heights, boundary_layer_model),
+        allocate_canopy(canopy_model, heights, boundary_layer_model; site, vapour_pressure_equation, soil_hydraulic_model),
     )
 
     # ODE integrator — sized for the combined (snow + soil) vector
@@ -892,7 +892,7 @@ function solve_soil!(cache::MicroCache)
                 # an SVector copy. The integrator's `.u` field is concretely
                 # typed `SVector{N,T}` so this is a plain memory write.
                 setfield!(ode_integrator, :u, T0_ode)
-                SciMLBase.u_modified!(ode_integrator, true)
+                SciMLBase.derivative_discontinuity!(ode_integrator, true)
 
                 init_surface_fluxes!(boundary_layer_model, buffers, forcing, site, heights, T0, i)
                 # Fortran OSUB.f: soil moisture runs only on final iteration (after line 353 guard)
@@ -1099,7 +1099,7 @@ function step_to_hour!(integrator, hour_index)
         if u_clamped !== integrator.u
             setfield!(integrator, :u, u_clamped)
             setfield!(integrator, :uprev, u_clamped)
-            SciMLBase.u_modified!(integrator, true)
+            SciMLBase.derivative_discontinuity!(integrator, true)
         end
     end
     return integrator.u
