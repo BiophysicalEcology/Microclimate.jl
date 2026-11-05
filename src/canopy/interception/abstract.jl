@@ -42,8 +42,8 @@ function canopy_interception! end
     deplete_canopy_water!(model, buffers, layer, evaporated_mass)
 
 Subtract `evaporated_mass` (kg/m², ground area) from layer `layer`'s stored
-leaf-surface water, clamped at zero. Called once per hour after Picard
-convergence (not itself Picard-iterated). No-op for `NoInterception`.
+leaf-surface water, clamped at zero. Called once per hour after the canopy
+solve (not part of it). No-op for `NoInterception`.
 """
 function deplete_canopy_water! end
 
@@ -51,7 +51,7 @@ function deplete_canopy_water! end
     reset_interception!(model, buffers)
 
 Zero accumulated leaf-surface water. Day-boundary reset (like
-`pool`/`soil_moisture`), not per-Picard-iteration. No-op for `NoInterception`.
+`pool`/`soil_moisture`), not per canopy solve. No-op for `NoInterception`.
 """
 function reset_interception! end
 

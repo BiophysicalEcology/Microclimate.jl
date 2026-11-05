@@ -65,6 +65,6 @@ end
     # *direction* of that difference over a multi-day run also depends on ground-
     # temperature feedback and how quickly soil moisture re-equilibrates (verified
     # separately, directly on canopy_energy_balance!, that more negative
-    # leaf_water_potential warms the leaf — see canopy_energy_balance_picard_test.jl).
+    # leaf_water_potential warms the leaf — see canopy_energy_balance_solve_test.jl).
     @test wet_output.canopy.leaf_temperature != dry_output.canopy.leaf_temperature
 end

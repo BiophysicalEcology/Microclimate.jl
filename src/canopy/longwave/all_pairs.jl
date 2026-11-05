@@ -94,7 +94,7 @@ end
 """
     canopy_longwave!(buffers, model::AllPairsLongwaveExchange, leaf_emissivity;
                       leaf_temperature, ground_temperature, ground_emissivity,
-                      site, environment_instant, vapour_pressure_equation=GoffGratch())
+                      incoming_longwave)
 
 Layer index 1 is canopy top. Downward flux sums the sky term and every
 layer strictly above the receiver; upward flux sums the ground term (no
@@ -106,7 +106,7 @@ net_absorbed_longwave)`.
 """
 function canopy_longwave!(buffers, model::AllPairsLongwaveExchange, leaf_emissivity;
     leaf_temperature, ground_temperature, ground_emissivity,
-    site, environment_instant, vapour_pressure_equation=GoffGratch(),
+    incoming_longwave,
 )
     (; view_weights, sky_transmission, ground_transmission,
        ground_view_weights, ground_sky_transmission, ground_ground_transmission,
@@ -115,9 +115,6 @@ function canopy_longwave!(buffers, model::AllPairsLongwaveExchange, leaf_emissiv
        boundary_downward_longwave, boundary_upward_longwave, absorbed_longwave, leaf_emission) = buffers
     n_layers = length(layer_transmission)
 
-    sky = precompute_longwave_sky(model.atmospheric_radiation_model;
-        site, environment_instant, vapour_pressure_equation, shade=0.0)
-    incoming_longwave = sky.incoming_longwave
     ground_emission = ground_emissivity * σ * u"K"(ground_temperature)^4
 
     for i in 1:n_layers
