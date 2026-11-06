@@ -30,10 +30,10 @@ temperature on soil thermal conductivity. *Soil Science* 158(5): 307–313.
 Campbell GS, Norman JM (1998) *An Introduction to Environmental Biophysics*, 2nd ed.
 Springer. [doi:10.1007/978-1-4612-1626-1](https://doi.org/10.1007/978-1-4612-1626-1)
 
+Carslaw HS, Jaeger JC (1959) *Conduction of Heat in Solids*. Oxford University Press.
+
 Cheng Y, Brutsaert W (2005) Flux-profile relationships for wind speed and temperature in
 the stable atmospheric boundary layer. *Boundary-Layer Meteorology* 114: 519–538.
-
-Carslaw HS, Jaeger JC (1959) *Conduction of Heat in Solids*. Oxford University Press.
 
 Comini G, Del Guidice S, Lewis RW, Zienkiewicz OC (1974) Finite element solution of
 non-linear heat conduction problems with special reference to phase change.
