@@ -1,11 +1,11 @@
 """
-    MoninObukhov(; karman_constant=0.4, stability_functions=BusingerDyer(),
+    MoninObukhov(; karman_constant=0.4, stability_functions=ChengBrutsaert(),
                    min_friction_velocity=0.1u"m/s", thermal_roughness_model=SublayerStantonRoughness(),
                    stability_limit=NoStabilityLimit())
 
 Monin–Obukhov similarity theory boundary-layer formulation, with the
-stability corrections of `stability_functions` ([`BusingerDyer`](@ref) or
-[`ChengBrutsaert`](@ref)).
+stability corrections of `stability_functions` ([`ChengBrutsaert`](@ref) or
+[`BusingerDyer`](@ref)).
 `stability_limit` bounds the canopy-top stability ([`NoStabilityLimit`](@ref) or
 [`MomentumCorrectionLimit`](@ref)).
 
@@ -14,7 +14,7 @@ coefficient. Default is SublayerStantonRoughness(); canopy uses ScalarRoughnessR
 """
 @kwdef struct MoninObukhov{KC,SF,MINUF,TRM,SL} <: AbstractBoundaryLayerModel
     karman_constant::KC = 0.4
-    stability_functions::SF = BusingerDyer()
+    stability_functions::SF = ChengBrutsaert()
     min_friction_velocity::MINUF = 0.1u"m/s" # stability clamp
     thermal_roughness_model::TRM = SublayerStantonRoughness()
     stability_limit::SL = NoStabilityLimit()
@@ -829,7 +829,7 @@ end
 
 """
     monin_obukhov_step(stability_variable, value, reference_temp, surface_temp, v_ref_height, z0, z, ρcpTκg, κ, ΔT,
-                       ρ_cp, kinematic_viscosity; stability_functions=BusingerDyer(),
+                       ρ_cp, kinematic_viscosity; stability_functions=ChengBrutsaert(),
                        min_friction_velocity=0.02u"m/s", thermal_roughness_model=SublayerStantonRoughness())
 
 One evaluation of the Monin–Obukhov relations at stability `value` (as
@@ -844,7 +844,7 @@ Works for either sign of `ΔT` -- `convective_flux`'s sign already tracks
 """
 function monin_obukhov_step(stability_variable, value, reference_temp, surface_temp, v_ref_height, z0, z, ρcpTκg, κ, ΔT,
     ρ_cp, kinematic_viscosity;
-    stability_functions=BusingerDyer(),
+    stability_functions=ChengBrutsaert(),
     min_friction_velocity=0.02u"m/s", thermal_roughness_model=SublayerStantonRoughness(),
 )
     ζ = stability_parameter(stability_variable, z, value)
