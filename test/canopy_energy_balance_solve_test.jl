@@ -82,7 +82,8 @@ end
     best_model = Microclimate.example_multilayer_canopy(; canopy_height, plant_area_index,
         convergence_model = AndersonCanopyConvergence(; maxiters = 1, on_failure = SmallestResidual()))
     best_buffers = allocate(best_model)
-    best = canopy_energy_balance!(best_buffers, best_model, boundary_layer_model, canopy_inputs(best_model); site)
+    best = @test_logs (:warn, r"did not converge") canopy_energy_balance!(best_buffers, best_model,
+        boundary_layer_model, canopy_inputs(best_model); site)
     @test best.iterations == 1
     @test all(isfinite, best_buffers.leaf.leaf_temperature)
     # A layer without leaf area maps its leaf to the layer's air temperature
@@ -96,6 +97,12 @@ end
     Microclimate.canopy_fixed_point!(next_state, residual, state, gappy, gappy_model, boundary_layer_model, forcing[];
         site, vapour_pressure_equation = Microclimate.GoffGratch())
     @test next_state[rows.leaf_temperature[3]] ≈ state[rows.air_temperature[3]]
+end
+
+@testset "AndersonCanopyConvergence needs a history" begin
+    model = Microclimate.example_multilayer_canopy(; canopy_height, plant_area_index,
+        convergence_model = AndersonCanopyConvergence(; history = 0))
+    @test_throws ArgumentError allocate(model)
 end
 
 @testset "uniform vector plant_area_index matches the equivalent scalar" begin

@@ -39,6 +39,7 @@ function allocate_canopy_convergence(convergence_model::AndersonCanopyConvergenc
     state_length = canopy_state_length(buffers)
     layer_count = length(buffers.leaf.leaf_temperature)
     (; history, backend) = convergence_model
+    history >= 1 || throw(ArgumentError("history must be at least 1, got $history"))
     rows = canopy_state_rows(layer_count)
     tolerances = canopy_tolerances(convergence_model)
     # Puts each row's step in units of its tolerance. A leaf's step is a temperature.
@@ -131,7 +132,7 @@ function converge_canopy!(buffers, model::MultilayerCanopy, boundary_layer_model
         canopy_fixed_point!(next_state, residual, state, buffers, model, boundary_layer_model, forcing[];
             site, vapour_pressure_equation)
         if !all(isfinite, next_state)
-            pass == 1 && return canopy_failure!(on_failure, convergence_model, SciMLBase.ReturnCode.Unstable, best_state,
+            pass == 1 && return canopy_failure!(on_failure, convergence_model, SciMLBase.ReturnCode.Unstable, best_state, pass,
                 buffers, model, boundary_layer_model, forcing[], inputs; keywords...)
             # Overshot: go halfway back to the last good state, without the history that led here
             for row in eachindex(state)
@@ -191,6 +192,6 @@ function converge_canopy!(buffers, model::MultilayerCanopy, boundary_layer_model
             state[row] = max(state[row], 0.0)
         end
     end
-    return canopy_failure!(on_failure, convergence_model, SciMLBase.ReturnCode.MaxIters, best_state,
+    return canopy_failure!(on_failure, convergence_model, SciMLBase.ReturnCode.MaxIters, best_state, maxiters,
         buffers, model, boundary_layer_model, forcing[], inputs; keywords...)
 end
