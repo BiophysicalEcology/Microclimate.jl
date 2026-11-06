@@ -60,8 +60,8 @@ end
 
 # One layer's leaf energy balance per unit leaf area (W/m²) at `leaf_temperature` (K)
 function layer_leaf_balance_density(leaf_temperature, buffers, model, forcing, layer)
-    (; balance, leaf_area) = layer_leaf_balance(buffers, model, forcing, layer, leaf_temperature * u"K")
-    return solver_number(balance.net / leaf_area)
+    (; balance, leaf_area) = layer_leaf_balance(buffers, model, forcing, layer, leaf_temperature * CANOPY_STATE_UNITS.temperature)
+    return in_state_units(balance.net / leaf_area)
 end
 
 # One pass: writes the state this pass would move to into `next_state`
@@ -123,7 +123,7 @@ function converge_canopy!(buffers, model::MultilayerCanopy, boundary_layer_model
     rows = canopy_state_rows(length(buffers.leaf.leaf_temperature))
     canopy_hour_setup!(state, forcing, buffers, model, boundary_layer_model, inputs, initial_wind; keywords...)
 
-    lowest_temperature, highest_temperature = solver_number.(CANOPY_TEMPERATURE_BOUNDS)
+    lowest_temperature, highest_temperature = in_state_units.(CANOPY_TEMPERATURE_BOUNDS)
     stored_count = 0
     oldest_column = 1
     smallest_residual = Inf
