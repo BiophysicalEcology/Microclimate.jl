@@ -102,7 +102,7 @@ end
 end
 
 @testset "$(nameof(typeof(bl.stability_functions))) atmospheric_surface_profile!: no crash, sensible output across regimes" for bl in
-        (MoninObukhov(), MoninObukhov(; stability_functions=ChengBrutsaert()))
+        (MoninObukhov(), MoninObukhov(; stability_functions=BusingerDyer()))
     site = Site(; latitude=0.0u"°", longitude=0.0u"°", elevation=0.0u"m", slope=0.0u"°", aspect=0.0u"°",
         horizon_angles=fill(0.0u"°", 24), sky_view_fraction=1.0, albedo=0.15, roughness_height=0.01u"m",
         atmospheric_pressure=101325.0u"Pa")
