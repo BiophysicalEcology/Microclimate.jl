@@ -24,12 +24,10 @@ end
 
 mean_leaf_temperature(buffers) = sum(buffers.leaf.leaf_temperature) / length(buffers.leaf.leaf_temperature)
 
-# Every residual row within the tolerance for its kind
+# Every residual within the tolerance for its kind
 function residual_within_tolerance(buffers)
     (; residual, tolerances) = buffers.convergence
-    return all(eachindex(residual)) do row
-        abs(residual[row]) <= Microclimate.canopy_row_tolerance(tolerances, buffers, row)
-    end
+    return Microclimate.canopy_scaled_residual(residual, tolerances) <= 1
 end
 
 @testset "midday: residual solved, physically reasonable" begin
@@ -91,12 +89,16 @@ end
         plant_area_index = [0.6, 0.5, 0.0, 0.4, 0.35, 0.3, 0.2, 0.15, 0.1, 0.05],
         convergence_model = AndersonCanopyConvergence())
     _, gappy = solve_canopy(gappy_model, canopy_inputs(gappy_model))
-    (; state, residual, next_state, forcing) = gappy.convergence
-    rows = Microclimate.canopy_state_rows(10)
-    state[rows.leaf_temperature[3]] += 1.0
-    Microclimate.canopy_fixed_point!(next_state, residual, state, gappy, gappy_model, boundary_layer_model, forcing[];
+    (; state, step, next_state, forcing) = gappy.convergence
+    inverse_obukhov_length = Microclimate.unpack_canopy_state!(gappy, state)
+    gappy.leaf.leaf_temperature[3] += 1.0u"K"
+    starting_air_temperature = copy(gappy.air_profile.current_air_temperature)
+    Microclimate.pack_canopy_state!(state, gappy.leaf.leaf_temperature, starting_air_temperature,
+        gappy.air_profile.current_vapor_density, inverse_obukhov_length)
+    Microclimate.canopy_fixed_point!(next_state, step, state, gappy, gappy_model, boundary_layer_model, forcing[];
         site, vapour_pressure_equation = Microclimate.GoffGratch())
-    @test next_state[rows.leaf_temperature[3]] ≈ state[rows.air_temperature[3]]
+    Microclimate.unpack_canopy_state!(gappy, next_state)
+    @test gappy.leaf.leaf_temperature[3] ≈ starting_air_temperature[3]
 end
 
 # An air profile that gives NaN on one call, the way a pass that overshoots does

@@ -1,24 +1,8 @@
-# The tolerance for each kind of residual row, in the state's units (see canopy_state_length)
+# The tolerance for each kind of residual, as plain numbers in the state's units
 canopy_tolerances(convergence_model) = (; leaf_balance=in_state_units(convergence_model.leaf_balance_tolerance),
     air_temperature=in_state_units(convergence_model.air_temperature_tolerance),
     vapor_density=in_state_units(convergence_model.vapor_density_tolerance),
     inverse_obukhov_length=in_state_units(convergence_model.inverse_obukhov_length_tolerance))
-
-# The tolerance of residual row `row`, in the state's units
-function canopy_row_tolerance(tolerances, buffers, row)
-    rows = canopy_state_rows(length(buffers.leaf.leaf_temperature))
-    if row in rows.leaf_temperature
-        # A layer without leaves gives a temperature difference. Leaf rows come first, so the row is the layer.
-        iszero(layer_leaf_areas(buffers, row).exchange_fraction) && return tolerances.air_temperature
-        return tolerances.leaf_balance
-    elseif row in rows.air_temperature
-        return tolerances.air_temperature
-    elseif row in rows.vapor_density
-        return tolerances.vapor_density
-    else
-        return tolerances.inverse_obukhov_length
-    end
-end
 
 """
     AbstractCanopyFailure
@@ -43,10 +27,14 @@ Warn, keep the best guess the solve reached, and carry on.
 struct SmallestResidual <: AbstractCanopyFailure end
 
 # The largest residual, measured in units of its own tolerance. At or below 1, the hour is solved.
-function canopy_scaled_residual(residual, tolerances, buffers)
-    largest = 0.0
-    for row in eachindex(residual)
-        largest = max(largest, abs(residual[row]) / canopy_row_tolerance(tolerances, buffers, row))
+function canopy_scaled_residual(residual, tolerances)
+    largest = abs(in_state_units(residual.inverse_obukhov_length[])) / tolerances.inverse_obukhov_length
+    for layer in eachindex(residual.leaf_balance)
+        largest = max(largest,
+            abs(in_state_units(residual.leaf_balance[layer])) / tolerances.leaf_balance,
+            abs(in_state_units(residual.leafless_temperature_difference[layer])) / tolerances.air_temperature,
+            abs(in_state_units(residual.air_temperature[layer])) / tolerances.air_temperature,
+            abs(in_state_units(residual.vapor_density[layer])) / tolerances.vapor_density)
     end
     return largest
 end
@@ -62,7 +50,7 @@ function canopy_failure!(::SmallestResidual, convergence_model, return_code, bes
     result = canopy_solution!(residual, state, buffers, model, boundary_layer_model, forcing, inputs, iterations;
         site, vapour_pressure_equation, soil_hydraulic_model)
     @warn "Canopy solve did not converge, keeping the state with the smallest residual" return_code iterations residual_over_tolerance =
-        canopy_scaled_residual(residual, tolerances, buffers) maxlog = 5
+        canopy_scaled_residual(residual, tolerances) maxlog = 5
     return result
 end
 
@@ -110,7 +98,7 @@ function canopy_hour_setup!(state, forcing::Ref, buffers, model::MultilayerCanop
         fill!(air.vapor_density, wet_air_properties(initial_wind.canopy_top_air_temperature,
             initial_wind.canopy_top_relative_humidity, atmospheric_pressure; vapour_pressure_equation).vapour_density)
     end
-    return write_canopy_state!(state, leaf_temperature, air.air_temperature, air.vapor_density,
+    return pack_canopy_state!(state, leaf_temperature, air.air_temperature, air.vapor_density,
         limit_inverse_obukhov_length(initial_wind.inverse_obukhov_length, forcing[].stability_limits))
 end
 
@@ -133,7 +121,8 @@ function canopy_solution!(residual, state, buffers, model::MultilayerCanopy, bou
 
     # Evaluating fills the buffers, but leaves the air profile at what the leaves
     # produce, so it is then set back to the solved values
-    result = evaluate_canopy!(residual, state, buffers, model, boundary_layer_model, forcing;
+    inverse_obukhov_length = unpack_canopy_state!(buffers, state)
+    result = evaluate_canopy!(residual, inverse_obukhov_length, buffers, model, boundary_layer_model, forcing;
         site, vapour_pressure_equation)
     unstressed_dry_conductance = stomatal_conductance(model.stomatal_model, zenith_angle, 0.0u"J/kg", soil_hydraulic_model)
     for i in 1:n_layers
