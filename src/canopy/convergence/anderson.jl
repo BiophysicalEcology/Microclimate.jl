@@ -1,6 +1,6 @@
 """
-    AndersonCanopyConvergence(; leaf_balance_tolerance=2e-5u"W/m^2", air_temperature_tolerance=1e-6u"K",
-        vapor_density_tolerance=1e-6u"g/m^3", inverse_obukhov_length_tolerance=1e-8u"m^-1",
+    AndersonCanopyConvergence(; leaf_balance_tolerance=1.5u"W/m^2", air_temperature_tolerance=0.1u"K",
+        vapor_density_tolerance=0.07u"g/m^3", inverse_obukhov_length_tolerance=1e-2u"m^-1",
         history=5, damping=1.0, maxiters=100, on_failure=ThrowError(), backend=AutoEnzyme(; mode=Enzyme.Forward))
 
 Solves the canopy for one hour by improving a guess until nothing changes.
@@ -22,10 +22,10 @@ decides what happens if the hour starts out of bounds or hasn't settled after `m
   *SIAM Journal on Numerical Analysis*, 49(4), 1715-1735.
 """
 @kwdef struct AndersonCanopyConvergence{LB,AT,VD,IL,D,F<:AbstractCanopyFailure,B} <: AbstractCanopyConvergenceModel
-    leaf_balance_tolerance::LB = 2e-5u"W/m^2"
-    air_temperature_tolerance::AT = 1e-6u"K"
-    vapor_density_tolerance::VD = 1e-6u"g/m^3"
-    inverse_obukhov_length_tolerance::IL = 1e-8u"m^-1"
+    leaf_balance_tolerance::LB = 1.5u"W/m^2"
+    air_temperature_tolerance::AT = 0.1u"K"
+    vapor_density_tolerance::VD = 0.07u"g/m^3"
+    inverse_obukhov_length_tolerance::IL = 1e-2u"m^-1"
     history::Int = 5
     damping::D = 1.0
     maxiters::Int = 100
