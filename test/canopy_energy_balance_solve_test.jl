@@ -99,6 +99,39 @@ end
     @test next_state[rows.leaf_temperature[3]] ≈ state[rows.air_temperature[3]]
 end
 
+# An air profile that gives NaN on one call, the way a pass that overshoots does
+struct OvershootingAirProfile{M} <: Microclimate.AbstractCanopyAirProfileModel
+    air_profile_model::M
+    overshooting_call::Int
+    calls::Base.RefValue{Int}
+end
+OvershootingAirProfile(overshooting_call) = OvershootingAirProfile(KTheoryAirProfile(), overshooting_call, Ref(0))
+Microclimate.allocate_air_profile(model::OvershootingAirProfile, arguments...) =
+    Microclimate.allocate_air_profile(model.air_profile_model, arguments...)
+function Microclimate.canopy_heat_vapor_transport!(buffers, model::OvershootingAirProfile, arguments...; keywords...)
+    Microclimate.canopy_heat_vapor_transport!(buffers, model.air_profile_model, arguments...; keywords...)
+    model.calls[] += 1
+    model.calls[] == model.overshooting_call && fill!(buffers.air_temperature, NaN * u"K")
+    return nothing
+end
+
+@testset "AndersonCanopyConvergence recovers from a pass that overshoots" begin
+    overshooting_canopy(overshooting_call) = Microclimate.example_multilayer_canopy(; canopy_height, plant_area_index,
+        air_profile_model = OvershootingAirProfile(overshooting_call))
+    # Later passes go back towards the last good state and carry on
+    model = overshooting_canopy(2)
+    result, buffers = solve_canopy(model, canopy_inputs(model))
+    @test model.air_profile_model.calls[] > 2
+    @test residual_within_tolerance(buffers)
+    clean_model = Microclimate.example_multilayer_canopy(; canopy_height, plant_area_index,
+        air_profile_model = KTheoryAirProfile())
+    _, clean_buffers = solve_canopy(clean_model, canopy_inputs(clean_model))
+    @test all(isapprox.(buffers.leaf.leaf_temperature, clean_buffers.leaf.leaf_temperature; atol = 1.0u"K"))
+    # The first pass has no good state to go back to
+    first_pass_model = overshooting_canopy(1)
+    @test_throws r"did not converge" solve_canopy(first_pass_model, canopy_inputs(first_pass_model))
+end
+
 @testset "AndersonCanopyConvergence needs a history" begin
     model = Microclimate.example_multilayer_canopy(; canopy_height, plant_area_index,
         convergence_model = AndersonCanopyConvergence(; history = 0))
