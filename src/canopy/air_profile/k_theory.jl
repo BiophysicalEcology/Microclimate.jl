@@ -11,7 +11,7 @@ its neighbours.
 The eddy diffusivity `K` follows the shape of the wind profile
 (`wind_attenuation_profile`), scaled to `κ u* (canopy_height - displacement_height)`
 at the canopy top. Heat and vapor share that diffusivity, and each is a tridiagonal system
-factorized in place in preallocated buffers.
+solved in preallocated buffers.
 
 # References
 - Raupach, M. R. (1989). A practical Lagrangian method for relating scalar
@@ -29,16 +29,18 @@ function allocate_air_profile(::KTheoryAirProfile, canopy_height, displacement_h
 
     # Layer 1 is fixed, so only the layers below it are solved
     free_layer_count = n_layers - 1
-    heat_diagonal, heat_off_diagonal = zeros(free_layer_count), zeros(free_layer_count - 1)
-    vapor_diagonal, vapor_off_diagonal = zeros(free_layer_count), zeros(free_layer_count - 1)
+    heat_conductance = typeof(0.0u"W/m^2/K")
+    vapor_conductance = typeof(0.0u"m/s")
 
     return (;
         canopy_height, displacement_height,
         layer_spacing = layer_thickness, relative_eddy_diffusivity,
-        heat_diagonal, heat_off_diagonal, heat_right_hand_side = zeros(free_layer_count),
-        vapor_diagonal, vapor_off_diagonal, vapor_right_hand_side = zeros(free_layer_count),
-        heat_matrix = SymTridiagonal(heat_diagonal, heat_off_diagonal),
-        vapor_matrix = SymTridiagonal(vapor_diagonal, vapor_off_diagonal),
+        heat_diagonal = zeros(heat_conductance, free_layer_count),
+        heat_off_diagonal = zeros(heat_conductance, free_layer_count - 1),
+        heat_right_hand_side = zeros(typeof(0.0u"W/m^2"), free_layer_count),
+        vapor_diagonal = zeros(vapor_conductance, free_layer_count),
+        vapor_off_diagonal = zeros(vapor_conductance, free_layer_count - 1),
+        vapor_right_hand_side = zeros(typeof(0.0u"kg/m^2/s"), free_layer_count),
         air_temperature = zeros(typeof(0.0u"K"), n_layers),
         current_air_temperature = zeros(typeof(0.0u"K"), n_layers),
         vapor_density = zeros(typeof(0.0u"kg/m^3"), n_layers),
@@ -52,24 +54,25 @@ end
 # Writes the conductance between each pair of free layers into `off_diagonal`, and returns the
 # conductances from the fixed layer 1 to the first free layer and from the last free layer to
 # the ground. `scale` turns the diffusivity over the spacing into the flux's units.
-function _ktheory_conductances!(off_diagonal, relative_eddy_diffusivity, canopy_top_eddy_diffusivity, layer_spacing, scale, unit)
+function _ktheory_conductances!(off_diagonal, relative_eddy_diffusivity, canopy_top_eddy_diffusivity, layer_spacing, scale)
     free_layer_count = length(off_diagonal) + 1
-    top_conductance = ustrip(unit, scale * canopy_top_eddy_diffusivity * 0.5 *
+    conductance_type = eltype(off_diagonal)
+    top_conductance = convert(conductance_type, scale * canopy_top_eddy_diffusivity * 0.5 *
         (relative_eddy_diffusivity[1] + relative_eddy_diffusivity[2]) / layer_spacing[1])
-    ground_conductance = ustrip(unit, scale * canopy_top_eddy_diffusivity * relative_eddy_diffusivity[free_layer_count + 1] /
+    ground_conductance = convert(conductance_type, scale * canopy_top_eddy_diffusivity * relative_eddy_diffusivity[free_layer_count + 1] /
         layer_spacing[free_layer_count + 1])
     for i in 1:(free_layer_count - 1)
         boundary_eddy_diffusivity = canopy_top_eddy_diffusivity * 0.5 *
             (relative_eddy_diffusivity[i + 1] + relative_eddy_diffusivity[i + 2])
-        off_diagonal[i] = ustrip(unit, scale * boundary_eddy_diffusivity / layer_spacing[i + 1])
+        off_diagonal[i] = scale * boundary_eddy_diffusivity / layer_spacing[i + 1]
     end
     return top_conductance, ground_conductance
 end
 
-# Fills in and solves one flux balance on the free layers, leaving the answer in `right_hand_side`:
+# Fills in and solves one flux balance on the free layers, writing the answer into `profile`:
 #   g₋(C₋ - Cᵢ) - g₊(Cᵢ - C₊) + Sᵢ = 0
 # `source(layer)` is Sᵢ, and layer 1 and the ground give the known end values.
-function _ktheory_solve!(matrix, diagonal, off_diagonal, right_hand_side, top_conductance, ground_conductance, top_value, ground_value, source)
+function _ktheory_solve!(profile, diagonal, off_diagonal, right_hand_side, top_conductance, ground_conductance, top_value, ground_value, source)
     free_layer_count = length(diagonal)
     for i in 1:free_layer_count
         conductance_above = i == 1 ? top_conductance : off_diagonal[i - 1]
@@ -79,8 +82,17 @@ function _ktheory_solve!(matrix, diagonal, off_diagonal, right_hand_side, top_co
     end
     right_hand_side[1] -= top_conductance * top_value
     right_hand_side[free_layer_count] -= ground_conductance * ground_value
-    ldiv!(ldlt!(matrix), right_hand_side)
-    return right_hand_side
+    # Eliminate from the top layer down, then substitute back up
+    for i in 1:(free_layer_count - 1)
+        ratio = off_diagonal[i] / diagonal[i]
+        diagonal[i + 1] -= ratio^2 * diagonal[i]
+        right_hand_side[i + 1] -= ratio * right_hand_side[i]
+    end
+    profile[free_layer_count + 1] = right_hand_side[free_layer_count] / diagonal[free_layer_count]
+    for i in (free_layer_count - 1):-1:1
+        profile[i + 1] = right_hand_side[i] / diagonal[i] - off_diagonal[i] / diagonal[i] * profile[i + 2]
+    end
+    return profile
 end
 
 function canopy_heat_vapor_transport!(buffers, ::KTheoryAirProfile, boundary_layer_model,
@@ -91,8 +103,7 @@ function canopy_heat_vapor_transport!(buffers, ::KTheoryAirProfile, boundary_lay
     (; canopy_height, displacement_height, layer_spacing, relative_eddy_diffusivity,
        heat_diagonal, heat_off_diagonal, heat_right_hand_side,
        vapor_diagonal, vapor_off_diagonal, vapor_right_hand_side,
-       heat_matrix, vapor_matrix, air_temperature, vapor_density,
-       ground_heat_conductance, ground_vapor_conductance) = buffers
+       air_temperature, vapor_density, ground_heat_conductance, ground_vapor_conductance) = buffers
 
     layer_count = length(air_temperature)
     length(sensible_heat_source) == layer_count || throw(ArgumentError("sensible_heat_source must have one entry per canopy layer"))
@@ -104,23 +115,19 @@ function canopy_heat_vapor_transport!(buffers, ::KTheoryAirProfile, boundary_lay
     # The floor stops the diffusivity reaching zero when displacement reaches the canopy top
     canopy_top_eddy_diffusivity = boundary_layer_model.karman_constant * friction_velocity * max(canopy_height - displacement_height, 1.0e-3u"m")
 
-    # Heat conductances are in W/m²/K
     heat_top_conductance, heat_ground_conductance = _ktheory_conductances!(heat_off_diagonal, relative_eddy_diffusivity,
-        canopy_top_eddy_diffusivity, layer_spacing, calc_ρ_cp(canopy_top_air_temperature), u"W/m^2/K")
-    ground_heat_conductance[] = heat_ground_conductance * u"W/m^2/K"
-    _ktheory_solve!(heat_matrix, heat_diagonal, heat_off_diagonal, heat_right_hand_side, heat_top_conductance, heat_ground_conductance,
-        ustrip(u"K", canopy_top_air_temperature), ustrip(u"K", ground_temperature), layer -> ustrip(u"W/m^2", sensible_heat_source[layer]))
-    air_temperature[2:end] .= heat_right_hand_side .* u"K"
+        canopy_top_eddy_diffusivity, layer_spacing, calc_ρ_cp(canopy_top_air_temperature))
+    ground_heat_conductance[] = heat_ground_conductance
+    _ktheory_solve!(air_temperature, heat_diagonal, heat_off_diagonal, heat_right_hand_side, heat_top_conductance, heat_ground_conductance,
+        canopy_top_air_temperature, ground_temperature, layer -> sensible_heat_source[layer])
 
-    # A diffusivity over a spacing is already a velocity, so vapor conductances are in m/s
+    # A diffusivity over a spacing is already a velocity, so vapor needs no scaling
     vapor_top_conductance, vapor_ground_conductance = _ktheory_conductances!(vapor_off_diagonal, relative_eddy_diffusivity,
-        canopy_top_eddy_diffusivity, layer_spacing, 1.0, u"m/s")
-    ground_vapor_conductance[] = vapor_ground_conductance * u"m/s"
+        canopy_top_eddy_diffusivity, layer_spacing, 1.0)
+    ground_vapor_conductance[] = vapor_ground_conductance
     ground_vapor_density = wet_air_properties(ground_temperature, ground_relative_humidity, atmospheric_pressure; vapour_pressure_equation).vapour_density
-    _ktheory_solve!(vapor_matrix, vapor_diagonal, vapor_off_diagonal, vapor_right_hand_side, vapor_top_conductance, vapor_ground_conductance,
-        ustrip(u"kg/m^3", canopy_top_vapor_density), ustrip(u"kg/m^3", ground_vapor_density),
-        layer -> ustrip(u"kg/m^2/s", evaporation_mass_flow[layer] / 1.0u"m^2"))
-    vapor_density[2:end] .= vapor_right_hand_side .* u"kg/m^3"
+    _ktheory_solve!(vapor_density, vapor_diagonal, vapor_off_diagonal, vapor_right_hand_side, vapor_top_conductance, vapor_ground_conductance,
+        canopy_top_vapor_density, ground_vapor_density, layer -> evaporation_mass_flow[layer] / 1.0u"m^2")
 
     return nothing
 end

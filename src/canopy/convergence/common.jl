@@ -1,8 +1,8 @@
 # The tolerance for each kind of residual row, in the state's units (see canopy_state_length)
-canopy_tolerances(convergence_model) = (; leaf_balance=ustrip(u"W/m^2", convergence_model.leaf_balance_tolerance),
-    air_temperature=ustrip(u"K", convergence_model.air_temperature_tolerance),
-    vapor_density=ustrip(u"g/m^3", convergence_model.vapor_density_tolerance),
-    inverse_obukhov_length=ustrip(u"m^-1", convergence_model.inverse_obukhov_length_tolerance))
+canopy_tolerances(convergence_model) = (; leaf_balance=solver_number(convergence_model.leaf_balance_tolerance),
+    air_temperature=solver_number(convergence_model.air_temperature_tolerance),
+    vapor_density=solver_number(convergence_model.vapor_density_tolerance),
+    inverse_obukhov_length=solver_number(convergence_model.inverse_obukhov_length_tolerance))
 
 # The tolerance of residual row `row`, in the state's units
 function canopy_row_tolerance(tolerances, buffers, row)
@@ -109,11 +109,11 @@ function canopy_hour_setup!(state, forcing::Ref, buffers, model::MultilayerCanop
             initial_wind.canopy_top_relative_humidity, atmospheric_pressure; vapour_pressure_equation).vapour_density)
     end
     for i in eachindex(leaf_temperature)
-        state[rows.leaf_temperature[i]] = ustrip(u"K", leaf_temperature[i])
-        state[rows.air_temperature[i]] = ustrip(u"K", air.air_temperature[i])
-        state[rows.vapor_density[i]] = ustrip(u"g/m^3", air.vapor_density[i])
+        state[rows.leaf_temperature[i]] = solver_number(leaf_temperature[i])
+        state[rows.air_temperature[i]] = solver_number(air.air_temperature[i])
+        state[rows.vapor_density[i]] = solver_number(air.vapor_density[i])
     end
-    state[rows.inverse_obukhov_length] = ustrip(u"m^-1",
+    state[rows.inverse_obukhov_length] = solver_number(
         limit_inverse_obukhov_length(initial_wind.inverse_obukhov_length, forcing[].stability_limits))
     return state
 end

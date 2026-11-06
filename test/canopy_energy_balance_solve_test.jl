@@ -84,7 +84,7 @@ end
     best_buffers = allocate(best_model)
     best = canopy_energy_balance!(best_buffers, best_model, boundary_layer_model, canopy_inputs(best_model); site)
     @test best.iterations == 1
-    @test all(isfinite, ustrip.(u"K", best_buffers.leaf.leaf_temperature))
+    @test all(isfinite, best_buffers.leaf.leaf_temperature)
     # A layer without leaf area maps its leaf to the layer's air temperature
     gappy_model = Microclimate.example_multilayer_canopy(; canopy_height,
         plant_area_index = [0.6, 0.5, 0.0, 0.4, 0.35, 0.3, 0.2, 0.15, 0.1, 0.05],

@@ -916,16 +916,14 @@ inverse_obukhov_length_limits(::NoStabilityLimit, stability_functions, height, r
     (; unstable=-Inf * u"m^-1", stable=Inf * u"m^-1")
 function inverse_obukhov_length_limits(limit::MomentumCorrectionLimit, stability_functions, height, roughness_length)
     (; fraction) = limit
-    height_in_metres = ustrip(u"m", height)
-    roughness_in_metres = ustrip(u"m", roughness_length)
-    target = fraction * log(height_in_metres / roughness_in_metres)
-    correction(inverse_length) = calc_ψ_m(stability_functions, roughness_in_metres * inverse_length) -
-        calc_ψ_m(stability_functions, height_in_metres * inverse_length)
+    target = fraction * log(height / roughness_length)
+    correction(inverse_length) = calc_ψ_m(stability_functions, roughness_length * inverse_length) -
+        calc_ψ_m(stability_functions, height * inverse_length)
     nearest_to_neutral(sign) = begin
         # The first doubling of |1/L| past the target, then bisection inside it
-        previous = 0.0
+        previous = 0.0u"m^-1"
         for exponent in -30:40
-            inverse_length = sign * 2.0^exponent
+            inverse_length = sign * 2.0^exponent * u"m^-1"
             if sign * correction(inverse_length) >= target
                 below_target, above_target = previous, inverse_length
                 for _ in 1:60
@@ -936,9 +934,9 @@ function inverse_obukhov_length_limits(limit::MomentumCorrectionLimit, stability
             end
             previous = inverse_length
         end
-        return sign * Inf
+        return sign * Inf * u"m^-1"
     end
-    return (; unstable=nearest_to_neutral(-1.0) * u"m^-1", stable=nearest_to_neutral(1.0) * u"m^-1")
+    return (; unstable=nearest_to_neutral(-1.0), stable=nearest_to_neutral(1.0))
 end
 
 # The inverse Obukhov length within `limits`: unchanged near neutral, approaching the limit
