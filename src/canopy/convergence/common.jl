@@ -1,8 +1,8 @@
 # The tolerance for each kind of residual row, in the state's units (see canopy_state_length)
-canopy_tolerances(convergence_model) = (; leaf_balance=solver_number(convergence_model.leaf_balance_tolerance),
-    air_temperature=solver_number(convergence_model.air_temperature_tolerance),
-    vapor_density=solver_number(convergence_model.vapor_density_tolerance),
-    inverse_obukhov_length=solver_number(convergence_model.inverse_obukhov_length_tolerance))
+canopy_tolerances(convergence_model) = (; leaf_balance=in_state_units(convergence_model.leaf_balance_tolerance),
+    air_temperature=in_state_units(convergence_model.air_temperature_tolerance),
+    vapor_density=in_state_units(convergence_model.vapor_density_tolerance),
+    inverse_obukhov_length=in_state_units(convergence_model.inverse_obukhov_length_tolerance))
 
 # The tolerance of residual row `row`, in the state's units
 function canopy_row_tolerance(tolerances, buffers, row)
@@ -96,7 +96,6 @@ function canopy_hour_setup!(state, forcing::Ref, buffers, model::MultilayerCanop
     (; atmospheric_pressure, reference_temperature, reference_wind_speed, reference_humidity) = environment_instant
     leaf_temperature = buffers.leaf.leaf_temperature
     air = buffers.air_profile
-    rows = canopy_state_rows(length(leaf_temperature))
 
     forcing[] = CanopyResidualForcing(; atmospheric_pressure, reference_temperature, reference_wind_speed,
         reference_humidity, ground_temperature, ground_emissivity, ground_relative_humidity, leaf_water_potential,
@@ -111,14 +110,8 @@ function canopy_hour_setup!(state, forcing::Ref, buffers, model::MultilayerCanop
         fill!(air.vapor_density, wet_air_properties(initial_wind.canopy_top_air_temperature,
             initial_wind.canopy_top_relative_humidity, atmospheric_pressure; vapour_pressure_equation).vapour_density)
     end
-    for i in eachindex(leaf_temperature)
-        state[rows.leaf_temperature[i]] = solver_number(leaf_temperature[i])
-        state[rows.air_temperature[i]] = solver_number(air.air_temperature[i])
-        state[rows.vapor_density[i]] = solver_number(air.vapor_density[i])
-    end
-    state[rows.inverse_obukhov_length] = solver_number(
+    return write_canopy_state!(state, leaf_temperature, air.air_temperature, air.vapor_density,
         limit_inverse_obukhov_length(initial_wind.inverse_obukhov_length, forcing[].stability_limits))
-    return state
 end
 
 """

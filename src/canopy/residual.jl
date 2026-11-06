@@ -42,11 +42,37 @@ canopy_state_length(buffers) = 3 * length(buffers.leaf.leaf_temperature) + 1
 
 Unitful.@derived_dimension AreaPower Unitful.𝐌 * Unitful.𝐓^-3
 
-# The solver works on plain numbers, so each kind of quantity has one unit in it
-solver_number(value::Unitful.Temperature) = ustrip(u"K", value)
-solver_number(value::Unitful.Density) = ustrip(u"g/m^3", value)
-solver_number(value::Unitful.Wavenumber) = ustrip(u"m^-1", value)
-solver_number(value::AreaPower) = ustrip(u"W/m^2", value)
+# The solver works on one vector of plain numbers, in these units. Only the functions below
+# go between that vector and quantities with units.
+const CANOPY_STATE_UNITS = (; temperature=u"K", vapor_density=u"g/m^3", inverse_obukhov_length=u"m^-1", leaf_balance=u"W/m^2")
+
+in_state_units(value::Unitful.Temperature) = ustrip(CANOPY_STATE_UNITS.temperature, value)
+in_state_units(value::Unitful.Density) = ustrip(CANOPY_STATE_UNITS.vapor_density, value)
+in_state_units(value::Unitful.Wavenumber) = ustrip(CANOPY_STATE_UNITS.inverse_obukhov_length, value)
+in_state_units(value::AreaPower) = ustrip(CANOPY_STATE_UNITS.leaf_balance, value)
+
+# Writes the whole canopy into the state vector
+function write_canopy_state!(state, leaf_temperature, air_temperature, vapor_density, inverse_obukhov_length)
+    rows = canopy_state_rows(length(leaf_temperature))
+    for layer in eachindex(leaf_temperature)
+        state[rows.leaf_temperature[layer]] = in_state_units(leaf_temperature[layer])
+        state[rows.air_temperature[layer]] = in_state_units(air_temperature[layer])
+        state[rows.vapor_density[layer]] = in_state_units(vapor_density[layer])
+    end
+    state[rows.inverse_obukhov_length] = in_state_units(inverse_obukhov_length)
+    return state
+end
+
+# One layer's values from the state vector, with units
+function read_canopy_state(state, layer)
+    rows = canopy_state_rows((length(state) - 1) ÷ 3)
+    return (; leaf_temperature=state[rows.leaf_temperature[layer]] * CANOPY_STATE_UNITS.temperature,
+        air_temperature=state[rows.air_temperature[layer]] * CANOPY_STATE_UNITS.temperature,
+        vapor_density=state[rows.vapor_density[layer]] * CANOPY_STATE_UNITS.vapor_density)
+end
+
+# The inverse Obukhov length from the state vector, which is its last value, with units
+read_inverse_obukhov_length(state) = last(state) * CANOPY_STATE_UNITS.inverse_obukhov_length
 
 """
     canopy_state_rows(layer_count)
@@ -137,9 +163,8 @@ function evaluate_canopy!(residual, state, buffers, model::MultilayerCanopy, bou
     lowest_temperature, highest_temperature = CANOPY_TEMPERATURE_BOUNDS
     in_bounds = true
     for i in 1:n_layers
-        leaf = state[rows.leaf_temperature[i]] * u"K"
-        air_temperature = state[rows.air_temperature[i]] * u"K"
-        vapor_density = state[rows.vapor_density[i]] * u"g/m^3"
+        layer_state = read_canopy_state(state, i)
+        leaf, air_temperature, vapor_density = layer_state.leaf_temperature, layer_state.air_temperature, layer_state.vapor_density
         # A negative vapor density is evaluated at zero. Its residual still points back to positive.
         in_bounds &= lowest_temperature <= leaf <= highest_temperature &&
             lowest_temperature <= air_temperature <= highest_temperature && !isnan(vapor_density)
@@ -147,7 +172,7 @@ function evaluate_canopy!(residual, state, buffers, model::MultilayerCanopy, bou
         air.current_air_temperature[i] = _within_bounds(air_temperature, lowest_temperature, highest_temperature)
         air.current_vapor_density[i] = _within_bounds(vapor_density, zero(vapor_density))
     end
-    inverse_obukhov_length = state[rows.inverse_obukhov_length] * u"m^-1"
+    inverse_obukhov_length = read_inverse_obukhov_length(state)
     in_bounds &= !isnan(inverse_obukhov_length)
 
     environment_instant = (; atmospheric_pressure, reference_temperature, reference_wind_speed, reference_humidity)
@@ -166,7 +191,7 @@ function evaluate_canopy!(residual, state, buffers, model::MultilayerCanopy, bou
             evaporation_mass_flow[i] = zero(evaporation_mass_flow[i])
             absorbed_radiation[i] = zero(absorbed_radiation[i])
             net_balance[i] = zero(net_balance[i])
-            residual[rows.leaf_temperature[i]] = solver_number(leaf_temperature[i] - air_temperature)
+            residual[rows.leaf_temperature[i]] = in_state_units(leaf_temperature[i] - air_temperature)
             continue
         end
         # absorbed_shortwave/absorbed_longwave are per unit ground area
@@ -175,7 +200,7 @@ function evaluate_canopy!(residual, state, buffers, model::MultilayerCanopy, bou
         sensible_heat_source[i] = balance.convection.convection_flow / 1.0u"m^2"
         evaporation_mass_flow[i] = balance.evaporation.transpiration_mass_flow
         net_balance[i] = balance.net
-        residual[rows.leaf_temperature[i]] = solver_number(balance.net / leaf_area)
+        residual[rows.leaf_temperature[i]] = in_state_units(balance.net / leaf_area)
     end
 
     reference_vapor_density = wet_air_properties(reference_temperature, reference_humidity, atmospheric_pressure;
@@ -207,15 +232,15 @@ function evaluate_canopy!(residual, state, buffers, model::MultilayerCanopy, bou
         site, vapour_pressure_equation)
 
     for i in 1:n_layers
-        residual[rows.air_temperature[i]] = solver_number(air.current_air_temperature[i] - air.air_temperature[i])
-        residual[rows.vapor_density[i]] = state[rows.vapor_density[i]] - solver_number(air.vapor_density[i])
+        residual[rows.air_temperature[i]] = in_state_units(air.current_air_temperature[i] - air.air_temperature[i])
+        residual[rows.vapor_density[i]] = state[rows.vapor_density[i]] - in_state_units(air.vapor_density[i])
     end
     # The stability the whole canopy's sensible flux through its top implies; the Obukhov
     # relation takes the downward flux
     obukhov_coefficient = calc_ρ_cp(reference_temperature) * reference_temperature / (boundary_layer_model.karman_constant * g_n)
     inverse_obukhov_length_update = limit_inverse_obukhov_length(stability_from_fluxes(InverseObukhovLength(), obukhov_coefficient,
         wind.friction_velocity, -boundary.sensible_flux), forcing.stability_limits)
-    residual[rows.inverse_obukhov_length] = solver_number(wind.inverse_obukhov_length - inverse_obukhov_length_update)
+    residual[rows.inverse_obukhov_length] = in_state_units(wind.inverse_obukhov_length - inverse_obukhov_length_update)
     in_bounds || fill!(residual, NaN)
 
     return (; longwave_result, canopy_top_air_temperature, canopy_top_relative_humidity,
