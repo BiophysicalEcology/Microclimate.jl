@@ -61,44 +61,28 @@ end
     canopy_energy_balance!(buffers, model::MultilayerCanopy, boundary_layer_model, inputs::CanopyEnergyBalanceInputs;
         site, vapour_pressure_equation=GoffGratch(), soil_hydraulic_model=nothing)
 
-Hourly solve tying every canopy sub-model together. Shortwave, the
-above-canopy wind/temperature profile, and rain interception are computed
-once per call (none depends on leaf temperature). Longwave, the in-canopy
-air profile, and per-layer leaf temperature are then solved together by
-[`converge_canopy!`](@ref), dispatching on `model.convergence_model`
-([`AndersonCanopyConvergence`](@ref)).
+Solves the canopy for one hour. Shortwave and rain interception don't depend on leaf
+temperature, so they are computed once. Leaf temperature, air temperature, vapor density,
+longwave and stability are then solved together by [`converge_canopy!`](@ref).
 
-A wetted leaf surface ([`wet_canopy_fraction`](@ref)) blends stomatal
-conductance toward [`WET_SURFACE_CONDUCTANCE`](@ref)
-([`blend_stomatal_conductance`](@ref)); storage depletion (or, for
-condensation, refill) from that evaporation is applied once, after
-convergence, bounded to [`available_canopy_water`](@ref)/
-[`canopy_water_capacity`](@ref) with any unrealized latent flux rerouted to
-sensible -- a conservative closure, not a re-solved leaf temperature.
+Water on a leaf ([`wet_canopy_fraction`](@ref)) moves its conductance towards
+[`WET_SURFACE_CONDUCTANCE`](@ref) ([`blend_stomatal_conductance`](@ref)). The water that
+evaporates or condenses is taken from storage once, after the solve. It is limited by
+[`available_canopy_water`](@ref) and [`canopy_water_capacity`](@ref), and any latent heat that
+can't happen is added to the sensible heat, without solving leaf temperature again.
 
-`inputs.ground_temperature`/`canopy_source_temperature`/`leaf_water_potential`
-are lagged (previous-hour) boundary conditions; only canopy-internal state is
-iterated. The `leaf_water_potential` lag is bounded by how fast it itself
-moves (a soil-moisture function, day-timescale) and self-corrects next hour.
+`inputs.ground_temperature`, `inputs.canopy_source_temperature` and
+`inputs.leaf_water_potential` come from the caller and stay fixed during the solve.
 
-Per-layer relative humidity is resolved by `model.air_profile_model` from
-each layer's own evaporation source, the same way per-layer air temperature
-is.
+Returns `(; ground_absorbed_shortwave, net_absorbed_shortwave, ground_absorbed_longwave,
+net_absorbed_longwave, ground_throughfall, canopy_potential_transpiration,
+ground_heat_conductance, ground_vapor_conductance, iterations, canopy_top_air_temperature,
+canopy_top_relative_humidity, friction_velocity, obukhov_length, displacement_height)`.
 
-Returns `(; ground_absorbed_shortwave, net_absorbed_shortwave,
-ground_absorbed_longwave, net_absorbed_longwave, ground_throughfall,
-canopy_potential_transpiration, ground_heat_conductance, ground_vapor_conductance,
-iterations, canopy_top_air_temperature, canopy_top_relative_humidity,
-friction_velocity, inverse_obukhov_length, displacement_height)`. `canopy_potential_transpiration`
-is the canopy-summed unstressed (water_potential=0) transpiration rate, for
-feeding a soil-hydraulics demand term (e.g. `CampbellSoilHydraulics`).
-`ground_heat_conductance`/`ground_vapor_conductance` are `model.air_profile_model`'s
-own ground-to-lowest-layer conductances, for the soil model's surface exchange to
-reuse instead of inverting the log law at a reference height too close to the
-roughness length (see `ground_convection_conditions`). The last five fields are
-the solved above-canopy boundary state —
-diagnostic-oriented (e.g. comparing against an independent implementation's own
-boundary solve), not consumed elsewhere in this package.
+- `canopy_potential_transpiration` is what the canopy would transpire with no water stress,
+  which the soil hydraulics model (e.g. `CampbellSoilHydraulics`) uses as demand.
+- `ground_heat_conductance` and `ground_vapor_conductance` connect the ground to the lowest
+  layer. The soil's surface exchange uses them (see `ground_convection_conditions`).
 """
 function canopy_energy_balance!(buffers, model::MultilayerCanopy, boundary_layer_model, inputs::CanopyEnergyBalanceInputs;
     site, vapour_pressure_equation=GoffGratch(), soil_hydraulic_model=nothing,
@@ -132,7 +116,7 @@ function canopy_energy_balance!(buffers, model::MultilayerCanopy, boundary_layer
     iszero(air_temperature[1]) && fill!(air_temperature, wind_result.canopy_top_air_temperature)
     iszero(leaf_temperature[1]) && fill!(leaf_temperature, wind_result.canopy_top_air_temperature)
 
-    longwave_result, iter, canopy_top_air_temperature, canopy_top_relative_humidity, friction_velocity, inverse_obukhov_length =
+    longwave_result, iterations, canopy_top_air_temperature, canopy_top_relative_humidity, friction_velocity, inverse_obukhov_length =
         converge_canopy!(buffers, model, boundary_layer_model, inputs, wind_result, model.convergence_model;
             site, vapour_pressure_equation, soil_hydraulic_model)
 
@@ -148,13 +132,13 @@ function canopy_energy_balance!(buffers, model::MultilayerCanopy, boundary_layer
             evaporation_mass_flow[layer], sensible_heat_source[layer], wet_fraction, available_mass, layer_capacity,
             air_temperature[layer])
 
-        leaf_temp = leaf_temperature[layer]
+        layer_leaf_temperature = leaf_temperature[layer]
         leaf_dew_formed[layer] = 0.0u"kg/m^2"
         leaf_frost_formed[layer] = 0.0u"kg/m^2"
         # Standing frost melts into standing dew (and leaf_surface_water) once the leaf
         # warms above 0°C; any overflow past capacity drips to the ground (stemflow).
         standing_frost_layer = leaf_standing_frost(model, buffers, layer)
-        if standing_frost_layer > 0.0u"kg/m^2" && leaf_temp > u"K"(0.0u"°C")
+        if standing_frost_layer > 0.0u"kg/m^2" && layer_leaf_temperature > u"K"(0.0u"°C")
             add_leaf_standing_dew!(model, buffers, layer, standing_frost_layer)
             add_leaf_standing_frost!(model, buffers, layer, -standing_frost_layer)
             deplete_canopy_water!(model, buffers, layer, -standing_frost_layer)
@@ -172,21 +156,21 @@ function canopy_energy_balance!(buffers, model::MultilayerCanopy, boundary_layer
         # is actual_mass, already fixed by _cap_wet_surface_evaporation and
         # tied to evaporation_mass_flow/sensible_heat_source above.
         (; leaf_area, aerodynamic_area) = layer_leaf_areas(buffers, layer)
-        conv = leaf_convection(model.leaf_convection_model, leaf_body, aerodynamic_area, air_temperature[layer],
-            leaf_temp, wind_speed[layer], atmospheric_pressure)
+        convection = leaf_convection(model.leaf_convection_model, leaf_body, aerodynamic_area, air_temperature[layer],
+            layer_leaf_temperature, wind_speed[layer], atmospheric_pressure)
         dew_frost_energy_flux = condensation_energy_flux(model.condensation_model;
-            leaf_temperature=leaf_temp, air_temperature=air_temperature[layer],
+            leaf_temperature=layer_leaf_temperature, air_temperature=air_temperature[layer],
             relative_humidity=buffers.air_profile.relative_humidity[layer],
             absorbed_radiation=buffers.leaf.absorbed_radiation[layer],
             leaf_emissivity=model.leaf_parameters.leaf_emissivity,
-            heat_transfer_coefficient=conv.heat_transfer_coefficient.combined,
+            heat_transfer_coefficient=convection.heat_transfer_coefficient.combined,
             leaf_area, aerodynamic_area, vapour_pressure_equation,
         )
         condensing = dew_frost_energy_flux < 0.0u"W/m^2"
 
         # actual_mass < 0 is condensation; frost isn't part of leaf_surface_water
         # (tracked, uncapped, in leaf_standing_frost instead, like ground).
-        if actual_mass < 0.0u"kg/m^2" && condensing && leaf_temp <= u"K"(0.0u"°C")
+        if actual_mass < 0.0u"kg/m^2" && condensing && layer_leaf_temperature <= u"K"(0.0u"°C")
             leaf_frost_formed[layer] = -actual_mass
             add_leaf_standing_frost!(model, buffers, layer, leaf_frost_formed[layer])
         elseif actual_mass < 0.0u"kg/m^2" && condensing
@@ -215,7 +199,7 @@ function canopy_energy_balance!(buffers, model::MultilayerCanopy, boundary_layer
     return (; shortwave_result..., longwave_result..., interception_result...,
         ground_throughfall = interception_result.ground_throughfall + melt_drip_total,
         canopy_potential_transpiration,
-        ground_heat_conductance, ground_vapor_conductance, iterations=iter,
+        ground_heat_conductance, ground_vapor_conductance, iterations,
         canopy_top_air_temperature, canopy_top_relative_humidity,
         friction_velocity, obukhov_length=inv(inverse_obukhov_length),
         displacement_height=buffers.wind.displacement_height)
@@ -225,11 +209,10 @@ end
     converge_canopy!(buffers, model::MultilayerCanopy, boundary_layer_model, inputs::CanopyEnergyBalanceInputs,
         initial_wind, convergence_model; site, vapour_pressure_equation, soil_hydraulic_model)
 
-Solve the hour's leaf/air-temperature state per `convergence_model`
-([`AndersonCanopyConvergence`](@ref)). `initial_wind` is the hour's
-[`canopy_wind_profile!`](@ref) result, whose canopy-top air temperature and
-humidity anchor the canopy-top boundary. Returns `(longwave_result,
-iterations, canopy_top_air_temperature, canopy_top_relative_humidity,
-friction_velocity, inverse_obukhov_length)` at the solution.
+Solves the hour's canopy state with `convergence_model` ([`AndersonCanopyConvergence`](@ref)).
+`initial_wind` is the hour's [`canopy_wind_profile!`](@ref) result, which gives the canopy-top
+air temperature and humidity the hour starts from. Returns `(longwave_result, iterations,
+canopy_top_air_temperature, canopy_top_relative_humidity, friction_velocity,
+inverse_obukhov_length)` at the solution.
 """
 function converge_canopy! end

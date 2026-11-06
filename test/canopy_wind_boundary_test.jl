@@ -9,15 +9,15 @@ displacement_height = 14.0u"m"
 reference_height = 45.0u"m"
 ground_temperature = 298.0u"K"
 reference_temperature = 300.0u"K"
-ground_vapour_density = 0.018u"kg/m^3"
-reference_vapour_density = 0.017u"kg/m^3"
+ground_vapor_density = 0.018u"kg/m^3"
+reference_vapor_density = 0.017u"kg/m^3"
 previous_top_temperature = 299.0u"K"
-previous_top_vapour_density = 0.0175u"kg/m^3"
+previous_top_vapor_density = 0.0175u"kg/m^3"
 
 flux_boundary(friction_velocity; displacement_height = displacement_height) = canopy_top_flux_boundary(
     boundary_layer_model, canopy_height, displacement_height, reference_height, friction_velocity, 0.0u"m^-1",
-    50.0u"W/m^2", 1.0e-5u"kg/m^2/s", ground_temperature, ground_vapour_density,
-    reference_temperature, reference_vapour_density, previous_top_temperature, previous_top_vapour_density)
+    50.0u"W/m^2", 1.0e-5u"kg/m^2/s", ground_temperature, ground_vapor_density,
+    reference_temperature, reference_vapor_density, previous_top_temperature, previous_top_vapor_density)
 
 @testset "canopy_top_flux_boundary: windy conditions barely damped" begin
     result = flux_boundary(1.0u"m/s")
@@ -45,8 +45,8 @@ end
     # A steady state with zero flux and previous == reference/ground-consistent point should stay put
     # regardless of damping strength (target == anchor).
     result = canopy_top_flux_boundary(boundary_layer_model, canopy_height, displacement_height, reference_height,
-        1.0e-4u"m/s", 0.0u"m^-1", 0.0u"W/m^2", 0.0u"kg/m^2/s", reference_temperature, reference_vapour_density,
-        reference_temperature, reference_vapour_density, reference_temperature, reference_vapour_density)
+        1.0e-4u"m/s", 0.0u"m^-1", 0.0u"W/m^2", 0.0u"kg/m^2/s", reference_temperature, reference_vapor_density,
+        reference_temperature, reference_vapor_density, reference_temperature, reference_vapor_density)
 
     @test ustrip(u"K", result.top_temperature) ≈ ustrip(u"K", reference_temperature) atol=1e-6
 end

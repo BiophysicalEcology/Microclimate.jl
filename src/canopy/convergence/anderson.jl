@@ -13,9 +13,9 @@ that is used, and `backend` differentiates the leaf energy balance.
 The hour is solved when every value is within its tolerance. A layer without leaves uses
 `air_temperature_tolerance` for its leaf.
 
-A pass can overshoot to temperatures outside [`CANOPY_TEMPERATURE_BOUNDS`](@ref). The solver
-then moves halfway back to its last good guess and forgets its history. `on_failure` decides
-what happens if the hour starts out of bounds or hasn't settled after `maxiters` passes.
+A pass can overshoot, leaving the canopy top outside [`CANOPY_TEMPERATURE_BOUNDS`](@ref). The
+solver then moves halfway back to its last good guess and forgets its history. `on_failure`
+decides what happens if the hour starts out of bounds or hasn't settled after `maxiters` passes.
 
 # References
 - Walker, H. F., & Ni, P. (2011). Anderson acceleration for fixed-point iterations.
@@ -46,6 +46,7 @@ function allocate_canopy_convergence(convergence_model::AndersonCanopyConvergenc
         row in rows.leaf_temperature ? 1 / tolerances.air_temperature : 1 / canopy_row_tolerance(tolerances, buffers, row)
     end
     forcing = Ref(initial_residual_forcing(model, soil_hydraulic_model))
+    # Prepared with a placeholder temperature and the first layer, to fix the argument types
     leaf_preparation = prepare_derivative(layer_leaf_balance_density, backend, 288.0,
         Constant(buffers), Constant(model), Constant(forcing[]), Constant(1))
     return (; forcing, tolerances, leaf_buffers=buffers, leaf_preparation, backend, row_scale,
@@ -102,6 +103,7 @@ function solve_history_weights!(history_weights, history_matrix, step_changes, s
                 matrix[first_column, second_column] += step_changes[row, first_column] * step_changes[row, second_column]
             end
         end
+        # A tiny increase on the diagonal keeps nearly identical passes solvable
         matrix[first_column, first_column] *= 1.0 + 1.0e-10
     end
     factorization = cholesky!(Symmetric(matrix); check=false)
