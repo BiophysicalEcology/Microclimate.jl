@@ -40,6 +40,14 @@ vapor density (g/m³) for each layer, then one inverse Obukhov length (1/m).
 """
 canopy_state_length(buffers) = 3 * length(buffers.leaf.leaf_temperature) + 1
 
+Unitful.@derived_dimension AreaPower Unitful.𝐌 * Unitful.𝐓^-3
+
+# The solver works on plain numbers, so each kind of quantity has one unit in it
+solver_number(value::Unitful.Temperature) = ustrip(u"K", value)
+solver_number(value::Unitful.Density) = ustrip(u"g/m^3", value)
+solver_number(value::Unitful.Wavenumber) = ustrip(u"m^-1", value)
+solver_number(value::AreaPower) = ustrip(u"W/m^2", value)
+
 """
     canopy_state_rows(layer_count)
 
@@ -158,7 +166,7 @@ function evaluate_canopy!(residual, state, buffers, model::MultilayerCanopy, bou
             evaporation_mass_flow[i] = zero(evaporation_mass_flow[i])
             absorbed_radiation[i] = zero(absorbed_radiation[i])
             net_balance[i] = zero(net_balance[i])
-            residual[rows.leaf_temperature[i]] = ustrip(u"K", leaf_temperature[i] - air_temperature)
+            residual[rows.leaf_temperature[i]] = solver_number(leaf_temperature[i] - air_temperature)
             continue
         end
         # absorbed_shortwave/absorbed_longwave are per unit ground area
@@ -167,7 +175,7 @@ function evaluate_canopy!(residual, state, buffers, model::MultilayerCanopy, bou
         sensible_heat_source[i] = balance.convection.convection_flow / 1.0u"m^2"
         evaporation_mass_flow[i] = balance.evaporation.transpiration_mass_flow
         net_balance[i] = balance.net
-        residual[rows.leaf_temperature[i]] = ustrip(u"W/m^2", balance.net / leaf_area)
+        residual[rows.leaf_temperature[i]] = solver_number(balance.net / leaf_area)
     end
 
     reference_vapor_density = wet_air_properties(reference_temperature, reference_humidity, atmospheric_pressure;
@@ -199,15 +207,15 @@ function evaluate_canopy!(residual, state, buffers, model::MultilayerCanopy, bou
         site, vapour_pressure_equation)
 
     for i in 1:n_layers
-        residual[rows.air_temperature[i]] = ustrip(u"K", air.current_air_temperature[i] - air.air_temperature[i])
-        residual[rows.vapor_density[i]] = state[rows.vapor_density[i]] - ustrip(u"g/m^3", air.vapor_density[i])
+        residual[rows.air_temperature[i]] = solver_number(air.current_air_temperature[i] - air.air_temperature[i])
+        residual[rows.vapor_density[i]] = state[rows.vapor_density[i]] - solver_number(air.vapor_density[i])
     end
     # The stability the whole canopy's sensible flux through its top implies; the Obukhov
     # relation takes the downward flux
     obukhov_coefficient = calc_ρ_cp(reference_temperature) * reference_temperature / (boundary_layer_model.karman_constant * g_n)
     inverse_obukhov_length_update = limit_inverse_obukhov_length(stability_from_fluxes(InverseObukhovLength(), obukhov_coefficient,
         wind.friction_velocity, -boundary.sensible_flux), forcing.stability_limits)
-    residual[rows.inverse_obukhov_length] = ustrip(u"m^-1", wind.inverse_obukhov_length - inverse_obukhov_length_update)
+    residual[rows.inverse_obukhov_length] = solver_number(wind.inverse_obukhov_length - inverse_obukhov_length_update)
     in_bounds || fill!(residual, NaN)
 
     return (; longwave_result, canopy_top_air_temperature, canopy_top_relative_humidity,

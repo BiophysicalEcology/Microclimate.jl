@@ -11,7 +11,7 @@ using Unitful, UnitfulMoles
 using ModelParameters, DelimitedFiles
 using SpecialFunctions, StaticArrays
 using PolyLog: reli2
-using LinearAlgebra: SymTridiagonal, Symmetric, cholesky!, issuccess, ldlt!, ldiv!
+using LinearAlgebra: Symmetric, cholesky!, issuccess, ldiv!
 using DifferentiationInterface: prepare_derivative, derivative, Constant
 using ADTypes: AutoEnzyme
 import Enzyme

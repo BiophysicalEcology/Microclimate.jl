@@ -19,8 +19,8 @@ leaf_water_potential = 0.0u"J/kg"
 
 @testset "leaf_body sizing" begin
     b = Microclimate.leaf_body(0.05u"m", 0.02u"m", 1.0)
-    expected_radius = sqrt(0.05 * 0.02) * Microclimate.leaf_angle_width_factor(1.0)
-    @test ustrip(u"m", b.geometry.length.b_semi_minor_skin) ≈ expected_radius rtol=1e-10
+    expected_radius = sqrt(0.05u"m" * 0.02u"m") * Microclimate.leaf_angle_width_factor(1.0)
+    @test b.geometry.length.b_semi_minor_skin ≈ expected_radius rtol=1e-10
     @test b.geometry.length.b_semi_minor_skin == b.geometry.length.c_semi_minor_skin
 end
 
@@ -34,7 +34,7 @@ end
 
     reallocated_sensible = out.convection.convection_flow + out.net
     closed_balance = reallocated_sensible + out.evaporation.evaporation_heat_flow + out.emitted_longwave
-    @test ustrip(u"W", closed_balance) ≈ ustrip(u"W", Rabs * 1.0u"m^2") atol=1e-9
+    @test closed_balance ≈ Rabs * 1.0u"m^2" atol=1e-9u"W"
 end
 
 @testset "leaf_heat_balance is smooth through T_leaf = T_air" begin

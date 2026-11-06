@@ -22,9 +22,9 @@ flux_boundary(friction_velocity; displacement_height = displacement_height) = ca
 @testset "canopy_top_flux_boundary: windy conditions barely damped" begin
     result = flux_boundary(1.0u"m/s")
 
-    @test isfinite(ustrip(u"K", result.top_temperature))
+    @test isfinite(result.top_temperature)
     # fast equilibration (small residence time): close to reference, not stuck near previous_top_temperature
-    @test abs(ustrip(u"K", result.top_temperature - reference_temperature)) < 2.0
+    @test abs(result.top_temperature - reference_temperature) < 2.0u"K"
 end
 
 @testset "canopy_top_flux_boundary: calm conditions damped toward previous value" begin
@@ -34,10 +34,10 @@ end
     small_top_depth_result = flux_boundary(1.0e-4u"m/s"; displacement_height = 14.0u"m")  # 6 m
     big_top_depth_result = flux_boundary(1.0e-4u"m/s"; displacement_height = 2.0u"m")     # 18 m
 
-    @test isfinite(ustrip(u"K", small_top_depth_result.top_temperature))
-    @test isfinite(ustrip(u"K", big_top_depth_result.top_temperature))
-    small_deviation = abs(ustrip(u"K", small_top_depth_result.top_temperature - previous_top_temperature))
-    big_deviation = abs(ustrip(u"K", big_top_depth_result.top_temperature - previous_top_temperature))
+    @test isfinite(small_top_depth_result.top_temperature)
+    @test isfinite(big_top_depth_result.top_temperature)
+    small_deviation = abs(small_top_depth_result.top_temperature - previous_top_temperature)
+    big_deviation = abs(big_top_depth_result.top_temperature - previous_top_temperature)
     @test big_deviation < small_deviation
 end
 
@@ -48,5 +48,5 @@ end
         1.0e-4u"m/s", 0.0u"m^-1", 0.0u"W/m^2", 0.0u"kg/m^2/s", reference_temperature, reference_vapor_density,
         reference_temperature, reference_vapor_density, reference_temperature, reference_vapor_density)
 
-    @test ustrip(u"K", result.top_temperature) ≈ ustrip(u"K", reference_temperature) atol=1e-6
+    @test result.top_temperature ≈ reference_temperature atol=1e-6u"K"
 end

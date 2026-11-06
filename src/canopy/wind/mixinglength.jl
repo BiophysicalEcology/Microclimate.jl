@@ -238,7 +238,7 @@ function canopy_top_flux_boundary(boundary_layer_model, canopy_height, displacem
         resistance_ratio * ground_vapor_density) / (1.0 + resistance_ratio)
 
     residence_time = top_depth * top_resistance
-    fraction_reached = 1.0 - exp(-ustrip(u"s", CANOPY_TIMESTEP) / ustrip(u"s", residence_time))
+    fraction_reached = 1.0 - exp(-CANOPY_TIMESTEP / residence_time)
     top_temperature = previous_top_temperature + (balanced_temperature - previous_top_temperature) * fraction_reached
     top_vapor_density = previous_top_vapor_density + (balanced_vapor_density - previous_top_vapor_density) * fraction_reached
     sensible_flux = volumetric_heat_capacity * (top_temperature - reference_temperature) / top_resistance
