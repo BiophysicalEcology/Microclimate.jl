@@ -141,8 +141,8 @@ function canopy_solution!(residual, state, buffers, model::MultilayerCanopy, bou
         site, vapour_pressure_equation)
     unstressed_dry_conductance = stomatal_conductance(model.stomatal_model, zenith_angle, 0.0u"J/kg", soil_hydraulic_model)
     for i in 1:n_layers
-        air.air_temperature[i] = air.air_temperature_prev[i]
-        air.vapor_density[i] = air.vapor_density_prev[i]
+        air.air_temperature[i] = air.current_air_temperature[i]
+        air.vapor_density[i] = air.current_vapor_density[i]
         saturation_vapor_density = wet_air_properties(air.air_temperature[i], 1.0, atmospheric_pressure;
             vapour_pressure_equation).vapour_density
         air.relative_humidity[i] = clamp(air.vapor_density[i] / saturation_vapor_density, 0.0, 1.0)

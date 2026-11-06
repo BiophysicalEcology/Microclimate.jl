@@ -106,12 +106,12 @@ function leaf_heat_balance(leaf_temperature, absorbed_radiation, air_temperature
     wind_speed, atmospheric_pressure, leaf_emissivity, stomatal_conductance, leaf_water_potential,
     body, leaf_area, convection_model=ElaborateLeafConvection(); aerodynamic_area=leaf_area,
 )
-    conv = leaf_convection(convection_model, body, aerodynamic_area, air_temperature, leaf_temperature, wind_speed, atmospheric_pressure)
-    atmos = AtmosphericConditions(; vapour_density=air_vapor_density, wind_speed, atmospheric_pressure)
-    evap = HeatExchange.evaporation(stomatal_conductance, conv.mass_transfer_coefficient, atmos, aerodynamic_area,
+    convection = leaf_convection(convection_model, body, aerodynamic_area, air_temperature, leaf_temperature, wind_speed, atmospheric_pressure)
+    atmosphere = AtmosphericConditions(; vapour_density=air_vapor_density, wind_speed, atmospheric_pressure)
+    evaporation = HeatExchange.evaporation(stomatal_conductance, convection.mass_transfer_coefficient, atmosphere, aerodynamic_area,
         leaf_temperature, air_temperature; water_potential=leaf_water_potential)
 
     emitted_longwave = leaf_emissivity * σ * leaf_temperature^4 * leaf_area
-    net = absorbed_radiation * leaf_area - emitted_longwave - conv.convection_flow - evap.evaporation_heat_flow
-    return (; net, conv, evap, emitted_longwave)
+    net = absorbed_radiation * leaf_area - emitted_longwave - convection.convection_flow - evaporation.evaporation_heat_flow
+    return (; net, convection, evaporation, emitted_longwave)
 end

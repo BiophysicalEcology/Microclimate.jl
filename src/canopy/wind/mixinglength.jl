@@ -193,13 +193,13 @@ end
 """
     canopy_top_flux_boundary(boundary_layer_model, canopy_height, displacement_height, reference_height,
                               friction_velocity, inverse_obukhov_length, total_sensible_flux, total_latent_flux,
-                              ground_temperature, ground_vapour_density, reference_temperature,
-                              reference_vapour_density, previous_top_temperature, previous_top_vapour_density;
+                              ground_temperature, ground_vapor_density, reference_temperature,
+                              reference_vapor_density, previous_top_temperature, previous_top_vapor_density;
                               max_resistance=2000.0u"s/m")
 
-The air temperature and vapour density at the top of the canopy.
+The air temperature and vapor density at the top of the canopy.
 
-Heat and vapour reach the canopy top from the leaves and the ground, and leave it towards
+Heat and vapor reach the canopy top from the leaves and the ground, and leave it towards
 the reference height. Balancing these gives the canopy-top value directly, without iteration.
 
 In calm air the resistances grow without limit, so `max_resistance` caps them at a typical
@@ -207,13 +207,13 @@ literature ceiling (Thom 1975; Monteith & Unsworth 2013). Calm air above a dense
 also take longer than an hour to reach that balance, so the result moves from the previous
 value towards the balance only as far as the air could in an hour.
 
-Returns `(; top_temperature, top_vapour_density, sensible_flux)`, where `sensible_flux` is
+Returns `(; top_temperature, top_vapor_density, sensible_flux)`, where `sensible_flux` is
 the upward heat flux from the canopy top to the reference height.
 """
 function canopy_top_flux_boundary(boundary_layer_model, canopy_height, displacement_height, reference_height,
     friction_velocity, inverse_obukhov_length, total_sensible_flux, total_latent_flux,
-    ground_temperature, ground_vapour_density, reference_temperature, reference_vapour_density,
-    previous_top_temperature, previous_top_vapour_density;
+    ground_temperature, ground_vapor_density, reference_temperature, reference_vapor_density,
+    previous_top_temperature, previous_top_vapor_density;
     max_resistance=2000.0u"s/m",
 )
     (; karman_constant, stability_functions) = boundary_layer_model
@@ -231,16 +231,16 @@ function canopy_top_flux_boundary(boundary_layer_model, canopy_height, displacem
     # temperature, which keeps the balance linear
     volumetric_heat_capacity = calc_ρ_cp((reference_temperature + ground_temperature) / 2)
 
-    # Solving T_top = T_reference + (H + (ρcp/R_ground)(T_ground - T_top)) R_top/ρcp for T_top; vapour likewise
+    # Solving T_top = T_reference + (H + (ρcp/R_ground)(T_ground - T_top)) R_top/ρcp for T_top; vapor likewise
     balanced_temperature = (reference_temperature + total_sensible_flux * top_resistance / volumetric_heat_capacity +
         resistance_ratio * ground_temperature) / (1.0 + resistance_ratio)
-    balanced_vapour_density = (reference_vapour_density + total_latent_flux * top_resistance +
-        resistance_ratio * ground_vapour_density) / (1.0 + resistance_ratio)
+    balanced_vapor_density = (reference_vapor_density + total_latent_flux * top_resistance +
+        resistance_ratio * ground_vapor_density) / (1.0 + resistance_ratio)
 
     residence_time = top_depth * top_resistance
     fraction_reached = 1.0 - exp(-ustrip(u"s", CANOPY_TIMESTEP) / ustrip(u"s", residence_time))
     top_temperature = previous_top_temperature + (balanced_temperature - previous_top_temperature) * fraction_reached
-    top_vapour_density = previous_top_vapour_density + (balanced_vapour_density - previous_top_vapour_density) * fraction_reached
+    top_vapor_density = previous_top_vapor_density + (balanced_vapor_density - previous_top_vapor_density) * fraction_reached
     sensible_flux = volumetric_heat_capacity * (top_temperature - reference_temperature) / top_resistance
-    return (; top_temperature, top_vapour_density, sensible_flux)
+    return (; top_temperature, top_vapor_density, sensible_flux)
 end

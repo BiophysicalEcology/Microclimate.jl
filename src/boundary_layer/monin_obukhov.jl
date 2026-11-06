@@ -904,39 +904,41 @@ end
 """
     inverse_obukhov_length_limits(stability_limit, stability_functions, height, roughness_length)
 
-The range of inverse Obukhov length `stability_limit` allows: unbounded for
-[`NoStabilityLimit`](@ref); for [`MomentumCorrectionLimit`](@ref), the unstable and stable inverse Obukhov lengths at which the momentum stability
-correction between `roughness_length` and `height` (above the displacement height),
-`ψ_m(z₀/L) - ψ_m(z/L)`, reaches `fraction` of the log term `ln(z/z₀)`, the nearest to
-neutral where it does; `-Inf`/`Inf` m⁻¹ where it never does. Within these limits the
-friction velocity changes with stability by at most a factor `1 ± fraction`.
+The range of inverse Obukhov length `stability_limit` allows, as `(; unstable, stable)`.
+
+[`NoStabilityLimit`](@ref) is unbounded. [`MomentumCorrectionLimit`](@ref) gives the values
+nearest to neutral where the momentum stability correction between `roughness_length` and
+`height` (above the displacement height), `ψ_m(z₀/L) - ψ_m(z/L)`, reaches `fraction` of the log
+term `ln(z/z₀)`, or an infinite value where it never does. Within these limits the friction
+velocity changes with stability by at most a factor `1 ± fraction`.
 """
 inverse_obukhov_length_limits(::NoStabilityLimit, stability_functions, height, roughness_length) =
     (; unstable=-Inf * u"m^-1", stable=Inf * u"m^-1")
 function inverse_obukhov_length_limits(limit::MomentumCorrectionLimit, stability_functions, height, roughness_length)
     (; fraction) = limit
-    z = ustrip(u"m", height)
-    z0 = ustrip(u"m", roughness_length)
-    target = fraction * log(z / z0)
-    correction(x) = calc_ψ_m(stability_functions, z0 * x) - calc_ψ_m(stability_functions, z * x)
-    nearest(sign) = begin
+    height_in_metres = ustrip(u"m", height)
+    roughness_in_metres = ustrip(u"m", roughness_length)
+    target = fraction * log(height_in_metres / roughness_in_metres)
+    correction(inverse_length) = calc_ψ_m(stability_functions, roughness_in_metres * inverse_length) -
+        calc_ψ_m(stability_functions, height_in_metres * inverse_length)
+    nearest_to_neutral(sign) = begin
         # The first doubling of |1/L| past the target, then bisection inside it
         previous = 0.0
-        for k in -30:40
-            x = sign * 2.0^k
-            if sign * correction(x) >= target
-                lo, hi = previous, x
+        for exponent in -30:40
+            inverse_length = sign * 2.0^exponent
+            if sign * correction(inverse_length) >= target
+                below_target, above_target = previous, inverse_length
                 for _ in 1:60
-                    mid = (lo + hi) / 2
-                    sign * correction(mid) >= target ? (hi = mid) : (lo = mid)
+                    middle = (below_target + above_target) / 2
+                    sign * correction(middle) >= target ? (above_target = middle) : (below_target = middle)
                 end
-                return hi
+                return above_target
             end
-            previous = x
+            previous = inverse_length
         end
         return sign * Inf
     end
-    return (; unstable=nearest(-1.0) * u"m^-1", stable=nearest(1.0) * u"m^-1")
+    return (; unstable=nearest_to_neutral(-1.0) * u"m^-1", stable=nearest_to_neutral(1.0) * u"m^-1")
 end
 
 # The inverse Obukhov length within `limits`: unchanged near neutral, approaching the limit

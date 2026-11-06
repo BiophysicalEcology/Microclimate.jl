@@ -26,8 +26,7 @@ forcing(; sensible_heat_source = no_heat, evaporation_mass_flow = no_evaporation
     wind_speed = fill(1.0u"m/s", n_layers),
     canopy_top_air_temperature = T, canopy_top_vapor_density = top_vapor_density,
     ground_temperature, ground_relative_humidity = 0.5,
-    sensible_heat_source, evaporation_mass_flow,
-    leaf_temperature = fill(T, n_layers), atmospheric_pressure = 101325.0u"Pa",
+    sensible_heat_source, evaporation_mass_flow, atmospheric_pressure = 101325.0u"Pa",
 )
 
 top_vapor_density = wet_air_properties(T, 0.5, 101325.0u"Pa").vapour_density
@@ -35,8 +34,8 @@ top_vapor_density = wet_air_properties(T, 0.5, 101325.0u"Pa").vapour_density
 # Fresh buffers with the current air state isothermal at the boundary humidity
 function initial_buffers(model)
     buffers = allocate_air_profile(model, canopy_height, displacement_height, plant_area_index, heights, n_layers, boundary_layer_model)
-    fill!(buffers.air_temperature_prev, T)
-    fill!(buffers.vapor_density_prev, top_vapor_density)
+    fill!(buffers.current_air_temperature, T)
+    fill!(buffers.current_vapor_density, top_vapor_density)
     return buffers
 end
 
