@@ -36,23 +36,25 @@ end
 function allocate_canopy_convergence(convergence_model::AndersonCanopyConvergence, buffers, model, boundary_layer_model;
     site, vapour_pressure_equation, soil_hydraulic_model,
 )
-    state_length = canopy_state_length(buffers)
     layer_count = length(buffers.leaf.leaf_temperature)
-    (; history, backend) = convergence_model
+    state_length = canopy_state_length(layer_count)
+    (; history, backend, air_temperature_tolerance, vapor_density_tolerance, inverse_obukhov_length_tolerance) = convergence_model
     history >= 1 || throw(ArgumentError("history must be at least 1, got $history"))
-    rows = canopy_state_rows(layer_count)
     tolerances = canopy_tolerances(convergence_model)
-    # Puts each row's step in units of its tolerance. A leaf's step is a temperature.
-    row_scale = map(1:state_length) do row
-        row in rows.leaf_temperature ? 1 / tolerances.air_temperature : 1 / canopy_row_tolerance(tolerances, buffers, row)
-    end
+    # Puts each step in units of its tolerance. A leaf's step is a temperature.
+    step_scale = 1 ./ canopy_state_filled(layer_count, air_temperature_tolerance, air_temperature_tolerance,
+        vapor_density_tolerance, inverse_obukhov_length_tolerance)
+    lowest_temperature, highest_temperature = CANOPY_TEMPERATURE_BOUNDS
+    lowest_state = canopy_state_filled(layer_count, lowest_temperature, lowest_temperature, 0.0u"g/m^3", -Inf * u"m^-1")
+    highest_state = canopy_state_filled(layer_count, highest_temperature, highest_temperature, Inf * u"g/m^3", Inf * u"m^-1")
     forcing = Ref(initial_residual_forcing(model, soil_hydraulic_model))
     # Prepared with a placeholder temperature and the first layer, to fix the argument types
     leaf_preparation = prepare_derivative(layer_leaf_balance_density, backend, 288.0,
         Constant(buffers), Constant(model), Constant(forcing[]), Constant(1))
-    return (; forcing, tolerances, leaf_buffers=buffers, leaf_preparation, backend, row_scale,
+    return (; forcing, tolerances, leaf_buffers=buffers, leaf_preparation, backend, step_scale, lowest_state, highest_state,
+        residual=allocate_canopy_residual(layer_count), leaf_temperature_error=zeros(typeof(0.0u"K"), layer_count),
         state=zeros(state_length), best_state=zeros(state_length), last_good_state=zeros(state_length),
-        residual=zeros(state_length), next_state=zeros(state_length), step=zeros(state_length),
+        next_state=zeros(state_length), step=zeros(state_length),
         previous_next_state=zeros(state_length), previous_step=zeros(state_length),
         next_state_changes=zeros(state_length, history), step_changes=zeros(state_length, history),
         history_matrix=zeros(history, history), history_weights=zeros(history))
@@ -64,44 +66,46 @@ function layer_leaf_balance_density(leaf_temperature, buffers, model, forcing, l
     return in_state_units(balance.net / leaf_area)
 end
 
-# One pass: writes the state this pass would move to into `next_state`
-function canopy_fixed_point!(next_state, residual, state, buffers, model, boundary_layer_model, forcing;
+# One pass: writes the state this pass would move to into `next_state`, and the move into `step`
+function canopy_fixed_point!(next_state, step, state, buffers, model, boundary_layer_model, forcing;
     site, vapour_pressure_equation,
 )
-    (; leaf_buffers, leaf_preparation, backend) = buffers.convergence
-    evaluate_canopy!(residual, state, buffers, model, boundary_layer_model, forcing; site, vapour_pressure_equation)
-    rows = canopy_state_rows(length(buffers.leaf.leaf_temperature))
-    for (layer, row) in enumerate(rows.leaf_temperature)
+    (; residual, leaf_temperature_error, leaf_buffers, leaf_preparation, backend) = buffers.convergence
+    inverse_obukhov_length = unpack_canopy_state!(buffers, state)
+    evaluate_canopy!(residual, inverse_obukhov_length, buffers, model, boundary_layer_model, forcing;
+        site, vapour_pressure_equation)
+    for layer in eachindex(leaf_temperature_error)
         if iszero(layer_leaf_areas(buffers, layer).exchange_fraction)
             # A layer without leaves takes the air temperature
-            next_state[row] = state[row] - residual[row]
+            leaf_temperature_error[layer] = residual.leafless_temperature_difference[layer]
             continue
         end
-        slope = derivative(layer_leaf_balance_density, leaf_preparation, backend, state[row],
+        slope = derivative(layer_leaf_balance_density, leaf_preparation, backend, in_state_units(buffers.leaf.leaf_temperature[layer]),
             Constant(leaf_buffers), Constant(model), Constant(forcing), Constant(layer))
-        next_state[row] = state[row] - residual[row] / slope
+        leaf_temperature_error[layer] = in_state_units(residual.leaf_balance[layer]) / slope * CANOPY_STATE_UNITS.temperature
     end
-    # The residuals of air, vapor and stability are already the difference to move by
-    for row in first(rows.air_temperature):rows.inverse_obukhov_length
-        next_state[row] = state[row] - residual[row]
-    end
+    # The residuals of air, vapor and stability are already the distance to move back
+    pack_canopy_state!(step, leaf_temperature_error, residual.air_temperature, residual.vapor_density,
+        residual.inverse_obukhov_length[])
+    @. next_state = state - step
+    @. step = -step
     return next_state
 end
 
 # Finds the weight of each stored pass that best cancels the current step, by least squares.
 # Returns false if the stored passes are too alike to separate.
-function solve_history_weights!(history_weights, history_matrix, step_changes, step, row_scale, stored_count)
+function solve_history_weights!(history_weights, history_matrix, step_changes, step, step_scale, stored_count)
     weights = view(history_weights, 1:stored_count)
     matrix = view(history_matrix, 1:stored_count, 1:stored_count)
     for first_column in 1:stored_count
         weights[first_column] = 0.0
-        for row in eachindex(step)
-            weights[first_column] += step_changes[row, first_column] * step[row] * row_scale[row]
+        for index in eachindex(step)
+            weights[first_column] += step_changes[index, first_column] * step[index] * step_scale[index]
         end
         for second_column in 1:stored_count
             matrix[first_column, second_column] = 0.0
-            for row in eachindex(step)
-                matrix[first_column, second_column] += step_changes[row, first_column] * step_changes[row, second_column]
+            for index in eachindex(step)
+                matrix[first_column, second_column] += step_changes[index, first_column] * step_changes[index, second_column]
             end
         end
         # A tiny increase on the diagonal keeps nearly identical passes solvable
@@ -117,41 +121,35 @@ function converge_canopy!(buffers, model::MultilayerCanopy, boundary_layer_model
     initial_wind, convergence_model::AndersonCanopyConvergence; site, vapour_pressure_equation, soil_hydraulic_model,
 )
     (; forcing, tolerances, state, best_state, last_good_state, residual, next_state, step, previous_next_state,
-       previous_step, next_state_changes, step_changes, history_matrix, history_weights, row_scale) = buffers.convergence
+       previous_step, next_state_changes, step_changes, history_matrix, history_weights, step_scale,
+       lowest_state, highest_state) = buffers.convergence
     (; damping, history, maxiters, on_failure) = convergence_model
     keywords = (; site, vapour_pressure_equation, soil_hydraulic_model)
-    rows = canopy_state_rows(length(buffers.leaf.leaf_temperature))
     canopy_hour_setup!(state, forcing, buffers, model, boundary_layer_model, inputs, initial_wind; keywords...)
 
-    lowest_temperature, highest_temperature = in_state_units.(CANOPY_TEMPERATURE_BOUNDS)
     stored_count = 0
     oldest_column = 1
     smallest_residual = Inf
     copyto!(best_state, state)
     for pass in 1:maxiters
-        canopy_fixed_point!(next_state, residual, state, buffers, model, boundary_layer_model, forcing[];
+        canopy_fixed_point!(next_state, step, state, buffers, model, boundary_layer_model, forcing[];
             site, vapour_pressure_equation)
         if !all(isfinite, next_state)
             pass == 1 && return canopy_failure!(on_failure, convergence_model, SciMLBase.ReturnCode.Unstable, best_state, pass,
                 buffers, model, boundary_layer_model, forcing[], inputs; keywords...)
             # Overshot: go halfway back to the last good state, without the history that led here
-            for row in eachindex(state)
-                state[row] = (state[row] + last_good_state[row]) / 2
-            end
+            @. state = (state + last_good_state) / 2
             stored_count = 0
             oldest_column = 1
             continue
         end
         copyto!(last_good_state, state)
-        scaled_residual = canopy_scaled_residual(residual, tolerances, buffers)
+        scaled_residual = canopy_scaled_residual(residual, tolerances)
         scaled_residual <= 1 && return canopy_solution!(residual, state, buffers, model, boundary_layer_model, forcing[],
             inputs, pass; keywords...)
         if scaled_residual < smallest_residual
             smallest_residual = scaled_residual
             copyto!(best_state, state)
-        end
-        for row in eachindex(step)
-            step[row] = next_state[row] - state[row]
         end
 
         if pass > 1
@@ -163,33 +161,27 @@ function converge_canopy!(buffers, model::MultilayerCanopy, boundary_layer_model
                 column = oldest_column
                 oldest_column = mod1(oldest_column + 1, history)
             end
-            for row in eachindex(step)
-                step_changes[row, column] = (step[row] - previous_step[row]) * row_scale[row]
-                next_state_changes[row, column] = next_state[row] - previous_next_state[row]
+            for index in eachindex(step)
+                step_changes[index, column] = (step[index] - previous_step[index]) * step_scale[index]
+                next_state_changes[index, column] = next_state[index] - previous_next_state[index]
             end
         end
         copyto!(previous_step, step)
         copyto!(previous_next_state, next_state)
 
-        if stored_count > 0 && !solve_history_weights!(history_weights, history_matrix, step_changes, step, row_scale, stored_count)
+        if stored_count > 0 && !solve_history_weights!(history_weights, history_matrix, step_changes, step, step_scale, stored_count)
             stored_count = 0
             oldest_column = 1
         end
 
         # Take the damped step, then subtract the weighted stored passes
-        for row in eachindex(state)
-            updated = state[row] + damping * step[row]
+        for index in eachindex(state)
+            updated = state[index] + damping * step[index]
             for column in 1:stored_count
-                updated -= (next_state_changes[row, column] -
-                    (1.0 - damping) * step_changes[row, column] / row_scale[row]) * history_weights[column]
+                updated -= (next_state_changes[index, column] -
+                    (1.0 - damping) * step_changes[index, column] / step_scale[index]) * history_weights[column]
             end
-            state[row] = updated
-        end
-        for row in first(rows.leaf_temperature):last(rows.air_temperature)
-            state[row] = clamp(state[row], lowest_temperature, highest_temperature)
-        end
-        for row in rows.vapor_density
-            state[row] = max(state[row], 0.0)
+            state[index] = clamp(updated, lowest_state[index], highest_state[index])
         end
     end
     return canopy_failure!(on_failure, convergence_model, SciMLBase.ReturnCode.MaxIters, best_state, maxiters,
