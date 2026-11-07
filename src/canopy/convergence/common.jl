@@ -117,7 +117,7 @@ function canopy_solution!(residual, state, buffers, model::MultilayerCanopy, bou
 )
     (; zenith_angle) = inputs
     (; atmospheric_pressure) = inputs.environment_instant
-    (; leaf_temperature, potential_evaporation_mass_flow, leaf_body) = buffers.leaf
+    (; leaf_temperature, potential_evaporation_mass_flux, leaf_body) = buffers.leaf
     air = buffers.air_profile
     n_layers = length(leaf_temperature)
 
@@ -136,16 +136,16 @@ function canopy_solution!(residual, state, buffers, model::MultilayerCanopy, bou
         # model uses as demand
         (; exchange_fraction, aerodynamic_area) = layer_leaf_areas(buffers, i)
         if iszero(exchange_fraction)
-            potential_evaporation_mass_flow[i] = zero(potential_evaporation_mass_flow[i])
+            potential_evaporation_mass_flux[i] = zero(potential_evaporation_mass_flux[i])
             continue
         end
         convection = leaf_convection(model.leaf_convection_model, leaf_body, aerodynamic_area, air.air_temperature[i],
             leaf_temperature[i], buffers.wind.wind_speed[i], atmospheric_pressure)
         atmosphere = AtmosphericConditions(; vapour_density=air.vapor_density[i], wind_speed=buffers.wind.wind_speed[i],
             atmospheric_pressure)
-        potential_evaporation_mass_flow[i] = HeatExchange.evaporation(unstressed_dry_conductance,
+        potential_evaporation_mass_flux[i] = HeatExchange.evaporation(unstressed_dry_conductance,
             convection.mass_transfer_coefficient, atmosphere, aerodynamic_area, leaf_temperature[i], air.air_temperature[i];
-            water_potential=0.0u"J/kg").transpiration_mass_flow
+            water_potential=0.0u"J/kg").transpiration_mass_flow / GROUND_AREA
     end
 
     return result.longwave_result, iterations, result.canopy_top_air_temperature,

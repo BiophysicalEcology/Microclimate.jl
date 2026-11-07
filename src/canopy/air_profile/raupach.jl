@@ -262,7 +262,7 @@ function canopy_heat_vapor_transport!(buffers, model::RaupachLTheoryAirProfile, 
     forcing::CanopyAirProfileForcing; site, vapour_pressure_equation=GoffGratch(),
 )
     (; friction_velocity, inverse_obukhov_length, wind_speed, canopy_top_air_temperature, canopy_top_vapor_density,
-       ground_temperature, ground_relative_humidity, sensible_heat_source, evaporation_mass_flow,
+       ground_temperature, ground_relative_humidity, sensible_heat_flux, evaporation_mass_flux,
        atmospheric_pressure) = forcing
     (; canopy_height, displacement_height, layer_heights, layer_thickness, inverse_near_field_length, layer_resistance,
        far_field_heat, far_field_vapor, cumulative_sensible_below, sensible_near_field_weight, cumulative_latent_below,
@@ -273,8 +273,8 @@ function canopy_heat_vapor_transport!(buffers, model::RaupachLTheoryAirProfile, 
     ground_roughness_height = site.roughness_height
 
     layer_count = length(air_temperature)
-    length(sensible_heat_source) == layer_count || throw(ArgumentError("sensible_heat_source must have one entry per canopy layer"))
-    length(evaporation_mass_flow) == layer_count || throw(ArgumentError("evaporation_mass_flow must have one entry per canopy layer"))
+    length(sensible_heat_flux) == layer_count || throw(ArgumentError("sensible_heat_flux must have one entry per canopy layer"))
+    length(evaporation_mass_flux) == layer_count || throw(ArgumentError("evaporation_mass_flux must have one entry per canopy layer"))
 
     # The Lagrangian timescale T_L is the same at every height. It makes the diffusivity at the
     # canopy top, K(h) = σw(h)²T_L, match the Monin-Obukhov diffusivity above it, κu*(h-d)/Φh:
@@ -294,8 +294,8 @@ function canopy_heat_vapor_transport!(buffers, model::RaupachLTheoryAirProfile, 
         inverse_near_field_length[layer] = 1 / (σw * T_L)
         eddy_diffusivity = σw^2 * T_L
         layer_resistance[layer] = layer_thickness[layer] / eddy_diffusivity
-        sensible_near_field_weight[layer] = sensible_heat_source[layer] / σw
-        latent_near_field_weight[layer] = (evaporation_mass_flow[layer] / 1.0u"m^2") / σw
+        sensible_near_field_weight[layer] = sensible_heat_flux[layer] / σw
+        latent_near_field_weight[layer] = evaporation_mass_flux[layer] / σw
     end
 
     # The ground's resistance is the lowest layer's plus a sublayer in series, with a friction
@@ -313,11 +313,11 @@ function canopy_heat_vapor_transport!(buffers, model::RaupachLTheoryAirProfile, 
     ground_heat_conductance[] = volumetric_heat_capacity / ground_heat_resistance
     ground_vapor_conductance[] = 1 / ground_vapor_resistance
 
-    cumulative_sensible_below[layer_count] = sensible_heat_source[layer_count]
-    cumulative_latent_below[layer_count] = evaporation_mass_flow[layer_count] / 1.0u"m^2"
+    cumulative_sensible_below[layer_count] = sensible_heat_flux[layer_count]
+    cumulative_latent_below[layer_count] = evaporation_mass_flux[layer_count]
     for layer in (layer_count - 1):-1:1
-        cumulative_sensible_below[layer] = cumulative_sensible_below[layer + 1] + sensible_heat_source[layer]
-        cumulative_latent_below[layer] = cumulative_latent_below[layer + 1] + evaporation_mass_flow[layer] / 1.0u"m^2"
+        cumulative_sensible_below[layer] = cumulative_sensible_below[layer + 1] + sensible_heat_flux[layer]
+        cumulative_latent_below[layer] = cumulative_latent_below[layer + 1] + evaporation_mass_flux[layer]
     end
 
     ground_vapor_density = wet_air_properties(ground_temperature, ground_relative_humidity, atmospheric_pressure; vapour_pressure_equation).vapour_density

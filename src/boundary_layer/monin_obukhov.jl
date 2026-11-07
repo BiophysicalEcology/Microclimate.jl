@@ -280,8 +280,9 @@ function atmospheric_surface_profile!(boundary_layer_model::MoninObukhov, buffer
 
     reference_temperature = u"K"(reference_temperature)
     surface_temperature = u"K"(surface_temperature)
+    κ = karman_constant
 
-    # ρ·cₚ·T/(karman_constant·g), the factor in the Obukhov relation L = factor·u*³/H. A constant, as in
+    # ρ·cₚ·T/(κ·g), the factor in the Obukhov relation L = factor·u*³/H. A constant, as in
     # the original Fortran. TODO calculate it from the air properties.
     obukhov_length_factor = u"J*s^2/m^4"(6.003e-8u"cal*minute^2/cm^4")
 
@@ -330,7 +331,7 @@ function atmospheric_surface_profile!(boundary_layer_model::MoninObukhov, buffer
             relative_humidity[i] = reference_humidity
         else
             height_stability_parameter = stability_parameter_at_height(stability_variable, height_above_origin, stability)
-            wind_speed[i] = (friction_velocity / karman_constant) * (log(height_above_origin / roughness_length) - momentum_stability_correction(stability_functions, height_stability_parameter) + ψ_m_roughness)
+            wind_speed[i] = (friction_velocity / κ) * (log(height_above_origin / roughness_length) - momentum_stability_correction(stability_functions, height_stability_parameter) + ψ_m_roughness)
             # Temperature uses its own anchor (which may differ from roughness_length -- see above)
             temperature_log_term = log(height_above_origin / anchor_height_above_origin) + ψ_h_anchor - heat_stability_correction(stability_functions, height_stability_parameter)
             air_temperature[i] = anchor_temperature + (reference_temperature - anchor_temperature) * temperature_log_term / temperature_denominator
@@ -487,34 +488,11 @@ logarithmic wind profile.
 - Friction velocity `friction_velocity::Quantity{<:Real,𝐋/𝐓}`.
 
 # See also
-[`calc_convection`](@ref), [`calc_wind`](@ref)
+[`calc_convection`](@ref)
 """
 function calc_friction_velocity(; reference_wind_speed, log_height_ratio, karman_constant=0.4)
     return karman_constant * reference_wind_speed / log_height_ratio
 end
-
-"""
-    calc_wind(height, roughness_height, karman_constant, friction_velocity, b)
-
-Calculate wind speed at `height` using the logarithmic wind profile.
-
-# Arguments
-- `height::Quantity{<:Real,𝐋}`: Height above the surface (e.g. `m`, `cm`).
-- `roughness_height::Quantity{<:Real,𝐋}`: Roughness length (e.g. `m`, `cm`).
-- `karman_constant::Real`: von Kármán constant.
-- `friction_velocity::Quantity{<:Real,𝐋/𝐓}`: Friction velocity.
-- `b::Real`: Offset term (e.g. `1.0` for neutral stability, or stability correction).
-
-# Returns
-- Wind speed at `height`, as `Quantity{<:Real,𝐋/𝐓}`.
-
-# See also
-[`calc_friction_velocity`](@ref), [`calc_convection`](@ref)
-"""
-function calc_wind(height, roughness_height, karman_constant, friction_velocity, b)
-    return (friction_velocity / karman_constant) * log(height / roughness_height + b)
-end
-
 
 """
     calc_convection(; friction_velocity, log_height_ratio, temperature_difference, air_volumetric_heat_capacity, roughness_height, height, karman_constant, kinematic_viscosity, thermal_roughness_model=SublayerStantonRoughness())
@@ -534,7 +512,7 @@ Calculate the convective heat flux (sensible heat exchange between surface and a
 Uses bulk and sublayer Stanton numbers to account for turbulence near the surface.
 
 # See also
-[`calc_friction_velocity`](@ref), [`calc_wind`](@ref), [`sublayer_stanton`](@ref), [`bulk_stanton`](@ref), [`convective_flux`](@ref)
+[`calc_friction_velocity`](@ref), [`sublayer_stanton`](@ref), [`bulk_stanton`](@ref), [`convective_flux`](@ref)
 """
 function calc_convection(; friction_velocity, log_height_ratio, temperature_difference, air_volumetric_heat_capacity, roughness_height, height, karman_constant, kinematic_viscosity, thermal_roughness_model=SublayerStantonRoughness())
     return _stable_convective_heat_flux(thermal_roughness_model, air_volumetric_heat_capacity, temperature_difference, friction_velocity, karman_constant, roughness_height, height, log_height_ratio, kinematic_viscosity)

@@ -64,7 +64,7 @@ covers the ground.
 function snow_surface_overrides end
 
 """
-    snow_phase_transition(snow_model, state, scratch, T_snow, T_snow_before, atmospheric_pressure, T_soil_surface)
+    snow_phase_transition(snow_model, state, scratch, snow_temperature, snow_temperature_before, atmospheric_pressure, soil_surface_temperature)
 
 Phase-change accounting within the snowpack; returns updated state and
 clamped temperatures.

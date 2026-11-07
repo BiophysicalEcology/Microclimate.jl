@@ -103,15 +103,15 @@ function canopy_heat_vapor_transport!(buffers, ::KTheoryAirProfile, boundary_lay
     forcing::CanopyAirProfileForcing; site, vapour_pressure_equation=GoffGratch(),
 )
     (; friction_velocity, canopy_top_air_temperature, canopy_top_vapor_density, ground_temperature,
-       ground_relative_humidity, sensible_heat_source, evaporation_mass_flow, atmospheric_pressure) = forcing
+       ground_relative_humidity, sensible_heat_flux, evaporation_mass_flux, atmospheric_pressure) = forcing
     (; canopy_height, displacement_height, layer_spacing, relative_eddy_diffusivity,
        heat_layer_total_conductance, heat_conductance_between_layers, heat_known_flux,
        vapor_layer_total_conductance, vapor_conductance_between_layers, vapor_known_flux,
        air_temperature, vapor_density, ground_heat_conductance, ground_vapor_conductance) = buffers
 
     layer_count = length(air_temperature)
-    length(sensible_heat_source) == layer_count || throw(ArgumentError("sensible_heat_source must have one entry per canopy layer"))
-    length(evaporation_mass_flow) == layer_count || throw(ArgumentError("evaporation_mass_flow must have one entry per canopy layer"))
+    length(sensible_heat_flux) == layer_count || throw(ArgumentError("sensible_heat_flux must have one entry per canopy layer"))
+    length(evaporation_mass_flux) == layer_count || throw(ArgumentError("evaporation_mass_flux must have one entry per canopy layer"))
 
     air_temperature[1] = canopy_top_air_temperature
     vapor_density[1] = canopy_top_vapor_density
@@ -123,7 +123,7 @@ function canopy_heat_vapor_transport!(buffers, ::KTheoryAirProfile, boundary_lay
         canopy_top_eddy_diffusivity, layer_spacing, calc_air_volumetric_heat_capacity(canopy_top_air_temperature))
     ground_heat_conductance[] = heat_ground_conductance
     _ktheory_solve!(air_temperature, heat_layer_total_conductance, heat_conductance_between_layers, heat_known_flux, heat_top_conductance, heat_ground_conductance,
-        canopy_top_air_temperature, ground_temperature, layer -> sensible_heat_source[layer])
+        canopy_top_air_temperature, ground_temperature, layer -> sensible_heat_flux[layer])
 
     # A diffusivity over a spacing is already a velocity, so vapor needs no scaling
     vapor_top_conductance, vapor_ground_conductance = _ktheory_conductances!(vapor_conductance_between_layers, relative_eddy_diffusivity,
@@ -131,7 +131,7 @@ function canopy_heat_vapor_transport!(buffers, ::KTheoryAirProfile, boundary_lay
     ground_vapor_conductance[] = vapor_ground_conductance
     ground_vapor_density = wet_air_properties(ground_temperature, ground_relative_humidity, atmospheric_pressure; vapour_pressure_equation).vapour_density
     _ktheory_solve!(vapor_density, vapor_layer_total_conductance, vapor_conductance_between_layers, vapor_known_flux, vapor_top_conductance, vapor_ground_conductance,
-        canopy_top_vapor_density, ground_vapor_density, layer -> evaporation_mass_flow[layer] / 1.0u"m^2")
+        canopy_top_vapor_density, ground_vapor_density, layer -> evaporation_mass_flux[layer])
 
     return nothing
 end

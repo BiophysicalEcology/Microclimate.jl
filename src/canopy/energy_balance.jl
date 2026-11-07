@@ -39,22 +39,22 @@ function CanopyEnergyBalanceInputs(model::MultilayerCanopy;
         ground_relative_humidity, canopy_source_temperature, rainfall, leaf_water_potential)
 end
 
-# Bounds the wet-surface share of evaporation_mass_flow to what storage can
+# Bounds the wet-surface share of evaporation_mass_flux to what storage can
 # supply (positive demand) or absorb (negative demand, i.e. condensation);
 # reroutes any unrealized latent flux to sensible so mass/energy stay exact
 # either direction. Dew/frost classification of the result happens below,
 # in the per-layer loop's condensation_model call.
-function _cap_wet_surface_evaporation(evaporation_mass_flow, sensible_heat_flux, wet_fraction, available_mass,
+function _cap_wet_surface_evaporation(evaporation_mass_flux, sensible_heat_flux, wet_fraction, available_mass,
     layer_capacity, air_temperature,
 )
-    demanded_mass = uconvert(u"kg", evaporation_mass_flow * wet_fraction * CANOPY_TIMESTEP) / 1.0u"m^2"
+    demanded_mass = uconvert(u"kg/m^2", evaporation_mass_flux * wet_fraction * CANOPY_TIMESTEP)
     actual_mass = clamp(demanded_mass, available_mass - layer_capacity, available_mass)
     shortfall_mass = demanded_mass - actual_mass
-    iszero(shortfall_mass) && return (evaporation_mass_flow, sensible_heat_flux, actual_mass)
+    iszero(shortfall_mass) && return (evaporation_mass_flux, sensible_heat_flux, actual_mass)
 
-    shortfall_mass_flow = uconvert(unit(evaporation_mass_flow), shortfall_mass * 1.0u"m^2" / CANOPY_TIMESTEP)
-    shortfall_heat_flux = uconvert(unit(sensible_heat_flux), shortfall_mass_flow * enthalpy_of_vaporisation(air_temperature) / 1.0u"m^2")
-    return (evaporation_mass_flow - shortfall_mass_flow, sensible_heat_flux + shortfall_heat_flux, actual_mass)
+    shortfall_mass_flux = uconvert(unit(evaporation_mass_flux), shortfall_mass / CANOPY_TIMESTEP)
+    shortfall_heat_flux = uconvert(unit(sensible_heat_flux), shortfall_mass_flux * enthalpy_of_vaporisation(air_temperature))
+    return (evaporation_mass_flux - shortfall_mass_flux, sensible_heat_flux + shortfall_heat_flux, actual_mass)
 end
 
 # A ground that stays at the temperature it was given
@@ -101,9 +101,9 @@ function canopy_energy_balance!(buffers, model::MultilayerCanopy, boundary_layer
 
     leaf_temperature = buffers.leaf.leaf_temperature
     air_temperature = buffers.air_profile.air_temperature
-    evaporation_mass_flow = buffers.leaf.evaporation_mass_flow
-    sensible_heat_source = buffers.leaf.sensible_heat_source
-    potential_evaporation_mass_flow = buffers.leaf.potential_evaporation_mass_flow
+    evaporation_mass_flux = buffers.leaf.evaporation_mass_flux
+    sensible_heat_flux = buffers.leaf.sensible_heat_flux
+    potential_evaporation_mass_flux = buffers.leaf.potential_evaporation_mass_flux
     leaf_dew_formed = buffers.leaf.leaf_dew_formed
     leaf_frost_formed = buffers.leaf.leaf_frost_formed
     leaf_body = buffers.leaf.leaf_body
@@ -132,14 +132,14 @@ function canopy_energy_balance!(buffers, model::MultilayerCanopy, boundary_layer
 
     melt_drip_total = 0.0u"kg/m^2"
     for layer in 1:n_layers
-        # evaporation_mass_flow blends transpiration and wet-surface
+        # evaporation_mass_flux blends transpiration and wet-surface
         # evaporation; only the wet fraction should draw down intercepted
         # rain — transpiration draws from soil/plant water instead.
         wet_fraction = wet_canopy_fraction(model, buffers, layer)
         available_mass = available_canopy_water(model, buffers, layer)
         layer_capacity = canopy_water_capacity(model, buffers, layer)
-        evaporation_mass_flow[layer], sensible_heat_source[layer], actual_mass = _cap_wet_surface_evaporation(
-            evaporation_mass_flow[layer], sensible_heat_source[layer], wet_fraction, available_mass, layer_capacity,
+        evaporation_mass_flux[layer], sensible_heat_flux[layer], actual_mass = _cap_wet_surface_evaporation(
+            evaporation_mass_flux[layer], sensible_heat_flux[layer], wet_fraction, available_mass, layer_capacity,
             air_temperature[layer])
 
         layer_leaf_temperature = leaf_temperature[layer]
@@ -164,7 +164,7 @@ function canopy_energy_balance!(buffers, model::MultilayerCanopy, boundary_layer
         # leaf_surface_water/leaf_standing_dew/leaf_standing_frost aren't
         # independent reservoirs, so the only physically-consistent mass
         # is actual_mass, already fixed by _cap_wet_surface_evaporation and
-        # tied to evaporation_mass_flow/sensible_heat_source above.
+        # tied to evaporation_mass_flux/sensible_heat_flux above.
         (; leaf_area, aerodynamic_area) = layer_leaf_areas(buffers, layer)
         convection = leaf_convection(model.leaf_convection_model, leaf_body, aerodynamic_area, air_temperature[layer],
             layer_leaf_temperature, wind_speed[layer], atmospheric_pressure)
@@ -202,7 +202,7 @@ function canopy_energy_balance!(buffers, model::MultilayerCanopy, boundary_layer
         clamp_leaf_standing_dew!(model, buffers, layer, available_canopy_water(model, buffers, layer))
     end
 
-    canopy_potential_transpiration = sum(potential_evaporation_mass_flow) / 1.0u"m^2"
+    canopy_potential_transpiration = sum(potential_evaporation_mass_flux)
     ground_heat_conductance = buffers.air_profile.ground_heat_conductance[]
     ground_vapor_conductance = buffers.air_profile.ground_vapor_conductance[]
 

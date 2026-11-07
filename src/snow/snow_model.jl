@@ -83,7 +83,7 @@ end
 n_snow_nodes(::SnowModel{N}) where N = N
 
 # Dispatching constructor for the per-node snow-temperature SVector. Callers
-# must use this so `T_snow`'s type is `Nothing` for NoSnow and
+# must use this so `snow_temperature`'s type is `Nothing` for NoSnow and
 # `SVector{N, T_init}` for SnowModel{N} — never a runtime Union.
 init_snow_temperatures(::SnowModel{N}, T_init) where N =
     SVector(ntuple(_ -> T_init, Val(N)))
@@ -414,7 +414,7 @@ function snow_phase_transition(snow_model::SnowModel{N}, state::SnowState, scrat
     # scratch are only updated inside snow_thermal_melt!, which is skipped when depth <
     # min_snow_depth. They stay at their initialized 0°C, making the freeze condition
     # (mean_temp_past >= 0 AND mean_temp <= 0) always true, which would spuriously set
-    # clamp_soil_surface and force T0[1] = 0°C every step.
+    # clamp_soil_surface and force the top soil node to 0°C every step.
     if state.current_depth < snow_model.min_snow_depth
         return (state, snow_temperature, soil_surface_temperature)
     end
@@ -426,7 +426,7 @@ function snow_phase_transition(snow_model::SnowModel{N}, state::SnowState, scrat
     # set tt(cnd)=0, tt(cnd+1)=0, y(cnd)=0, y(cnd+1)=0. OSUB line 1087 then records
     # tt_past=tt (the clamped 0°C), so meanTpast = 0°C next hour → condition re-fires →
     # persistent 0°C floor while latent heat is available. Julia replicates this by
-    # clamping T_snow[node_index] to 0°C (plus the next node / soil surface).
+    # clamping snow_temperature[node_index] to 0°C (plus the next node / soil surface).
     clamp_soil_surface = false
     clamp_snow = scratch.clamp_snow
     fill!(clamp_snow, false)

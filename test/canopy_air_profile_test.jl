@@ -15,18 +15,18 @@ n_layers = 10
 T = 290.0u"K"
 
 no_heat = zeros(typeof(0.0u"W/m^2"), n_layers)
-no_evaporation = zeros(typeof(0.0u"g/s"), n_layers)
+no_evaporation = zeros(typeof(0.0u"g/s/m^2"), n_layers)
 mid_layer = n_layers ÷ 2
 mid_heat = [i == mid_layer ? 50.0u"W/m^2" : 0.0u"W/m^2" for i in 1:n_layers]
-mid_evaporation = [i == mid_layer ? 1.0e-3u"g/s" : 0.0u"g/s" for i in 1:n_layers]
+mid_evaporation = [i == mid_layer ? 1.0e-3u"g/s/m^2" : 0.0u"g/s/m^2" for i in 1:n_layers]
 
-forcing(; sensible_heat_source = no_heat, evaporation_mass_flow = no_evaporation,
+forcing(; sensible_heat_flux = no_heat, evaporation_mass_flux = no_evaporation,
     friction_velocity = 0.3u"m/s", ground_temperature = T) = CanopyAirProfileForcing(;
     friction_velocity, inverse_obukhov_length = 0.0u"m^-1",
     wind_speed = fill(1.0u"m/s", n_layers),
     canopy_top_air_temperature = T, canopy_top_vapor_density = top_vapor_density,
     ground_temperature, ground_relative_humidity = 0.5,
-    sensible_heat_source, evaporation_mass_flow, atmospheric_pressure = 101325.0u"Pa",
+    sensible_heat_flux, evaporation_mass_flux, atmospheric_pressure = 101325.0u"Pa",
 )
 
 top_vapor_density = wet_air_properties(T, 0.5, 101325.0u"Pa").vapour_density
@@ -57,33 +57,33 @@ is_local_bump(values) = abs(argmax(values) - mid_layer) <= 1 && count(==(maximum
     end
 
     @testset "a mid-canopy heat source produces a local warm bump" begin
-        result = profile(model; sensible_heat_source = mid_heat)
+        result = profile(model; sensible_heat_flux = mid_heat)
         @test maximum(result.air_temperature) > T
         @test is_local_bump(result.air_temperature)
     end
 
     @testset "a mid-canopy evaporative source produces a local humidity bump" begin
-        result = profile(model; evaporation_mass_flow = mid_evaporation)
+        result = profile(model; evaporation_mass_flux = mid_evaporation)
         @test maximum(result.vapor_density) > top_vapor_density
         @test is_local_bump(result.vapor_density)
     end
 
     @testset "stronger mixing flattens the same forcing" begin
-        weak = maximum(profile(model; sensible_heat_source = mid_heat, friction_velocity = 0.1u"m/s").air_temperature)
-        strong = maximum(profile(model; sensible_heat_source = mid_heat, friction_velocity = 1.0u"m/s").air_temperature)
+        weak = maximum(profile(model; sensible_heat_flux = mid_heat, friction_velocity = 0.1u"m/s").air_temperature)
+        strong = maximum(profile(model; sensible_heat_flux = mid_heat, friction_velocity = 1.0u"m/s").air_temperature)
         @test strong < weak
     end
 
     @testset "zero allocations" begin
         buffers = initial_buffers(model)
-        hour_forcing = forcing(; sensible_heat_source = fill(10.0u"W/m^2", n_layers),
-            evaporation_mass_flow = fill(1.0e-4u"g/s", n_layers), ground_temperature = 288.0u"K")
+        hour_forcing = forcing(; sensible_heat_flux = fill(10.0u"W/m^2", n_layers),
+            evaporation_mass_flux = fill(1.0e-4u"g/s/m^2", n_layers), ground_temperature = 288.0u"K")
         @test allocations(canopy_heat_vapor_transport!, buffers, model, boundary_layer_model, hour_forcing; site) == 0
     end
 end
 
 @testset "KTheoryAirProfile: diffusion decays monotonically away from a source" begin
-    result = profile(KTheoryAirProfile(); sensible_heat_source = mid_heat)
+    result = profile(KTheoryAirProfile(); sensible_heat_flux = mid_heat)
     peak = argmax(result.air_temperature)
     @test issorted(result.air_temperature[1:peak])
     @test issorted(result.air_temperature[peak:end]; rev = true)

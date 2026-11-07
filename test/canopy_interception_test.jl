@@ -130,7 +130,7 @@ end
 
 @testset "_cap_wet_surface_evaporation conserves mass and energy" begin
     air_T = 293.0u"K"
-    flux = 1.0e-4u"kg/s"  # demands 0.36 kg/m^2 over the hour at wet_fraction=1
+    flux = 1.0e-4u"kg/s/m^2"  # demands 0.36 kg/m^2 over the hour at wet_fraction=1
     sensible = 50.0u"W/m^2"
 
     @testset "ample storage: passes through unchanged" begin
@@ -138,7 +138,7 @@ end
         @test flux2 == flux
         @test sensible2 == sensible
         @test ustrip(u"kg/m^2", actual) ≈
-            ustrip(u"kg/m^2", uconvert(u"kg", flux * Microclimate.CANOPY_TIMESTEP) / 1.0u"m^2")
+            ustrip(u"kg/m^2", flux * Microclimate.CANOPY_TIMESTEP)
     end
 
     @testset "scarce storage: withdrawal capped, shortfall moved to sensible" begin
@@ -146,34 +146,34 @@ end
         flux2, sensible2, actual = Microclimate._cap_wet_surface_evaporation(flux, sensible, 1.0, available, 0.1u"kg/m^2", air_T)
         @test actual == available
         @test flux2 < flux
-        latent_removed = uconvert(u"W", (flux - flux2) * Microclimate.enthalpy_of_vaporisation(air_T))
-        sensible_added = (sensible2 - sensible) * 1.0u"m^2"
-        @test ustrip(u"W", latent_removed) ≈ ustrip(u"W", sensible_added) rtol=1e-10
+        latent_removed = (flux - flux2) * Microclimate.enthalpy_of_vaporisation(air_T)
+        sensible_added = sensible2 - sensible
+        @test ustrip(u"W/m^2", latent_removed) ≈ ustrip(u"W/m^2", sensible_added) rtol=1e-10
         @test ustrip(u"kg/m^2", actual) ≈
-            ustrip(u"kg/m^2", uconvert(u"kg", flux2 * Microclimate.CANOPY_TIMESTEP) / 1.0u"m^2") atol=1e-12
+            ustrip(u"kg/m^2", flux2 * Microclimate.CANOPY_TIMESTEP) atol=1e-12
     end
 
     @testset "no storage: wet-surface share fully rerouted, dry (transpiration) share untouched" begin
         wet_fraction = 0.5
         flux2, sensible2, actual = Microclimate._cap_wet_surface_evaporation(flux, sensible, wet_fraction, 0.0u"kg/m^2", 0.1u"kg/m^2", air_T)
         @test actual == 0.0u"kg/m^2"
-        @test ustrip(u"kg/s", flux2) ≈ ustrip(u"kg/s", flux * (1.0 - wet_fraction)) rtol=1e-10
+        @test ustrip(u"kg/s/m^2", flux2) ≈ ustrip(u"kg/s/m^2", flux * (1.0 - wet_fraction)) rtol=1e-10
     end
 
     @testset "condensation overflow: storage capped at capacity, shortfall moved to sensible" begin
-        condensing_flux = -1.0e-4u"kg/s"
+        condensing_flux = -1.0e-4u"kg/s/m^2"
         available = 0.09u"kg/m^2"
         capacity = 0.1u"kg/m^2"
         flux2, sensible2, actual = Microclimate._cap_wet_surface_evaporation(condensing_flux, sensible, 1.0, available, capacity, air_T)
         @test actual == available - capacity  # capped at remaining headroom, not unbounded
         @test flux2 > condensing_flux  # less condensation "happened" than the uncapped flux implied
-        latent_delta = uconvert(u"W", (condensing_flux - flux2) * Microclimate.enthalpy_of_vaporisation(air_T))
-        sensible_delta = (sensible2 - sensible) * 1.0u"m^2"
-        @test ustrip(u"W", latent_delta) ≈ ustrip(u"W", sensible_delta) rtol=1e-10
+        latent_delta = (condensing_flux - flux2) * Microclimate.enthalpy_of_vaporisation(air_T)
+        sensible_delta = sensible2 - sensible
+        @test ustrip(u"W/m^2", latent_delta) ≈ ustrip(u"W/m^2", sensible_delta) rtol=1e-10
     end
 
     @testset "condensation within headroom: passes through unchanged" begin
-        condensing_flux = -1.0e-6u"kg/s"  # small dew, well within headroom
+        condensing_flux = -1.0e-6u"kg/s/m^2"  # small dew, well within headroom
         flux2, sensible2, actual = Microclimate._cap_wet_surface_evaporation(condensing_flux, sensible, 1.0, 0.05u"kg/m^2", 0.1u"kg/m^2", air_T)
         @test flux2 == condensing_flux
         @test sensible2 == sensible
@@ -200,9 +200,9 @@ end
     abundant = run_with_capacity(10.0u"kg/m^2")
 
     @test all(>=(0.0u"kg/m^2"), scarce.interception.leaf_surface_water)
-    @test all(isfinite, ustrip.(u"kg/s", scarce.leaf.evaporation_mass_flow))
-    @test all(isfinite, ustrip.(u"W/m^2", scarce.leaf.sensible_heat_source))
+    @test all(isfinite, ustrip.(u"kg/s/m^2", scarce.leaf.evaporation_mass_flux))
+    @test all(isfinite, ustrip.(u"W/m^2", scarce.leaf.sensible_heat_flux))
     # scarce storage forces some latent demand into sensible heat instead
-    @test sum(scarce.leaf.evaporation_mass_flow) < sum(abundant.leaf.evaporation_mass_flow)
-    @test sum(scarce.leaf.sensible_heat_source) > sum(abundant.leaf.sensible_heat_source)
+    @test sum(scarce.leaf.evaporation_mass_flux) < sum(abundant.leaf.evaporation_mass_flux)
+    @test sum(scarce.leaf.sensible_heat_flux) > sum(abundant.leaf.sensible_heat_flux)
 end

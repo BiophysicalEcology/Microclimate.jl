@@ -18,7 +18,7 @@ function allocate_air_profile end
 """
     CanopyAirProfileForcing(; friction_velocity, inverse_obukhov_length, wind_speed,
         canopy_top_air_temperature, canopy_top_vapor_density, ground_temperature,
-        ground_relative_humidity, sensible_heat_source, evaporation_mass_flow, atmospheric_pressure)
+        ground_relative_humidity, sensible_heat_flux, evaporation_mass_flux, atmospheric_pressure)
 
 Everything [`canopy_heat_vapor_transport!`](@ref) takes from the current canopy state: the
 turbulence above the canopy, the values at the canopy top and the ground, and each layer's
@@ -32,8 +32,8 @@ leaf sources. Every air-profile model receives the same forcing and reads the fi
     canopy_top_vapor_density::TVD
     ground_temperature::GT
     ground_relative_humidity::GRH
-    sensible_heat_source::SH
-    evaporation_mass_flow::EM
+    sensible_heat_flux::SH
+    evaporation_mass_flux::EM
     atmospheric_pressure::P
 end
 

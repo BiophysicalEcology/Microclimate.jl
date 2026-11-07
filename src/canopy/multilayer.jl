@@ -137,9 +137,9 @@ function allocate_canopy(model::MultilayerCanopy, heights, boundary_layer_model;
         leaf = (;
             leaf_body = leaf_body(model.leaf_parameters.leaf_length, model.leaf_parameters.leaf_width, canopy_projection_ratio),
             leaf_temperature = zeros(typeof(0.0u"K"), n_layers),
-            sensible_heat_source = zeros(typeof(0.0u"W/m^2"), n_layers),
-            evaporation_mass_flow = zeros(typeof(0.0u"g/s"), n_layers),
-            potential_evaporation_mass_flow = zeros(typeof(0.0u"g/s"), n_layers),
+            sensible_heat_flux = zeros(typeof(0.0u"W/m^2"), n_layers),
+            evaporation_mass_flux = zeros(typeof(0.0u"g/s/m^2"), n_layers),
+            potential_evaporation_mass_flux = zeros(typeof(0.0u"g/s/m^2"), n_layers),
             leaf_dew_formed = zeros(typeof(0.0u"kg/m^2"), n_layers),
             leaf_frost_formed = zeros(typeof(0.0u"kg/m^2"), n_layers),
             absorbed_radiation = zeros(typeof(0.0u"W/m^2"), n_layers),

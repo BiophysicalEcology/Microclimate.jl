@@ -122,6 +122,14 @@ function invalidate_canopy_residual!(residual)
 end
 
 """
+    GROUND_AREA
+
+The area of ground under the modelled canopy column. Layer results are fluxes per unit of this
+area. It only converts to and from HeatExchange.jl, which works with whole areas and flows.
+"""
+const GROUND_AREA = 1.0u"m^2"
+
+"""
     layer_leaf_areas(buffers, layer)
 
 The areas of a layer's leaves, as `(; exchange_fraction, leaf_area, aerodynamic_area)`.
@@ -134,8 +142,8 @@ function layer_leaf_areas(buffers, layer)
     exchange_fraction = 1.0 - buffers.longwave.layer_transmission[layer]
     boundaries = buffers.shortwave.layer_plant_area_index_boundaries
     layer_plant_area_index = boundaries[layer + 1] - boundaries[layer]
-    return (; exchange_fraction, leaf_area=2.0 * exchange_fraction * 1.0u"m^2",
-        aerodynamic_area=2.0 * layer_plant_area_index * 1.0u"m^2")
+    return (; exchange_fraction, leaf_area=2.0 * exchange_fraction * GROUND_AREA,
+        aerodynamic_area=2.0 * layer_plant_area_index * GROUND_AREA)
 end
 
 """
@@ -193,7 +201,7 @@ function evaluate_canopy!(residual, inverse_obukhov_length, ground_temperature, 
 )
     (; atmospheric_pressure, reference_temperature, reference_wind_speed, reference_humidity, incoming_longwave,
        ground_emissivity, ground_relative_humidity) = forcing
-    (; leaf_temperature, sensible_heat_source, evaporation_mass_flow, absorbed_radiation, net_balance) = buffers.leaf
+    (; leaf_temperature, sensible_heat_flux, evaporation_mass_flux, absorbed_radiation, net_balance) = buffers.leaf
     air = buffers.air_profile
     (; absorbed_shortwave) = buffers.shortwave
     (; absorbed_longwave) = buffers.longwave
@@ -224,8 +232,8 @@ function evaluate_canopy!(residual, inverse_obukhov_length, ground_temperature, 
         air_temperature = air.current_air_temperature[i]
         (; exchange_fraction) = layer_leaf_areas(buffers, i)
         if iszero(exchange_fraction)
-            sensible_heat_source[i] = zero(sensible_heat_source[i])
-            evaporation_mass_flow[i] = zero(evaporation_mass_flow[i])
+            sensible_heat_flux[i] = zero(sensible_heat_flux[i])
+            evaporation_mass_flux[i] = zero(evaporation_mass_flux[i])
             absorbed_radiation[i] = zero(absorbed_radiation[i])
             net_balance[i] = zero(net_balance[i])
             residual.leaf_balance[i] = zero(residual.leaf_balance[i])
@@ -235,8 +243,8 @@ function evaluate_canopy!(residual, inverse_obukhov_length, ground_temperature, 
         # absorbed_shortwave/absorbed_longwave are per unit ground area
         absorbed_radiation[i] = (absorbed_shortwave[i] + absorbed_longwave[i]) / (2.0 * exchange_fraction)
         (; balance, leaf_area) = layer_leaf_balance(buffers, model, forcing, i, leaf_temperature[i])
-        sensible_heat_source[i] = balance.convection.convection_flow / 1.0u"m^2"
-        evaporation_mass_flow[i] = balance.evaporation.transpiration_mass_flow
+        sensible_heat_flux[i] = balance.convection.convection_flow / GROUND_AREA
+        evaporation_mass_flux[i] = balance.evaporation.transpiration_mass_flow / GROUND_AREA
         net_balance[i] = balance.net_heat_flow
         residual.leaf_balance[i] = balance.net_heat_flow / leaf_area
         residual.leafless_temperature_difference[i] = zero(residual.leafless_temperature_difference[i])
@@ -250,7 +258,7 @@ function evaluate_canopy!(residual, inverse_obukhov_length, ground_temperature, 
         atmospheric_pressure; vapour_pressure_equation).vapour_density
     boundary = canopy_top_flux_boundary(boundary_layer_model, model.canopy_height, buffers.wind.displacement_height,
         buffers.wind.above_canopy_profile.heights[2], wind.friction_velocity, wind.inverse_obukhov_length,
-        sum(sensible_heat_source), sum(evaporation_mass_flow) / 1.0u"m^2",
+        sum(sensible_heat_flux), sum(evaporation_mass_flux),
         ground_temperature, ground_vapor_density, reference_temperature, reference_vapor_density,
         forcing.canopy_top_air_temperature, initial_top_vapor_density)
     in_bounds &= lowest_temperature <= boundary.top_temperature <= highest_temperature &&
@@ -265,8 +273,8 @@ function evaluate_canopy!(residual, inverse_obukhov_length, ground_temperature, 
 
     air_forcing = CanopyAirProfileForcing(; friction_velocity=wind.friction_velocity,
         inverse_obukhov_length=wind.inverse_obukhov_length, wind_speed, canopy_top_air_temperature,
-        canopy_top_vapor_density, ground_temperature, ground_relative_humidity, sensible_heat_source,
-        evaporation_mass_flow, atmospheric_pressure)
+        canopy_top_vapor_density, ground_temperature, ground_relative_humidity, sensible_heat_flux,
+        evaporation_mass_flux, atmospheric_pressure)
     canopy_heat_vapor_transport!(air, model.air_profile_model, boundary_layer_model, air_forcing;
         site, vapour_pressure_equation)
 

@@ -38,7 +38,7 @@ end
     @test all(t -> 250.0u"K" < t < 340.0u"K", buffers.leaf.leaf_temperature)
     @test all(isfinite, buffers.air_profile.air_temperature)
     @test result.net_absorbed_shortwave > 0.0u"W/m^2"
-    @test result.canopy_potential_transpiration >= sum(buffers.leaf.evaporation_mass_flow) / 1.0u"m^2"
+    @test result.canopy_potential_transpiration >= sum(buffers.leaf.evaporation_mass_flux)
 end
 
 @testset "new hourly inputs drive day -> night on the same buffers" begin

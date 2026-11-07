@@ -1199,12 +1199,12 @@ write_canopy_output!(::NoCanopy, output, canopy_buffers, canopy_result, step) = 
 # Total canopy sensible/latent heat flux (W/m^2 ground area), summed over
 # layers -- latent evaluated at each layer's own leaf temperature.
 function _sum_canopy_fluxes(leaf)
-    (; sensible_heat_source, evaporation_mass_flow, leaf_temperature) = leaf
+    (; sensible_heat_flux, evaporation_mass_flux, leaf_temperature) = leaf
     sensible = zero(typeof(1.0u"W/m^2"))
     latent = zero(typeof(1.0u"W/m^2"))
-    for i in eachindex(sensible_heat_source)
-        sensible += sensible_heat_source[i]
-        latent += uconvert(u"W/m^2", evaporation_mass_flow[i] * enthalpy_of_vaporisation(leaf_temperature[i]) / 1.0u"m^2")
+    for i in eachindex(sensible_heat_flux)
+        sensible += sensible_heat_flux[i]
+        latent += uconvert(u"W/m^2", evaporation_mass_flux[i] * enthalpy_of_vaporisation(leaf_temperature[i]))
     end
     return sensible, latent
 end
