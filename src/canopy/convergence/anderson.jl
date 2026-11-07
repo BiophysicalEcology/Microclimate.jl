@@ -87,13 +87,14 @@ function canopy_fixed_point!(next_state, step, state, buffers, model, boundary_l
     # The residuals of air, vapor and stability are already the distance to move back
     pack_canopy_state!(step, leaf_temperature_error, residual.air_temperature, residual.vapor_density,
         residual.inverse_obukhov_length[])
-    @. next_state = state - step
-    @. step = -step
+    next_state .= state .- step
+    step .= .-step
     return next_state
 end
 
-# Finds the weight of each stored pass that best cancels the current step, by least squares.
-# Returns false if the stored passes are too alike to separate.
+# Finds, by least squares, the weight of each stored pass that best cancels the current step.
+# Solves in-place by Cholesky, overwriting `matrix` and `weights`; returns false if the
+# stored passes are too alike to separate (the system is not positive definite).
 function solve_history_weights!(history_weights, history_matrix, step_changes, step, step_scale, stored_count)
     weights = view(history_weights, 1:stored_count)
     matrix = view(history_matrix, 1:stored_count, 1:stored_count)
@@ -138,7 +139,7 @@ function converge_canopy!(buffers, model::MultilayerCanopy, boundary_layer_model
             pass == 1 && return canopy_failure!(on_failure, convergence_model, SciMLBase.ReturnCode.Unstable, best_state, pass,
                 buffers, model, boundary_layer_model, forcing[], inputs; keywords...)
             # Overshot: go halfway back to the last good state, without the history that led here
-            @. state = (state + last_good_state) / 2
+            state .= (state .+ last_good_state) ./ 2
             stored_count = 0
             oldest_column = 1
             continue

@@ -1,7 +1,7 @@
 """
     FixedIterationConvergence(iterations_per_day::Int)
 
-Run a fixed number of Picard iterations per simulated day/hour, for
+Run a fixed number of iterations per simulated day/hour, for
 `MicroConfig.convergence` and `MicroConfig.canopy_soil_convergence`.
 """
 struct FixedIterationConvergence <: AbstractSoilTemperatureConvergence

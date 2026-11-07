@@ -85,7 +85,7 @@ model, separate from the physical-process choices above:
 - `rainfall_schedule` — [`DailyRainfall`](@ref) or [`HourlyRainfall`](@ref)
 - `soil_moisture_strategy` — [`PrescribedSoilMoisture`](@ref) (from
   `environment_daily`) or [`DynamicSoilMoisture`](@ref) (solved from rainfall)
-- `canopy_soil_convergence`, `canopy_soil_relaxation` — the per-hour Picard iteration
+- `canopy_soil_convergence`, `canopy_soil_relaxation` — the per-hour iteration
   between the canopy solve and the soil-heat ODE
 
 ## How the pieces fit together each hour

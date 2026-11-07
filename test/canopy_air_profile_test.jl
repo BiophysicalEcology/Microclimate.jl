@@ -48,7 +48,8 @@ end
 # A single peak at (or next to) the source layer, everything else below it
 is_local_bump(values) = abs(argmax(values) - mid_layer) <= 1 && count(==(maximum(values)), values) == 1
 
-@testset "$(nameof(typeof(model)))" for model in (KTheoryAirProfile(), RaupachLTheoryAirProfile())
+@testset "$model" for model in (KTheoryAirProfile(), RaupachLTheoryAirProfile(),
+        RaupachLTheoryAirProfile(; formulation = BulkRaupachFormulation()))
     @testset "no forcing: uniform boundaries give a uniform profile" begin
         result = profile(model)
         @test all(t -> isapprox(t, T; atol = 1e-6u"K"), result.air_temperature)
