@@ -25,14 +25,14 @@ leaf_water_potential = 0.0u"J/kg"
 end
 
 @testset "leaf_heat_balance: net residual plus fluxes closes the balance away from equilibrium" begin
-    # Far from the equilibrium leaf temperature, so out.net is a real nonzero residual.
+    # Far from the equilibrium leaf temperature, so out.net_heat_flow is a real nonzero residual.
     Rabs = 300.0u"W/m^2"
     Tleaf = air_temperature + 40.0u"K"
     out = Microclimate.leaf_heat_balance(Tleaf, Rabs, air_temperature, air_vapor_density,
         wind_speed, atmospheric_pressure, leaf_emissivity, stomatal_conductance, leaf_water_potential, body, 1.0u"m^2")
-    @test abs(out.net) > 1.0u"W"
+    @test abs(out.net_heat_flow) > 1.0u"W"
 
-    reallocated_sensible = out.convection.convection_flow + out.net
+    reallocated_sensible = out.convection.convection_flow + out.net_heat_flow
     closed_balance = reallocated_sensible + out.evaporation.evaporation_heat_flow + out.emitted_longwave
     @test closed_balance ≈ Rabs * 1.0u"m^2" atol=1e-9u"W"
 end
@@ -40,7 +40,7 @@ end
 @testset "leaf_heat_balance is smooth through T_leaf = T_air" begin
     net(Tleaf, convection_model) = Microclimate.leaf_heat_balance(Tleaf, 300.0u"W/m^2", air_temperature, air_vapor_density,
         0.1u"m/s", atmospheric_pressure, leaf_emissivity, stomatal_conductance, leaf_water_potential, body, 1.0u"m^2",
-        convection_model).net
+        convection_model).net_heat_flow
     # Slopes just below and just above T_air
     δ = 1.0e-3u"K"
     slopes(convection_model) = (net(air_temperature - δ, convection_model) - net(air_temperature - 2δ, convection_model),

@@ -85,12 +85,13 @@ Dyer, A. J. (1974). A review of flux–profile relationships.
 end
 
 """
-    ChengBrutsaert(; momentum_dyer_constant=16.0, heat_dyer_constant=16.0, momentum_a=6.1, momentum_b=2.5, heat_c=5.3, heat_d=1.1)
+    ChengBrutsaert(; momentum_dyer_constant=16.0, heat_dyer_constant=16.0, momentum_scale=6.1, momentum_exponent=2.5, heat_scale=5.3, heat_exponent=1.1)
 
 Smooth stability corrections, without clamps. Unstable: Businger–Dyer/Paulson
 with `momentum_dyer_constant` in `ψ_m`, `heat_dyer_constant` in `ψ_h` and `Φ_h`;
 the slopes at neutral are `-momentum_dyer_constant/4` and `-heat_dyer_constant/2`. Stable: Cheng & Brutsaert (2005),
-`ψ_m = -a·ln(ζ + (1 + ζᵇ)^(1/b))`, `ψ_h = -c·ln(ζ + (1 + ζᵈ)^(1/d))`, which
+`ψ_m = -a·ln(ζ + (1 + ζᵇ)^(1/b))` with `a = momentum_scale` and `b = momentum_exponent`,
+`ψ_h = -c·ln(ζ + (1 + ζᵈ)^(1/d))` with `c = heat_scale` and `d = heat_exponent`, which
 level off into the z-less limit rather than growing linearly, so the bulk
 Richardson number has no critical value and every stable state has a
 Monin–Obukhov solution.
@@ -103,10 +104,10 @@ and temperature in the stable atmospheric boundary layer.
 @kwdef struct ChengBrutsaert{DM,DH,A,B,C,D} <: AbstractStabilityFunctions
     momentum_dyer_constant::DM = 16.0
     heat_dyer_constant::DH = 16.0
-    momentum_a::A = 6.1
-    momentum_b::B = 2.5
-    heat_c::C = 5.3
-    heat_d::D = 1.1
+    momentum_scale::A = 6.1
+    momentum_exponent::B = 2.5
+    heat_scale::C = 5.3
+    heat_exponent::D = 1.1
 end
 
 """
@@ -279,20 +280,19 @@ function atmospheric_surface_profile!(boundary_layer_model::MoninObukhov, buffer
 
     reference_temperature = u"K"(reference_temperature)
     surface_temperature = u"K"(surface_temperature)
-    κ = karman_constant
 
-    # ρ·cₚ·T/(κ·g), the factor in the Obukhov relation L = factor·u*³/H. A constant, as in
+    # ρ·cₚ·T/(karman_constant·g), the factor in the Obukhov relation L = factor·u*³/H. A constant, as in
     # the original Fortran. TODO calculate it from the air properties.
     obukhov_length_factor = u"J*s^2/m^4"(6.003e-8u"cal*minute^2/cm^4")
 
-    ΔT = reference_temperature - surface_temperature
+    temperature_difference = reference_temperature - surface_temperature
     mean_temperature = (surface_temperature + reference_temperature) / 2
-    # TODO call calc_ρ_cp method specific to elevation and RH in final version but do it this way for NicheMapR comparison
-    ρ_cp = calc_ρ_cp(mean_temperature)#, elevation, reference_humidity)
+    # TODO call calc_air_volumetric_heat_capacity method specific to elevation and RH in final version but do it this way for NicheMapR comparison
+    air_volumetric_heat_capacity = calc_air_volumetric_heat_capacity(mean_temperature)#, elevation, reference_humidity)
     kinematic_viscosity = dry_air_properties(mean_temperature, atmospheric_pressure).kinematic_viscosity
 
     stability_result = surface_layer_stability(stability_variable, stability, obukhov_length_prev, reference_temperature,
-        surface_temperature, reference_wind_speed, roughness_length, reference_height_above_origin, obukhov_length_factor, κ, ΔT, ρ_cp, kinematic_viscosity;
+        surface_temperature, reference_wind_speed, roughness_length, reference_height_above_origin, obukhov_length_factor, karman_constant, temperature_difference, air_volumetric_heat_capacity, kinematic_viscosity;
         stability_functions, min_friction_velocity, thermal_roughness_model)
     stability = stability_result.value
     roughness_height_temperature = stability_result.roughness_height_temperature
@@ -330,7 +330,7 @@ function atmospheric_surface_profile!(boundary_layer_model::MoninObukhov, buffer
             relative_humidity[i] = reference_humidity
         else
             height_stability_parameter = stability_parameter_at_height(stability_variable, height_above_origin, stability)
-            wind_speed[i] = (friction_velocity / κ) * (log(height_above_origin / roughness_length) - momentum_stability_correction(stability_functions, height_stability_parameter) + ψ_m_roughness)
+            wind_speed[i] = (friction_velocity / karman_constant) * (log(height_above_origin / roughness_length) - momentum_stability_correction(stability_functions, height_stability_parameter) + ψ_m_roughness)
             # Temperature uses its own anchor (which may differ from roughness_length -- see above)
             temperature_log_term = log(height_above_origin / anchor_height_above_origin) + ψ_h_anchor - heat_stability_correction(stability_functions, height_stability_parameter)
             air_temperature[i] = anchor_temperature + (reference_temperature - anchor_temperature) * temperature_log_term / temperature_denominator
@@ -368,7 +368,7 @@ function surface_fluxes(boundary_layer_model::MoninObukhov;
     surface_temperature, air_temperature, wind_speed, zenith_angle,
     roughness_height, reference_height, atmospheric_pressure, obukhov_length_prev=nothing,
 )
-    κ = boundary_layer_model.karman_constant
+    karman_constant = boundary_layer_model.karman_constant
     loglaw_ratio = reference_height / roughness_height
     loglaw_ratio > 1 || throw(DomainError(ustrip(loglaw_ratio),
         "surface_fluxes: reference_height ($reference_height) must exceed roughness_height " *
@@ -378,19 +378,19 @@ function surface_fluxes(boundary_layer_model::MoninObukhov;
         "log-law inversion is unreliable in this roughness-sublayer regime",
         reference_height, roughness_height, loglaw_ratio, maxlog=10,
     )
-    log_z_ratio = log(reference_height / roughness_height)
-    ΔT = air_temperature - surface_temperature
+    log_height_ratio = log(reference_height / roughness_height)
+    temperature_difference = air_temperature - surface_temperature
     mean_temperature = (surface_temperature + air_temperature) / 2
-    ρ_cp = calc_ρ_cp(mean_temperature)
+    air_volumetric_heat_capacity = calc_air_volumetric_heat_capacity(mean_temperature)
     kinematic_viscosity = dry_air_properties(mean_temperature, atmospheric_pressure).kinematic_viscosity
 
     if air_temperature ≥ surface_temperature || zenith_angle ≥ 90°
         # Stable / nocturnal: neutral log-law.
         friction_velocity = max(
-            calc_friction_velocity(; reference_wind_speed=wind_speed, log_z_ratio, κ), boundary_layer_model.min_friction_velocity
+            calc_friction_velocity(; reference_wind_speed=wind_speed, log_height_ratio, karman_constant), boundary_layer_model.min_friction_velocity
         )
         convective_heat_flux = uconvert(u"W/m^2",
-            calc_convection(; friction_velocity, log_z_ratio, ΔT, ρ_cp, z0=roughness_height, z=reference_height, κ,
+            calc_convection(; friction_velocity, log_height_ratio, temperature_difference, air_volumetric_heat_capacity, roughness_height, height=reference_height, karman_constant,
                 kinematic_viscosity, thermal_roughness_model=boundary_layer_model.thermal_roughness_model))
     else
         # Unstable: iterate Obukhov length. 
@@ -398,38 +398,38 @@ function surface_fluxes(boundary_layer_model::MoninObukhov;
         previous_obukhov_length = isnothing(obukhov_length_prev) ? -0.3u"m" : obukhov_length_prev[]
         initial_obukhov_length = previous_obukhov_length >= 0.0u"m" ? -0.3u"m" : previous_obukhov_length # Resetting to the default unstable guess?
         out = calc_obukhov_length(air_temperature, surface_temperature, wind_speed,
-            roughness_height, reference_height, obukhov_length_factor, κ, ΔT, ρ_cp, kinematic_viscosity;
+            roughness_height, reference_height, obukhov_length_factor, karman_constant, temperature_difference, air_volumetric_heat_capacity, kinematic_viscosity;
             initial_obukhov_length, boundary_layer_model.stability_functions, boundary_layer_model.min_friction_velocity, boundary_layer_model.thermal_roughness_model)
         friction_velocity = out.friction_velocity
         convective_heat_flux = out.convective_heat_flux
     end
 
-    return (; convective_heat_flux, friction_velocity, temperature_difference=ΔT)
+    return (; convective_heat_flux, friction_velocity, temperature_difference)
 end
 
-function init_surface_fluxes!(boundary_layer_model::MoninObukhov, buffers, forcing, site, heights, T0, i)
+function init_surface_fluxes!(boundary_layer_model::MoninObukhov, buffers, forcing, site, heights, soil_temperatures, i)
     t_next = ((i - 1) * 60)u"minute"
     (; air_temperature, wind_speed, zenith_angle) = interpolate_forcings(forcing, t_next)
-    surface_temperature = T0[1]
+    surface_temperature = soil_temperatures[1]
     if air_temperature < surface_temperature && zenith_angle < 90u"°"
-        κ = boundary_layer_model.karman_constant
+        karman_constant = boundary_layer_model.karman_constant
         roughness_height = site.roughness_height
         reference_height = last(heights)
-        ΔT = air_temperature - surface_temperature
+        temperature_difference = air_temperature - surface_temperature
         mean_temperature = (surface_temperature + air_temperature) / 2
-        ρ_cp = calc_ρ_cp(mean_temperature)
+        air_volumetric_heat_capacity = calc_air_volumetric_heat_capacity(mean_temperature)
         kinematic_viscosity = dry_air_properties(mean_temperature, site.atmospheric_pressure).kinematic_viscosity
         obukhov_length_factor = 6.003e-8u"cal*minute^2/cm^4"
         previous_obukhov_length = buffers.soil_energy_balance.obukhov_length_prev[]
         initial_obukhov_length = previous_obukhov_length >= 0.0u"m" ? -0.3u"m" : previous_obukhov_length
         out = calc_obukhov_length(air_temperature, surface_temperature, wind_speed,
-            roughness_height, reference_height, obukhov_length_factor, κ, ΔT, ρ_cp, kinematic_viscosity;
+            roughness_height, reference_height, obukhov_length_factor, karman_constant, temperature_difference, air_volumetric_heat_capacity, kinematic_viscosity;
             initial_obukhov_length, boundary_layer_model.stability_functions, boundary_layer_model.min_friction_velocity, boundary_layer_model.thermal_roughness_model)
         buffers.soil_energy_balance.obukhov_length_prev[] = out.obukhov_length end
 end
 
 """
-    calc_ρ_cp(mean_temperature)
+    calc_air_volumetric_heat_capacity(mean_temperature)
 
 Compute the volumetric heat capacity of air (ρ·cₚ) as a function of mean temperature.
 
@@ -442,12 +442,12 @@ Compute the volumetric heat capacity of air (ρ·cₚ) as a function of mean tem
 This is a simplified empirical regression based only on temperature,
 without accounting for moisture or elevation effects.
 """
-function calc_ρ_cp(mean_temperature)
+function calc_air_volumetric_heat_capacity(mean_temperature)
     return u"J/m^3/K"(u"(cal*g)/(g*cm^3*K)" * (0.08472 / ustrip(u"K", mean_temperature)))
 end
 
 """
-    calc_ρ_cp(mean_temperature, elevation, relative_humidity, atmospheric_pressure)
+    calc_air_volumetric_heat_capacity(mean_temperature, elevation, relative_humidity, atmospheric_pressure)
 
 Compute the volumetric heat capacity of moist air (ρ·cₚ) given temperature,
 elevation, and relative humidity.
@@ -464,7 +464,7 @@ elevation, and relative humidity.
 Uses `dry_air_properties` to compute air density (ρ) and
 `wet_air_properties` to compute specific heat capacity (cₚ).
 """
-function calc_ρ_cp(mean_temperature, elevation, relative_humidity, atmospheric_pressure; vapour_pressure_equation=GoffGratch())
+function calc_air_volumetric_heat_capacity(mean_temperature, elevation, relative_humidity, atmospheric_pressure; vapour_pressure_equation=GoffGratch())
     dry_air_out = dry_air_properties(u"K"(mean_temperature), atmospheric_pressure)
     wet_air_out = wet_air_properties(u"K"(mean_temperature), relative_humidity, atmospheric_pressure; vapour_pressure_equation)
     air_density = dry_air_out.density
@@ -473,15 +473,15 @@ function calc_ρ_cp(mean_temperature, elevation, relative_humidity, atmospheric_
 end
 
 """
-    calc_friction_velocity(; reference_wind_speed, log_z_ratio, κ=0.4)
+    calc_friction_velocity(; reference_wind_speed, log_height_ratio, karman_constant=0.4)
 
 Compute the friction velocity (u*) from a reference wind speed using the
 logarithmic wind profile.
 
 # Arguments
 - `reference_wind_speed::Quantity{<:Real,𝐋/𝐓}`: Wind speed at the reference height (e.g. `m/s`, `cm/min`).
-- `log_z_ratio::Real`: Precomputed log height ratio, typically `log(z/z0 + 1.0)`.
-- `κ::Real`: von Kármán constant (default = 0.4).
+- `log_height_ratio::Real`: Precomputed log height ratio, typically `log(height / roughness_height + 1.0)`.
+- `karman_constant::Real`: von Kármán constant (default = 0.4).
 
 # Returns
 - Friction velocity `friction_velocity::Quantity{<:Real,𝐋/𝐓}`.
@@ -489,44 +489,44 @@ logarithmic wind profile.
 # See also
 [`calc_convection`](@ref), [`calc_wind`](@ref)
 """
-function calc_friction_velocity(; reference_wind_speed, log_z_ratio, κ=0.4)
-    return κ * reference_wind_speed / log_z_ratio
+function calc_friction_velocity(; reference_wind_speed, log_height_ratio, karman_constant=0.4)
+    return karman_constant * reference_wind_speed / log_height_ratio
 end
 
 """
-    calc_wind(z, z0, κ, friction_velocity, b)
+    calc_wind(height, roughness_height, karman_constant, friction_velocity, b)
 
-Calculate wind speed at height `z` using the logarithmic wind profile.
+Calculate wind speed at `height` using the logarithmic wind profile.
 
 # Arguments
-- `z::Quantity{<:Real,𝐋}`: Height above the surface (e.g. `m`, `cm`).
-- `z0::Quantity{<:Real,𝐋}`: Roughness length (e.g. `m`, `cm`).
-- `κ::Real`: von Kármán constant.
+- `height::Quantity{<:Real,𝐋}`: Height above the surface (e.g. `m`, `cm`).
+- `roughness_height::Quantity{<:Real,𝐋}`: Roughness length (e.g. `m`, `cm`).
+- `karman_constant::Real`: von Kármán constant.
 - `friction_velocity::Quantity{<:Real,𝐋/𝐓}`: Friction velocity.
 - `b::Real`: Offset term (e.g. `1.0` for neutral stability, or stability correction).
 
 # Returns
-- Wind speed at height `z::Quantity{<:Real,𝐋/𝐓}`.
+- Wind speed at `height`, as `Quantity{<:Real,𝐋/𝐓}`.
 
 # See also
 [`calc_friction_velocity`](@ref), [`calc_convection`](@ref)
 """
-function calc_wind(z, z0, κ, friction_velocity, b)
-    return (friction_velocity / κ) * log(z / z0 + b)
+function calc_wind(height, roughness_height, karman_constant, friction_velocity, b)
+    return (friction_velocity / karman_constant) * log(height / roughness_height + b)
 end
 
 
 """
-    calc_convection(; friction_velocity, log_z_ratio, ΔT, ρ_cp, z0)
+    calc_convection(; friction_velocity, log_height_ratio, temperature_difference, air_volumetric_heat_capacity, roughness_height, height, karman_constant, kinematic_viscosity, thermal_roughness_model=SublayerStantonRoughness())
 
 Calculate the convective heat flux (sensible heat exchange between surface and air).
 
 # Arguments
 - `friction_velocity::Quantity{<:Real,𝐋/𝐓}`: Friction velocity (e.g. `m/s`, `cm/min`).
-- `log_z_ratio::Real`: Precomputed logarithmic height ratio, typically `log(z/z0 + 1.0)`.
-- `ΔT::Quantity{<:Real,Θ}`: Temperature difference between reference air and surface (Kelvin).
-- `ρ_cp::Quantity{<:Real,(𝐌*𝐋^-1*𝐓^-2)}`: Volumetric heat capacity of air (e.g. `J/m³/K`, `cal/cm³/K`).
-- `z0::Quantity{<:Real,𝐋}`: Surface roughness length (length).
+- `log_height_ratio::Real`: Precomputed logarithmic height ratio, typically `log(height / roughness_height + 1.0)`.
+- `temperature_difference::Quantity{<:Real,Θ}`: Temperature difference between reference air and surface (Kelvin).
+- `air_volumetric_heat_capacity::Quantity{<:Real,(𝐌*𝐋^-1*𝐓^-2)}`: Volumetric heat capacity of air (e.g. `J/m³/K`, `cal/cm³/K`).
+- `roughness_height::Quantity{<:Real,𝐋}`: Surface roughness length.
 
 # Returns
 - Convective heat flux as `Quantity{<:Real,(𝐌*𝐓^-3)}` (e.g. `W/m²`, `cal/min/cm²`).
@@ -536,59 +536,59 @@ Uses bulk and sublayer Stanton numbers to account for turbulence near the surfac
 # See also
 [`calc_friction_velocity`](@ref), [`calc_wind`](@ref), [`sublayer_stanton`](@ref), [`bulk_stanton`](@ref), [`convective_flux`](@ref)
 """
-function calc_convection(; friction_velocity, log_z_ratio, ΔT, ρ_cp, z0, z, κ, kinematic_viscosity, thermal_roughness_model=SublayerStantonRoughness())
-    return _stable_convective_heat_flux(thermal_roughness_model, ρ_cp, ΔT, friction_velocity, κ, z0, z, log_z_ratio, kinematic_viscosity)
+function calc_convection(; friction_velocity, log_height_ratio, temperature_difference, air_volumetric_heat_capacity, roughness_height, height, karman_constant, kinematic_viscosity, thermal_roughness_model=SublayerStantonRoughness())
+    return _stable_convective_heat_flux(thermal_roughness_model, air_volumetric_heat_capacity, temperature_difference, friction_velocity, karman_constant, roughness_height, height, log_height_ratio, kinematic_viscosity)
 end
 
 """
-    convective_flux(ρ_cp, ΔT, friction_velocity, St_bulk, St_sublayer)
+    convective_flux(air_volumetric_heat_capacity, temperature_difference, friction_velocity, bulk_stanton_number, sublayer_stanton_number)
 
 Compute convective heat flux given bulk and sublayer Stanton numbers.
 """
-@inline function convective_flux(ρ_cp, ΔT, friction_velocity, bulk_stanton_number, sublayer_stanton_number)
-    return ρ_cp * ΔT * friction_velocity * bulk_stanton_number / (1 + bulk_stanton_number / sublayer_stanton_number)
+@inline function convective_flux(air_volumetric_heat_capacity, temperature_difference, friction_velocity, bulk_stanton_number, sublayer_stanton_number)
+    return air_volumetric_heat_capacity * temperature_difference * friction_velocity * bulk_stanton_number / (1 + bulk_stanton_number / sublayer_stanton_number)
 end
 
 # Scalar-roughness-ratio resistance, ln(z/zh) - ψ_h(z/L) + ψ_h(zh/L)
-function _scalar_roughness_resistance(ratio, κ, friction_velocity, z0, z, ψ_h_z, ψ_h_zh)
-    zh = ratio * z0
-    return (log(z / zh) - ψ_h_z + ψ_h_zh) / (κ * friction_velocity)
+function _scalar_roughness_resistance(ratio, karman_constant, friction_velocity, roughness_height, height, heat_correction_at_height, heat_correction_at_scalar_roughness)
+    scalar_roughness_height = ratio * roughness_height
+    return (log(height / scalar_roughness_height) - heat_correction_at_height + heat_correction_at_scalar_roughness) / (karman_constant * friction_velocity)
 end
 
 # calc_convection's stable/neutral direct branch: no Obukhov iteration, ψ_h implicitly 0.
-_stable_convective_heat_flux(::SublayerStantonRoughness, ρ_cp, ΔT, friction_velocity, κ, z0, z, log_z_ratio, kinematic_viscosity) =
-    convective_flux(ρ_cp, ΔT, friction_velocity, bulk_stanton(log_z_ratio), sublayer_stanton(z0, friction_velocity, kinematic_viscosity))
-function _stable_convective_heat_flux(thermal_roughness_model::ScalarRoughnessRatio, ρ_cp, ΔT, friction_velocity, κ, z0, z, log_z_ratio, kinematic_viscosity)
-    resistance = _scalar_roughness_resistance(thermal_roughness_model.ratio, κ, friction_velocity, z0, z, 0.0, 0.0)
-    return ρ_cp * ΔT / resistance
+_stable_convective_heat_flux(::SublayerStantonRoughness, air_volumetric_heat_capacity, temperature_difference, friction_velocity, karman_constant, roughness_height, height, log_height_ratio, kinematic_viscosity) =
+    convective_flux(air_volumetric_heat_capacity, temperature_difference, friction_velocity, bulk_stanton(log_height_ratio), sublayer_stanton(roughness_height, friction_velocity, kinematic_viscosity))
+function _stable_convective_heat_flux(thermal_roughness_model::ScalarRoughnessRatio, air_volumetric_heat_capacity, temperature_difference, friction_velocity, karman_constant, roughness_height, height, log_height_ratio, kinematic_viscosity)
+    resistance = _scalar_roughness_resistance(thermal_roughness_model.ratio, karman_constant, friction_velocity, roughness_height, height, 0.0, 0.0)
+    return air_volumetric_heat_capacity * temperature_difference / resistance
 end
 
 # calc_obukhov_length's iterative branch. Also returns roughness_height_temperature
 # (the below-z0 profile's own boundary value) since SublayerStantonRoughness derives
 # it from the same bulk/sublayer split as the flux itself.
-function _unstable_convective_heat_flux(::SublayerStantonRoughness, stability_functions, ρ_cp, ΔT, friction_velocity, κ, z0, z, log_ratio_corrected, ψ_h, stability_parameter, kinematic_viscosity, reference_temperature, surface_temperature)
-    sublayer_stanton_number = sublayer_stanton(z0, friction_velocity, kinematic_viscosity)
+function _unstable_convective_heat_flux(::SublayerStantonRoughness, stability_functions, air_volumetric_heat_capacity, temperature_difference, friction_velocity, karman_constant, roughness_height, height, log_ratio_corrected, ψ_h, stability_parameter, kinematic_viscosity, reference_temperature, surface_temperature)
+    sublayer_stanton_number = sublayer_stanton(roughness_height, friction_velocity, kinematic_viscosity)
     bulk_stanton_number = bulk_stanton(log_ratio_corrected, stability_parameter)
-    convective_heat_flux = convective_flux(ρ_cp, ΔT, friction_velocity, bulk_stanton_number, sublayer_stanton_number)
+    convective_heat_flux = convective_flux(air_volumetric_heat_capacity, temperature_difference, friction_velocity, bulk_stanton_number, sublayer_stanton_number)
     roughness_height_temperature = (reference_temperature * bulk_stanton_number + surface_temperature * sublayer_stanton_number) / (bulk_stanton_number + sublayer_stanton_number)
     return (; convective_heat_flux, roughness_height_temperature)
 end
-function _unstable_convective_heat_flux(thermal_roughness_model::ScalarRoughnessRatio, stability_functions, ρ_cp, ΔT, friction_velocity, κ, z0, z, log_ratio_corrected, ψ_h, stability_parameter, kinematic_viscosity, reference_temperature, surface_temperature)
+function _unstable_convective_heat_flux(thermal_roughness_model::ScalarRoughnessRatio, stability_functions, air_volumetric_heat_capacity, temperature_difference, friction_velocity, karman_constant, roughness_height, height, log_ratio_corrected, ψ_h, stability_parameter, kinematic_viscosity, reference_temperature, surface_temperature)
     (; ratio) = thermal_roughness_model
-    ψ_h_zh = heat_stability_correction(stability_functions, stability_parameter * ratio * z0 / z)
-    resistance = _scalar_roughness_resistance(ratio, κ, friction_velocity, z0, z, ψ_h, ψ_h_zh)
-    return (; convective_heat_flux=ρ_cp * ΔT / resistance, roughness_height_temperature=surface_temperature)
+    heat_correction_at_scalar_roughness = heat_stability_correction(stability_functions, stability_parameter * ratio * roughness_height / height)
+    resistance = _scalar_roughness_resistance(ratio, karman_constant, friction_velocity, roughness_height, height, ψ_h, heat_correction_at_scalar_roughness)
+    return (; convective_heat_flux=air_volumetric_heat_capacity * temperature_difference / resistance, roughness_height_temperature=surface_temperature)
 end
 
 
 """
-    calc_heat_transfer_coefficient(convective_heat_flux, ΔT)
+    calc_heat_transfer_coefficient(convective_heat_flux, temperature_difference)
 
 Heat transfer coefficient from convective heat flux and temperature difference.
 Minimum 0.5 W/m²/K.
 """
-calc_heat_transfer_coefficient(convective_heat_flux, ΔT) =
-    iszero(ΔT) ? 0.5u"W/m^2/K" : max(abs(convective_heat_flux / ΔT), 0.5u"W/m^2/K")
+calc_heat_transfer_coefficient(convective_heat_flux, temperature_difference) =
+    iszero(temperature_difference) ? 0.5u"W/m^2/K" : max(abs(convective_heat_flux / temperature_difference), 0.5u"W/m^2/K")
 
 """
     LEWIS_HEAT_TO_MASS_RATIO
@@ -607,33 +607,33 @@ calc_mass_transfer_coefficient(heat_transfer_coefficient, air_specific_heat, air
     (heat_transfer_coefficient / (air_specific_heat * air_density)) * LEWIS_HEAT_TO_MASS_RATIO
 
 """
-    sublayer_stanton(z0, friction_velocity, kinematic_viscosity)
+    sublayer_stanton(roughness_height, friction_velocity, kinematic_viscosity)
 
 Stanton number for the roughness sublayer immediately above the surface,
-`0.62·Re*^-0.45` with roughness Reynolds number `Re* = z0·u*/ν` (form
+`0.62·Re*^-0.45` with roughness Reynolds number `Re* = roughness_height·u*/ν` (form
 resembles Owen & Thomson (1963)) Not suitable for a canopy.
 """
-function sublayer_stanton(z0, friction_velocity, kinematic_viscosity)
-    roughness_reynolds_number = uconvert(NoUnits, z0 * friction_velocity / kinematic_viscosity)
+function sublayer_stanton(roughness_height, friction_velocity, kinematic_viscosity)
+    roughness_reynolds_number = uconvert(NoUnits, roughness_height * friction_velocity / kinematic_viscosity)
     return 0.62 / roughness_reynolds_number^0.45
 end
 
 """
-    bulk_stanton(log_z_ratio)
+    bulk_stanton(log_height_ratio)
 
 Compute the bulk Stanton number for stable conditions.
 """
-@inline function bulk_stanton(log_z_ratio)
-    return 0.64 / log_z_ratio
+@inline function bulk_stanton(log_height_ratio)
+    return 0.64 / log_height_ratio
 end
 
 """
-    bulk_stanton(log_z_ratio, stability_parameter)
+    bulk_stanton(log_height_ratio, stability_parameter)
 
 Compute the bulk Stanton number for unstable conditions.
 """
-@inline function bulk_stanton(log_z_ratio, stability_parameter)
-    return (0.64 / log_z_ratio) * (1 - 0.1 * stability_parameter)
+@inline function bulk_stanton(log_height_ratio, stability_parameter)
+    return (0.64 / log_height_ratio) * (1 - 0.1 * stability_parameter)
 end
 
 
@@ -795,29 +795,29 @@ end
 
 function momentum_stability_correction(stability_functions::ChengBrutsaert, stability_parameter)
     stability_parameter < 0 && return momentum_stability_correction(paulson_x(stability_parameter, stability_functions.momentum_dyer_constant))
-    (; momentum_a, momentum_b) = stability_functions
-    return -momentum_a * log(stability_parameter + (1 + stability_parameter^momentum_b)^(1 / momentum_b))
+    (; momentum_scale, momentum_exponent) = stability_functions
+    return -momentum_scale * log(stability_parameter + (1 + stability_parameter^momentum_exponent)^(1 / momentum_exponent))
 end
 
 function heat_stability_correction(stability_functions::ChengBrutsaert, stability_parameter)
     stability_parameter < 0 && return heat_stability_correction(paulson_x(stability_parameter, stability_functions.heat_dyer_constant))
-    (; heat_c, heat_d) = stability_functions
-    return -heat_c * log(stability_parameter + (1 + stability_parameter^heat_d)^(1 / heat_d))
+    (; heat_scale, heat_exponent) = stability_functions
+    return -heat_scale * log(stability_parameter + (1 + stability_parameter^heat_exponent)^(1 / heat_exponent))
 end
 
 function heat_gradient_stability_factor(stability_functions::ChengBrutsaert, stability_parameter)
     stability_parameter < 0 && return heat_gradient_stability_factor(stability_parameter, stability_functions.heat_dyer_constant)
     # Φ_h = 1 - ζ·dψ_h/dζ, for ψ_h = -c·ln g, g = ζ + (1 + ζᵈ)^(1/d), with ζ the stability parameter
-    (; heat_c, heat_d) = stability_functions
-    q = 1 + stability_parameter^heat_d
-    g = stability_parameter + q^(1 / heat_d)
-    return 1 + heat_c * stability_parameter * (1 + stability_parameter^(heat_d - 1) * q^(1 / heat_d - 1)) / g
+    (; heat_scale, heat_exponent) = stability_functions
+    q = 1 + stability_parameter^heat_exponent
+    g = stability_parameter + q^(1 / heat_exponent)
+    return 1 + heat_scale * stability_parameter * (1 + stability_parameter^(heat_exponent - 1) * q^(1 / heat_exponent - 1)) / g
 end
 
 
 """
-    monin_obukhov_step(stability_variable, value, reference_temperature, surface_temperature, reference_wind_speed, roughness_length, reference_height_above_origin, obukhov_length_factor, κ, ΔT,
-                       ρ_cp, kinematic_viscosity; stability_functions=ChengBrutsaert(),
+    monin_obukhov_step(stability_variable, value, reference_temperature, surface_temperature, reference_wind_speed, roughness_length, reference_height_above_origin, obukhov_length_factor, karman_constant, temperature_difference,
+                       air_volumetric_heat_capacity, kinematic_viscosity; stability_functions=ChengBrutsaert(),
                        min_friction_velocity=0.02u"m/s", thermal_roughness_model=SublayerStantonRoughness())
 
 One evaluation of the Monin–Obukhov relations at stability `value` (as
@@ -826,12 +826,12 @@ friction velocity and convective heat flux from the stability corrections,
 then `stability_update`, the stability those fluxes imply through the
 Obukhov relation. `value` is self-consistent when `stability_update == value`.
 `kinematic_viscosity` feeds `sublayer_stanton`'s roughness Reynolds number.
-Works for either sign of `ΔT` -- `convective_flux`'s sign already tracks
-`ΔT`'s sign (negative ΔT, surface warmer than reference → negative heat flux
-→ unstable; positive ΔT → stable).
+Works for either sign of `temperature_difference` -- `convective_flux`'s sign already tracks
+`temperature_difference`'s sign (negative temperature_difference, surface warmer than reference → negative heat flux
+→ unstable; positive temperature_difference → stable).
 """
-function monin_obukhov_step(stability_variable, value, reference_temperature, surface_temperature, reference_wind_speed, roughness_length, reference_height_above_origin, obukhov_length_factor, κ, ΔT,
-    ρ_cp, kinematic_viscosity;
+function monin_obukhov_step(stability_variable, value, reference_temperature, surface_temperature, reference_wind_speed, roughness_length, reference_height_above_origin, obukhov_length_factor, karman_constant, temperature_difference,
+    air_volumetric_heat_capacity, kinematic_viscosity;
     stability_functions=ChengBrutsaert(),
     min_friction_velocity=0.02u"m/s", thermal_roughness_model=SublayerStantonRoughness(),
 )
@@ -840,9 +840,9 @@ function monin_obukhov_step(stability_variable, value, reference_temperature, su
     ψ_h = heat_stability_correction(stability_functions, reference_stability_parameter)
     log_ratio_corrected = log(reference_height_above_origin / roughness_length) - ψ_m +
         momentum_stability_correction(stability_functions, reference_stability_parameter * roughness_length / reference_height_above_origin)
-    friction_velocity = max(κ * reference_wind_speed / log_ratio_corrected, min_friction_velocity)
+    friction_velocity = max(karman_constant * reference_wind_speed / log_ratio_corrected, min_friction_velocity)
     convective_heat_flux, roughness_height_temperature = _unstable_convective_heat_flux(thermal_roughness_model,
-        stability_functions, ρ_cp, ΔT, friction_velocity, κ, roughness_length, reference_height_above_origin, log_ratio_corrected, ψ_h, reference_stability_parameter, kinematic_viscosity,
+        stability_functions, air_volumetric_heat_capacity, temperature_difference, friction_velocity, karman_constant, roughness_length, reference_height_above_origin, log_ratio_corrected, ψ_h, reference_stability_parameter, kinematic_viscosity,
         reference_temperature, surface_temperature)
     stability_update = stability_from_fluxes(stability_variable, obukhov_length_factor, friction_velocity, convective_heat_flux)
     return (;
@@ -862,14 +862,14 @@ Iterate [`monin_obukhov_step`](@ref) (same `args` and `kw`) from
 update by `relaxation`. Returns the last step's fluxes and `value`, the
 stability that step was evaluated at.
 """
-function monin_obukhov_iteration(stability_variable, reference_temperature, surface_temperature, reference_wind_speed, roughness_length, reference_height_above_origin, obukhov_length_factor, κ, ΔT,
-    ρ_cp, kinematic_viscosity; initial_value, max_iterations=50, tolerance=1e-2, relaxation=0.5, kw...,
+function monin_obukhov_iteration(stability_variable, reference_temperature, surface_temperature, reference_wind_speed, roughness_length, reference_height_above_origin, obukhov_length_factor, karman_constant, temperature_difference,
+    air_volumetric_heat_capacity, kinematic_viscosity; initial_value, max_iterations=50, tolerance=1e-2, relaxation=0.5, kw...,
 )
     value = initial_value
     iteration = 1
     while true
-        step = monin_obukhov_step(stability_variable, value, reference_temperature, surface_temperature, reference_wind_speed, roughness_length, reference_height_above_origin, obukhov_length_factor, κ,
-            ΔT, ρ_cp, kinematic_viscosity; kw...)
+        step = monin_obukhov_step(stability_variable, value, reference_temperature, surface_temperature, reference_wind_speed, roughness_length, reference_height_above_origin, obukhov_length_factor, karman_constant,
+            temperature_difference, air_volumetric_heat_capacity, kinematic_viscosity; kw...)
         change = stability_change(stability_variable, reference_height_above_origin, step.stability_update, value)
         (change <= tolerance || iteration >= max_iterations) && return (; value, step...)
         value = relaxation * step.stability_update + (1.0 - relaxation) * value
@@ -878,11 +878,11 @@ function monin_obukhov_iteration(stability_variable, reference_temperature, surf
 end
 
 """
-    calc_obukhov_length(reference_temperature, surface_temperature, reference_wind_speed, roughness_length, reference_height_above_origin, obukhov_length_factor, κ, ΔT, ρ_cp, kinematic_viscosity;
+    calc_obukhov_length(reference_temperature, surface_temperature, reference_wind_speed, roughness_length, reference_height_above_origin, obukhov_length_factor, karman_constant, temperature_difference, air_volumetric_heat_capacity, kinematic_viscosity;
                          initial_obukhov_length=-0.3u"m", kw...)
 
 [`monin_obukhov_iteration`](@ref) on the Obukhov length. Converges to `±Inf`
-(neutral) as `ΔT → 0`.
+(neutral) as `temperature_difference → 0`.
 """
 function calc_obukhov_length(args...; initial_obukhov_length=-0.3u"m", kw...)
     (; value, friction_velocity, heat_correction, convective_heat_flux, roughness_height_temperature) =

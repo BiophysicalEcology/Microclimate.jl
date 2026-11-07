@@ -66,7 +66,7 @@ end
 # One layer's leaf energy balance per unit leaf area (W/m²) at `leaf_temperature` (K)
 function layer_leaf_balance_density(leaf_temperature, buffers, model, forcing, layer)
     (; balance, leaf_area) = layer_leaf_balance(buffers, model, forcing, layer, leaf_temperature * CANOPY_STATE_UNITS.temperature)
-    return in_state_units(balance.net / leaf_area)
+    return in_state_units(balance.net_heat_flow / leaf_area)
 end
 
 # One pass: writes the state this pass would move to into `next_state`, and the move into `step`

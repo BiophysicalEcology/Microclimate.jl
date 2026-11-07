@@ -28,7 +28,7 @@ function reset_canopy_scratch! end
 
 Save day-start canopy water storage (e.g. interception), so
 [`restore_canopy_water!`](@ref) can reset spin-up passes back to it like
-T0/T_snow are. No-op for `NoCanopy`.
+the soil and snow temperatures are. No-op for `NoCanopy`.
 """
 function snapshot_canopy_water! end
 

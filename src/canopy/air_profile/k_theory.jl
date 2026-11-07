@@ -120,7 +120,7 @@ function canopy_heat_vapor_transport!(buffers, ::KTheoryAirProfile, boundary_lay
     canopy_top_eddy_diffusivity = boundary_layer_model.karman_constant * friction_velocity * max(canopy_height - displacement_height, 1.0e-3u"m")
 
     heat_top_conductance, heat_ground_conductance = _ktheory_conductances!(heat_conductance_between_layers, relative_eddy_diffusivity,
-        canopy_top_eddy_diffusivity, layer_spacing, calc_ρ_cp(canopy_top_air_temperature))
+        canopy_top_eddy_diffusivity, layer_spacing, calc_air_volumetric_heat_capacity(canopy_top_air_temperature))
     ground_heat_conductance[] = heat_ground_conductance
     _ktheory_solve!(air_temperature, heat_layer_total_conductance, heat_conductance_between_layers, heat_known_flux, heat_top_conductance, heat_ground_conductance,
         canopy_top_air_temperature, ground_temperature, layer -> sensible_heat_source[layer])

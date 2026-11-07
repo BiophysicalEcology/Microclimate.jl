@@ -41,7 +41,7 @@ whichever atmospheric-stability parameterisation they use. Returns
 function surface_fluxes end
 
 """
-    init_surface_fluxes!(boundary_layer_model, buffers, forcing, site, heights, T0, i)
+    init_surface_fluxes!(boundary_layer_model, buffers, forcing, site, heights, soil_temperatures, i)
 
 Refresh any internal state the model needs for `surface_fluxes` on the
 upcoming hour `i`. Default no-op for models that don't carry warm-start state.

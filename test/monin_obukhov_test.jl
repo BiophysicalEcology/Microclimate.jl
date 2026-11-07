@@ -1,6 +1,6 @@
 using Microclimate
 using Microclimate: calc_obukhov_length, monin_obukhov_iteration, ObukhovLength, InverseObukhovLength, stability_parameter_at_height,
-    momentum_stability_correction, heat_stability_correction, heat_gradient_stability_factor, calc_ρ_cp, atmospheric_surface_profile!, allocate_profile, dry_air_properties
+    momentum_stability_correction, heat_stability_correction, heat_gradient_stability_factor, calc_air_volumetric_heat_capacity, atmospheric_surface_profile!, allocate_profile, dry_air_properties
 using Unitful
 using Test
 
@@ -17,9 +17,9 @@ function iteration_arguments(dT)  # dT = reference_temp - surface_temp
     surface_temp = reference_temp - dT
     ΔT = reference_temp - surface_temp
     mean_temp = (reference_temp + surface_temp) / 2
-    ρ_cp = calc_ρ_cp(mean_temp)
+    air_volumetric_heat_capacity = calc_air_volumetric_heat_capacity(mean_temp)
     kinematic_viscosity = dry_air_properties(mean_temp, atmospheric_pressure).kinematic_viscosity
-    return (reference_temp, surface_temp, 2.0u"m/s", z0, z, ρcpTκg, bl.karman_constant, ΔT, ρ_cp, kinematic_viscosity)
+    return (reference_temp, surface_temp, 2.0u"m/s", z0, z, ρcpTκg, bl.karman_constant, ΔT, air_volumetric_heat_capacity, kinematic_viscosity)
 end
 stability_keywords = (; bl.stability_functions)
 

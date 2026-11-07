@@ -44,17 +44,17 @@ end
 # reroutes any unrealized latent flux to sensible so mass/energy stay exact
 # either direction. Dew/frost classification of the result happens below,
 # in the per-layer loop's condensation_model call.
-function _cap_wet_surface_evaporation(evaporation_mass_flow, sensible_heat_flow, wet_fraction, available_mass,
+function _cap_wet_surface_evaporation(evaporation_mass_flow, sensible_heat_flux, wet_fraction, available_mass,
     layer_capacity, air_temperature,
 )
     demanded_mass = uconvert(u"kg", evaporation_mass_flow * wet_fraction * CANOPY_TIMESTEP) / 1.0u"m^2"
     actual_mass = clamp(demanded_mass, available_mass - layer_capacity, available_mass)
     shortfall_mass = demanded_mass - actual_mass
-    iszero(shortfall_mass) && return (evaporation_mass_flow, sensible_heat_flow, actual_mass)
+    iszero(shortfall_mass) && return (evaporation_mass_flow, sensible_heat_flux, actual_mass)
 
-    shortfall_flow = uconvert(unit(evaporation_mass_flow), shortfall_mass * 1.0u"m^2" / CANOPY_TIMESTEP)
-    shortfall_power = uconvert(unit(sensible_heat_flow), shortfall_flow * enthalpy_of_vaporisation(air_temperature) / 1.0u"m^2")
-    return (evaporation_mass_flow - shortfall_flow, sensible_heat_flow + shortfall_power, actual_mass)
+    shortfall_mass_flow = uconvert(unit(evaporation_mass_flow), shortfall_mass * 1.0u"m^2" / CANOPY_TIMESTEP)
+    shortfall_heat_flux = uconvert(unit(sensible_heat_flux), shortfall_mass_flow * enthalpy_of_vaporisation(air_temperature) / 1.0u"m^2")
+    return (evaporation_mass_flow - shortfall_mass_flow, sensible_heat_flux + shortfall_heat_flux, actual_mass)
 end
 
 # A ground that stays at the temperature it was given

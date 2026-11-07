@@ -112,6 +112,6 @@ function leaf_heat_balance(leaf_temperature, absorbed_radiation, air_temperature
         leaf_temperature, air_temperature; water_potential=leaf_water_potential)
 
     emitted_longwave = leaf_emissivity * σ * leaf_temperature^4 * leaf_area
-    net = absorbed_radiation * leaf_area - emitted_longwave - convection.convection_flow - evaporation.evaporation_heat_flow
-    return (; net, convection, evaporation, emitted_longwave)
+    net_heat_flow = absorbed_radiation * leaf_area - emitted_longwave - convection.convection_flow - evaporation.evaporation_heat_flow
+    return (; net_heat_flow, convection, evaporation, emitted_longwave)
 end

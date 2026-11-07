@@ -447,7 +447,7 @@ end
 # out[k] = functor(in₁[k], in₂[k], …) over each input quantity's buffer.
 function fill_derived!(out, d::Derived{Names}, buffers) where {Names}
     ins = values(NamedTuple{Names}(buffers))
-    @inbounds for k in eachindex(out)
+    for k in eachindex(out)
         out[k] = d.functor(map(b -> b[k], ins)...)
     end
     return out

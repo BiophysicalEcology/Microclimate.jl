@@ -321,6 +321,6 @@ mutable struct MicroCache{MP<:MicroProblem,O<:MicroResult,S<:MicroState,B<:Micro
     forcing::F
     ode_integrator::I
     # Type-level soil-node count, used for `SVector(ntuple(f, Val(N_soil)))` in
-    # the day loop so T0 reconstruction is type-stable.
+    # the day loop so rebuilding the soil temperatures is type-stable.
     num_soil_nodes_val::Val{Nsoil}
 end

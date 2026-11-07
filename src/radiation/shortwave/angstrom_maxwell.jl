@@ -25,7 +25,7 @@ function shortwave_radiation!(model::AngstromMaxwellShortwave, output, cloud::Ab
     diffuse_fraction = output.diffuse_fraction
     solar_constant = 1367.0u"W/m^2"
     ϵ = 1e-9u"W/m^2"
-    @inbounds for i in eachindex(global_radiation)
+    for i in eachindex(global_radiation)
         # 1) Extraterrestrial horizontal irradiance for this hour's day
         d = doy[i]
         θ1 = 360.0 * (d - 1) / 365.0

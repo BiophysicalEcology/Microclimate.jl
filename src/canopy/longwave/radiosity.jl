@@ -74,18 +74,23 @@ function canopy_longwave!(buffers, model::LayeredRadiosityExchange, leaf_emissiv
 
     n = length(layer_transmission)
 
-    τ_d = layer_transmission; f_d = backscatter_fraction
+    τ_d = layer_transmission
+    f_d = backscatter_fraction
     εₗ = leaf_emissivity
-    εₛ = ground_emissivity;    Tₛ = u"K"(ground_temperature)
+    εₛ = ground_emissivity
+    Tₛ = u"K"(ground_temperature)
 
-    ρ = layer_reflectance;     τ = layer_effective_transmission
+    ρ = layer_reflectance
+    τ = layer_effective_transmission
     E = layer_emission_source
 
     L_d = boundary_downward_longwave
     L_u = boundary_upward_longwave
 
-    A = absorbed_longwave;     R = reflectance_response
-    Γ = response_gain;         S = effective_source
+    A = absorbed_longwave
+    R = reflectance_response
+    Γ = response_gain
+    S = effective_source
 
     # optical coefficients of each canopy layer
     for i in 1:n
