@@ -1,6 +1,6 @@
 using Microclimate
 using Microclimate: calc_Obukhov_length, monin_obukhov_iteration, ObukhovLength, InverseObukhovLength, stability_parameter,
-    calc_ψ_m, calc_ψ_h, calc_Φ_h, calc_ρ_cp, atmospheric_surface_profile!, allocate_profile, dry_air_properties
+    momentum_stability_correction, heat_stability_correction, heat_gradient_stability_factor, calc_ρ_cp, atmospheric_surface_profile!, allocate_profile, dry_air_properties
 using Unitful
 using Test
 
@@ -62,31 +62,31 @@ end
     @test isapprox(stability_parameter(InverseObukhovLength(), z, inverse_obukhov(0.0u"K").value), 0.0; atol = 0.01)
 end
 
-@testset "$(nameof(typeof(f))) calc_ψ_m/calc_ψ_h/calc_Φ_h: type-stable and zero-allocation, both regimes" for f in
+@testset "$(nameof(typeof(f))) momentum_stability_correction/heat_stability_correction/heat_gradient_stability_factor: type-stable and zero-allocation, both regimes" for f in
         (BusingerDyer(), ChengBrutsaert())
     for L in (-5.0u"m", 5.0u"m", Inf * u"m")
-        @inferred calc_ψ_m(f, ζ(L))
-        @inferred calc_ψ_h(f, ζ(L))
-        @inferred calc_Φ_h(f, ζ(L))
-        @test allocations(calc_ψ_m, f, ζ(L)) == 0
-        @test allocations(calc_ψ_h, f, ζ(L)) == 0
-        @test allocations(calc_Φ_h, f, ζ(L)) == 0
+        @inferred momentum_stability_correction(f, ζ(L))
+        @inferred heat_stability_correction(f, ζ(L))
+        @inferred heat_gradient_stability_factor(f, ζ(L))
+        @test allocations(momentum_stability_correction, f, ζ(L)) == 0
+        @test allocations(heat_stability_correction, f, ζ(L)) == 0
+        @test allocations(heat_gradient_stability_factor, f, ζ(L)) == 0
     end
     # Φ_h = 1 at neutral; stable Φ_h > 1 (suppressed mixing), unstable Φ_h < 1 (enhanced).
-    @test calc_Φ_h(f, ζ(Inf * u"m")) == 1.0
-    @test calc_Φ_h(f, ζ(5.0u"m")) > 1.0
-    @test calc_Φ_h(f, ζ(-5.0u"m")) < 1.0
+    @test heat_gradient_stability_factor(f, ζ(Inf * u"m")) == 1.0
+    @test heat_gradient_stability_factor(f, ζ(5.0u"m")) > 1.0
+    @test heat_gradient_stability_factor(f, ζ(-5.0u"m")) < 1.0
     # Stays bounded for very small L (calm, strongly stable), keeping
     # RaupachLTheoryAirProfile's T_L bounded
     for L in (10.0u"m", 1.0u"m", 0.1u"m", 0.01u"m", 0.0001u"m")
-        @test 1.0 <= calc_Φ_h(f, ζ(L)) <= 10.0
+        @test 1.0 <= heat_gradient_stability_factor(f, ζ(L)) <= 10.0
     end
 end
 
 @testset "ChengBrutsaert: smooth and strictly decreasing through the stable range" begin
     f = ChengBrutsaert()
     ζs = range(0.1, 50.0; length=2001)
-    for ψ in (calc_ψ_m, calc_ψ_h)
+    for ψ in (momentum_stability_correction, heat_stability_correction)
         values = ψ.(Ref(f), ζs)
         @test all(<(0), diff(values))
         # No kinks: the slope changes gradually everywhere (BusingerDyer's clamp jumps it by ~6)
@@ -96,8 +96,8 @@ end
     # Φ_h is the heat gradient of ψ_h, 1 - ζ dψ_h/dζ
     for ζ₀ in (0.01, 0.5, 2.0, 20.0)
         h = 1e-6
-        slope = (calc_ψ_h(f, ζ₀ + h) - calc_ψ_h(f, ζ₀ - h)) / 2h
-        @test calc_Φ_h(f, ζ₀) ≈ 1 - ζ₀ * slope rtol = 1e-6
+        slope = (heat_stability_correction(f, ζ₀ + h) - heat_stability_correction(f, ζ₀ - h)) / 2h
+        @test heat_gradient_stability_factor(f, ζ₀) ≈ 1 - ζ₀ * slope rtol = 1e-6
     end
 end
 
