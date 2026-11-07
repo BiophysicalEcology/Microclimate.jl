@@ -1162,8 +1162,8 @@ function solve_canopy_soil_hour!(ode_integrator, hour_index, hour_T0_ode,
         ground_temperature=ground_temperature0, ground_emissivity, ground_relative_humidity, canopy_source_temperature,
         rainfall, direct_horizontal_irradiance, diffuse_horizontal_irradiance,
         ground_reflectance=albedo, leaf_water_potential)
-    (; T0, T_snow) = soil_hour!(overrides)
-    return (; overrides, T0, T_snow)
+    soil = soil_hour!(overrides)
+    return (; overrides, soil.T0, soil.T_snow)
 end
 
 function update_soil_properties!(output, soil_properties_buffers, soil_properties_model; step, kw...)
