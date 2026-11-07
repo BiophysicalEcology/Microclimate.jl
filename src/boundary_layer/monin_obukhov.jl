@@ -311,6 +311,9 @@ function atmospheric_surface_profile!(boundary_layer_model::MoninObukhov, buffer
     ψ_h_anchor = heat_stability_correction(stability_functions, stability_parameter_at_height(stability_variable, anchor_height_above_origin, stability))
     ψ_m_roughness = momentum_stability_correction(stability_functions, stability_parameter_at_height(stability_variable, roughness_length, stability))
     temperature_denominator = log(reference_height_above_origin / anchor_height_above_origin) + ψ_h_anchor - ψ_h
+    # Wind follows the reference wind, not the friction velocity, which has a floor in calm air
+    reference_momentum_term = log(reference_height_above_origin / roughness_length) -
+        momentum_stability_correction(stability_functions, stability_parameter_at_height(stability_variable, reference_height_above_origin, stability)) + ψ_m_roughness
 
     reference_vapor_pressure = wet_air_properties(reference_temperature, reference_humidity, atmospheric_pressure; vapour_pressure_equation).vapour_pressure
     # No surface_relative_humidity: constant vapour pressure with height, as before.
@@ -334,7 +337,8 @@ function atmospheric_surface_profile!(boundary_layer_model::MoninObukhov, buffer
             relative_humidity[i] = reference_humidity
         else
             height_stability_parameter = stability_parameter_at_height(stability_variable, height_above_origin, stability)
-            wind_speed[i] = (friction_velocity / κ) * (log(height_above_origin / roughness_length) - momentum_stability_correction(stability_functions, height_stability_parameter) + ψ_m_roughness)
+            momentum_term = log(height_above_origin / roughness_length) - momentum_stability_correction(stability_functions, height_stability_parameter) + ψ_m_roughness
+            wind_speed[i] = reference_wind_speed * momentum_term / reference_momentum_term
             # Temperature uses its own anchor (which may differ from roughness_length -- see above)
             temperature_log_term = log(height_above_origin / anchor_height_above_origin) + ψ_h_anchor - heat_stability_correction(stability_functions, height_stability_parameter)
             air_temperature[i] = anchor_temperature + (reference_temperature - anchor_temperature) * temperature_log_term / temperature_denominator

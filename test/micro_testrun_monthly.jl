@@ -173,7 +173,7 @@ wind_matrix = micro_out.profile.wind_speed
 @testset "runmicro comparisons" begin
     @test humidity_matrix[:, 1] ≈ rh1cm_nmr rtol=1e-1
     @test humidity_matrix[:, 2] ≈ rh2m_nmr rtol=5e-2
-    @test wind_matrix[:, 1] ≈ vel1cm_nmr rtol=0.15  # pre-existing marginal drift at the 1cm node, unrelated to dew/frost (never forms in this scenario)
+    @test wind_matrix[:, 1] ≈ vel1cm_nmr rtol=0.06
     @test wind_matrix[:, 2] ≈ vel2m_nmr rtol=1e-1
     @test u"K".(air_temperature_matrix[:, 1]) ≈ ta1cm_nmr rtol=1e-2
     @test u"K".(air_temperature_matrix[:, 2]) ≈ ta2m_nmr rtol=2e-3
