@@ -63,6 +63,7 @@ Makie = "0.20, 0.21, 0.22, 0.23, 0.24"
 ModelParameters = "0.4"
 OrdinaryDiffEqAdamsBashforthMoulton = "2"
 OrdinaryDiffEqCore = "4"
+OrdinaryDiffEqSDIRK = "2"
 OrdinaryDiffEqTsit5 = "2"
 PolyLog = "2.6.4"
 SafeTestsets = "0.0.1"
@@ -80,9 +81,10 @@ julia = "1.10"
 Aqua = "4c88cf16-eb10-579e-8560-4a9242c79595"
 CSV = "336ed68f-0bac-5ca0-87d4-7b16caf5d00b"
 DataFrames = "a93c6f00-e57d-5684-b7b6-d8193f3e46c0"
+OrdinaryDiffEqSDIRK = "2d112036-d095-4a1e-ab9a-08536f3ecdbf"
 SafeTestsets = "1bc83da4-3b8d-516f-aca4-4fe02f6d838f"
 Statistics = "10745b16-79ce-11e8-11f9-7d13ad32a3b2"
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 
 [targets]
-test = ["Aqua", "CSV", "DataFrames", "SafeTestsets", "Statistics", "Test"]
+test = ["Aqua", "CSV", "DataFrames", "OrdinaryDiffEqSDIRK", "SafeTestsets", "Statistics", "Test"]

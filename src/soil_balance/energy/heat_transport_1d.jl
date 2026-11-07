@@ -1,6 +1,6 @@
 """
     SoilHeatTransport1D(; ode_solver=Tsit5(),
-                          ode_kwargs=(; reltol=1e-6u"K", abstol=1e-3u"K"),
+                          ode_kwargs=(; reltol=1e-6, abstol=1e-3u"K"),
                           maximum_surface_temperature=85.0u"°C",
                           freezing_model=PhaseTransitionLatentHeat())
 
@@ -14,8 +14,9 @@ deep soil temperature (Dirichlet BC).
 Solver tuning lives here, not on `MicroConfig`, because each
 `SoilHeatTransportModel` chooses its own integration strategy:
 
-- `ode_solver` — any SciML algorithm (`Tsit5()`, `RK4()`, …)
-- `ode_kwargs` — NamedTuple of kwargs forwarded to the integrator
+- `ode_solver` — any SciML algorithm (`Tsit5()`, `RK4()`, …), explicit or implicit. An
+  implicit one needs `autodiff=AutoFiniteDiff()`, as the soil balance can't be auto-differentiated.
+- `ode_kwargs` — NamedTuple of kwargs forwarded to the integrator, such as `dt=60u"minute"`
 - `maximum_surface_temperature` — surface-temperature safety clamp
   (Fortran microinput[74])
 - `freezing_model` — soil ice/water phase-transition correction applied to
@@ -23,7 +24,7 @@ Solver tuning lives here, not on `MicroConfig`, because each
 """
 @kwdef struct SoilHeatTransport1D{SOS,SOK,MSF,FM} <: SoilHeatTransportModel
     ode_solver::SOS = Tsit5()
-    ode_kwargs::SOK = (; reltol=1e-6u"K", abstol=1e-3u"K")
+    ode_kwargs::SOK = (; reltol=1e-6, abstol=1e-3u"K")
     maximum_surface_temperature::MSF = 85.0u"°C"
     freezing_model::FM = PhaseTransitionLatentHeat()
 end
