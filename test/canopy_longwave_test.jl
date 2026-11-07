@@ -46,22 +46,19 @@ end
 end
 
 @testset "isothermal canopy at sky-equivalent temperature: near-zero net exchange" begin
-    # If leaf/ground temperature equals the effective sky temperature AND both are
-    # perfect emitters (emissivity 1), the whole profile is in radiative
-    # equilibrium (`sky_temperature` is defined as `(incoming_longwave/σ)^(1/4)`,
-    # i.e. exactly the blackbody temperature matching the incoming flux). A leaf
-    # emissivity below 1 (checked elsewhere) breaks this deliberately: an
-    # imperfect emitter at the sky-equivalent temperature radiates less than a
-    # blackbody would, so a small systematic net gain is real, not a bug.
     sky = Microclimate.precompute_longwave_sky(model.atmospheric_radiation_model;
         site, environment_instant=environment, shade=0.0)
     T_eq = sky.sky_temperature
     leaf_temperature = fill(T_eq, n_layers)
 
-    result = Microclimate.canopy_longwave!(buffers, model, 1.0;
-        leaf_temperature, ground_temperature=T_eq, ground_emissivity=1.0, incoming_longwave=canopy_incoming_longwave(model; site, environment_instant=environment))
+    for emissivity in (1.0, leaf_emissivity, 0.9)
+        result = Microclimate.canopy_longwave!(buffers, model, emissivity;
+            leaf_temperature, ground_temperature=T_eq, ground_emissivity=1.0, incoming_longwave=canopy_incoming_longwave(model; site, environment_instant=environment))
 
-    @test abs(ustrip(u"W/m^2", result.net_absorbed_longwave)) < 1e-6
+        @test abs(ustrip(u"W/m^2", result.net_absorbed_longwave)) < 1e-6
+        emitted = 2.0 .* emissivity .* Microclimate.σ .* T_eq^4 .* (1.0 .- buffers.layer_transmission)
+        @test all(f -> abs(ustrip(u"W/m^2", f)) < 1e-6, buffers.absorbed_longwave .- emitted)
+    end
 end
 
 @testset "AllPairsLongwaveExchange: runs and gives physically sane fluxes" begin

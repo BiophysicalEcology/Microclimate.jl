@@ -2,10 +2,10 @@
     LayeredLongwaveExchange(; atmospheric_radiation_model=CampbellNormanAtmosphericRadiation())
 
 Multi-layer longwave exchange. Each canopy layer is a semi-transparent,
-isothermal slab. Canopy-internal scattering is neglected, following, 
-Norman (1979); emission scales with `leaf_emissivity`. Layer transmission
-assumes that diffuse extinction is almost independent of leaf angle 
-(Goudriaan 1977).
+isothermal slab with no reflection, following Norman (1979). Leaves absorb and
+emit in proportion to `leaf_emissivity`, and longwave they intercept but don't
+absorb carries on in the same direction. Layer transmission assumes that
+diffuse extinction is almost independent of leaf angle (Goudriaan 1977).
 
 Sky longwave reuses [`precompute_longwave_sky`](@ref) with `shade=0` — the
 canopy resolves vegetation shading layer by layer, so the bulk `shade`
@@ -42,22 +42,11 @@ end
                       incoming_longwave)
 
 Sequential top-down (sky → ground) then bottom-up (ground → sky) gap-fraction
-exchange, each pass `O(n_layers)`. with no matrix solve (non-reflecting
+exchange, each pass `O(n_layers)`, with no matrix solve (non-reflecting
 layers mean the two streams don't couple). Writes `absorbed_longwave`
 (gross per layer, per unit ground area — `leaf_heat_balance` subtracts the
 leaf's own emission separately) and returns `(; ground_absorbed_longwave,
 net_absorbed_longwave)`.
-
-Absorbs at `1-τ` (full interception, not `leaf_emissivity*(1-τ)`) while
-emitting at `leaf_emissivity*σT^4`: the transmission recursion above treats
-100% of intercepted flux as consumed and replaced by local emission (no
-reflection term), so absorption bookkeeping must match that same `1-τ` or
-leak energy, per this file's own exact conservation test. (
-[`AllPairsLongwaveExchange`](@ref) uses the `leaf_emissivity*(1-τ)` form
-instead, matching R's `longwavebelow`'s `RlwLabs = 0.5*vegem*(Rlwdown+Rlwup)`;
-its purpose is R-comparison fidelity rather than closed-system conservation.)
-[`LayeredRadiosityExchange`](@ref) adds reflection properly and stays exact
-at any `leaf_emissivity`.
 """
 function canopy_longwave!(buffers, model::LayeredLongwaveExchange, leaf_emissivity;
     leaf_temperature, ground_temperature, ground_emissivity,
@@ -70,22 +59,20 @@ function canopy_longwave!(buffers, model::LayeredLongwaveExchange, leaf_emissivi
 
     L_d[1] = incoming_longwave
     for i in 1:n_layers
-        τ = layer_transmission[i]
-        emission = leaf_emissivity * σ * u"K"(leaf_temperature[i])^4
-        L_d[i + 1] = L_d[i] * τ + emission * (1.0 - τ)
+        absorptance = leaf_emissivity * (1.0 - layer_transmission[i])
+        L_d[i + 1] = L_d[i] * (1.0 - absorptance) + absorptance * σ * u"K"(leaf_temperature[i])^4
     end
 
     ground_emission = ground_emissivity * σ * u"K"(ground_temperature)^4
     L_u[n_layers + 1] = ground_emission + (1.0 - ground_emissivity) * L_d[n_layers + 1]
     for i in n_layers:-1:1
-        τ = layer_transmission[i]
-        emission = leaf_emissivity * σ * u"K"(leaf_temperature[i])^4
-        L_u[i] = L_u[i + 1] * τ + emission * (1.0 - τ)
+        absorptance = leaf_emissivity * (1.0 - layer_transmission[i])
+        L_u[i] = L_u[i + 1] * (1.0 - absorptance) + absorptance * σ * u"K"(leaf_temperature[i])^4
     end
 
     for i in 1:n_layers
-        τ = layer_transmission[i]
-        absorbed_longwave[i] = (1.0 - τ) * (L_d[i] + L_u[i + 1])
+        absorptance = leaf_emissivity * (1.0 - layer_transmission[i])
+        absorbed_longwave[i] = absorptance * (L_d[i] + L_u[i + 1])
     end
 
     ground_absorbed_longwave = ground_emissivity * L_d[n_layers + 1]
