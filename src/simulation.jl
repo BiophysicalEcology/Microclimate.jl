@@ -1,19 +1,12 @@
 # Output quantities are written straight into the result buffers; any other
 # quantity in `forcings` (e.g. vapour pressure feeding a derived humidity) is an
 # intermediate and needs a scratch buffer. Allocate one per intermediate.
-allocate_interpolation_scratch(::Nothing) = nothing
-function allocate_interpolation_scratch(env)
+allocate_interpolation_scratch(::Nothing, output) = nothing
+function allocate_interpolation_scratch(env, output)
     fs = env.forcings
-    names = filter(k -> !_is_output_quantity(Val(k)), keys(fs))
+    names = filter(name -> !hasproperty(output, name), keys(fs))
     return NamedTuple{names}(map(k -> _quantity_buffer(getproperty(fs, k)), names))
 end
-
-# Quantity names that the solver writes directly into its result buffers.
-@inline _is_output_quantity(::Val) = false
-@inline _is_output_quantity(::Val{:reference_temperature}) = true
-@inline _is_output_quantity(::Val{:reference_humidity}) = true
-@inline _is_output_quantity(::Val{:reference_wind_speed}) = true
-@inline _is_output_quantity(::Val{:cloud_cover}) = true
 
 _quantity_buffer(f::DielForcing) = zeros(eltype(first(f.values)), 24 * n_days(f))
 
@@ -269,7 +262,7 @@ function CommonSolve.init(mp::MicroProblem)
         allocate_phase_transition(soil_energy_model.freezing_model, num_soil_nodes),
         allocate_soil_water_balance(soil_hydraulic_model, num_soil_nodes),
         snow_scratch,
-        allocate_interpolation_scratch(environment_minmax),
+        allocate_interpolation_scratch(environment_minmax, output),
         allocate_canopy(canopy_model, heights, boundary_layer_model; site, vapour_pressure_equation, soil_hydraulic_model),
     )
 
@@ -405,9 +398,8 @@ function interpolate_minmax!(output, environment_minmax, environment_daily, envi
     # Fill every quantity buffer: output quantities into the result, intermediates
     # into scratch. Derived quantities (e.g. humidity from vapour pressure) read
     # the forcings filled before them.
-    buffer_for(vk) = _is_output_quantity(vk) ? getproperty(output, _name(vk)) :
-                                               getproperty(interpolation_scratch, _name(vk))
-    populate_quantities!(buffer_for, environment_minmax.forcings, solar_radiation_out, consecutive_days(environment_minmax))
+    buffers = merge(ConstructionBase.getproperties(output), interpolation_scratch)
+    populate_quantities!(buffers, environment_minmax.forcings, solar_radiation_out, consecutive_days(environment_minmax))
 
     # Clamp humidity and cloud cover to [_, 1.0] without allocating a mask Vector.
     @inbounds for i in eachindex(output.reference_humidity)
