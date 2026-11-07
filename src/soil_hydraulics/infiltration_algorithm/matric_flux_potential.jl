@@ -42,14 +42,10 @@ function state_to_water_potential!(::MatricFluxPotentialAlgorithm, buffers, camp
     return nothing
 end
 
-# vapor_flux_derivative isn't added into flux_diagonal (unlike MatricPotentialAlgorithm's
-# diagonal) since it's d(vapor flux)/dψ — converting to d/dΦ needs a dψ/dΦ=1/K factor with no
-# reference to check it against. flux_diagonal is just the Newton Jacobian, not the residual,
-# so mass_balance_residual (which does include vapor_flux) still converges correctly without it.
 function assemble_tridiagonal_system!(::MatricFluxPotentialAlgorithm, buffers, i, dt, campbell_b)
     (; matric_flux_potential, hydraulic_conductivity, water_content_new, water_content, depth,
        layer_water_mass, campbell_flux_exponent,
-       vapor_flux, rainfall_flux, root_water_uptake,
+       vapor_flux, vapor_flux_derivative, rainfall_flux, root_water_uptake,
        flux_sub_diagonal, flux_diagonal, flux_super_diagonal, mass_balance_residual) = buffers
     b3 = campbell_flux_exponent[i]
     Φ, K = matric_flux_potential, hydraulic_conductivity
@@ -58,7 +54,9 @@ function assemble_tridiagonal_system!(::MatricFluxPotentialAlgorithm, buffers, i
     hydraulic_capacitance = layer_water_mass[i] * water_content_new[i] / ((campbell_b[i] + 3.0) * Φ[i] * dt)
     flux_sub_diagonal[i] = -1.0 / Δz_upper - Unitful.gn * b3 * K[i-1] / Φ[i-1]
     flux_super_diagonal[i] = -1.0 / Δz_lower
-    flux_diagonal[i] = 1.0 / Δz_upper + 1.0 / Δz_lower + hydraulic_capacitance + Unitful.gn * b3 * K[i] / Φ[i]
+    # dΦ = K dψ, so a derivative with respect to ψ divides by K
+    flux_diagonal[i] = 1.0 / Δz_upper + 1.0 / Δz_lower + hydraulic_capacitance + Unitful.gn * b3 * K[i] / Φ[i] +
+        (vapor_flux_derivative[i-1] + vapor_flux_derivative[i]) / K[i]
 
     # Mass balance residual: net outflow plus storage change, zero at convergence
     matric_divergence = (Φ[i] - Φ[i-1]) / Δz_upper - (Φ[i+1] - Φ[i]) / Δz_lower

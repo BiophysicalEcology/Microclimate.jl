@@ -137,8 +137,8 @@ soil_properties_model = CampbelldeVriesSoilProperties(;
 soil_profile = SoilProfile(;
     bulk_density          = fill(BULK_DENSITY, length(DEPTHS)),
     mineral_density       = fill(MINERAL_DENSITY, length(DEPTHS)),
-    mineral_conductivity  = fill(MINERAL_CONDUCTIVITY, length(DEPTHS)),
-    mineral_heat_capacity = fill(MINERAL_HEAT_CAPACITY, length(DEPTHS)),
+    mineral_conductivity  = MINERAL_CONDUCTIVITY,
+    mineral_heat_capacity = MINERAL_HEAT_CAPACITY,
     hydraulics      = CampbellHydraulicProfile(;
         air_entry_water_potential        = fill(AIR_ENTRY_POTENTIAL, length(DEPTHS)),
         saturated_hydraulic_conductivity = fill(SAT_HYDRAULIC_COND, length(DEPTHS)),
@@ -371,17 +371,17 @@ for day in [90, 180, 270, 360, 450, 540, 730, 1000]
     println("  $(lpad(day,4)) | $j5  $n5 | $j20  $n20 | $j50  $n50 | $k5  $k20  $k50")
 end
 
-# @testset "SNOTEL 329 — Julia vs NicheMapR ($(NDAYS)d)" begin
-#     @test size(micro_out.soil_temperature, 1) == nhours_out
-#     @test size(micro_out.soil_temperature, 2) == length(DEPTHS)
+@testset "SNOTEL 329 — Julia vs NicheMapR ($(NDAYS)d)" begin
+    @test size(micro_out.soil_temperature, 1) == nhours_out
+    @test size(micro_out.soil_temperature, 2) == length(DEPTHS)
 
-#     @test julia_D5cm  ≈ nmr_sub.D5cm  rtol=0.3
-#     @test julia_D20cm ≈ nmr_sub.D20cm rtol=0.2
-#     @test julia_D50cm ≈ nmr_sub.D50cm rtol=0.2
+    @test_broken julia_D5cm  ≈ nmr_sub.D5cm  rtol=0.3
+    @test_broken julia_D20cm ≈ nmr_sub.D20cm rtol=0.2
+    @test_broken julia_D50cm ≈ nmr_sub.D50cm rtol=0.2
 
-#     @test snow_depth_julia   ≈ nmr_sub.SNOWDEP  rtol=0.3
-#     @test snow_density_julia ≈ nmr_sub.SNOWDENS rtol=0.2
-# end
+    @test_broken snow_depth_julia ≈ nmr_sub.SNOWDEP  rtol=0.3
+    @test snow_density_julia ≈ nmr_sub.SNOWDENS rtol=0.2
+end
 
 #── Visual comparisons — run manually (not in CI) ─────────────────────────────
 # Set plot_year (e.g. 2013) and/or plot_month (1–12) to zoom in.

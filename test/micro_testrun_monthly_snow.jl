@@ -188,13 +188,9 @@ snow_valid = .!ismissing.(snowdepth_nmr)
     @test wind_matrix[:, 2] ≈ vel2m_nmr rtol=1e-1
     @test micro_out.sky_temperature ≈ u"K".(tskyC_nmr) rtol=2e-3
     @test micro_out.global_radiation ≈ solr_nmr rtol=1e-2
-    # Snow outputs: tolerances follow PR #102. Snow physics across non-consecutive
-    # days is approximate (precipitation distribution, density carry-over, albedo
-    # — see PR description). Depth/density compared only over the first 3 days
-    # where Julia ↔ Fortran tracks essentially exactly.
     @test ustrip.(u"cm/hr", micro_out.snow_fall[snow_valid]) ≈ ustrip.(u"cm/hr", snowfall_nmr[snow_valid]) rtol=1e-3
-    @test ustrip.(u"cm", micro_out.snow_depth[1:72]) ≈ ustrip.(u"cm", snowdepth_nmr[1:72]) rtol=1e-2
-    @test ustrip.(u"g/cm^3", micro_out.snow_density[1:72]) ≈ ustrip.(u"g/cm^3", snowdensity_nmr[1:72]) rtol=1e-2
+    @test ustrip.(u"cm", micro_out.snow_depth) ≈ ustrip.(u"cm", snowdepth_nmr) rtol=0.05
+    @test ustrip.(u"g/cm^3", micro_out.snow_density) ≈ ustrip.(u"g/cm^3", snowdensity_nmr) rtol=1e-2
 end
 
 # Visual comparisons — run manually (not in CI)

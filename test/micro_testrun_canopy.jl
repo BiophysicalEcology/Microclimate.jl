@@ -99,11 +99,6 @@ end
 
     @test all(isfinite, ustrip.(u"K", wet_output.canopy.leaf_temperature))
     @test all(isfinite, ustrip.(u"K", dry_output.canopy.leaf_temperature))
-    # Different initial soil moisture propagates through Campbell's demand/supply
-    # solve into a different leaf_water_potential and hence leaf temperature. The
-    # *direction* of that difference over a multi-day run also depends on ground-
-    # temperature feedback and how quickly soil moisture re-equilibrates (verified
-    # separately, directly on canopy_energy_balance!, that more negative
-    # leaf_water_potential warms the leaf — see canopy_energy_balance_solve_test.jl).
-    @test wet_output.canopy.leaf_temperature != dry_output.canopy.leaf_temperature
+    peak_sun = argmax(wet_output.global_radiation)
+    @test all(dry_output.canopy.leaf_temperature[peak_sun, :] .> wet_output.canopy.leaf_temperature[peak_sun, :])
 end
