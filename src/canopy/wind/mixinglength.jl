@@ -220,7 +220,7 @@ function canopy_top_flux_boundary(boundary_layer_model, canopy_height, displacem
     top_depth = max(canopy_height - displacement_height, 1.0e-3u"m")
     reference_depth = max(reference_height - displacement_height, 1.0e-3u"m")
     heat_correction(depth) = heat_stability_correction(stability_functions,
-        stability_parameter(InverseObukhovLength(), depth, inverse_obukhov_length))
+        stability_parameter_at_height(InverseObukhovLength(), depth, inverse_obukhov_length))
 
     ground_resistance = min(canopy_height / (karman_constant * friction_velocity * top_depth), max_resistance)
     top_resistance = min((log(reference_depth / top_depth) - heat_correction(reference_depth) + heat_correction(top_depth)) /

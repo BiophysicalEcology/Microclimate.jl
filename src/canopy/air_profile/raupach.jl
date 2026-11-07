@@ -283,7 +283,7 @@ function canopy_heat_vapor_transport!(buffers, model::RaupachLTheoryAirProfile, 
     a₀, a₁ = ground_velocity_std_factor, canopy_top_velocity_std_factor
     canopy_top_depth = max(h - d, 1.0e-3u"m")
     Φh = heat_gradient_stability_factor(boundary_layer_model.stability_functions,
-        stability_parameter(InverseObukhovLength(), canopy_top_depth, inverse_obukhov_length))
+        stability_parameter_at_height(InverseObukhovLength(), canopy_top_depth, inverse_obukhov_length))
     a₂ = κ * (1.0 - d / h) / (a₁^2 * Φh)
     T_L = min(a₂ * h / u_star, max_lagrangian_timescale)
 

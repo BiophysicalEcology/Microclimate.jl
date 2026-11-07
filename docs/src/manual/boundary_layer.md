@@ -22,7 +22,7 @@ relative humidity between the surface and the reference height with
 ## Monin-Obukhov similarity theory
 
 [`MoninObukhov`](@ref) solves for the friction velocity ``u^*`` and Obukhov length
-``L`` iteratively (`calc_Obukhov_length`), so stable and unstable atmospheric
+``L`` iteratively (`calc_obukhov_length`), so stable and unstable atmospheric
 regimes are both handled directly by the same solve. Wind and temperature at a height
 ``z`` above a roughness length ``z_0`` follow the log-law with a stability correction:
 

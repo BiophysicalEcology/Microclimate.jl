@@ -36,7 +36,7 @@ function atmospheric_surface_profile! end
 
 Surface-layer convective heat flux and friction velocity. Variants apply
 whichever atmospheric-stability parameterisation they use. Returns
-`(; convective_heat_flux, friction_velocity, ΔT, ρ_cp)`.
+`(; convective_heat_flux, friction_velocity, temperature_difference)`.
 """
 function surface_fluxes end
 
