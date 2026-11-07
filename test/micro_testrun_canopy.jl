@@ -44,6 +44,21 @@ end
     end
 end
 
+@testset "solve! allocates nothing, whatever the canopy and soil solver" begin
+    function solve_allocations(cache)
+        solve!(cache)
+        solve!(cache)
+        return @allocated solve!(cache)
+    end
+    implicit_soil = SoilHeatTransport1D(; ode_solver = ImplicitEuler(; autodiff = AutoFiniteDiff()),
+        ode_kwargs = (; adaptive = false, dt = 60.0u"minute"))
+    for canopy_model in (NoCanopy(), example_multilayer_canopy(; canopy_height = 1.0u"m", plant_area_index = 2.0)),
+        soil_energy_model in (SoilHeatTransport1D(), implicit_soil)
+        cache = init(example_microclimate_problem(; heights, canopy_model, soil_energy_model))
+        @test solve_allocations(cache) == 0
+    end
+end
+
 @testset "NoCanopy leaves canopy output zero-columned" begin
     output = solve(example_microclimate_problem(; heights))
     @test size(output.canopy.leaf_temperature) == (size(output.soil_temperature, 1), 0)

@@ -352,20 +352,22 @@ end
 
 # Curve value at clock hour `h`: the covering shape, evaluated.
 sample(curve::DielCurve, h, day, prev_vals, vals, next_vals) =
-    sample_shape(covering_shape(curve, h, day), h, day, curve, prev_vals, vals, next_vals)
+    sample_covering_shape(curve.shapes, nothing, h, h, day, curve, prev_vals, vals, next_vals)
 
-# The shape covering hour `h`: a bounded shape whose span holds it, else the filler.
-function covering_shape(curve::DielCurve, h, day)
-    filler = nothing
-    for s in curve.shapes
-        if is_space_filling(s)
-            filler = s
-        else
-            f, t = span(s)
-            in_span(h, resolve_time(f, day), resolve_time(t, day)) && return s
-        end
+# Evaluates at `h` the shape covering hour `covered_hour`: a bounded shape whose span holds it,
+# else the filler. Shapes have different types, so this steps through them by dispatch, which
+# keeps the types known and so doesn't allocate.
+sample_covering_shape(::Tuple{}, filler, covered_hour, h, day, curve, prev_vals, vals, next_vals) =
+    sample_shape(filler, h, day, curve, prev_vals, vals, next_vals)
+function sample_covering_shape(shapes::Tuple, filler, covered_hour, h, day, curve, prev_vals, vals, next_vals)
+    shape = first(shapes)
+    if is_space_filling(shape)
+        return sample_covering_shape(Base.tail(shapes), shape, covered_hour, h, day, curve, prev_vals, vals, next_vals)
     end
-    return filler
+    from, to = span(shape)
+    in_span(covered_hour, resolve_time(from, day), resolve_time(to, day)) &&
+        return sample_shape(shape, h, day, curve, prev_vals, vals, next_vals)
+    return sample_covering_shape(Base.tail(shapes), filler, covered_hour, h, day, curve, prev_vals, vals, next_vals)
 end
 
 # Cyclic membership of `h` in [t1, t2).
@@ -401,16 +403,12 @@ end
 function endpoint_height(t, th, day, curve, prev_vals, vals, next_vals)
     i = input_index(curve.inputs, t)
     i === nothing || return vals[i]
-    prev = covering_shape(curve, mod(th - 1e-6, 24.0), day)
-    return sample_shape(prev, th, day, curve, prev_vals, vals, next_vals)
+    return sample_covering_shape(curve.shapes, nothing, mod(th - 1e-6, 24.0), th, day, curve, prev_vals, vals, next_vals)
 end
 
-@inline function input_index(inputs::Tuple, t)
-    for i in eachindex(inputs)
-        inputs[i] == t && return i
-    end
-    return nothing
-end
+input_index(::Tuple{}, t, index=1) = nothing
+input_index(inputs::Tuple, t, index=1) =
+    first(inputs) == t ? index : input_index(Base.tail(inputs), t, index + 1)
 
 # Shape geometry between (t1, v1) and (t2, v2), evaluated at h.
 @inline shape_value(::Linear, h, t1, v1, t2, v2) = v1 + (v2 - v1) * frac(h, t1, t2)
