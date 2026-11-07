@@ -154,13 +154,6 @@ end
                               ground_reflectance, leaf_optics, diffuse_optics)
 
 Two-stream coefficients for the *direct* beam as a function of solar zenith angle.
-
-Note: the classic Dickinson/Sellers direct-beam particular solution doesn't
-exactly satisfy the ground boundary condition (reflected upward flux =
-`ground_reflectance` × downward flux at canopy base) — max relative error
-in whole-canopy energy conservation is ~6e-4 across a zenith/reflectance
-sweep (the diffuse-only solution closes to floating-point precision); see
-`test/canopy_shortwave_test.jl`.
 """
 function direct_two_stream_optics(plant_area_index, direct_beam_extinction_coefficient, ground_reflectance, leaf_optics, diffuse_optics)
     (; leaf_scattering_coefficient, leaf_absorptance, leaf_scattering_asymmetry, leaf_orientation_factor,
@@ -209,7 +202,7 @@ function direct_two_stream_optics(plant_area_index, direct_beam_extinction_coeff
     Rᵦ⁺ = -((V₁ * τ) * (Bᵤ + λ) - (α + β + λ) * Tᵦ * V₂) / Nᵤ
 
     # Transmitted direct-beam particular-solution coefficient.
-    Cₜ = S_d * (α + β + kᵦ) - β * Sᵤ
+    Cₜ = S_d * (α + β + kᵦ) + β * Sᵤ
 
     V₃ = (S_d + β * ρg - (Cₜ / -Δ) * (B_d - kᵦ)) * Tᵦ
 

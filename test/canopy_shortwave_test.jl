@@ -13,17 +13,6 @@ buffers = Microclimate.allocate_canopy(model, heights, boundary_layer_model;
         site = Microclimate.example_site(), vapour_pressure_equation = Microclimate.GoffGratch(), soil_hydraulic_model = nothing)
 n_layers = length(buffers.shortwave.layer_plant_area_index_above)
 
-# The diffuse-only two-stream solution closes energy conservation to
-# floating-point precision (verified directly: relative residual ~1e-16).
-# Once a direct beam is present, the classic Dickinson/Sellers two-stream
-# direct-beam particular solution does not exactly satisfy the ground
-# boundary condition (upward = ground_reflectance * downward at the canopy
-# base) — verified independently: the residual is resolution-independent
-# (identical from 5 to 500 layers, so it isn't a discretisation artefact)
-# and traces to the direct-beam term specifically (the diffuse-only
-# boundary condition is satisfied to ~1e-15). This is a known property of
-# this two-stream formulation, not a transcription bug — max relative
-# residual observed over a zenith/ground-reflectance sweep is ~6e-4.
 @testset "energy conservation: foliage + ground = whole-canopy absorption" begin
     for zenith_angle in (10.0u"°", 45.0u"°", 80.0u"°"), ground_reflectance in (0.1, 0.3)
         result = Microclimate.canopy_shortwave!(buffers, model;
@@ -32,7 +21,7 @@ n_layers = length(buffers.shortwave.layer_plant_area_index_above)
         )
         total_foliage_absorbed = sum(buffers.shortwave.absorbed_shortwave)
         @test ustrip(u"W/m^2", total_foliage_absorbed + result.ground_absorbed_shortwave) ≈
-              ustrip(u"W/m^2", result.net_absorbed_shortwave) rtol=1e-3
+              ustrip(u"W/m^2", result.net_absorbed_shortwave) rtol=1e-10
     end
 end
 
