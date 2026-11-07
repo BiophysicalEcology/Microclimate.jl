@@ -49,7 +49,7 @@ site = Site(;
     roughness_height = microinput[:RUF] * 1.0u"m",
     atmospheric_pressure = atmospheric_pressure(microinput[:ALTT] * 1.0u"m"),
 )
-boundary_layer_model = MoninObukhov(; karman_constant=0.4, dyer_constant=16.0)
+boundary_layer_model = MoninObukhov(; karman_constant=0.4)
 
 mineral_density = (CSV.File("$testdir/data/init_monthly/soilprop.csv")[1, 1][6]) * 1.0u"Mg/m^3" # soil minerals density (Mg/m3)
 bulk_density = (CSV.File("$testdir/data/init_monthly/soilprop.csv")[1, 1][2]) * 1.0u"Mg/m^3" # dry soil bulk density (Mg/m3)

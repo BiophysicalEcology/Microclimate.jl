@@ -110,7 +110,8 @@ end
 @testset "WET_SURFACE_CONDUCTANCE saturates leaf evaporation (boundary-layer-limited)" begin
     body = Microclimate.leaf_body(0.05u"m", 0.02u"m", 1.0)
     conv = Microclimate.leaf_convection(Microclimate.ElaborateLeafConvection(), body, 1.0u"m^2", 293.0u"K", 295.0u"K", 1.0u"m/s", 101325.0u"Pa")
-    atmos = Microclimate.AtmosphericConditions(0.5, 1.0u"m/s", 101325.0u"Pa")
+    atmos = Microclimate.HeatExchange.AtmosphericConditions(; relative_humidity = 0.5, wind_speed = 1.0u"m/s",
+        atmospheric_pressure = 101325.0u"Pa")
 
     function wet_evap(conductance)
         wet = LeafEvaporationParameters(;
@@ -186,7 +187,8 @@ end
             canopy_height = 1.0u"m", plant_area_index = 3.0,
             interception_model = LayeredRainInterception(; leaf_water_storage_capacity = capacity),
         )
-        buffers = Microclimate.allocate_canopy(model, heights, boundary_layer_model)
+        buffers = Microclimate.allocate_canopy(model, heights, boundary_layer_model;
+        site = Microclimate.example_site(), vapour_pressure_equation = Microclimate.GoffGratch(), soil_hydraulic_model = nothing)
         inputs = canopy_inputs(model; zenith_angle = 20.0u"°", direct_horizontal_irradiance = 600.0u"W/m^2",
             reference_temperature = 293.0u"K", ground_temperature = 295.0u"K", canopy_source_temperature = 295.0u"K",
             rainfall = 5.0u"kg/m^2")

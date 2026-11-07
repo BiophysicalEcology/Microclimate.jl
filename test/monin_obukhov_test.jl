@@ -1,6 +1,6 @@
 using Microclimate
-using Microclimate: calc_Obukhov_length, calc_ψ_m, calc_ψ_h, calc_Φ_h, calc_ρ_cp, atmospheric_surface_profile!, allocate_profile,
-    dry_air_properties
+using Microclimate: calc_Obukhov_length, monin_obukhov_iteration, ObukhovLength, InverseObukhovLength, stability_parameter,
+    momentum_stability_correction, heat_stability_correction, heat_gradient_stability_factor, calc_ρ_cp, atmospheric_surface_profile!, allocate_profile, dry_air_properties
 using Unitful
 using Test
 
@@ -12,17 +12,23 @@ z = 10.0u"m"
 ρcpTκg = u"J*s^2/m^4"(6.003e-8u"cal*minute^2/cm^4")
 atmospheric_pressure = 101325.0u"Pa"
 
-function obukhov(dT)  # dT = reference_temp - surface_temp
+function iteration_arguments(dT)  # dT = reference_temp - surface_temp
     reference_temp = 293.15u"K"
     surface_temp = reference_temp - dT
     ΔT = reference_temp - surface_temp
     mean_temp = (reference_temp + surface_temp) / 2
     ρ_cp = calc_ρ_cp(mean_temp)
     kinematic_viscosity = dry_air_properties(mean_temp, atmospheric_pressure).kinematic_viscosity
-    return calc_Obukhov_length(reference_temp, surface_temp, 2.0u"m/s", z0, z, ρcpTκg, bl.karman_constant, ΔT, ρ_cp, kinematic_viscosity;
-        γ=bl.dyer_constant, stable_beta=bl.stable_beta, turbulent_prandtl_number=bl.turbulent_prandtl_number,
-        initial_obukhov_length=-0.3u"m")
+    return (reference_temp, surface_temp, 2.0u"m/s", z0, z, ρcpTκg, bl.karman_constant, ΔT, ρ_cp, kinematic_viscosity)
 end
+stability_keywords = (; bl.stability_functions)
+
+obukhov(dT) = calc_Obukhov_length(iteration_arguments(dT)...; stability_keywords..., initial_obukhov_length=-0.3u"m")
+inverse_obukhov(dT) = monin_obukhov_iteration(InverseObukhovLength(), iteration_arguments(dT)...; stability_keywords...,
+    initial_value=inv(-0.3u"m"))
+
+# Stability parameter at the reference height for an Obukhov length
+ζ(obukhov_length) = stability_parameter(ObukhovLength(), z, obukhov_length)
 
 @testset "calc_Obukhov_length: sign and continuity across the stable/unstable transition" begin
     unstable = obukhov(-2.0u"K")  # surface warmer than reference
@@ -44,36 +50,59 @@ end
     end
 end
 
-@testset "calc_ψ_m/calc_ψ_h/calc_Φ_h: type-stable and zero-allocation, both regimes" begin
+@testset "inverse Obukhov length iteration matches the Obukhov length iteration" begin
+    for dT in (-3.0u"K", -1.0u"K", -0.25u"K", 0.25u"K", 1.0u"K", 3.0u"K")
+        direct = obukhov(dT)
+        inverse = inverse_obukhov(dT)
+        @test isapprox(ζ(direct.obukhov_length), stability_parameter(InverseObukhovLength(), z, inverse.value); atol = 0.05)
+        @test isapprox(direct.friction_velocity, inverse.friction_velocity; rtol = 0.01)
+        @test isapprox(direct.convective_heat_flux, inverse.convective_heat_flux; rtol = 0.01, atol = 0.1u"W/m^2")
+    end
+    # Neutral: finite, and the stability parameter converges to zero
+    @test isapprox(stability_parameter(InverseObukhovLength(), z, inverse_obukhov(0.0u"K").value), 0.0; atol = 0.01)
+end
+
+@testset "$(nameof(typeof(f))) momentum_stability_correction/heat_stability_correction/heat_gradient_stability_factor: type-stable and zero-allocation, both regimes" for f in
+        (BusingerDyer(), ChengBrutsaert())
     for L in (-5.0u"m", 5.0u"m", Inf * u"m")
-        @inferred calc_ψ_m(z, bl.dyer_constant, L, bl.stable_beta)
-        @inferred calc_ψ_h(z, bl.dyer_constant, L, bl.stable_beta, bl.turbulent_prandtl_number)
-        @inferred calc_Φ_h(z, bl.dyer_constant, L, bl.stable_Φ_h_coefficient, bl.min_stable_Φ_h, bl.max_stable_Φ_h)
-        @test allocations(calc_ψ_m, z, bl.dyer_constant, L, bl.stable_beta) == 0
-        @test allocations(calc_ψ_h, z, bl.dyer_constant, L, bl.stable_beta, bl.turbulent_prandtl_number) == 0
-        @test allocations(calc_Φ_h, z, bl.dyer_constant, L, bl.stable_Φ_h_coefficient, bl.min_stable_Φ_h, bl.max_stable_Φ_h) == 0
+        @inferred momentum_stability_correction(f, ζ(L))
+        @inferred heat_stability_correction(f, ζ(L))
+        @inferred heat_gradient_stability_factor(f, ζ(L))
+        @test allocations(momentum_stability_correction, f, ζ(L)) == 0
+        @test allocations(heat_stability_correction, f, ζ(L)) == 0
+        @test allocations(heat_gradient_stability_factor, f, ζ(L)) == 0
     end
-end
-
-@testset "calc_Φ_h: stable branch increases with height, unstable branch decreases" begin
     # Φ_h = 1 at neutral; stable Φ_h > 1 (suppressed mixing), unstable Φ_h < 1 (enhanced).
-    @test calc_Φ_h(z, bl.dyer_constant, Inf * u"m", bl.stable_Φ_h_coefficient, bl.min_stable_Φ_h, bl.max_stable_Φ_h) == 1.0
-    @test calc_Φ_h(z, bl.dyer_constant, 5.0u"m", bl.stable_Φ_h_coefficient, bl.min_stable_Φ_h, bl.max_stable_Φ_h) > 1.0
-    @test calc_Φ_h(z, bl.dyer_constant, -5.0u"m", bl.stable_Φ_h_coefficient, bl.min_stable_Φ_h, bl.max_stable_Φ_h) < 1.0
-end
-
-@testset "calc_Φ_h: stable branch stays bounded even for very small L (calm, strongly-stable)" begin
-    # Regression test: a linear (unclamped) stable Φ_h let very small L (common
-    # on calm clear nights, real full-year data) inflate RaupachLTheoryAirProfile's
-    # T_L by orders of magnitude -- R's own dphih (sensibleheat.R) is a
-    # saturating form for exactly this reason, matched here.
+    @test heat_gradient_stability_factor(f, ζ(Inf * u"m")) == 1.0
+    @test heat_gradient_stability_factor(f, ζ(5.0u"m")) > 1.0
+    @test heat_gradient_stability_factor(f, ζ(-5.0u"m")) < 1.0
+    # Stays bounded for very small L (calm, strongly stable), keeping
+    # RaupachLTheoryAirProfile's T_L bounded
     for L in (10.0u"m", 1.0u"m", 0.1u"m", 0.01u"m", 0.0001u"m")
-        Φ_h = calc_Φ_h(z, bl.dyer_constant, L, bl.stable_Φ_h_coefficient, bl.min_stable_Φ_h, bl.max_stable_Φ_h)
-        @test bl.min_stable_Φ_h <= Φ_h <= bl.max_stable_Φ_h
+        @test 1.0 <= heat_gradient_stability_factor(f, ζ(L)) <= 10.0
     end
 end
 
-@testset "atmospheric_surface_profile!: no crash, sensible output across regimes" begin
+@testset "ChengBrutsaert: smooth and strictly decreasing through the stable range" begin
+    f = ChengBrutsaert()
+    ζs = range(0.1, 50.0; length=2001)
+    for ψ in (momentum_stability_correction, heat_stability_correction)
+        values = ψ.(Ref(f), ζs)
+        @test all(<(0), diff(values))
+        # No kinks: the slope changes gradually everywhere (BusingerDyer's clamp jumps it by ~6)
+        slopes = diff(values) ./ step(ζs)
+        @test maximum(abs, diff(slopes)) < 0.5
+    end
+    # Φ_h is the heat gradient of ψ_h, 1 - ζ dψ_h/dζ
+    for ζ₀ in (0.01, 0.5, 2.0, 20.0)
+        h = 1e-6
+        slope = (heat_stability_correction(f, ζ₀ + h) - heat_stability_correction(f, ζ₀ - h)) / 2h
+        @test heat_gradient_stability_factor(f, ζ₀) ≈ 1 - ζ₀ * slope rtol = 1e-6
+    end
+end
+
+@testset "$(nameof(typeof(bl.stability_functions))) atmospheric_surface_profile!: no crash, sensible output across regimes" for bl in
+        (MoninObukhov(), MoninObukhov(; stability_functions=BusingerDyer()))
     site = Site(; latitude=0.0u"°", longitude=0.0u"°", elevation=0.0u"m", slope=0.0u"°", aspect=0.0u"°",
         horizon_angles=fill(0.0u"°", 24), sky_view_fraction=1.0, albedo=0.15, roughness_height=0.01u"m",
         atmospheric_pressure=101325.0u"Pa")

@@ -30,12 +30,12 @@ regimes are both handled directly by the same solve. Wind and temperature at a h
 u(z) = \frac{u^*}{\kappa}\left[\ln\!\left(\frac{z}{z_0}\right) - \psi_m\right]
 ```
 
-with ``\kappa`` the von Kármán constant and ``\psi_m`` the Businger-Dyer/Paulson
-momentum stability correction (`calc_ψ_m`), following Businger et al. (1971)
-and Dyer (1974) for the unstable branch and a Dyer (1974) linear/saturating form for
-the stable branch — the two meet continuously at neutral (``L \to \pm\infty``). The
-analogous heat correction ``\psi_h`` (`calc_ψ_h`) and the ``\Phi_h`` bulk
-diffusivity multiplier (`calc_Φ_h`) place the surface temperature and
+with ``\kappa`` the von Kármán constant and ``\psi_m`` the momentum stability
+correction (`momentum_stability_correction`). By default ([`ChengBrutsaert`](@ref)) this follows Businger
+et al. (1971) and Dyer (1974) in unstable air and Cheng and Brutsaert (2005) in stable
+air, smoothly at both, so the solver never meets a kink. [`BusingerDyer`](@ref) is
+NicheMapR's clamped form. The analogous heat correction ``\psi_h`` (`heat_stability_correction`) and the ``\Phi_h`` bulk
+diffusivity multiplier (`heat_gradient_stability_factor`) place the surface temperature and
 convective heat flux on the same log-law basis.
 
 Convective heat transfer at the surface combines a bulk (log-law) and a sublayer
