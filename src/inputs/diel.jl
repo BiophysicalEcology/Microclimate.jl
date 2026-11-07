@@ -423,34 +423,30 @@ input_index(inputs::Tuple, t, index=1) =
 end
 
 """
-    populate_quantities!(buffer_for, forcings, solar, consecutive_days)
+    populate_quantities!(buffers, forcings, solar, consecutive_days)
 
 Fill every quantity's hourly buffer from `forcings` (a `NamedTuple` of
-`DielForcing`/`Derived`). `buffer_for(::Val{name})` returns the buffer for a
-quantity. Interpolated forcings are filled first, then derived quantities — so a
+`DielForcing`/`Derived`). `buffers` is a `NamedTuple` holding each quantity's buffer.
+Interpolated forcings are filled first, then derived quantities — so a
 `Derived` reads its inputs after they exist. (A derived quantity that depends on
 another derived quantity must be declared after it.)
 """
-function populate_quantities!(buffer_for, forcings::NamedTuple{K}, solar, consecutive_days::Bool) where {K}
-    keyvals = map(Val, K)
-    map(keyvals) do vk
-        q = getproperty(forcings, _name(vk))
-        q isa DielForcing && evaluate!(buffer_for(vk), q, solar, consecutive_days)
+function populate_quantities!(buffers::NamedTuple, forcings::NamedTuple{K}, solar, consecutive_days::Bool) where {K}
+    forcing_buffers = NamedTuple{K}(buffers)
+    map(forcings, forcing_buffers) do forcing, buffer
+        forcing isa DielForcing && evaluate!(buffer, forcing, solar, consecutive_days)
         nothing
     end
-    map(keyvals) do vk
-        q = getproperty(forcings, _name(vk))
-        q isa Derived && fill_derived!(buffer_for(vk), q, buffer_for)
+    map(forcings, forcing_buffers) do forcing, buffer
+        forcing isa Derived && fill_derived!(buffer, forcing, buffers)
         nothing
     end
     return nothing
 end
 
-@inline _name(::Val{k}) where {k} = k
-
 # out[k] = functor(in₁[k], in₂[k], …) over each input quantity's buffer.
-function fill_derived!(out, d::Derived, buffer_for)
-    ins = map(buffer_for, map(Val, derived_inputs(d)))
+function fill_derived!(out, d::Derived{Names}, buffers) where {Names}
+    ins = values(NamedTuple{Names}(buffers))
     @inbounds for k in eachindex(out)
         out[k] = d.functor(map(b -> b[k], ins)...)
     end
