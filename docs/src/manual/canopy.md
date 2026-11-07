@@ -30,7 +30,7 @@ The literature sources for each sub-model are as follows:
   with cumulative plant area index from canopy top, after Nikolov and Zeller 2003) and
   [`MixingLengthCanopyWindAttenuation`](@ref) (a shelter-factor alternative).
 - **In-canopy air profile**: [`RaupachLTheoryAirProfile`](@ref) is a Lagrangian 
-  near-field/far-field scheme (its `:bulk` formulation option matches micropoint's 
+  near-field/far-field scheme (its [`BulkRaupachFormulation`](@ref) matches micropoint's
   `LangrangianOne` closely); [`KTheoryAirProfile`](@ref) is a simpler K-theory diffusion
   alternative.
 - **Rain interception**: [`LayeredRainInterception`](@ref) reuses micropoint's
