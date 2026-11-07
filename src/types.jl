@@ -231,6 +231,7 @@ function example_microclimate_problem(;
     soil_properties_model = example_soil_properties_model(),
     soil_hydraulic_model = example_soil_hydraulic_model(),
     soil_moisture_strategy = PrescribedSoilMoisture(),
+    soil_energy_model = SoilHeatTransport1D(),
     max_surface_pool = 1.0e4u"kg/m^2",
     snow_model = NoSnow(),
     canopy_model = NoCanopy(),
@@ -243,7 +244,7 @@ function example_microclimate_problem(;
 )
     soil = SoilModel(;
         depths, profile=soil_profile, properties_model=soil_properties_model,
-        hydraulic_model=soil_hydraulic_model, moisture_strategy=soil_moisture_strategy,
+        hydraulic_model=soil_hydraulic_model, moisture_strategy=soil_moisture_strategy, energy_model=soil_energy_model,
     )
     model = MicroModel(;
         hours, site, soil, surface=SurfaceModel(; max_surface_pool), atmosphere=AtmosphereModel(; heights),

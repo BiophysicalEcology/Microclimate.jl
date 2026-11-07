@@ -2,6 +2,8 @@ using Microclimate
 using Microclimate: allocate_canopy, canopy_energy_balance!
 using Unitful
 using Test
+using ADTypes: AutoFiniteDiff
+using OrdinaryDiffEqSDIRK: ImplicitEuler
 
 heights = vcat(0.1:0.1:1.0, [2.0]) .* u"m"
 
@@ -30,6 +32,16 @@ heights = vcat(0.1:0.1:1.0, [2.0]) .* u"m"
     @test all(>=(0.0u"W/m^2"), output.canopy.boundary_upward_longwave)
     # canopy top (boundary 1) receives at least as much downward shortwave as the ground (boundary end)
     @test all(output.canopy.boundary_downward_shortwave[:, 1] .>= output.canopy.boundary_downward_shortwave[:, end])
+end
+
+@testset "An implicit soil solver follows the default, with or without a canopy" begin
+    implicit_soil = SoilHeatTransport1D(; ode_solver = ImplicitEuler(; autodiff = AutoFiniteDiff()),
+        ode_kwargs = (; adaptive = false, dt = 60.0u"minute"))
+    for canopy_model in (NoCanopy(), example_multilayer_canopy(; canopy_height = 1.0u"m", plant_area_index = 2.0))
+        surface_temperature(soil_energy_model) = solve(example_microclimate_problem(; heights, canopy_model,
+            soil_energy_model)).soil_temperature[:, 1]
+        @test isapprox(surface_temperature(implicit_soil), surface_temperature(SoilHeatTransport1D()); rtol = 2e-3)
+    end
 end
 
 @testset "NoCanopy leaves canopy output zero-columned" begin
