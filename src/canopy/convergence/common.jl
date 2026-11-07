@@ -2,6 +2,7 @@
 canopy_tolerances(convergence_model) = (; leaf_balance=in_state_units(convergence_model.leaf_balance_tolerance),
     air_temperature=in_state_units(convergence_model.air_temperature_tolerance),
     vapor_density=in_state_units(convergence_model.vapor_density_tolerance),
+    ground_temperature=in_state_units(convergence_model.ground_temperature_tolerance),
     inverse_obukhov_length=in_state_units(convergence_model.inverse_obukhov_length_tolerance))
 
 """
@@ -28,7 +29,8 @@ struct SmallestResidual <: AbstractCanopyFailure end
 
 # The largest residual, measured in units of its own tolerance. At or below 1, the hour is solved.
 function canopy_scaled_residual(residual, tolerances)
-    largest = abs(in_state_units(residual.inverse_obukhov_length[])) / tolerances.inverse_obukhov_length
+    largest = max(abs(in_state_units(residual.inverse_obukhov_length[])) / tolerances.inverse_obukhov_length,
+        abs(in_state_units(residual.ground_temperature[])) / tolerances.ground_temperature)
     for layer in eachindex(residual.leaf_balance)
         largest = max(largest,
             abs(in_state_units(residual.leaf_balance[layer])) / tolerances.leaf_balance,
@@ -63,7 +65,7 @@ canopy_convergence_error(convergence_model, return_code, inputs) =
 # A placeholder hour, so the solver's buffers can be built with the right types
 initial_residual_forcing(model, soil_hydraulic_model) = CanopyResidualForcing(;
     atmospheric_pressure=101325.0u"Pa", reference_temperature=288.0u"K", reference_wind_speed=1.0u"m/s",
-    reference_humidity=0.5, incoming_longwave=300.0u"W/m^2", ground_temperature=288.0u"K",
+    reference_humidity=0.5, incoming_longwave=300.0u"W/m^2",
     ground_emissivity=0.95, ground_relative_humidity=0.5, leaf_water_potential=0.0u"J/kg",
     dry_conductance=stomatal_conductance(model.stomatal_model, 0.0u"°", 0.0u"J/kg", soil_hydraulic_model),
     canopy_top_air_temperature=288.0u"K", canopy_top_relative_humidity=0.5,
@@ -86,7 +88,7 @@ function canopy_hour_setup!(state, forcing::Ref, buffers, model::MultilayerCanop
     air = buffers.air_profile
 
     forcing[] = CanopyResidualForcing(; atmospheric_pressure, reference_temperature, reference_wind_speed,
-        reference_humidity, ground_temperature, ground_emissivity, ground_relative_humidity, leaf_water_potential,
+        reference_humidity, ground_emissivity, ground_relative_humidity, leaf_water_potential,
         incoming_longwave=canopy_incoming_longwave(model; site, environment_instant, vapour_pressure_equation),
         dry_conductance=stomatal_conductance(model.stomatal_model, zenith_angle, leaf_water_potential, soil_hydraulic_model),
         canopy_top_air_temperature=initial_wind.canopy_top_air_temperature,
@@ -98,7 +100,7 @@ function canopy_hour_setup!(state, forcing::Ref, buffers, model::MultilayerCanop
         fill!(air.vapor_density, wet_air_properties(initial_wind.canopy_top_air_temperature,
             initial_wind.canopy_top_relative_humidity, atmospheric_pressure; vapour_pressure_equation).vapour_density)
     end
-    return pack_canopy_state!(state, leaf_temperature, air.air_temperature, air.vapor_density,
+    return pack_canopy_state!(state, leaf_temperature, air.air_temperature, air.vapor_density, ground_temperature,
         limit_inverse_obukhov_length(initial_wind.inverse_obukhov_length, forcing[].stability_limits))
 end
 
@@ -121,16 +123,14 @@ function canopy_solution!(residual, state, buffers, model::MultilayerCanopy, bou
 
     # Evaluating fills the buffers, but leaves the air profile at what the leaves
     # produce, so it is then set back to the solved values
-    inverse_obukhov_length = unpack_canopy_state!(buffers, state)
-    result = evaluate_canopy!(residual, inverse_obukhov_length, buffers, model, boundary_layer_model, forcing;
+    (; ground_temperature, inverse_obukhov_length) = unpack_canopy_state!(buffers, state)
+    result = evaluate_canopy!(residual, inverse_obukhov_length, ground_temperature, buffers, model, boundary_layer_model, forcing;
         site, vapour_pressure_equation)
     unstressed_dry_conductance = stomatal_conductance(model.stomatal_model, zenith_angle, 0.0u"J/kg", soil_hydraulic_model)
     for i in 1:n_layers
         air.air_temperature[i] = air.current_air_temperature[i]
         air.vapor_density[i] = air.current_vapor_density[i]
-        saturation_vapor_density = wet_air_properties(air.air_temperature[i], 1.0, atmospheric_pressure;
-            vapour_pressure_equation).vapour_density
-        air.relative_humidity[i] = clamp(air.vapor_density[i] / saturation_vapor_density, 0.0, 1.0)
+        air.relative_humidity[i] = layer_relative_humidity(air, i, atmospheric_pressure, vapour_pressure_equation)
 
         # What the leaves would transpire with no water stress, which the soil hydraulics
         # model uses as demand

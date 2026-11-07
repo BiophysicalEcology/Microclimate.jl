@@ -57,13 +57,20 @@ function _cap_wet_surface_evaporation(evaporation_mass_flow, sensible_heat_flow,
     return (evaporation_mass_flow - shortfall_flow, sensible_heat_flow + shortfall_power, actual_mass)
 end
 
+# A ground that stays at the temperature it was given
+keep_ground_temperature(ground_temperature, ground_absorbed_shortwave, ground_absorbed_longwave) = ground_temperature
+
 """
     canopy_energy_balance!(buffers, model::MultilayerCanopy, boundary_layer_model, inputs::CanopyEnergyBalanceInputs;
-        site, vapour_pressure_equation=GoffGratch(), soil_hydraulic_model=nothing)
+        site, vapour_pressure_equation=GoffGratch(), soil_hydraulic_model=nothing,
+        ground_temperature_after_hour=keep_ground_temperature)
 
 Solves the canopy for one hour. Shortwave and rain interception don't depend on leaf
 temperature, so they are computed once. Leaf temperature, air temperature, vapor density,
-longwave and stability are then solved together by [`converge_canopy!`](@ref).
+ground temperature, longwave and stability are then solved together by [`converge_canopy!`](@ref).
+
+`ground_temperature_after_hour(ground_temperature, ground_absorbed_shortwave, ground_absorbed_longwave)`
+returns the ground temperature the soil reaches by the end of the hour. Any soil solve can be used.
 
 Water on a leaf ([`wet_canopy_fraction`](@ref)) moves its conductance towards
 [`WET_SURFACE_CONDUCTANCE`](@ref) ([`blend_stomatal_conductance`](@ref)). The water that
@@ -71,7 +78,7 @@ evaporates or condenses is taken from storage once, after the solve. It is limit
 [`available_canopy_water`](@ref) and [`canopy_water_capacity`](@ref), and any latent heat that
 can't happen is added to the sensible heat, without solving leaf temperature again.
 
-`inputs.ground_temperature`, `inputs.canopy_source_temperature` and
+`inputs.ground_temperature` is where the ground starts. `inputs.canopy_source_temperature` and
 `inputs.leaf_water_potential` come from the caller and stay fixed during the solve.
 
 Returns `(; ground_absorbed_shortwave, net_absorbed_shortwave, ground_absorbed_longwave,
@@ -86,7 +93,8 @@ canopy_top_relative_humidity, friction_velocity, obukhov_length, displacement_he
 """
 function canopy_energy_balance!(buffers, model::MultilayerCanopy, boundary_layer_model, inputs::CanopyEnergyBalanceInputs;
     site, vapour_pressure_equation=GoffGratch(), soil_hydraulic_model=nothing,
-)
+    ground_temperature_after_hour::G=keep_ground_temperature,
+) where G
     (; environment_instant, zenith_angle, direct_horizontal_irradiance, diffuse_horizontal_irradiance,
        ground_reflectance, ground_temperature, ground_emissivity, ground_relative_humidity, canopy_source_temperature,
        rainfall, leaf_water_potential) = inputs
@@ -118,7 +126,9 @@ function canopy_energy_balance!(buffers, model::MultilayerCanopy, boundary_layer
 
     longwave_result, iterations, canopy_top_air_temperature, canopy_top_relative_humidity, friction_velocity, inverse_obukhov_length =
         converge_canopy!(buffers, model, boundary_layer_model, inputs, wind_result, model.convergence_model;
-            site, vapour_pressure_equation, soil_hydraulic_model)
+            site, vapour_pressure_equation, soil_hydraulic_model,
+            ground_temperature_after_hour=(ground_temperature, ground_absorbed_longwave) -> ground_temperature_after_hour(
+                ground_temperature, shortwave_result.ground_absorbed_shortwave, ground_absorbed_longwave))
 
     melt_drip_total = 0.0u"kg/m^2"
     for layer in 1:n_layers
@@ -207,7 +217,8 @@ end
 
 """
     converge_canopy!(buffers, model::MultilayerCanopy, boundary_layer_model, inputs::CanopyEnergyBalanceInputs,
-        initial_wind, convergence_model; site, vapour_pressure_equation, soil_hydraulic_model)
+        initial_wind, convergence_model; site, vapour_pressure_equation, soil_hydraulic_model,
+        ground_temperature_after_hour)
 
 Solves the hour's canopy state with `convergence_model` ([`AndersonCanopyConvergence`](@ref)).
 `initial_wind` is the hour's [`canopy_wind_profile!`](@ref) result, which gives the canopy-top

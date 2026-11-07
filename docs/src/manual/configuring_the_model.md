@@ -85,8 +85,6 @@ model, separate from the physical-process choices above:
 - `rainfall_schedule` — [`DailyRainfall`](@ref) or [`HourlyRainfall`](@ref)
 - `soil_moisture_strategy` — [`PrescribedSoilMoisture`](@ref) (from
   `environment_daily`) or [`DynamicSoilMoisture`](@ref) (solved from rainfall)
-- `canopy_soil_convergence`, `canopy_soil_relaxation` — the per-hour iteration
-  between the canopy solve and the soil-heat ODE
 
 ## How the pieces fit together each hour
 
@@ -95,12 +93,10 @@ with different aspects converging in different ways via different algorithsm:
 
 - **Soil temperature** is an ODE system ([`SoilHeatTransport1D`](@ref), handed
   to a SciML integrator) — continuous within the hour, not a single explicit step.
-- **Canopy**, when present, takes turns with that same ODE each hour. The model
-  (a) solves the canopy for the current guess of ground temperature, using the canopy's
-  `convergence_model`, (b) passes the result to the soil ODE and advances it through the
-  hour, (c) compares the new ground temperature to the guess, and repeats until
-  `canopy_soil_convergence` is satisfied or its iteration limit is hit. So canopy and soil
-  *temperature* agree with each other each hour.
+- **Canopy**, when present, is solved together with that same ODE each hour. The canopy's
+  `convergence_model` treats ground temperature as one of the values it solves, and each of
+  its passes advances the soil ODE through the hour to get the next guess. So canopy and soil
+  *temperature* agree with each other each hour, or the solve fails.
 - **Soil moisture**, ground dew/frost, and snow growth/melt are then computed once
   per hour, downstream of that hour's already-converged temperature — not solved
   simultaneously with it. Soil moisture in particular assumes the current hour's
