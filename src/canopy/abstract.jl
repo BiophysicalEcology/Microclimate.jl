@@ -24,6 +24,14 @@ Zero day-boundary-reset canopy state (e.g. interception storage). No-op for
 function reset_canopy_scratch! end
 
 """
+    reset_canopy_starting_state!(model, buffers)
+
+Clear the values each hour's canopy solve starts from, so that a new run doesn't
+start from the end of the last one. No-op for `NoCanopy`.
+"""
+function reset_canopy_starting_state! end
+
+"""
     snapshot_canopy_water!(model, buffers)
 
 Save day-start canopy water storage (e.g. interception), so

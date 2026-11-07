@@ -140,11 +140,14 @@ end
 
 const _MIN_LOGLAW_RATIO = 5.0 # avoid the log-law inversion becoming ill-conditioned
 
+# The unstable first guess, before any previous value exists to start from
+const INITIAL_OBUKHOV_LENGTH = -0.3u"m"
+
 function allocate_profile(::MoninObukhov, heights)
     wind_speed = similar(heights, typeof(0.0u"m/s")) # output wind speeds
     air_temperature = similar(heights, typeof(0.0u"K")) # output temperatures, need to do this otherwise get InexactError
     relative_humidity = similar(heights, Float64) # output relative humidities
-    obukhov_length_prev = Ref(-0.3u"m")  # warm-start across timesteps
+    obukhov_length_prev = Ref(INITIAL_OBUKHOV_LENGTH)  # warm-start across timesteps
     warned_below_roughness = Ref(false)  # emit warning at most once per buffer
     warned_above_reference = Ref(false)
     return (; heights, air_temperature, wind_speed, relative_humidity,
@@ -396,8 +399,8 @@ function surface_fluxes(boundary_layer_model::MoninObukhov;
     else
         # Unstable: iterate Obukhov length. 
         obukhov_length_factor = 6.003e-8u"cal*minute^2/cm^4"
-        previous_obukhov_length = isnothing(obukhov_length_prev) ? -0.3u"m" : obukhov_length_prev[]
-        initial_obukhov_length = previous_obukhov_length >= 0.0u"m" ? -0.3u"m" : previous_obukhov_length # Resetting to the default unstable guess?
+        previous_obukhov_length = isnothing(obukhov_length_prev) ? INITIAL_OBUKHOV_LENGTH : obukhov_length_prev[]
+        initial_obukhov_length = previous_obukhov_length >= 0.0u"m" ? INITIAL_OBUKHOV_LENGTH : previous_obukhov_length
         out = calc_obukhov_length(air_temperature, surface_temperature, wind_speed,
             roughness_height, reference_height, obukhov_length_factor, karman_constant, temperature_difference, air_volumetric_heat_capacity, kinematic_viscosity;
             initial_obukhov_length, boundary_layer_model.stability_functions, boundary_layer_model.min_friction_velocity, boundary_layer_model.thermal_roughness_model)

@@ -75,6 +75,18 @@ end
     @test canopy_output.soil_temperature != bare_output.soil_temperature
 end
 
+@testset "reinit! with a canopy: same result as a fresh solve" begin
+    problem = example_microclimate_problem(; heights,
+        canopy_model = example_multilayer_canopy(; canopy_height = 1.0u"m", plant_area_index = 3.0))
+    fresh = solve(problem)
+    cache = init(problem)
+    solve!(cache)
+    reinit!(cache, problem.inputs)
+    reused = solve!(cache)
+    @test reused.soil_temperature == fresh.soil_temperature
+    @test reused.canopy.leaf_temperature == fresh.canopy.leaf_temperature
+end
+
 @testset "MultilayerCanopy leaf temperature responds to soil moisture via Campbell coupling" begin
     canopy_model = example_multilayer_canopy(; canopy_height = 1.0u"m", plant_area_index = 3.0)
     soil_moisture_strategy = DynamicSoilMoisture()

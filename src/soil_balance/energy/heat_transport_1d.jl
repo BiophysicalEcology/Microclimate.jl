@@ -169,7 +169,7 @@ function allocate_soil_energy_balance(::SoilHeatTransport1D, num_nodes::Int)
     layer_depths = fill(0.0u"cm", num_nodes + 1)
     heat_capacity = fill(1.0u"J/K/m^2", num_nodes)
     thermal_conductance = fill(1.0u"W/K/m^2", num_nodes)
-    obukhov_length_prev = Ref(-0.3u"m")  # warm-start across hourly ODE solves
+    obukhov_length_prev = Ref(INITIAL_OBUKHOV_LENGTH)  # warm-start across hourly ODE solves
     return (; layer_depths, heat_capacity, thermal_conductance, obukhov_length_prev)
 end
 

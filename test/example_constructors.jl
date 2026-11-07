@@ -49,6 +49,6 @@ end
     reinit!(cache, model, problem.inputs)
     reused = solve!(cache)
     fresh = solve(MicroProblem(model, problem.inputs; days = problem.days))
-    @test reused.soil_temperature ≈ fresh.soil_temperature rtol=1e-4
+    @test reused.soil_temperature == fresh.soil_temperature
     @test reused.global_radiation ≈ fresh.global_radiation
 end

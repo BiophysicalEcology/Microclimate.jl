@@ -506,6 +506,12 @@ function solve_soil!(cache::MicroCache)
     snow_state = initial_snow_state(snow_model, initial_snow_depth, initial_snow_density)
     reset_snow_scratch!(snow_model, buffers.snow)
     reset_canopy_scratch!(canopy_model, buffers.canopy)
+    reset_canopy_starting_state!(canopy_model, buffers.canopy)
+    buffers.condensation_profile.obukhov_length_prev[] = INITIAL_OBUKHOV_LENGTH
+    buffers.air_profile.obukhov_length_prev[] = INITIAL_OBUKHOV_LENGTH
+    buffers.soil_energy_balance.obukhov_length_prev[] = INITIAL_OBUKHOV_LENGTH
+    ode_integrator.dt = first_soil_step(mp.model.soil.energy_model)
+    SciMLBase.set_proposed_dt!(ode_integrator, ode_integrator.dt)
 
     soil_prop_view = if n_snow > 0
         (; bulk_thermal_conductivity = view(buffers.soil_properties.bulk_thermal_conductivity, n_snow+1:n_snow+num_soil_nodes),
@@ -1080,16 +1086,21 @@ function allocate_ode_integrator(model::SoilHeatTransport1D, soil_temperatures::
     day = (0.0, in_soil_state_units(1440.0u"minute"))
     problem = ODEProblem{true,SciMLBase.FullSpecialize}(function_with_structure, collect(map(in_soil_state_units, soil_temperatures)), day, inputs_proto)
     return SciMLBase.init(problem, model.ode_solver;
-        save_everystep=false, save_start=false, save_end=false, map(in_soil_state_units, model.ode_kwargs)...)
+        save_everystep=false, save_start=false, save_end=false, dt=first_soil_step(model), map(in_soil_state_units, model.ode_kwargs)...)
 end
+
+# The soil solver's first step, the same for every solve so that results never depend on an earlier one
+first_soil_step(model::SoilHeatTransport1D) = in_soil_state_units(get(model.ode_kwargs, :dt, 0.1u"minute"))
 
 # Restarts the soil solver from `temperatures` at `time`.
 # Multi-step solvers (Adams family) need their f-history rebuilt via
 # `reinit!`'s cache pass; single-step solvers (Tsit5, RK4, …) don't, so we skip
-# `reinit_cache` and avoid the ~440 B/call allocation.
+# `reinit_cache` and avoid the ~440 B/call allocation. Every solver must
+# re-evaluate its stored derivative, which belongs to the previous state and forcing.
 function restart_soil_solver!(integrator, temperatures, time)
     SciMLBase.reinit!(integrator, map(in_soil_state_units, temperatures);
         t0=in_soil_state_units(time), erase_sol=false, reset_dt=false, reinit_cache=ismultistep(integrator.alg))
+    SciMLBase.derivative_discontinuity!(integrator, true)
     return integrator
 end
 

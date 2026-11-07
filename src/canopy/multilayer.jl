@@ -203,6 +203,14 @@ function reset_canopy_scratch!(model::MultilayerCanopy, buffers)
     return nothing
 end
 
+function reset_canopy_starting_state!(::MultilayerCanopy, buffers)
+    fill!(buffers.leaf.leaf_temperature, 0.0u"K")
+    fill!(buffers.air_profile.air_temperature, 0.0u"K")
+    fill!(buffers.air_profile.vapor_density, 0.0u"kg/m^3")
+    buffers.wind.above_canopy_profile.obukhov_length_prev[] = INITIAL_OBUKHOV_LENGTH
+    return nothing
+end
+
 initial_ground_overrides(::MultilayerCanopy) = (;
     ground_shortwave_transmission = 1.0, ground_incoming_longwave = 0.0u"W/m^2",
     ground_wind_speed = 0.0u"m/s", ground_air_temperature = 288.0u"K",
