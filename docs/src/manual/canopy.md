@@ -99,14 +99,14 @@ that term for canopy dew.
 
 ## Solving each hour
 
-Each hour the model finds the leaf temperature, air temperature, humidity and atmospheric
-stability that all agree with each other. [`AndersonCanopyConvergence`](@ref) does this by
+Each hour the model finds the leaf temperature, air temperature, humidity, ground temperature
+and atmospheric stability that all agree with each other. [`AndersonCanopyConvergence`](@ref) does this by
 improving its guess repeatedly, using its recent guesses to take larger steps. If an hour
 doesn't settle, the model stops with an error by default, or with
 `on_failure = SmallestResidual()` it keeps its best guess.
 
-The canopy and the soil then take turns, each using the other's latest temperature, until
-the ground temperature stops changing (`MicroConfig.canopy_soil_convergence`).
+Each guess of the ground temperature comes from running the soil through the hour, with the
+canopy's latest values at its surface.
 
 ## Assembling a canopy
 

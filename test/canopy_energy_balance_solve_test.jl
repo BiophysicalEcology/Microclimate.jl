@@ -90,15 +90,38 @@ end
         convergence_model = AndersonCanopyConvergence())
     _, gappy = solve_canopy(gappy_model, canopy_inputs(gappy_model))
     (; state, step, next_state, forcing) = gappy.convergence
-    inverse_obukhov_length = Microclimate.unpack_canopy_state!(gappy, state)
+    (; ground_temperature, inverse_obukhov_length) = Microclimate.unpack_canopy_state!(gappy, state)
     gappy.leaf.leaf_temperature[3] += 1.0u"K"
     starting_air_temperature = copy(gappy.air_profile.current_air_temperature)
     Microclimate.pack_canopy_state!(state, gappy.leaf.leaf_temperature, starting_air_temperature,
-        gappy.air_profile.current_vapor_density, inverse_obukhov_length)
+        gappy.air_profile.current_vapor_density, ground_temperature, inverse_obukhov_length)
     Microclimate.canopy_fixed_point!(next_state, step, state, gappy, gappy_model, boundary_layer_model, forcing[];
-        site, vapour_pressure_equation = Microclimate.GoffGratch())
+        site, vapour_pressure_equation = Microclimate.GoffGratch(),
+        ground_temperature_after_hour = (ground_temperature, _) -> ground_temperature)
     Microclimate.unpack_canopy_state!(gappy, next_state)
     @test gappy.leaf.leaf_temperature[3] ≈ starting_air_temperature[3]
+end
+
+@testset "AndersonCanopyConvergence solves the ground temperature with the canopy" begin
+    model = canopy()
+    buffers = allocate(model)
+    calls = Ref(0)
+    # A soil that moves halfway towards 290 K, whatever the canopy does
+    function ground_temperature_after_hour(ground_temperature, ground_absorbed_shortwave, ground_absorbed_longwave)
+        calls[] += 1
+        @test ground_absorbed_shortwave > 0.0u"W/m^2"
+        @test ground_absorbed_longwave > 0.0u"W/m^2"
+        return (ground_temperature + 290.0u"K") / 2
+    end
+    canopy_energy_balance!(buffers, model, boundary_layer_model, canopy_inputs(model; ground_temperature = 300.0u"K");
+        site, ground_temperature_after_hour)
+    @test calls[] > 1
+    @test residual_within_tolerance(buffers)
+    solved = Microclimate.unpack_canopy_state!(buffers, buffers.convergence.state)
+    @test isapprox(solved.ground_temperature, 290.0u"K"; atol = 0.2u"K")
+    # A soil that never settles is an error, not an accepted hour
+    @test_throws r"did not converge" canopy_energy_balance!(allocate(model), model, boundary_layer_model,
+        canopy_inputs(model); site, ground_temperature_after_hour = (ground_temperature, _, _) -> ground_temperature + 1.0u"K")
 end
 
 # An air profile that gives NaN on one call, the way a pass that overshoots does

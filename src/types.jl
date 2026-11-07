@@ -122,20 +122,10 @@ Solver iteration and data-delivery strategy. Lives on `MicroModel.config`.
 
 - `convergence`: `FixedIterationConvergence(3)` or `IterationToleranceConvergence(; tolerance, max_iterations_per_day)`
 - `rainfall_schedule`: `DailyRainfall()` (default) or `HourlyRainfall()`
-- `canopy_soil_convergence`: per-hour convergence between the canopy solve
-  and the soil-heat ODE, iterating the two to a jointly self-consistent state
-  within the hour by default (`IterationToleranceConvergence(; tolerance=0.05u"K",
-  max_iterations_per_day=80)`); `FixedIterationConvergence(1)` for a single
-  pass using the previous hour's soil temperature instead.
-- `canopy_soil_relaxation`: under-relaxation on each `canopy_soil_convergence`
-  pass's `ground_temperature` update (`x_new = relaxation*x_solved +
-  (1-relaxation)*x_prev`), `1.0` (no relaxation) by default.
 """
-@kwdef struct MicroConfig{CV,RFS,CSC,CSR}
+@kwdef struct MicroConfig{CV,RFS}
     convergence::CV = FixedIterationConvergence(3)
     rainfall_schedule::RFS = DailyRainfall()
-    canopy_soil_convergence::CSC = IterationToleranceConvergence(; tolerance=0.05u"K", max_iterations_per_day=80)
-    canopy_soil_relaxation::CSR = 1.0
 end
 
 """
