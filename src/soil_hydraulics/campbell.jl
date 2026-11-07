@@ -559,14 +559,14 @@ function ground_condensation_step!(buffers, boundary_layer_model;
     if snow_present
         evaporation_potential = 1e-7u"kg/m^2/s"
     elseif raw_flux_condensation < 0.0u"kg/m^2/s" && surface_temperature <= u"K"(0.0u"°C")
-        candidate = -raw_flux_condensation * Δt
+        candidate = uconvert(u"kg/m^2", -raw_flux_condensation * Δt)
         if candidate <= max_plausible_formed
             frost_formed = candidate
             standing_frost += frost_formed
         end
         evaporation_potential = 1e-7u"kg/m^2/s"
     elseif raw_flux_condensation < 0.0u"kg/m^2/s"
-        candidate = -raw_flux_condensation * Δt
+        candidate = uconvert(u"kg/m^2", -raw_flux_condensation * Δt)
         if candidate <= max_plausible_formed
             dew_formed = candidate
             standing_dew += dew_formed
@@ -577,7 +577,7 @@ function ground_condensation_step!(buffers, boundary_layer_model;
         # Loss demand: sublimate standing frost, then evaporate standing dew, before
         # drawing on soil moisture via the residual evaporation_potential
         # (DynamicSoilMoisture's own infiltration_step! demand).
-        demand = raw_flux * Δt
+        demand = uconvert(u"kg/m^2", raw_flux * Δt)
         frost_sublimated = min(demand, standing_frost)
         standing_frost -= frost_sublimated
         demand -= frost_sublimated
@@ -585,7 +585,7 @@ function ground_condensation_step!(buffers, boundary_layer_model;
         standing_dew -= dew_evaporated
         pool -= dew_evaporated
         demand -= dew_evaporated
-        evaporation_potential = max(1e-7u"kg/m^2/s", demand / Δt)
+        evaporation_potential = max(1e-7u"kg/m^2/s", uconvert(u"kg/m^2/s", demand / Δt))
     end
 
     return (; pool, standing_dew, standing_frost, dew_formed, frost_formed, evaporation_potential, local_relative_humidity)
