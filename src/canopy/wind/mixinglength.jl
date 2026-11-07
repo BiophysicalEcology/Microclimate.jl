@@ -39,8 +39,9 @@ index (structural, computed once).
   area index. *Boundary-Layer Meteorology*, 71(1-2), 211-216.
 """
 function zero_plane_displacement(canopy_height, plant_area_index)
-    pai = max(plant_area_index, 0.001)  # numerical floor, not a physical parameter
-    return (1.0 - (1.0 - exp(-sqrt(7.5 * pai))) / sqrt(7.5 * pai)) * canopy_height
+    plant_area_index = max(plant_area_index, 0.001)  # numerical floor, not a physical parameter
+    x = sqrt(7.5 * plant_area_index)
+    return (1.0 - (1.0 - exp(-x)) / x) * canopy_height
 end
 
 """
@@ -93,9 +94,9 @@ function wind_attenuation_profile(layer_plant_area_index, canopy_height, plant_a
     # internally bottom-to-top (index n = canopy top = unattenuated)
     whole_canopy_attenuation = _element_attenuation(plant_area_index_total, canopy_height,
         shelter_floor, shelter_plant_area_coefficient, mixing_length_coefficient, mixing_length_plant_area_coefficient)
-    layer_attenuation = [_element_attenuation(pai, canopy_height,
+    layer_attenuation = [_element_attenuation(element_plant_area_index, canopy_height,
         shelter_floor, shelter_plant_area_coefficient, mixing_length_coefficient, mixing_length_plant_area_coefficient)
-        for pai in Iterators.reverse(layer_plant_area_index)]
+        for element_plant_area_index in Iterators.reverse(layer_plant_area_index)]
     layer_attenuation_sum = sum(layer_attenuation)
     # zero total PAI (leafless canopy): every element is already 0, no attenuation to rescale
     if !iszero(layer_attenuation_sum)
@@ -119,11 +120,12 @@ end
 function _apply_near_ground_loglaw!(relative_wind, canopy_height, karman_constant, n_ground_layers)
     # 10.0 here is the same "bottom tenth" ratio as n_ground_layers = n÷10;
     # 20.0 sets ground_roughness ~ half the bottom layer's own thickness.
+    κ = karman_constant
     ground_roughness = canopy_height / (20.0 * n_ground_layers)
-    friction_scale = karman_constant * relative_wind[n_ground_layers] / log(canopy_height / (10.0 * ground_roughness))
+    friction_scale = κ * relative_wind[n_ground_layers] / log(canopy_height / (10.0 * ground_roughness))
     for i in 1:n_ground_layers
         z = i * canopy_height / (10.0 * n_ground_layers)
-        relative_wind[i] = (friction_scale / karman_constant) * log(z / ground_roughness)
+        relative_wind[i] = (friction_scale / κ) * log(z / ground_roughness)
     end
     return relative_wind
 end
@@ -222,25 +224,27 @@ function canopy_top_flux_boundary(boundary_layer_model, canopy_height, displacem
     heat_correction(depth) = heat_stability_correction(stability_functions,
         stability_parameter_at_height(InverseObukhovLength(), depth, inverse_obukhov_length))
 
-    ground_resistance = min(canopy_height / (karman_constant * friction_velocity * top_depth), max_resistance)
-    top_resistance = min((log(reference_depth / top_depth) - heat_correction(reference_depth) + heat_correction(top_depth)) /
-        (karman_constant * friction_velocity), max_resistance)
-    resistance_ratio = top_resistance / ground_resistance
+    κ = karman_constant
+    u★ = friction_velocity
+    R_ground = min(canopy_height / (κ * u★ * top_depth), max_resistance)
+    R_top = min((log(reference_depth / top_depth) - heat_correction(reference_depth) + heat_correction(top_depth)) /
+        (κ * u★), max_resistance)
+    resistance_ratio = R_top / R_ground
 
     # Fixed from the reference and ground temperatures, not the unknown canopy-top
     # temperature, which keeps the balance linear
-    volumetric_heat_capacity = calc_air_volumetric_heat_capacity((reference_temperature + ground_temperature) / 2)
+    ρcₚ = calc_air_volumetric_heat_capacity((reference_temperature + ground_temperature) / 2)
 
-    # Solving T_top = T_reference + (H + (ρcp/R_ground)(T_ground - T_top)) R_top/ρcp for T_top; vapor likewise
-    balanced_temperature = (reference_temperature + total_sensible_flux * top_resistance / volumetric_heat_capacity +
+    # Solving T_top = T_reference + (H + (ρcₚ/R_ground)(T_ground - T_top)) R_top/ρcₚ for T_top; vapor likewise
+    balanced_temperature = (reference_temperature + total_sensible_flux * R_top / ρcₚ +
         resistance_ratio * ground_temperature) / (1.0 + resistance_ratio)
-    balanced_vapor_density = (reference_vapor_density + total_vapor_flux * top_resistance +
+    balanced_vapor_density = (reference_vapor_density + total_vapor_flux * R_top +
         resistance_ratio * ground_vapor_density) / (1.0 + resistance_ratio)
 
-    residence_time = top_depth * top_resistance
+    residence_time = top_depth * R_top
     fraction_reached = 1.0 - exp(-CANOPY_TIMESTEP / residence_time)
     top_temperature = previous_top_temperature + (balanced_temperature - previous_top_temperature) * fraction_reached
     top_vapor_density = previous_top_vapor_density + (balanced_vapor_density - previous_top_vapor_density) * fraction_reached
-    sensible_flux = volumetric_heat_capacity * (top_temperature - reference_temperature) / top_resistance
+    sensible_flux = ρcₚ * (top_temperature - reference_temperature) / R_top
     return (; top_temperature, top_vapor_density, sensible_flux)
 end

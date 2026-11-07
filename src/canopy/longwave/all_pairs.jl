@@ -24,55 +24,55 @@ point (the ground surface itself).
     atmospheric_radiation_model::ARM = CampbellNormanAtmosphericRadiation()
 end
 
-# Row-normalized exp(-ΔPAI) weights from each of `receiver_pai_above` (n_receivers) to every
-# `source_pai_above`/`source_pai` layer, rescaled per row so canopy+sky+ground view sums to 2.
+# Row-normalized exp(-ΔPAI) weights from each of `receiver_plant_area_index_above` (n_receivers) to every
+# `source_plant_area_index_above`/`source_plant_area_index` layer, rescaled per row so canopy+sky+ground view sums to 2.
 # `self_view` toggles the zero-diagonal (only meaningful when receivers == layers themselves).
-function _view_factor_weights(receiver_pai_above, source_pai_above, source_pai, pai_total, self_view::Bool)
-    n_receivers = length(receiver_pai_above)
-    n_layers = length(source_pai_above)
+function _view_factor_weights(receiver_plant_area_index_above, source_plant_area_index_above, source_plant_area_index, total_plant_area_index, self_view::Bool)
+    n_receivers = length(receiver_plant_area_index_above)
+    n_layers = length(source_plant_area_index_above)
     τ_sky = zeros(n_receivers)
     τ_ground = zeros(n_receivers)
     for i in 1:n_receivers
-        τ_sky[i] = exp(-receiver_pai_above[i])
-        τ_ground[i] = exp(-(pai_total - receiver_pai_above[i]))
+        τ_sky[i] = exp(-receiver_plant_area_index_above[i])
+        τ_ground[i] = exp(-(total_plant_area_index - receiver_plant_area_index_above[i]))
     end
-    w = zeros(n_receivers, n_layers)
+    view_weights = zeros(n_receivers, n_layers)
     for j in 1:n_layers, i in 1:n_receivers
-        w[i, j] = (self_view && i == j) ? 0.0 :
-            exp(-abs(receiver_pai_above[i] - source_pai_above[j])) * source_pai[j]
+        view_weights[i, j] = (self_view && i == j) ? 0.0 :
+            exp(-abs(receiver_plant_area_index_above[i] - source_plant_area_index_above[j])) * source_plant_area_index[j]
     end
     for i in 1:n_receivers
-        Σw = zero(eltype(w))
+        canopy_view = zero(eltype(view_weights))
         for j in 1:n_layers
-            Σw += w[i, j]
+            canopy_view += view_weights[i, j]
         end
-        Σv = Σw + τ_sky[i] + τ_ground[i] # total view: canopy + sky + ground
-        μ = 1.0 + (2.0 - Σv) / _safe_nonzero(Σw)
+        total_view = canopy_view + τ_sky[i] + τ_ground[i]
+        rescale = 1.0 + (2.0 - total_view) / _safe_nonzero(canopy_view)
         for j in 1:n_layers
-            w[i, j] *= μ
+            view_weights[i, j] *= rescale
         end
     end
-    return w, τ_sky, τ_ground
+    return view_weights, τ_sky, τ_ground
 end
 
 function allocate_longwave(::AllPairsLongwaveExchange, plant_area_index, n_layers, canopy_projection_ratio)
     (; layer_plant_area_index, layer_plant_area_index_boundaries) = canopy_layer_geometry(plant_area_index, n_layers)
-    pai_total = sum(layer_plant_area_index)
+    total_plant_area_index = sum(layer_plant_area_index)
 
     # layer position = cumulative PAI at the BOTTOM of the layer (boundaries[i+1]),
     # matching R's paia = rev(cumsum(rev(paii))) exactly (not the layer midpoint)
-    layer_pai_above = layer_plant_area_index_boundaries[2:end]
+    layer_plant_area_index_above = layer_plant_area_index_boundaries[2:end]
 
     view_weights, sky_transmission, ground_transmission =
-        _view_factor_weights(layer_pai_above, layer_pai_above, layer_plant_area_index, pai_total, true)
-    # single extra receiver point at the ground surface itself (pai_above = pai_total)
+        _view_factor_weights(layer_plant_area_index_above, layer_plant_area_index_above, layer_plant_area_index, total_plant_area_index, true)
+    # single extra receiver point at the ground surface itself (plant_area_index_above = total_plant_area_index)
     ground_view_weights, ground_sky_transmission, ground_ground_transmission =
-        _view_factor_weights([pai_total], layer_pai_above, layer_plant_area_index, pai_total, false)
-    # mirror receiver point at true canopy top (pai_above = 0), for net_absorbed_longwave --
+        _view_factor_weights([total_plant_area_index], layer_plant_area_index_above, layer_plant_area_index, total_plant_area_index, false)
+    # mirror receiver point at true canopy top (plant_area_index_above = 0), for net_absorbed_longwave --
     # sky_transmission[1]/downward_longwave[1] sit at layer 1's own (already-attenuated)
     # position, not the true top, unlike LayeredLongwaveExchange/LayeredRadiosityExchange.
     top_view_weights, _, top_ground_transmission =
-        _view_factor_weights([0.0], layer_pai_above, layer_plant_area_index, pai_total, false)
+        _view_factor_weights([0.0], layer_plant_area_index_above, layer_plant_area_index, total_plant_area_index, false)
 
     layer_transmission = exp.(-layer_plant_area_index)
 
@@ -125,9 +125,9 @@ function canopy_longwave!(buffers, model::AllPairsLongwaveExchange, leaf_emissiv
         down = incoming_longwave * sky_transmission[i]
         up = ground_emission * ground_transmission[i]
         for j in 1:n_layers
-            wij = view_weights[i, j]
-            j < i && (down += wij * leaf_emission[j])
-            j > i && (up += wij * leaf_emission[j])
+            weight = view_weights[i, j]
+            j < i && (down += weight * leaf_emission[j])
+            j > i && (up += weight * leaf_emission[j])
         end
         downward_longwave[i] = down
         upward_longwave[i] = up

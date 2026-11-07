@@ -29,8 +29,8 @@ leaf_standing_dew(::NoInterception, buffers, layer) = 0.0u"kg/m^2"
 
 leaf_standing_frost(::NoInterception, buffers, layer) = 0.0u"kg/m^2"
 
-add_leaf_standing_dew!(::NoInterception, buffers, layer, Δ) = nothing
+add_leaf_standing_dew!(::NoInterception, buffers, layer, mass_change) = nothing
 
-add_leaf_standing_frost!(::NoInterception, buffers, layer, Δ) = nothing
+add_leaf_standing_frost!(::NoInterception, buffers, layer, mass_change) = nothing
 
 clamp_leaf_standing_dew!(::NoInterception, buffers, layer, ceiling) = nothing

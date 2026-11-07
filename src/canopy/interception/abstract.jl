@@ -97,10 +97,10 @@ function leaf_standing_dew end
 function leaf_standing_frost end
 
 """
-    add_leaf_standing_dew!(model, buffers, layer, Δ)
-    add_leaf_standing_frost!(model, buffers, layer, Δ)
+    add_leaf_standing_dew!(model, buffers, layer, mass_change)
+    add_leaf_standing_frost!(model, buffers, layer, mass_change)
 
-Add `Δ` (kg/m², may be negative) to layer `layer`'s standing dew/frost
+Add `mass_change` (kg/m², may be negative) to layer `layer`'s standing dew/frost
 balance, clamped at zero. No-op for `NoInterception`.
 """
 function add_leaf_standing_dew! end

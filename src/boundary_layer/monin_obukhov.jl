@@ -524,13 +524,23 @@ end
 Compute convective heat flux given bulk and sublayer Stanton numbers.
 """
 @inline function convective_flux(air_volumetric_heat_capacity, temperature_difference, friction_velocity, bulk_stanton_number, sublayer_stanton_number)
-    return air_volumetric_heat_capacity * temperature_difference * friction_velocity * bulk_stanton_number / (1 + bulk_stanton_number / sublayer_stanton_number)
+    ρcₚ = air_volumetric_heat_capacity
+    ΔT = temperature_difference
+    u★ = friction_velocity
+    St_bulk = bulk_stanton_number
+    St_sublayer = sublayer_stanton_number
+    return ρcₚ * ΔT * u★ * St_bulk / (1 + St_bulk / St_sublayer)
 end
 
 # Scalar-roughness-ratio resistance, ln(z/zh) - ψ_h(z/L) + ψ_h(zh/L)
 function _scalar_roughness_resistance(ratio, karman_constant, friction_velocity, roughness_height, height, heat_correction_at_height, heat_correction_at_scalar_roughness)
-    scalar_roughness_height = ratio * roughness_height
-    return (log(height / scalar_roughness_height) - heat_correction_at_height + heat_correction_at_scalar_roughness) / (karman_constant * friction_velocity)
+    κ = karman_constant
+    u★ = friction_velocity
+    z = height
+    zh = ratio * roughness_height
+    ψ_h_z = heat_correction_at_height
+    ψ_h_zh = heat_correction_at_scalar_roughness
+    return (log(z / zh) - ψ_h_z + ψ_h_zh) / (κ * u★)
 end
 
 # calc_convection's stable/neutral direct branch: no Obukhov iteration, ψ_h implicitly 0.
@@ -544,17 +554,17 @@ end
 # calc_obukhov_length's iterative branch. Also returns roughness_height_temperature
 # (the below-z0 profile's own boundary value) since SublayerStantonRoughness derives
 # it from the same bulk/sublayer split as the flux itself.
-function _unstable_convective_heat_flux(::SublayerStantonRoughness, stability_functions, air_volumetric_heat_capacity, temperature_difference, friction_velocity, karman_constant, roughness_height, height, log_ratio_corrected, ψ_h, stability_parameter, kinematic_viscosity, reference_temperature, surface_temperature)
-    sublayer_stanton_number = sublayer_stanton(roughness_height, friction_velocity, kinematic_viscosity)
-    bulk_stanton_number = bulk_stanton(log_ratio_corrected, stability_parameter)
-    convective_heat_flux = convective_flux(air_volumetric_heat_capacity, temperature_difference, friction_velocity, bulk_stanton_number, sublayer_stanton_number)
-    roughness_height_temperature = (reference_temperature * bulk_stanton_number + surface_temperature * sublayer_stanton_number) / (bulk_stanton_number + sublayer_stanton_number)
+function _unstable_convective_heat_flux(::SublayerStantonRoughness, stability_functions, air_volumetric_heat_capacity, temperature_difference, friction_velocity, karman_constant, roughness_height, height, log_ratio_corrected, heat_correction, stability_parameter, kinematic_viscosity, reference_temperature, surface_temperature)
+    St_sublayer = sublayer_stanton(roughness_height, friction_velocity, kinematic_viscosity)
+    St_bulk = bulk_stanton(log_ratio_corrected, stability_parameter)
+    convective_heat_flux = convective_flux(air_volumetric_heat_capacity, temperature_difference, friction_velocity, St_bulk, St_sublayer)
+    roughness_height_temperature = (reference_temperature * St_bulk + surface_temperature * St_sublayer) / (St_bulk + St_sublayer)
     return (; convective_heat_flux, roughness_height_temperature)
 end
-function _unstable_convective_heat_flux(thermal_roughness_model::ScalarRoughnessRatio, stability_functions, air_volumetric_heat_capacity, temperature_difference, friction_velocity, karman_constant, roughness_height, height, log_ratio_corrected, ψ_h, stability_parameter, kinematic_viscosity, reference_temperature, surface_temperature)
+function _unstable_convective_heat_flux(thermal_roughness_model::ScalarRoughnessRatio, stability_functions, air_volumetric_heat_capacity, temperature_difference, friction_velocity, karman_constant, roughness_height, height, log_ratio_corrected, heat_correction, stability_parameter, kinematic_viscosity, reference_temperature, surface_temperature)
     (; ratio) = thermal_roughness_model
     heat_correction_at_scalar_roughness = heat_stability_correction(stability_functions, stability_parameter * ratio * roughness_height / height)
-    resistance = _scalar_roughness_resistance(ratio, karman_constant, friction_velocity, roughness_height, height, ψ_h, heat_correction_at_scalar_roughness)
+    resistance = _scalar_roughness_resistance(ratio, karman_constant, friction_velocity, roughness_height, height, heat_correction, heat_correction_at_scalar_roughness)
     return (; convective_heat_flux=air_volumetric_heat_capacity * temperature_difference / resistance, roughness_height_temperature=surface_temperature)
 end
 
@@ -669,15 +679,15 @@ to_inverse_obukhov_length(::InverseObukhovLength, inverse_obukhov_length) = inve
 
 
 """
-    paulson_x(stability_parameter, γ)
+    paulson_x(stability_parameter, dyer_constant)
 
-The Paulson (1970) variable `x = (1 - γ z / L)^(1/4)`, used as the argument to `momentum_stability_correction`
+The Paulson (1970) variable `x = (1 - γ z / L)^(1/4)`, with `γ = dyer_constant`, used as the argument to `momentum_stability_correction`
 and `heat_stability_correction`. It is the reciprocal of the Businger–Dyer stability function
 `φₘ = (1 - γ z / L)^(-1/4)`.
 
 # Arguments
 - `stability_parameter`: `z/L`, negative (unstable), see [`stability_parameter_at_height`](@ref).
-- `γ`: Empirical constant (dimensionless, often ≈16).
+- `dyer_constant`: Empirical constant (dimensionless, often ≈16).
 
 # References
 - Paulson, C. A. (1970). The mathematical representation of wind speed and
@@ -689,14 +699,16 @@ and `heat_stability_correction`. It is the reciprocal of the Businger–Dyer sta
 - Dyer, A. J. (1974). A review of flux–profile relationships.
   *Boundary-Layer Meteorology*, 7(3), 363–372.
 """
-@inline function paulson_x(stability_parameter, γ)
+@inline function paulson_x(stability_parameter, dyer_constant)
+    γ = dyer_constant
+    ζ = stability_parameter
     # sqrt is faster than ^1/4
-    return sqrt(sqrt(1.0 - γ * stability_parameter))
+    return sqrt(sqrt(1.0 - γ * ζ))
 end
 
 
 """
-    heat_gradient_stability_factor(stability_parameter, γ)
+    heat_gradient_stability_factor(stability_parameter, dyer_constant)
     heat_gradient_stability_factor(stability_functions::AbstractStabilityFunctions, stability_parameter)
 
 Dimensionless heat gradient Φ_h, the eddy diffusivity's stability divisor.
@@ -709,43 +721,45 @@ the momentum φₘ = x⁻¹). With `stability_functions`: either regime.
   Flux–profile relationships in the atmospheric surface layer.
   *Journal of the Atmospheric Sciences*, 28(2), 181–189.
 """
-function heat_gradient_stability_factor(stability_parameter, γ)
-    return paulson_x(stability_parameter, γ)^(-2)
+function heat_gradient_stability_factor(stability_parameter, dyer_constant)
+    return paulson_x(stability_parameter, dyer_constant)^(-2)
 end
 
 
 """
-    momentum_stability_correction(x)
+    momentum_stability_correction(paulson_variable)
     momentum_stability_correction(stability_functions::AbstractStabilityFunctions, stability_parameter)
 
 Stability correction ψₘ for momentum. 1-arg form: the unstable Businger–Dyer
-expression, `ψₘ(x) = 2 ln((1+x)/2) + ln((1+x²)/2) - 2 atan(x) + π/2`, `x`
-typically `(1 - γ z / L)^(1/4)`. With `stability_functions`: either regime,
+expression, `ψₘ(x) = 2 ln((1+x)/2) + ln((1+x²)/2) - 2 atan(x) + π/2`, with
+`x = paulson_variable`, see [`paulson_x`](@ref). With `stability_functions`: either regime,
 continuous at neutral.
 
 # References
 - Businger et al. (1971).
 - Dyer (1974).
 """
-@inline function momentum_stability_correction(x)
+@inline function momentum_stability_correction(paulson_variable)
+    x = paulson_variable
     return 2.0 * log((1.0 + x) / 2.0) + log((1.0 + x^2) / 2.0) - 2.0 * atan(x) + π / 2.0
 end
 
 
 """
-    heat_stability_correction(x)
+    heat_stability_correction(paulson_variable)
     heat_stability_correction(stability_functions::AbstractStabilityFunctions, stability_parameter)
 
 Stability correction ψ_h for heat and vapour. 1-arg form: the unstable
-Businger–Dyer expression, `ψ_h(x) = 2 ln((1+x²)/2)`, `x` typically
-`(1 - γ z / L)^(1/4)`. With `stability_functions`: either regime,
+Businger–Dyer expression, `ψ_h(x) = 2 ln((1+x²)/2)`, with
+`x = paulson_variable`, see [`paulson_x`](@ref). With `stability_functions`: either regime,
 continuous at neutral.
 
 # References
 - Businger et al. (1971).
 - Dyer (1974).
 """
-@inline function heat_stability_correction(x)
+@inline function heat_stability_correction(paulson_variable)
+    x = paulson_variable
     return 2.0 * log((1.0 + x^2.0) / 2.0)
 end
 
@@ -773,23 +787,29 @@ end
 
 function momentum_stability_correction(stability_functions::ChengBrutsaert, stability_parameter)
     stability_parameter < 0 && return momentum_stability_correction(paulson_x(stability_parameter, stability_functions.momentum_dyer_constant))
-    (; momentum_scale, momentum_exponent) = stability_functions
-    return -momentum_scale * log(stability_parameter + (1 + stability_parameter^momentum_exponent)^(1 / momentum_exponent))
+    a = stability_functions.momentum_scale
+    b = stability_functions.momentum_exponent
+    ζ = stability_parameter
+    return -a * log(ζ + (1 + ζ^b)^(1 / b))
 end
 
 function heat_stability_correction(stability_functions::ChengBrutsaert, stability_parameter)
     stability_parameter < 0 && return heat_stability_correction(paulson_x(stability_parameter, stability_functions.heat_dyer_constant))
-    (; heat_scale, heat_exponent) = stability_functions
-    return -heat_scale * log(stability_parameter + (1 + stability_parameter^heat_exponent)^(1 / heat_exponent))
+    c = stability_functions.heat_scale
+    d = stability_functions.heat_exponent
+    ζ = stability_parameter
+    return -c * log(ζ + (1 + ζ^d)^(1 / d))
 end
 
 function heat_gradient_stability_factor(stability_functions::ChengBrutsaert, stability_parameter)
     stability_parameter < 0 && return heat_gradient_stability_factor(stability_parameter, stability_functions.heat_dyer_constant)
     # Φ_h = 1 - ζ·dψ_h/dζ, for ψ_h = -c·ln g, g = ζ + (1 + ζᵈ)^(1/d), with ζ the stability parameter
-    (; heat_scale, heat_exponent) = stability_functions
-    q = 1 + stability_parameter^heat_exponent
-    g = stability_parameter + q^(1 / heat_exponent)
-    return 1 + heat_scale * stability_parameter * (1 + stability_parameter^(heat_exponent - 1) * q^(1 / heat_exponent - 1)) / g
+    c = stability_functions.heat_scale
+    d = stability_functions.heat_exponent
+    ζ = stability_parameter
+    q = 1 + ζ^d
+    g = ζ + q^(1 / d)
+    return 1 + c * ζ * (1 + ζ^(d - 1) * q^(1 / d - 1)) / g
 end
 
 
@@ -818,7 +838,8 @@ function monin_obukhov_step(stability_variable, value, reference_temperature, su
     ψ_h = heat_stability_correction(stability_functions, reference_stability_parameter)
     log_ratio_corrected = log(reference_height_above_origin / roughness_length) - ψ_m +
         momentum_stability_correction(stability_functions, reference_stability_parameter * roughness_length / reference_height_above_origin)
-    friction_velocity = max(karman_constant * reference_wind_speed / log_ratio_corrected, min_friction_velocity)
+    κ = karman_constant
+    friction_velocity = max(κ * reference_wind_speed / log_ratio_corrected, min_friction_velocity)
     convective_heat_flux, roughness_height_temperature = _unstable_convective_heat_flux(thermal_roughness_model,
         stability_functions, air_volumetric_heat_capacity, temperature_difference, friction_velocity, karman_constant, roughness_length, reference_height_above_origin, log_ratio_corrected, ψ_h, reference_stability_parameter, kinematic_viscosity,
         reference_temperature, surface_temperature)

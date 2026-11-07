@@ -1,5 +1,5 @@
 """
-    MonteithLeafCondensation(; gamma=66.0u"Pa/K")
+    MonteithLeafCondensation(; psychrometric_constant=66.0u"Pa/K")
 
 Leaf dew/frost from Monteith, J. L. (1963). Dew: facts and fallacies. In
 The Water Relations of Plants (pp. 37-56). Blackwell. Adapted from the
@@ -12,12 +12,12 @@ coefficient). No ground-heat-flux analogue: a thin leaf has negligible heat
 storage, matching Garratt & Segal (1988) eq. 6a's own omission of `G` for
 canopy dew.
 
-Simpler than [`GarrattSegalCondensation`](@ref): `gamma` is a fixed
-psychrometric constant rather than derived each hour, and the slope is
+Simpler than [`GarrattSegalCondensation`](@ref): `psychrometric_constant` is
+fixed rather than derived each hour, and the slope is
 vapour-pressure- rather than specific-humidity-based.
 """
 @kwdef struct MonteithLeafCondensation{G} <: AbstractCondensationModel
-    gamma::G = 66.0u"Pa/K"
+    psychrometric_constant::G = 66.0u"Pa/K"
 end
 
 function condensation_energy_flux(model::MonteithLeafCondensation;
@@ -31,7 +31,7 @@ function condensation_energy_flux(model::MonteithLeafCondensation;
 
     saturated_vapour_pressure_air = vapour_pressure(vapour_pressure_equation, T_1)
     δ = (vapour_pressure(vapour_pressure_equation, T_1 + 1.0u"K") - saturated_vapour_pressure_air) / 1.0u"K"
-    γ = model.gamma
+    γ = model.psychrometric_constant
 
     # absorbed_radiation is per unit leaf_area (radiative, self-shaded);
     # the aerodynamic term uses aerodynamic_area (PAI-based, convective) --

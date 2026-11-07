@@ -62,13 +62,13 @@ end
 leaf_standing_dew(::AbstractStorageInterception, buffers, layer) = buffers.leaf_standing_dew[layer]
 leaf_standing_frost(::AbstractStorageInterception, buffers, layer) = buffers.leaf_standing_frost[layer]
 
-function add_leaf_standing_dew!(::AbstractStorageInterception, buffers, layer, Δ)
-    buffers.leaf_standing_dew[layer] = max(buffers.leaf_standing_dew[layer] + Δ, 0.0u"kg/m^2")
+function add_leaf_standing_dew!(::AbstractStorageInterception, buffers, layer, mass_change)
+    buffers.leaf_standing_dew[layer] = max(buffers.leaf_standing_dew[layer] + mass_change, 0.0u"kg/m^2")
     return nothing
 end
 
-function add_leaf_standing_frost!(::AbstractStorageInterception, buffers, layer, Δ)
-    buffers.leaf_standing_frost[layer] = max(buffers.leaf_standing_frost[layer] + Δ, 0.0u"kg/m^2")
+function add_leaf_standing_frost!(::AbstractStorageInterception, buffers, layer, mass_change)
+    buffers.leaf_standing_frost[layer] = max(buffers.leaf_standing_frost[layer] + mass_change, 0.0u"kg/m^2")
     return nothing
 end
 

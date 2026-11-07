@@ -279,16 +279,16 @@ function canopy_heat_vapor_transport!(buffers, model::RaupachLTheoryAirProfile, 
     # The Lagrangian timescale T_L is the same at every height. It makes the diffusivity at the
     # canopy top, K(h) = σw(h)²T_L, match the Monin-Obukhov diffusivity above it, κu*(h-d)/Φh:
     #   T_L = min(a₂h/u*, max_lagrangian_timescale), with a₂ = κ(1-d/h)/(a₁²Φh)
-    h, d, u_star, κ = canopy_height, displacement_height, friction_velocity, karman_constant
+    h, d, u★, κ = canopy_height, displacement_height, friction_velocity, karman_constant
     a₀, a₁ = ground_velocity_deviation_factor, canopy_top_velocity_deviation_factor
     canopy_top_depth = max(h - d, 1.0e-3u"m")
     Φh = heat_gradient_stability_factor(boundary_layer_model.stability_functions,
         stability_parameter_at_height(InverseObukhovLength(), canopy_top_depth, inverse_obukhov_length))
     a₂ = κ * (1.0 - d / h) / (a₁^2 * Φh)
-    T_L = min(a₂ * h / u_star, max_lagrangian_timescale)
+    T_L = min(a₂ * h / u★, max_lagrangian_timescale)
 
-    σw_mean = (a₁ + a₀) * u_star / 2
-    σw_amplitude = (a₁ - a₀) * u_star / 2
+    σw_mean = (a₁ + a₀) * u★ / 2
+    σw_amplitude = (a₁ - a₀) * u★ / 2
     for layer in 1:layer_count
         σw = σw_mean + σw_amplitude * cos(π * (1.0 - layer_heights[layer] / h))
         inverse_near_field_length[layer] = 1 / (σw * T_L)
@@ -300,7 +300,7 @@ function canopy_heat_vapor_transport!(buffers, model::RaupachLTheoryAirProfile, 
 
     # The ground's resistance is the lowest layer's plus a sublayer in series, with a friction
     # velocity from the log law in that layer. allocate_canopy checks it is above the roughness.
-    ground_friction_velocity = karman_constant * wind_speed[layer_count] / log(layer_heights[layer_count] / ground_roughness_height)
+    ground_friction_velocity = κ * wind_speed[layer_count] / log(layer_heights[layer_count] / ground_roughness_height)
     kinematic_viscosity = dry_air_properties((canopy_top_air_temperature + ground_temperature) / 2, atmospheric_pressure).kinematic_viscosity
     sublayer_heat_resistance = 1.0 / (ground_friction_velocity * sublayer_stanton(ground_roughness_height, ground_friction_velocity, kinematic_viscosity))
     ground_heat_resistance = layer_resistance[layer_count] + sublayer_heat_resistance

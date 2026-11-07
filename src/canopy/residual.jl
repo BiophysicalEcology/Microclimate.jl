@@ -284,7 +284,9 @@ function evaluate_canopy!(residual, inverse_obukhov_length, ground_temperature, 
     end
     # The stability the whole canopy's sensible flux through its top implies; the Obukhov
     # relation takes the downward flux
-    obukhov_coefficient = calc_air_volumetric_heat_capacity(reference_temperature) * reference_temperature / (boundary_layer_model.karman_constant * g_n)
+    ρcₚ = calc_air_volumetric_heat_capacity(reference_temperature)
+    κ = boundary_layer_model.karman_constant
+    obukhov_coefficient = ρcₚ * reference_temperature / (κ * g_n)
     inverse_obukhov_length_update = limit_inverse_obukhov_length(stability_from_fluxes(InverseObukhovLength(), obukhov_coefficient,
         wind.friction_velocity, -boundary.sensible_flux), forcing.stability_limits)
     residual.inverse_obukhov_length[] = wind.inverse_obukhov_length - inverse_obukhov_length_update

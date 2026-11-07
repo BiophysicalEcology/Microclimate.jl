@@ -117,7 +117,9 @@ function canopy_heat_vapor_transport!(buffers, ::KTheoryAirProfile, boundary_lay
     vapor_density[1] = canopy_top_vapor_density
 
     # The floor stops the diffusivity reaching zero when displacement reaches the canopy top
-    canopy_top_eddy_diffusivity = boundary_layer_model.karman_constant * friction_velocity * max(canopy_height - displacement_height, 1.0e-3u"m")
+    κ = boundary_layer_model.karman_constant
+    u★ = friction_velocity
+    canopy_top_eddy_diffusivity = κ * u★ * max(canopy_height - displacement_height, 1.0e-3u"m")
 
     heat_top_conductance, heat_ground_conductance = _ktheory_conductances!(heat_conductance_between_layers, relative_eddy_diffusivity,
         canopy_top_eddy_diffusivity, layer_spacing, calc_air_volumetric_heat_capacity(canopy_top_air_temperature))

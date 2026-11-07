@@ -65,29 +65,31 @@ function canopy_longwave!(buffers, model::LayeredLongwaveExchange, leaf_emissivi
 )
     (; layer_transmission, boundary_downward_longwave, boundary_upward_longwave, absorbed_longwave) = buffers
     n_layers = length(layer_transmission)
+    L_d = boundary_downward_longwave
+    L_u = boundary_upward_longwave
 
-    boundary_downward_longwave[1] = incoming_longwave
+    L_d[1] = incoming_longwave
     for i in 1:n_layers
         τ = layer_transmission[i]
         emission = leaf_emissivity * σ * u"K"(leaf_temperature[i])^4
-        boundary_downward_longwave[i + 1] = boundary_downward_longwave[i] * τ + emission * (1.0 - τ)
+        L_d[i + 1] = L_d[i] * τ + emission * (1.0 - τ)
     end
 
     ground_emission = ground_emissivity * σ * u"K"(ground_temperature)^4
-    boundary_upward_longwave[n_layers + 1] = ground_emission + (1.0 - ground_emissivity) * boundary_downward_longwave[n_layers + 1]
+    L_u[n_layers + 1] = ground_emission + (1.0 - ground_emissivity) * L_d[n_layers + 1]
     for i in n_layers:-1:1
         τ = layer_transmission[i]
         emission = leaf_emissivity * σ * u"K"(leaf_temperature[i])^4
-        boundary_upward_longwave[i] = boundary_upward_longwave[i + 1] * τ + emission * (1.0 - τ)
+        L_u[i] = L_u[i + 1] * τ + emission * (1.0 - τ)
     end
 
     for i in 1:n_layers
         τ = layer_transmission[i]
-        absorbed_longwave[i] = (1.0 - τ) * (boundary_downward_longwave[i] + boundary_upward_longwave[i + 1])
+        absorbed_longwave[i] = (1.0 - τ) * (L_d[i] + L_u[i + 1])
     end
 
-    ground_absorbed_longwave = ground_emissivity * boundary_downward_longwave[n_layers + 1]
-    net_absorbed_longwave = boundary_downward_longwave[1] - boundary_upward_longwave[1]
+    ground_absorbed_longwave = ground_emissivity * L_d[n_layers + 1]
+    net_absorbed_longwave = L_d[1] - L_u[1]
 
     return (; ground_absorbed_longwave, net_absorbed_longwave)
 end

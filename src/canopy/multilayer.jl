@@ -183,11 +183,11 @@ leaf_standing_dew(model::MultilayerCanopy, buffers, layer) =
 leaf_standing_frost(model::MultilayerCanopy, buffers, layer) =
     leaf_standing_frost(model.interception_model, buffers.interception, layer)
 
-add_leaf_standing_dew!(model::MultilayerCanopy, buffers, layer, Δ) =
-    add_leaf_standing_dew!(model.interception_model, buffers.interception, layer, Δ)
+add_leaf_standing_dew!(model::MultilayerCanopy, buffers, layer, mass_change) =
+    add_leaf_standing_dew!(model.interception_model, buffers.interception, layer, mass_change)
 
-add_leaf_standing_frost!(model::MultilayerCanopy, buffers, layer, Δ) =
-    add_leaf_standing_frost!(model.interception_model, buffers.interception, layer, Δ)
+add_leaf_standing_frost!(model::MultilayerCanopy, buffers, layer, mass_change) =
+    add_leaf_standing_frost!(model.interception_model, buffers.interception, layer, mass_change)
 
 clamp_leaf_standing_dew!(model::MultilayerCanopy, buffers, layer, ceiling) =
     clamp_leaf_standing_dew!(model.interception_model, buffers.interception, layer, ceiling)
