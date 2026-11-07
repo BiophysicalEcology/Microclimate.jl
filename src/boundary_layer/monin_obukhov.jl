@@ -23,26 +23,25 @@ end
 """
     AbstractStabilityLimit
 
-A bound on the canopy-top inverse Obukhov length the canopy's flux implies.
+How far the atmospheric stability above a canopy is allowed to go.
 """
 abstract type AbstractStabilityLimit end
 
 """
     NoStabilityLimit()
 
-The inverse Obukhov length the flux implies, unbounded.
+Atmospheric stability above a canopy has no limit.
 """
 struct NoStabilityLimit <: AbstractStabilityLimit end
 
 """
     MomentumCorrectionLimit(; fraction=0.9)
 
-Bounds the inverse Obukhov length where the momentum stability correction between the
-roughness length and the reference height reaches `fraction` of the log term, so the
-friction velocity changes with stability by at most a factor `1 ± fraction`. The
-stability the flux implies approaches the limit smoothly, `limit·tanh(1/L / limit)`. Where the
-flux implies more stability than that, as in calm nights when cooling decouples the canopy
-faster than it suppresses the flux, there is no consistent state; the limit gives one.
+Limits the atmospheric stability above a canopy, so that stability changes the friction
+velocity by at most a factor `1 ± fraction`.
+
+On calm nights a canopy can cool faster than stability reduces its heat flux, and then no
+stability agrees with that flux. This limit gives one. Stability approaches the limit smoothly.
 """
 @kwdef struct MomentumCorrectionLimit{F} <: AbstractStabilityLimit
     fraction::F = 0.9

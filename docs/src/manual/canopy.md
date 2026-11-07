@@ -4,9 +4,9 @@ A single scalar `shade` fraction ([`NoCanopy`](@ref), the default) cannot repres
 how radiation, wind, temperature and humidity change with height through a
 canopy. [`MultilayerCanopy`](@ref) resolves the canopy into layers (one per 
 `MicroModel.atmosphere.heights` entry at or below `canopy_height`) and solves shortwave, longwave, 
-wind, air-profile, interception and leaf temperature sub-models per layer, each hour,
-solving leaf temperature, air temperature, humidity and stability together and coupling
-the canopy to the soil (see [Solving each hour](#Solving-each-hour)).
+wind, air-profile, interception and leaf temperature sub-models per layer. Each hour,
+[`AndersonCanopyConvergence`](@ref) solves the canopy and ground temperature together, and
+stops with an error if they don't settle.
 
 The default wind model, [`ExponentialCanopyWindAttenuation`](@ref), requires at least
 10 canopy layers (it replaces the bottom tenth of the profile with a local log-law
@@ -96,17 +96,6 @@ heat transfer coefficient directly) rather than the ground's two-term
 energy/aerodynamic split — a thin leaf has negligible heat storage, so there's no
 ground-heat-flux analogue term, matching Garratt and Segal's (1988) own omission of
 that term for canopy dew.
-
-## Solving each hour
-
-Each hour the model finds the leaf temperature, air temperature, humidity, ground temperature
-and atmospheric stability that all agree with each other. [`AndersonCanopyConvergence`](@ref) does this by
-improving its guess repeatedly, using its recent guesses to take larger steps. If an hour
-doesn't settle, the model stops with an error by default, or with
-`on_failure = SmallestResidual()` it keeps its best guess.
-
-Each guess of the ground temperature comes from running the soil through the hour, with the
-canopy's latest values at its surface.
 
 ## Assembling a canopy
 
