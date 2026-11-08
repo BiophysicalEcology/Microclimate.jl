@@ -688,13 +688,7 @@ to_inverse_obukhov_length(::InverseObukhovLength, inverse_obukhov_length) = inve
 """
     paulson_x(stability_parameter, dyer_constant)
 
-The Paulson (1970) variable `x = (1 - γ z / L)^(1/4)`, with `γ = dyer_constant`, used as the argument to `momentum_stability_correction`
-and `heat_stability_correction`. It is the reciprocal of the Businger–Dyer stability function
-`φₘ = (1 - γ z / L)^(-1/4)`.
-
-# Arguments
-- `stability_parameter`: `z/L`, negative (unstable), see [`stability_parameter_at_height`](@ref).
-- `dyer_constant`: Empirical constant (dimensionless, often ≈16).
+`(1 - dyer_constant * stability_parameter)^(1/4)`, the input to the unstable stability corrections.
 
 # References
 - Paulson, C. A. (1970). The mathematical representation of wind speed and
@@ -718,10 +712,7 @@ end
     heat_gradient_stability_factor(stability_parameter, dyer_constant)
     heat_gradient_stability_factor(stability_functions::AbstractStabilityFunctions, stability_parameter)
 
-Dimensionless heat gradient Φ_h, the eddy diffusivity's stability divisor.
-2-arg form: the unstable Businger–Dyer expression, `x⁻²` of `paulson_x`'s
-Paulson x-substitution (unlike `paulson_x` itself, which returns `x`, not
-the momentum φₘ = x⁻¹). With `stability_functions`: either regime.
+Factor that divides the heat mixing coefficient: below 1 in unstable air, above 1 in stable air.
 
 # References
 - Businger, J. A., Wyngaard, J. C., Izumi, Y., & Bradley, E. F. (1971).
@@ -737,10 +728,7 @@ end
     momentum_stability_correction(paulson_variable)
     momentum_stability_correction(stability_functions::AbstractStabilityFunctions, stability_parameter)
 
-Stability correction ψₘ for momentum. 1-arg form: the unstable Businger–Dyer
-expression, `ψₘ(x) = 2 ln((1+x)/2) + ln((1+x²)/2) - 2 atan(x) + π/2`,
-with `x = paulson_variable` (see [`paulson_x`](@ref)). With
-`stability_functions`: either regime, continuous at neutral.
+Stability correction to the log wind profile. Zero in neutral air.
 
 # References
 - Businger et al. (1971).
@@ -756,11 +744,7 @@ end
     heat_stability_correction(paulson_variable)
     heat_stability_correction(stability_functions::AbstractStabilityFunctions, stability_parameter)
 
-Stability correction `ψ_h` for heat and vapour. 1-arg form: the unstable
-Businger–Dyer expression, `ψ_h(x) = 2 ln((1+x²)/2)`,
-with `x = paulson_variable` (see [`paulson_x`](@ref)). With
-`stability_functions`: either regime,
-continuous at neutral.
+Stability correction to the log temperature and vapour profiles. Zero in neutral air.
 
 # References
 - Businger et al. (1971).
