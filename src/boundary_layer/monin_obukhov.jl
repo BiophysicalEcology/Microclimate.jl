@@ -738,9 +738,9 @@ end
     momentum_stability_correction(stability_functions::AbstractStabilityFunctions, stability_parameter)
 
 Stability correction ψₘ for momentum. 1-arg form: the unstable Businger–Dyer
-expression, `ψₘ(x) = 2 ln((1+x)/2) + ln((1+x²)/2) - 2 atan(x) + π/2`, with
-`x = paulson_variable`, see [`paulson_x`](@ref). With `stability_functions`: either regime,
-continuous at neutral.
+expression, `ψₘ(x) = 2 ln((1+x)/2) + ln((1+x²)/2) - 2 atan(x) + π/2`,
+with `x = paulson_variable` (see [`paulson_x`](@ref)). With
+`stability_functions`: either regime, continuous at neutral.
 
 # References
 - Businger et al. (1971).
@@ -756,9 +756,10 @@ end
     heat_stability_correction(paulson_variable)
     heat_stability_correction(stability_functions::AbstractStabilityFunctions, stability_parameter)
 
-Stability correction ψ_h for heat and vapour. 1-arg form: the unstable
-Businger–Dyer expression, `ψ_h(x) = 2 ln((1+x²)/2)`, with
-`x = paulson_variable`, see [`paulson_x`](@ref). With `stability_functions`: either regime,
+Stability correction `ψ_h` for heat and vapour. 1-arg form: the unstable
+Businger–Dyer expression, `ψ_h(x) = 2 ln((1+x²)/2)`,
+with `x = paulson_variable` (see [`paulson_x`](@ref)). With
+`stability_functions`: either regime,
 continuous at neutral.
 
 # References
