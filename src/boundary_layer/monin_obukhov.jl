@@ -136,6 +136,10 @@ const _MIN_LOGLAW_RATIO = 5.0 # avoid the log-law inversion becoming ill-conditi
 # The unstable first guess, before any previous value exists to start from
 const INITIAL_OBUKHOV_LENGTH = -0.3u"m"
 
+# ρ·cₚ·T/(κ·g), the factor in the Obukhov relation L = factor·u*³/H. A constant, as in
+# the original Fortran. TODO calculate it from the air properties.
+const OBUKHOV_LENGTH_FACTOR = u"J*s^2/m^4"(6.003e-8u"cal*minute^2/cm^4")
+
 function allocate_profile(::MoninObukhov, heights)
     wind_speed = similar(heights, typeof(0.0u"m/s")) # output wind speeds
     air_temperature = similar(heights, typeof(0.0u"K")) # output temperatures, need to do this otherwise get InexactError
@@ -236,7 +240,7 @@ function atmospheric_surface_profile!(boundary_layer_model::MoninObukhov, buffer
     stability=nothing,
 )
     (; elevation) = site
-    (; karman_constant, stability_functions, min_friction_velocity) = boundary_layer_model
+    (; karman_constant, stability_functions) = boundary_layer_model
     (; atmospheric_pressure, reference_temperature, reference_wind_speed, reference_humidity) = environment_instant
 
     (; heights, air_temperature, wind_speed, relative_humidity,
@@ -269,19 +273,15 @@ function atmospheric_surface_profile!(boundary_layer_model::MoninObukhov, buffer
     surface_temperature = u"K"(surface_temperature)
     κ = karman_constant
 
-    # ρ·cₚ·T/(κ·g), the factor in the Obukhov relation L = factor·u*³/H. A constant, as in
-    # the original Fortran. TODO calculate it from the air properties.
-    obukhov_length_factor = u"J*s^2/m^4"(6.003e-8u"cal*minute^2/cm^4")
-
     temperature_difference = reference_temperature - surface_temperature
     mean_temperature = (surface_temperature + reference_temperature) / 2
     # TODO call calc_air_volumetric_heat_capacity method specific to elevation and RH in final version but do it this way for NicheMapR comparison
     air_volumetric_heat_capacity = calc_air_volumetric_heat_capacity(mean_temperature)#, elevation, reference_humidity)
     kinematic_viscosity = dry_air_properties(mean_temperature, atmospheric_pressure).kinematic_viscosity
 
-    stability_result = surface_layer_stability(stability_variable, stability, obukhov_length_prev, reference_temperature,
-        surface_temperature, reference_wind_speed, roughness_length, reference_height_above_origin, obukhov_length_factor, karman_constant, temperature_difference, air_volumetric_heat_capacity, kinematic_viscosity;
-        stability_functions, min_friction_velocity, thermal_roughness_model)
+    stability_result = surface_layer_stability(boundary_layer_model, stability_variable, stability, obukhov_length_prev, reference_temperature,
+        surface_temperature, reference_wind_speed, roughness_length, reference_height_above_origin, temperature_difference, air_volumetric_heat_capacity, kinematic_viscosity;
+        thermal_roughness_model)
     stability = stability_result.value
     roughness_height_temperature = stability_result.roughness_height_temperature
     convective_heat_flux = stability_result.convective_heat_flux
@@ -346,15 +346,15 @@ function atmospheric_surface_profile!(boundary_layer_model::MoninObukhov, buffer
 end
 
 # No stability given: iterate it, warm-started from (and updating) the buffer's previous value
-function surface_layer_stability(stability_variable, ::Nothing, obukhov_length_prev, args...; kw...)
-    out = monin_obukhov_iteration(stability_variable, args...; max_iterations=30, tolerance=1e-2,
+function surface_layer_stability(boundary_layer_model, stability_variable, ::Nothing, obukhov_length_prev, args...; kw...)
+    out = monin_obukhov_iteration(boundary_layer_model, stability_variable, args...; max_iterations=30, tolerance=1e-2,
         initial_value=from_obukhov_length(stability_variable, obukhov_length_prev[]), kw...)
     obukhov_length_prev[] = to_obukhov_length(stability_variable, out.value)
     return out
 end
 # Stability given: one step at that value
-surface_layer_stability(stability_variable, stability, obukhov_length_prev, args...; kw...) =
-    (; value=stability, monin_obukhov_step(stability_variable, stability, args...; kw...)...)
+surface_layer_stability(boundary_layer_model, stability_variable, stability, obukhov_length_prev, args...; kw...) =
+    (; value=stability, monin_obukhov_step(boundary_layer_model, stability_variable, stability, args...; kw...)...)
 
 function surface_fluxes(boundary_layer_model::MoninObukhov;
     surface_temperature, air_temperature, wind_speed, zenith_angle,
@@ -385,13 +385,12 @@ function surface_fluxes(boundary_layer_model::MoninObukhov;
             calc_convection(; friction_velocity, log_height_ratio, temperature_difference, air_volumetric_heat_capacity, roughness_height, height=reference_height, karman_constant,
                 kinematic_viscosity, thermal_roughness_model=boundary_layer_model.thermal_roughness_model))
     else
-        # Unstable: iterate Obukhov length. 
-        obukhov_length_factor = 6.003e-8u"cal*minute^2/cm^4"
+        # Unstable: iterate Obukhov length.
         previous_obukhov_length = isnothing(obukhov_length_prev) ? INITIAL_OBUKHOV_LENGTH : obukhov_length_prev[]
         initial_obukhov_length = previous_obukhov_length >= 0.0u"m" ? INITIAL_OBUKHOV_LENGTH : previous_obukhov_length
-        out = calc_obukhov_length(air_temperature, surface_temperature, wind_speed,
-            roughness_height, reference_height, obukhov_length_factor, karman_constant, temperature_difference, air_volumetric_heat_capacity, kinematic_viscosity;
-            initial_obukhov_length, boundary_layer_model.stability_functions, boundary_layer_model.min_friction_velocity, boundary_layer_model.thermal_roughness_model)
+        out = calc_obukhov_length(boundary_layer_model, air_temperature, surface_temperature, wind_speed,
+            roughness_height, reference_height, temperature_difference, air_volumetric_heat_capacity, kinematic_viscosity;
+            initial_obukhov_length)
         friction_velocity = out.friction_velocity
         convective_heat_flux = out.convective_heat_flux
     end
@@ -411,12 +410,11 @@ function init_surface_fluxes!(boundary_layer_model::MoninObukhov, buffers, forci
         mean_temperature = (surface_temperature + air_temperature) / 2
         air_volumetric_heat_capacity = calc_air_volumetric_heat_capacity(mean_temperature)
         kinematic_viscosity = dry_air_properties(mean_temperature, site.atmospheric_pressure).kinematic_viscosity
-        obukhov_length_factor = 6.003e-8u"cal*minute^2/cm^4"
         previous_obukhov_length = buffers.soil_energy_balance.obukhov_length_prev[]
-        initial_obukhov_length = previous_obukhov_length >= 0.0u"m" ? -0.3u"m" : previous_obukhov_length
-        out = calc_obukhov_length(air_temperature, surface_temperature, wind_speed,
-            roughness_height, reference_height, obukhov_length_factor, karman_constant, temperature_difference, air_volumetric_heat_capacity, kinematic_viscosity;
-            initial_obukhov_length, boundary_layer_model.stability_functions, boundary_layer_model.min_friction_velocity, boundary_layer_model.thermal_roughness_model)
+        initial_obukhov_length = previous_obukhov_length >= 0.0u"m" ? INITIAL_OBUKHOV_LENGTH : previous_obukhov_length
+        out = calc_obukhov_length(boundary_layer_model, air_temperature, surface_temperature, wind_speed,
+            roughness_height, reference_height, temperature_difference, air_volumetric_heat_capacity, kinematic_viscosity;
+            initial_obukhov_length)
         buffers.soil_energy_balance.obukhov_length_prev[] = out.obukhov_length end
 end
 
@@ -762,9 +760,9 @@ end
 
 
 """
-    monin_obukhov_step(stability_variable, value, reference_temperature, surface_temperature, reference_wind_speed, roughness_length, reference_height_above_origin, obukhov_length_factor, karman_constant, temperature_difference,
-                       air_volumetric_heat_capacity, kinematic_viscosity; stability_functions=ChengBrutsaert(),
-                       min_friction_velocity=0.02u"m/s", thermal_roughness_model=SublayerStantonRoughness())
+    monin_obukhov_step(boundary_layer_model, stability_variable, value, reference_temperature, surface_temperature, reference_wind_speed,
+                       roughness_length, reference_height_above_origin, temperature_difference, air_volumetric_heat_capacity, kinematic_viscosity;
+                       thermal_roughness_model=boundary_layer_model.thermal_roughness_model)
 
 One evaluation of the Monin–Obukhov relations at stability `value` (as
 `stability_variable`, [`ObukhovLength`](@ref) or [`InverseObukhovLength`](@ref)):
@@ -773,11 +771,11 @@ then `stability_update`, the stability those fluxes imply through the
 Obukhov relation. `value` is self-consistent when `stability_update == value`.
 Works for either sign of `temperature_difference`.
 """
-function monin_obukhov_step(stability_variable, value, reference_temperature, surface_temperature, reference_wind_speed, roughness_length, reference_height_above_origin, obukhov_length_factor, karman_constant, temperature_difference,
-    air_volumetric_heat_capacity, kinematic_viscosity;
-    stability_functions=ChengBrutsaert(),
-    min_friction_velocity=0.02u"m/s", thermal_roughness_model=SublayerStantonRoughness(),
+function monin_obukhov_step(boundary_layer_model, stability_variable, value, reference_temperature, surface_temperature, reference_wind_speed,
+    roughness_length, reference_height_above_origin, temperature_difference, air_volumetric_heat_capacity, kinematic_viscosity;
+    thermal_roughness_model=boundary_layer_model.thermal_roughness_model,
 )
+    (; karman_constant, stability_functions, min_friction_velocity) = boundary_layer_model
     reference_stability_parameter = stability_parameter_at_height(stability_variable, reference_height_above_origin, value)
     ψ_m = momentum_stability_correction(stability_functions, reference_stability_parameter)
     ψ_h = heat_stability_correction(stability_functions, reference_stability_parameter)
@@ -788,7 +786,7 @@ function monin_obukhov_step(stability_variable, value, reference_temperature, su
     convective_heat_flux, roughness_height_temperature = _unstable_convective_heat_flux(thermal_roughness_model,
         stability_functions, air_volumetric_heat_capacity, temperature_difference, friction_velocity, karman_constant, roughness_length, reference_height_above_origin, log_ratio_corrected, ψ_h, reference_stability_parameter, kinematic_viscosity,
         reference_temperature, surface_temperature)
-    stability_update = stability_from_fluxes(stability_variable, obukhov_length_factor, friction_velocity, convective_heat_flux)
+    stability_update = stability_from_fluxes(stability_variable, OBUKHOV_LENGTH_FACTOR, friction_velocity, convective_heat_flux)
     return (;
         stability_update,
         friction_velocity,
@@ -799,21 +797,22 @@ function monin_obukhov_step(stability_variable, value, reference_temperature, su
 end
 
 """
-    monin_obukhov_iteration(stability_variable, args...; initial_value, max_iterations=50, tolerance=1e-2, relaxation=0.5, kw...)
+    monin_obukhov_iteration(boundary_layer_model, stability_variable, args...; initial_value, max_iterations=50, tolerance=1e-2, relaxation=0.5, kw...)
 
 Iterate [`monin_obukhov_step`](@ref) (same `args` and `kw`) from
 `initial_value` until the stability stops changing, under-relaxing each
 update by `relaxation`. Returns the last step's fluxes and `value`, the
 stability that step was evaluated at.
 """
-function monin_obukhov_iteration(stability_variable, reference_temperature, surface_temperature, reference_wind_speed, roughness_length, reference_height_above_origin, obukhov_length_factor, karman_constant, temperature_difference,
-    air_volumetric_heat_capacity, kinematic_viscosity; initial_value, max_iterations=50, tolerance=1e-2, relaxation=0.5, kw...,
+function monin_obukhov_iteration(boundary_layer_model, stability_variable, reference_temperature, surface_temperature, reference_wind_speed,
+    roughness_length, reference_height_above_origin, temperature_difference, air_volumetric_heat_capacity, kinematic_viscosity;
+    initial_value, max_iterations=50, tolerance=1e-2, relaxation=0.5, kw...,
 )
     value = initial_value
     iteration = 1
     while true
-        step = monin_obukhov_step(stability_variable, value, reference_temperature, surface_temperature, reference_wind_speed, roughness_length, reference_height_above_origin, obukhov_length_factor, karman_constant,
-            temperature_difference, air_volumetric_heat_capacity, kinematic_viscosity; kw...)
+        step = monin_obukhov_step(boundary_layer_model, stability_variable, value, reference_temperature, surface_temperature, reference_wind_speed,
+            roughness_length, reference_height_above_origin, temperature_difference, air_volumetric_heat_capacity, kinematic_viscosity; kw...)
         change = stability_change(stability_variable, reference_height_above_origin, step.stability_update, value)
         (change <= tolerance || iteration >= max_iterations) && return (; value, step...)
         value = relaxation * step.stability_update + (1.0 - relaxation) * value
@@ -822,15 +821,16 @@ function monin_obukhov_iteration(stability_variable, reference_temperature, surf
 end
 
 """
-    calc_obukhov_length(reference_temperature, surface_temperature, reference_wind_speed, roughness_length, reference_height_above_origin, obukhov_length_factor, karman_constant, temperature_difference, air_volumetric_heat_capacity, kinematic_viscosity;
-                         initial_obukhov_length=-0.3u"m", kw...)
+    calc_obukhov_length(boundary_layer_model, reference_temperature, surface_temperature, reference_wind_speed, roughness_length,
+                        reference_height_above_origin, temperature_difference, air_volumetric_heat_capacity, kinematic_viscosity;
+                        initial_obukhov_length, kw...)
 
 [`monin_obukhov_iteration`](@ref) on the Obukhov length. Converges to `±Inf`
 (neutral) as `temperature_difference → 0`.
 """
-function calc_obukhov_length(args...; initial_obukhov_length=-0.3u"m", kw...)
+function calc_obukhov_length(boundary_layer_model, args...; initial_obukhov_length, kw...)
     (; value, friction_velocity, heat_correction, convective_heat_flux, roughness_height_temperature) =
-        monin_obukhov_iteration(ObukhovLength(), args...; initial_value=initial_obukhov_length, kw...)
+        monin_obukhov_iteration(boundary_layer_model, ObukhovLength(), args...; initial_value=initial_obukhov_length, kw...)
     return (; obukhov_length=value, friction_velocity, heat_correction, convective_heat_flux, roughness_height_temperature)
 end
 

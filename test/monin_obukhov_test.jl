@@ -9,7 +9,6 @@ include("helpers.jl")
 bl = MoninObukhov()
 z0 = 0.01u"m"
 z = 10.0u"m"
-ρcpTκg = u"J*s^2/m^4"(6.003e-8u"cal*minute^2/cm^4")
 atmospheric_pressure = 101325.0u"Pa"
 
 function iteration_arguments(dT)  # dT = reference_temp - surface_temp
@@ -19,12 +18,11 @@ function iteration_arguments(dT)  # dT = reference_temp - surface_temp
     mean_temp = (reference_temp + surface_temp) / 2
     air_volumetric_heat_capacity = calc_air_volumetric_heat_capacity(mean_temp)
     kinematic_viscosity = dry_air_properties(mean_temp, atmospheric_pressure).kinematic_viscosity
-    return (reference_temp, surface_temp, 2.0u"m/s", z0, z, ρcpTκg, bl.karman_constant, ΔT, air_volumetric_heat_capacity, kinematic_viscosity)
+    return (reference_temp, surface_temp, 2.0u"m/s", z0, z, ΔT, air_volumetric_heat_capacity, kinematic_viscosity)
 end
-stability_keywords = (; bl.stability_functions)
 
-obukhov(dT) = calc_obukhov_length(iteration_arguments(dT)...; stability_keywords..., initial_obukhov_length=-0.3u"m")
-inverse_obukhov(dT) = monin_obukhov_iteration(InverseObukhovLength(), iteration_arguments(dT)...; stability_keywords...,
+obukhov(dT) = calc_obukhov_length(bl, iteration_arguments(dT)...; initial_obukhov_length=-0.3u"m")
+inverse_obukhov(dT) = monin_obukhov_iteration(bl, InverseObukhovLength(), iteration_arguments(dT)...;
     initial_value=inv(-0.3u"m"))
 
 # Stability parameter at the reference height for an Obukhov length
