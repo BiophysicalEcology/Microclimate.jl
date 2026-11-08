@@ -5,9 +5,7 @@ Layer-resolved canopy longwave exchange — the longwave
 sibling of [`AbstractCanopyShortwaveModel`](@ref). Concrete variants
 implement [`allocate_longwave`](@ref) and [`canopy_longwave!`](@ref).
 Currently: [`LayeredLongwaveExchange`](@ref) (sequential, non-reflecting
-gap-fraction cascade, O(n_layers)), [`AllPairsLongwaveExchange`](@ref)
-(pairwise exchange-weight matrix, O(n_layers^2), ported from
-micropoint/microclimlearn for direct comparison), and
+gap-fraction cascade, O(n_layers)) and
 [`LayeredRadiosityExchange`](@ref) (implicit reflecting two-stream slabs,
 O(n_layers), following Flerchinger's SHAW model). Each is re-evaluated
 at every canopy residual evaluation.

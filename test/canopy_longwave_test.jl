@@ -61,39 +61,6 @@ end
     end
 end
 
-@testset "AllPairsLongwaveExchange: runs and gives physically sane fluxes" begin
-    ap_model = AllPairsLongwaveExchange()
-    ap_buffers = Microclimate.allocate_longwave(ap_model, plant_area_index, n_layers, canopy_projection_ratio)
-    leaf_temperature = fill(288.0u"K", n_layers)
-    ground_temperature = 285.0u"K"
-
-    result = Microclimate.canopy_longwave!(ap_buffers, ap_model, leaf_emissivity;
-        leaf_temperature, ground_temperature, ground_emissivity=0.95, incoming_longwave=canopy_incoming_longwave(ap_model; site, environment_instant=environment))
-
-    @test all(>(0.0u"W/m^2"), ap_buffers.downward_longwave)
-    @test all(>(0.0u"W/m^2"), ap_buffers.upward_longwave)
-    @test result.ground_absorbed_longwave > 0.0u"W/m^2"
-end
-
-@testset "AllPairsLongwaveExchange: net_absorbed_longwave closed form for a single non-emitting layer" begin
-    total_pai = 2.5
-    ground_temperature = 285.0u"K"
-    ground_emissivity = 0.95
-
-    # emissivity 0: pure sky<->ground exchange through one attenuating layer,
-    # closed-form-checkable independent of the pairwise weighting scheme.
-    single_model = AllPairsLongwaveExchange()
-    single_buffers = Microclimate.allocate_longwave(single_model, total_pai, 1, canopy_projection_ratio)
-    result = Microclimate.canopy_longwave!(single_buffers, single_model, 0.0;
-        leaf_temperature=[288.0u"K"], ground_temperature, ground_emissivity, incoming_longwave=canopy_incoming_longwave(single_model; site, environment_instant=environment))
-
-    sky = Microclimate.precompute_longwave_sky(single_model.atmospheric_radiation_model;
-        site, environment_instant=environment, shade=0.0)
-    ground_emission = ground_emissivity * Microclimate.σ * u"K"(ground_temperature)^4
-    expected = sky.incoming_longwave - ground_emission * exp(-total_pai)
-    @test ustrip(u"W/m^2", result.net_absorbed_longwave) ≈ ustrip(u"W/m^2", expected) atol=1e-9
-end
-
 @testset "LayeredRadiosityExchange" begin
     lr_model = LayeredRadiosityExchange()
     lr_buffers = Microclimate.allocate_longwave(lr_model, plant_area_index, n_layers, canopy_projection_ratio)
