@@ -1,7 +1,4 @@
-# Shared leaf-level heat/mass transfer physics, used by every
-# AbstractLeafTemperatureSolver variant. Built on HeatExchange.jl's
-# convection()/evaporation(): shape-specific Nusselt correlations and
-# water-potential-driven surface humidity (Kelvin equation).
+# Leaf heat and vapor exchange, built on HeatExchange.jl.
 
 # The oblate spheroid's equatorial radius is the boundary-layer length scale
 # directly -- no extra empirical scale factor on top of it.
@@ -53,11 +50,8 @@ abstract type AbstractLeafConvectionModel end
 Combined free+forced convection, shape-dispatched via the leaf's
 oblate-ellipsoid geometry (`HeatExchange.ShapeCorrelation`). Default.
 
-`temperature_difference_model` is how free convection takes `|T_leaf - T_air|`
-(a `HeatExchange.TemperatureDifferenceModel`). With the exact `|ΔT|`, free
-convection, and so evaporation, has a cusp at `T_leaf = T_air`, and the canopy
-solve can stall on the wrong side of it. Rounding `|ΔT|` over 0.1 K removes the
-cusp, well inside the free-convection correlation's uncertainty.
+`temperature_difference_model` smooths `|T_leaf - T_air|` over 0.1 K so the canopy solve
+doesn't stall at `T_leaf = T_air`.
 """
 @kwdef struct ElaborateLeafConvection{T<:TemperatureDifferenceModel} <: AbstractLeafConvectionModel
     temperature_difference_model::T = SmoothTemperatureDifference(0.1u"K")
@@ -91,16 +85,9 @@ leaf_convection(convection_model, body, leaf_area, air_temperature, leaf_tempera
                        wind_speed, atmospheric_pressure, leaf_emissivity, stomatal_conductance,
                        leaf_water_potential, body, leaf_area, convection_model; aerodynamic_area=leaf_area)
 
-Net leaf energy balance (W, positive = leaf gaining energy): absorbed
-radiation minus emitted longwave, convection, and transpiration. `leaf_area`
-scales absorbed radiation/emission (radiative, matching whatever area
-`absorbed_radiation` and the canopy's own longwave exchange were normalized
-to); `aerodynamic_area` scales convection/evaporation (the leaf's actual
-exchange surface). They differ for a canopy layer, where radiative exchange
-saturates with self-shading `(1-e^{-K·PAI})` but aerodynamic exchange keeps
-scaling with actual leaf area (`PAI`); default matches for a standalone leaf.
-`air_vapor_density` is the air's own vapor density, so supersaturated air
-condenses onto the leaf rather than passing through a relative humidity clamped to 1.
+Net leaf energy (W, positive = gaining): absorbed radiation minus emitted longwave,
+convection and evaporation. `leaf_area` scales radiation, `aerodynamic_area` scales
+convection and evaporation; they differ inside a canopy, where leaves shade each other.
 """
 function leaf_heat_balance(leaf_temperature, absorbed_radiation, air_temperature, air_vapor_density,
     wind_speed, atmospheric_pressure, leaf_emissivity, stomatal_conductance, leaf_water_potential,

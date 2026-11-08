@@ -162,16 +162,13 @@ end
 # `solve_soil!` (which would force Julia to box `t` for the whole function).
 @inline _filled_svec(val, ::Val{N}) where N = SVector(ntuple(_ -> val, Val(N)))
 
-# Hoisted to avoid closure-capture of `snow_temperatures`. Dispatches on `first_active`
-# type so the Union{Nothing,Int} from `findfirst` resolves to one method per
-# branch — no Union propagation through the calling function.
+# Sets snow nodes above the first active one (all of them if none) to `sync_temp`.
 @inline _sync_snow_to_active(snow_temperatures::SVector{N,T}, ::Nothing, sync_temp) where {N,T} =
     _filled_svec(sync_temp, Val(N))
 @inline _sync_snow_to_active(snow_temperatures::SVector{N,T}, first_active::Int, sync_temp) where {N,T} =
     SVector(ntuple(k -> k < first_active ? sync_temp : snow_temperatures[k], Val(N)))
 
-# Dispatched on snow_temperatures's type so the call site infers a concrete SVector
-# return rather than `Union{SVector{N1,T}, SVector{N2,T}}`.
+# The solver state: snow temperatures, if any, then soil temperatures.
 combine_ode_state(::Nothing, soil_temperatures, _) = soil_temperatures
 combine_ode_state(snow_temperatures::SVector, soil_temperatures, _) = vcat(snow_temperatures, soil_temperatures)
 
@@ -1092,11 +1089,7 @@ end
 # The soil solver's first step, the same for every solve so that results never depend on an earlier one
 first_soil_step(model::SoilHeatTransport1D) = in_soil_state_units(get(model.ode_kwargs, :dt, 0.1u"minute"))
 
-# Restarts the soil solver from `temperatures` at `time`.
-# Multi-step solvers (Adams family) need their f-history rebuilt via
-# `reinit!`'s cache pass; single-step solvers (Tsit5, RK4, …) don't, so we skip
-# `reinit_cache` and avoid the ~440 B/call allocation. Every solver must
-# re-evaluate its stored derivative, which belongs to the previous state and forcing.
+# Restarts the soil solver from `temperatures` at `time`, clearing its stored derivative.
 function restart_soil_solver!(integrator, temperatures, time)
     SciMLBase.reinit!(integrator, map(in_soil_state_units, temperatures);
         t0=in_soil_state_units(time), erase_sol=false, reset_dt=false, reinit_cache=ismultistep(integrator.alg))
@@ -1111,12 +1104,8 @@ function set_soil_temperatures!(integrator, temperatures)
     return integrator
 end
 
-# Step the integrator to an exact hour boundary and return the temperatures.
-# Fortran DSUB.f:551 clamps T(I) in-place at every derivative call. Our
-# `soil_energy_balance` only clamps the local copy used for derivatives, so
-# fixed-step solvers (e.g. ABM43) can let the integrator state drift outside
-# physical bounds. We re-clamp the state after every internal step here so
-# any solver — adaptive or fixed-step — stays in [-81°C, max_surface_T].
+# Steps to the end of the hour and returns the temperatures, clamped to
+# [-81 °C, maximum_surface_temperature] after each step.
 function step_to_hour!(integrator, hour_index)
     target_t = in_soil_state_units(hour_index * 60.0u"minute")
     SciMLBase.add_tstop!(integrator, target_t)

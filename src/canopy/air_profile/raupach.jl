@@ -18,9 +18,8 @@ struct ExactRaupachFormulation <: AbstractRaupachFormulation end
 """
     BulkRaupachFormulation()
 
-An alternative, computationally cheaper approach where the far field is the flux at each layer
-times the resistance from there to the top. The near field evaluates the kernel once, leaves out
-a layer's own source, and adds a correction that depends only on the layer count.
+Cheaper: the far field is each layer's flux times the resistance to the top; the near field
+evaluates the kernel once, skips a layer's own source, and is scaled by the layer count.
 """
 struct BulkRaupachFormulation <: AbstractRaupachFormulation end
 
@@ -34,18 +33,16 @@ transport model. Each layer's value is the canopy-top value plus two parts:
 - a far field, from all the heat and vapor sources mixed together
 - a near field, a correction close to each source, where mixing hasn't happened yet
 
-Unlike [`KTheoryAirProfile`](@ref), every layer depends directly on every other layer's source.
+Every layer depends on every layer's source.
 
-`ground_velocity_deviation_factor` and `canopy_top_velocity_deviation_factor` (Raupach's `a0` and `a1`) set
-the standard deviation of vertical velocity with height, from `a0·u*` at the ground to `a1·u*`
-at the canopy top: `σ_w(z) = (a1+a0)/2·u* + (a1-a0)/2·u*·cos(π(1 - z/h))`.
+`ground_velocity_deviation_factor` (`a0`) and `canopy_top_velocity_deviation_factor` (`a1`) set the
+standard deviation of vertical velocity `σ_w`, from `a0·u*` at the ground to `a1·u*` at the top
+(`u*` friction velocity, `h` canopy height): `σ_w(z) = (a1+a0)/2·u* + (a1-a0)/2·u*·cos(π(1 - z/h))`.
 
 The ground's resistance is the lowest layer's turbulent resistance plus a thin sublayer at
 the ground ([`sublayer_stanton`](@ref), with a friction velocity from the wind in that layer).
 
-The Lagrangian timescale grows in calm and unstable air, and `max_lagrangian_timescale` caps
-it. The default, user-defined cap of 200 s is well above the seconds to tens of seconds typical
-conditions give.
+`max_lagrangian_timescale` caps the Lagrangian timescale, which grows in calm and unstable air.
 
 `formulation` is an [`AbstractRaupachFormulation`](@ref), which sets how both fields are calculated.
 
@@ -119,9 +116,7 @@ end
 """
     _raupach_kernel_integral(scaled_distance)
 
-Analytic integral of the Raupach kernel, ∫₀^ζ kₙ(t) dt for ζ ≥ 0. The logarithmic term uses the
-dilogarithm identity ∫₀^ζ log(1 - exp(-t)) dt = Li₂(exp(-ζ)) - π²/6. `decay` is in (0, 1], so
-the real dilogarithm `reli2` gives the analytic log-term integral.
+Exact integral of the Raupach kernel from 0 to `scaled_distance` (≥ 0), via the dilogarithm `reli2`.
 """
 function _raupach_kernel_integral(scaled_distance)
     ζ, c₁, c₂ = scaled_distance, _RAUPACH_KERNEL_LOG_COEFFICIENT, _RAUPACH_KERNEL_EXPONENTIAL_COEFFICIENT

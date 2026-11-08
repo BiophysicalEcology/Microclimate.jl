@@ -15,18 +15,11 @@ Multi-layer canopy structure resolved by height. Splits the canopy into as
 many layers as there are `MicroModel.atmosphere.heights` entries at or below
 `canopy_height`.
 
-Composes swappable sub-models the same way `MicroModel` composes
-`RadiationModel`/`boundary_layer_model`/`soil_energy_model`:
-
-- `canopy_height`, `plant_area_index` — solver geometry shared by every
-  sub-model, not owned by any one of them. `plant_area_index` (PAI: leaves
-  plus woody material) is a scalar total (split evenly across layers) or an
-  `AbstractVector` of per-layer values, top-to-bottom (see
-  [`plant_area_index_from_density`](@ref) for a density-profile builder).
-- `woody_area_fraction` — fraction of `plant_area_index` that is woody
-  rather than leaf. Every sub-model here uses the full PAI (bark intercepts
-  light/rain/momentum too); only [`canopy_leaf_area_index`](@ref)'s Campbell
-  hookup narrows PAI down to LAI with it. Default `0.0` (PAI ≈ LAI).
+- `canopy_height`, `plant_area_index` — shared by every sub-model. `plant_area_index`
+  (leaves plus wood) is a scalar total split evenly across layers, or one value per
+  layer, top-to-bottom (see [`plant_area_index_from_density`](@ref)).
+- `woody_area_fraction` — share of `plant_area_index` that is wood. Only
+  [`canopy_leaf_area_index`](@ref) uses it.
 - `shortwave_model::AbstractCanopyShortwaveModel` — layer-resolved shortwave
   radiative transfer (default [`TwoStreamRadiation`](@ref), Dickinson/Sellers)
 - `longwave_model::AbstractCanopyLongwaveModel` — layer-resolved longwave
@@ -43,23 +36,14 @@ Composes swappable sub-models the same way `MicroModel` composes
   (default [`MonteithLeafCondensation`](@ref); [`NoCondensation`](@ref) to
   switch it off). Independent of `MicroModel.surface.condensation_model` (ground).
 - `leaf_parameters::LeafParameters` — per-leaf structural/physiological data
-- `stomatal_model::AbstractStomatalConductanceModel` — stomatal response
-  (default [`PrescribedStomatalConductance`](@ref): day/night gating only,
-  ignores `leaf_water_potential`). Pair with `CampbellSoilHydraulics` via
-  [`MoistureResponsiveStomatalConductance`](@ref) instead if soil-moisture
-  stress should actually reach the leaf's transpiration/temperature —
-  `PrescribedStomatalConductance` leaves Campbell's `leaf_water_potential`
-  output unused.
+- `stomatal_model::AbstractStomatalConductanceModel` — stomatal response (default
+  [`PrescribedStomatalConductance`](@ref); use
+  [`MoistureResponsiveStomatalConductance`](@ref) for soil-water stress)
 - `leaf_convection_model::AbstractLeafConvectionModel` — leaf boundary-layer
   Nusselt correlation (default [`ElaborateLeafConvection`](@ref); see also
   [`SimpleLeafConvection`](@ref))
-- `convergence_model::AbstractCanopyConvergenceModel` — how the hourly
-  leaf/air-temperature state is solved (default
-  [`AndersonCanopyConvergence`](@ref))
-
-Ground reflectance is not stored here — supplied to
-[`canopy_shortwave!`](@ref) by the caller (e.g. `Site.albedo`), matching how
-other radiation models read albedo from their caller.
+- `convergence_model::AbstractCanopyConvergenceModel` — how each hour's canopy
+  state is solved (default [`AndersonCanopyConvergence`](@ref))
 """
 @kwdef struct MultilayerCanopy{H,PAI,WAF,RM,LWM,WM,APM,IM,CDM,LP,SM,LCM,CVM} <: AbstractCanopyModel
     canopy_height::H
@@ -111,13 +95,8 @@ n_canopy_layers(model::MultilayerCanopy, heights) = count(h -> h <= model.canopy
 """
     allocate_canopy(model::MultilayerCanopy, heights, boundary_layer_model; site, vapour_pressure_equation, soil_hydraulic_model)
 
-Buffers nest one sub-struct per sub-model — `buffers.shortwave`,
-`buffers.longwave`, `buffers.wind`, `buffers.air_profile`,
-`buffers.interception`, `buffers.leaf` — mirroring `MicroBuffers`'s own
-composition, rather than flattening every sub-model's fields into one
-`NamedTuple` (which would let same-named fields silently collide).
-`buffers.leaf` bundles orchestrator-owned per-layer state: leaf body,
-temperature, and the source terms other sub-models read/write.
+Buffers per sub-model: `shortwave`, `longwave`, `wind`, `air_profile`,
+`interception`, `leaf` and `convergence`.
 """
 function allocate_canopy(model::MultilayerCanopy, heights, boundary_layer_model; site, vapour_pressure_equation, soil_hydraulic_model)
     n_layers = n_canopy_layers(model, heights)

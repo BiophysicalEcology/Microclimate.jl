@@ -1,10 +1,7 @@
 """
     NoCanopy()
 
-Default canopy model: no canopy-layer structure. Vegetation influence is a
-scalar `environment_daily.shade` fraction consumed directly by the longwave
-(`ViewFactorLongwave`) and soil-energy (`SoilHeatTransport1D`) budgets.
-Reproduces existing behaviour bit-for-bit.
+Default: no canopy layers. Vegetation is the scalar `environment_daily.shade`.
 """
 struct NoCanopy <: AbstractCanopyModel end
 

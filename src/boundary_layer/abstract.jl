@@ -32,7 +32,7 @@ pre-allocated buffers.
 function atmospheric_surface_profile! end
 
 """
-    surface_fluxes(boundary_layer_model; surface_temperature, air_temperature, wind_speed, zenith_angle, roughness_height, reference_height, obukhov_length_prev)
+    surface_fluxes(boundary_layer_model; surface_temperature, air_temperature, wind_speed, zenith_angle, roughness_height, reference_height, atmospheric_pressure, obukhov_length_prev=nothing)
 
 Surface-layer convective heat flux and friction velocity. Variants apply
 whichever atmospheric-stability parameterisation they use. Returns

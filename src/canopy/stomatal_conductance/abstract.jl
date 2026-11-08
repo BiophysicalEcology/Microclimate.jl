@@ -1,8 +1,7 @@
 """
     AbstractStomatalConductanceModel
 
-How a canopy resolves the `HeatExchange.LeafEvaporationParameters` fed to
-`leaf_heat_balance`/`leaf_temperature`.
+How a canopy sets the leaf conductances given to `leaf_heat_balance`.
 
 - [`PrescribedStomatalConductance`](@ref) (default): one fixed conductance
   in daylight (`zenith_angle < 90°`), a separate (by default cuticular-only)
@@ -10,8 +9,6 @@ How a canopy resolves the `HeatExchange.LeafEvaporationParameters` fed to
 - [`MoistureResponsiveStomatalConductance`](@ref): the same closure curve
   `CampbellSoilHydraulics` uses, applied to a caller-supplied
   `leaf_water_potential`.
-- Not yet implemented: a full photosynthesis-coupled demand function
-  (Farquhar-style) plugs in at this same slot.
 """
 abstract type AbstractStomatalConductanceModel end
 
@@ -21,10 +18,6 @@ abstract type AbstractStomatalConductanceModel end
 
 The `HeatExchange.LeafEvaporationParameters` to use this hour, given the
 solar `zenith_angle` and the current `leaf_water_potential`.
-`soil_hydraulic_model` (`MicroModel.soil.hydraulic_model`) is threaded
-through so models sharing parameters with it — currently
-[`MoistureResponsiveStomatalConductance`](@ref) and
-[`CampbellSoilHydraulics`](@ref) — read from that single source rather
-than storing their own copy; models that don't need it just ignore it.
+`soil_hydraulic_model` is passed for models that read its parameters.
 """
 function stomatal_conductance end

@@ -9,8 +9,7 @@ stability corrections of `stability_functions` ([`ChengBrutsaert`](@ref) or
 `stability_limit` bounds the canopy-top stability ([`NoStabilityLimit`](@ref) or
 [`MomentumCorrectionLimit`](@ref)).
 
-The thermal_roughness_model is a z0-to-z0h correction for the sensible heat transfer
-coefficient. Default is SublayerStantonRoughness(); canopy uses ScalarRoughnessRatio().
+`thermal_roughness_model` sets heat roughness from momentum roughness.
 """
 @kwdef struct MoninObukhov{KC,SF,MINUF,TRM,SL} <: AbstractBoundaryLayerModel
     karman_constant::KC = 0.4
@@ -92,9 +91,7 @@ with `momentum_dyer_constant` in `ψ_m`, `heat_dyer_constant` in `ψ_h` and `Φ_
 the slopes at neutral are `-momentum_dyer_constant/4` and `-heat_dyer_constant/2`. Stable: Cheng & Brutsaert (2005),
 `ψ_m = -a·ln(ζ + (1 + ζᵇ)^(1/b))` with `a = momentum_scale` and `b = momentum_exponent`,
 `ψ_h = -c·ln(ζ + (1 + ζᵈ)^(1/d))` with `c = heat_scale` and `d = heat_exponent`, which
-level off into the z-less limit rather than growing linearly, so the bulk
-Richardson number has no critical value and every stable state has a
-Monin–Obukhov solution.
+level off in very stable air, so every stable state has a solution.
 
 # References
 Cheng, Y., & Brutsaert, W. (2005). Flux-profile relationships for wind speed
@@ -113,26 +110,22 @@ end
 """
     AbstractThermalRoughnessModel
 
-How the momentum roughness length `z0` relates to the scalar (heat)
-transfer resistance -- the `z0`-to-`z0h` correction, `kB⁻¹` in the
-literature's usual notation.
+How heat roughness relates to momentum roughness.
 """
 abstract type AbstractThermalRoughnessModel end
 
 """
     SublayerStantonRoughness()
 
-[`sublayer_stanton`](@ref)'s `Re*`-dependent correction, combined in series
-with the bulk (log-law) Stanton number via [`convective_flux`](@ref).
-Default; appropriate at the bare-ground/short-roughness scale.
+Default, for bare ground: [`sublayer_stanton`](@ref) in series with the log-law Stanton
+number ([`convective_flux`](@ref)).
 """
 struct SublayerStantonRoughness <: AbstractThermalRoughnessModel end
 
 """
     ScalarRoughnessRatio(; ratio=0.2)
 
-Fixed scalar-to-momentum roughness ratio `z0h = ratio·z0` (`kB⁻¹ =
--log(ratio)`, constant, not `Re*`-dependent).
+Heat roughness is a fixed `ratio` of momentum roughness.
 """
 @kwdef struct ScalarRoughnessRatio{R} <: AbstractThermalRoughnessModel
     ratio::R = 0.2
@@ -155,7 +148,7 @@ function allocate_profile(::MoninObukhov, heights)
 end
 
 """
-    atmospheric_surface_profile(; kwargs...)
+    atmospheric_surface_profile(boundary_layer_model::MoninObukhov; heights=DEFAULT_HEIGHTS, reference_height=last(heights), kwargs...)
 
 Compute vertical profiles of wind speed, air temperature, and relative humidity
 using Monin–Obukhov similarity theory (MOST). Profiles are returned at all requested
@@ -169,11 +162,11 @@ temperature; heights above `reference_height` are extrapolated via the log-law.
 - `surface_temperature`: Soil/surface temperature.
 - `site`: `Site` holding `roughness_height` and `elevation`.
 - `environment_instant`: Named tuple with `reference_temperature`, `reference_wind_speed`,
-  `reference_humidity`, `atmospheric_pressure`, and `zenith_angle`.
+  `reference_humidity` and `atmospheric_pressure`.
 
 # Returns
 Named tuple: `wind_speed`, `air_temperature`, `relative_humidity` (profiles at each height),
-`convective_heat_flux` (`W/m²`), `friction_velocity` (`m/s`), `obukhov_length`, `inverse_obukhov_length`.
+`convective_heat_flux` (`W/m²`), `friction_velocity` (`m/s`), `obukhov_length`, `inverse_obukhov_length`, `stability_update`.
 
 # References
 - Businger et al. (1971). *J. Atmos. Sci.* 28, 181–189.
@@ -210,25 +203,16 @@ atmospheric_surface_profile(boundary_layer_model::MoninObukhov; heights=DEFAULT_
     atmospheric_surface_profile!(boundary_layer_model::MoninObukhov, buffers; site, environment_instant,
                                   surface_temperature, vapour_pressure_equation=GoffGratch(),
                                   reference_height=last(buffers.heights),
-                                  displacement_height=0.0u"m", roughness_length=site.roughness_height)
+                                  displacement_height=0.0u"m", roughness_length=site.roughness_height,
+                                  thermal_roughness_model=boundary_layer_model.thermal_roughness_model,
+                                  temperature_anchor_height=nothing, surface_relative_humidity=nothing,
+                                  stability_variable=ObukhovLength(), stability=nothing)
 
-`displacement_height`/`roughness_length` shift the effective log-profile
-origin to a canopy-displaced height with a canopy-derived roughness length,
-instead of bare ground. Defaults (`0.0u"m"` / `site.roughness_height`)
-give the bare-ground profile. Heights are measured from the true ground (as
-in `MicroModel.atmosphere.heights`); `displacement_height` is subtracted internally
-wherever the log-law needs height above the displaced origin.
+`displacement_height` and `roughness_length` move the log profile's origin, e.g. for a
+canopy. Heights are still measured from the ground.
 
-`temperature_anchor_height`: by default (`nothing`) the temperature profile
-is anchored at `z0` using `roughness_height_temperature`. Pass an absolute height 
-(e.g. a canopy's `canopy_height`) to anchor directly on `surface_temperature`
-*at that height* for a plain two-point MOST log-law interpolation between
-`(temperature_anchor_height, surface_temperature)` and
-`(reference_height, reference_temperature)`.
-
-`surface_relative_humidity` (only used when `temperature_anchor_height` is
-given): the known relative humidity *at* `temperature_anchor_height`,
-anchoring vapour pressure the same two-point way.
+`temperature_anchor_height` fixes `surface_temperature`, and `surface_relative_humidity`
+if given, at that height instead of at the roughness length.
 
 `stability_variable` ([`ObukhovLength`](@ref) or [`InverseObukhovLength`](@ref))
 selects what the stability iteration solves for. Both are returned, as
@@ -439,38 +423,19 @@ end
 """
     calc_air_volumetric_heat_capacity(mean_temperature)
 
-Compute the volumetric heat capacity of air (ρ·cₚ) as a function of mean temperature.
-
-# Arguments
-- `mean_temperature`: Mean air temperature (`Unitful.Temperature`), in Kelvin.
-
-# Returns
-- Volumetric heat capacity (`cal / (cm³·K)`).
-
-This is a simplified empirical regression based only on temperature,
-without accounting for moisture or elevation effects.
+Volumetric heat capacity of air (`J/m^3/K`) from temperature alone, ignoring moisture
+and elevation.
 """
 function calc_air_volumetric_heat_capacity(mean_temperature)
     return u"J/m^3/K"(u"(cal*g)/(g*cm^3*K)" * (0.08472 / ustrip(u"K", mean_temperature)))
 end
 
 """
-    calc_air_volumetric_heat_capacity(mean_temperature, elevation, relative_humidity, atmospheric_pressure)
+    calc_air_volumetric_heat_capacity(mean_temperature, elevation, relative_humidity, atmospheric_pressure;
+                                      vapour_pressure_equation=GoffGratch())
 
-Compute the volumetric heat capacity of moist air (ρ·cₚ) given temperature,
-elevation, and relative humidity.
-
-# Arguments
-- `mean_temperature`: Mean air temperature (`Unitful.Temperature`), in Kelvin.
-- `elevation`: Elevation above sea level (with units of length).
-- `relative_humidity`: Relative humidity (fraction between 0 and 1).
-- `atmospheric_pressure`: Atmospheric pressure.
-
-# Returns
-- Volumetric heat capacity (`cal / (cm³·K)`).
-
-Uses `dry_air_properties` to compute air density (ρ) and
-`wet_air_properties` to compute specific heat capacity (cₚ).
+Volumetric heat capacity of moist air: dry air density (`dry_air_properties`) times moist
+air specific heat (`wet_air_properties`). `elevation` is not used.
 """
 function calc_air_volumetric_heat_capacity(mean_temperature, elevation, relative_humidity, atmospheric_pressure; vapour_pressure_equation=GoffGratch())
     dry_air_out = dry_air_properties(u"K"(mean_temperature), atmospheric_pressure)
@@ -488,7 +453,7 @@ logarithmic wind profile.
 
 # Arguments
 - `reference_wind_speed::Quantity{<:Real,𝐋/𝐓}`: Wind speed at the reference height (e.g. `m/s`, `cm/min`).
-- `log_height_ratio::Real`: Precomputed log height ratio, typically `log(height / roughness_height + 1.0)`.
+- `log_height_ratio::Real`: `log(height / roughness_height)`.
 - `karman_constant::Real`: von Kármán constant (default = 0.4).
 
 # Returns
@@ -504,19 +469,10 @@ end
 """
     calc_convection(; friction_velocity, log_height_ratio, temperature_difference, air_volumetric_heat_capacity, roughness_height, height, karman_constant, kinematic_viscosity, thermal_roughness_model=SublayerStantonRoughness())
 
-Calculate the convective heat flux (sensible heat exchange between surface and air).
-
-# Arguments
-- `friction_velocity::Quantity{<:Real,𝐋/𝐓}`: Friction velocity (e.g. `m/s`, `cm/min`).
-- `log_height_ratio::Real`: Precomputed logarithmic height ratio, typically `log(height / roughness_height + 1.0)`.
-- `temperature_difference::Quantity{<:Real,Θ}`: Temperature difference between reference air and surface (Kelvin).
-- `air_volumetric_heat_capacity::Quantity{<:Real,(𝐌*𝐋^-1*𝐓^-2)}`: Volumetric heat capacity of air (e.g. `J/m³/K`, `cal/cm³/K`).
-- `roughness_height::Quantity{<:Real,𝐋}`: Surface roughness length.
-
-# Returns
-- Convective heat flux as `Quantity{<:Real,(𝐌*𝐓^-3)}` (e.g. `W/m²`, `cal/min/cm²`).
-
-Uses bulk and sublayer Stanton numbers to account for turbulence near the surface.
+Neutral convective heat flux between the surface and the air at `height`, with no
+stability correction. `log_height_ratio` is `log(height / roughness_height)` and
+`temperature_difference` is air minus surface. `thermal_roughness_model` sets how heat
+roughness is found (see [`SublayerStantonRoughness`](@ref) and [`ScalarRoughnessRatio`](@ref)).
 
 # See also
 [`calc_friction_velocity`](@ref), [`sublayer_stanton`](@ref), [`bulk_stanton`](@ref), [`convective_flux`](@ref)
@@ -605,8 +561,8 @@ calc_mass_transfer_coefficient(heat_transfer_coefficient, air_specific_heat, air
     sublayer_stanton(roughness_height, friction_velocity, kinematic_viscosity)
 
 Stanton number for the roughness sublayer immediately above the surface,
-`0.62·Re*^-0.45` with roughness Reynolds number `Re* = roughness_height·u*/ν` (form
-resembles Owen & Thomson (1963)) Not suitable for a canopy.
+`0.62·Re^-0.45`, with `Re = roughness_height · friction_velocity / kinematic_viscosity`.
+Not suitable for a canopy.
 """
 function sublayer_stanton(roughness_height, friction_velocity, kinematic_viscosity)
     roughness_reynolds_number = uconvert(NoUnits, roughness_height * friction_velocity / kinematic_viscosity)
@@ -815,10 +771,7 @@ One evaluation of the Monin–Obukhov relations at stability `value` (as
 friction velocity and convective heat flux from the stability corrections,
 then `stability_update`, the stability those fluxes imply through the
 Obukhov relation. `value` is self-consistent when `stability_update == value`.
-`kinematic_viscosity` feeds `sublayer_stanton`'s roughness Reynolds number.
-Works for either sign of `temperature_difference` -- `convective_flux`'s sign already tracks
-`temperature_difference`'s sign (negative temperature_difference, surface warmer than reference → negative heat flux
-→ unstable; positive temperature_difference → stable).
+Works for either sign of `temperature_difference`.
 """
 function monin_obukhov_step(stability_variable, value, reference_temperature, surface_temperature, reference_wind_speed, roughness_length, reference_height_above_origin, obukhov_length_factor, karman_constant, temperature_difference,
     air_volumetric_heat_capacity, kinematic_viscosity;

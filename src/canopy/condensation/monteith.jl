@@ -1,20 +1,12 @@
 """
     MonteithLeafCondensation(; psychrometric_constant=66.0u"Pa/K")
 
-Leaf dew/frost from Monteith, J. L. (1963). Dew: facts and fallacies. In
-The Water Relations of Plants (pp. 37-56). Blackwell. Adapted from the
-author's own validated R port (`calc_dew_object.R`), substituting a leaf's
-own heat-balance terms for an animal's. A single-term combination equation
--- net radiative loss weighted by the saturation-vapour-pressure-curve
-slope, plus an aerodynamic term using the leaf's own heat transfer
-coefficient directly (Lewis number ≈ 1, no separate bulk transfer
-coefficient). No ground-heat-flux analogue: a thin leaf has negligible heat
-storage, matching Garratt & Segal (1988) eq. 6a's own omission of `G` for
-canopy dew.
+Leaf dew and frost (Monteith 1963), from the leaf's own radiation and heat transfer
+coefficient, with a fixed `psychrometric_constant`.
 
-Simpler than [`GarrattSegalCondensation`](@ref): `psychrometric_constant` is
-fixed rather than derived each hour, and the slope is
-vapour-pressure- rather than specific-humidity-based.
+# References
+- Monteith, J. L. (1963). Dew: facts and fallacies. In The Water Relations of Plants
+  (pp. 37-56). Blackwell.
 """
 @kwdef struct MonteithLeafCondensation{G} <: AbstractCondensationModel
     psychrometric_constant::G = 66.0u"Pa/K"

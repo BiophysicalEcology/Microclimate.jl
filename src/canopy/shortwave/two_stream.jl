@@ -6,10 +6,7 @@ sunlight is split between leaf layers and the ground.
 
 - `leaf_reflectance`, `leaf_transmittance` — leaf shortwave optical properties.
 
-Leaf angle distribution (`canopy_projection_ratio`) is not stored here — it's a
-geometric leaf trait shared with the rain-interception model, so it lives on
-[`LeafParameters`](@ref). Ground reflectance is likewise supplied by the
-caller to [`canopy_shortwave!`](@ref) (e.g. `Site.albedo`), not stored here.
+Leaf angle comes from [`LeafParameters`](@ref), ground reflectance from the caller.
 
 # References
 - Dickinson, R. E. (1983). Land surface processes and climate—surface
@@ -51,10 +48,8 @@ end
 """
     leaf_orientation_factor(canopy_projection_ratio)
 
-The squared cosine of the mean leaf angle, or exactly 1/3 for spherical leaves
-(`canopy_projection_ratio == 1`). The mean leaf angle comes from Campbell's
-(1990) numerical integration of ᾱ = ∫ α⋅g(α)⋅dα (eq. 15) from 0 to π/2, which
-gives ᾱ = 9.65(3+χ)^(-1.65) (eq. 16).
+Squared cosine of the mean leaf angle (Campbell 1990, eq. 16), or 1/3 for spherical
+leaves (`canopy_projection_ratio == 1`).
 
 # References
 - Campbell, G. S. (1990). Derivation of an angle density function for
@@ -232,9 +227,6 @@ area index `plant_area_index_above`.
 Diffuse fluxes are expressed as fractions of incoming diffuse horizontal
 irradiance. Direct-beam-generated fluxes and direct transmission are expressed
 as fractions of incoming direct horizontal irradiance.
-
-This function is shared by the layer profile, layer-boundary absorption
-calculations, and whole-canopy ground-level totals.
 """
 function two_stream_flux_fractions(leaf_optics, diffuse_optics, direct_optics,
     direct_beam_extinction_coefficient, maximum_layer_reflectance, has_direct_beam, plant_area_index_above,

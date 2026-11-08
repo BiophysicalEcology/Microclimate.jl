@@ -4,14 +4,9 @@
 Air temperature and vapor density through the canopy, from steady diffusion between
 neighbouring layers: `d/dz(K dT/dz) = -S`, with each layer's leaves as the source `S`.
 
-Layer 1 is fixed at the canopy-top value, and heat and vapor diffuse from there down to the
-ground. Unlike [`RaupachLTheoryAirProfile`](@ref), each layer only exchanges directly with
-its neighbours.
-
-The eddy diffusivity `K` follows the shape of the wind profile
-(`wind_attenuation_profile`), scaled to `κ u* (canopy_height - displacement_height)`
-at the canopy top. Heat and vapor share that diffusivity, and each is a tridiagonal system
-solved in preallocated buffers.
+Layer 1 is the canopy-top value; each layer exchanges only with its neighbours. The
+diffusivity `K`, shared by heat and vapor, follows the wind profile, scaled at the top to
+von Kármán constant × friction velocity × (`canopy_height` − `displacement_height`).
 
 # References
 - Raupach, M. R. (1989). A practical Lagrangian method for relating scalar

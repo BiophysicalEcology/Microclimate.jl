@@ -1,20 +1,9 @@
 """
     LayeredRadiosityExchange(; atmospheric_radiation_model=CampbellNormanAtmosphericRadiation())
 
-Multi-layer longwave exchange: reflecting/transmitting/emitting slabs,
-solved implicitly in one pass. Layer `i`'s gap transmission `τ_d[i]`
-leaves a scattered remainder `(1-εₗ)(1-τ_d[i])`, split by
-`backscatter_fraction` (Flerchinger & Yu 2007, from
-`canopy_projection_ratio`) into reflectance `ρ[i]` and an effective
-transmission `τ[i]` (forward-scatter folded in). `εₗ=1` reduces this to
-[`LayeredLongwaveExchange`](@ref)'s cascade.
-
-Solved via the two-stream "adding" recursion `L_u[i] = R[i]*L_d[i] + S[i]`:
-a ground-to-sky sweep gives `R`/`Γ` as pure geometry and `S` as the only
-temperature-dependent piece, then one sky-to-ground pass recovers every
-`L_d`/`L_u`. `O(n)` per call. Non-adjacent-layer coupling falls out of the 
-implicit solve. `ρ[i]+τ[i]+εₗ(1-τ_d[i])=1` keeps this energy-conserving and 
-Kirchhoff-consistent for any `backscatter_fraction`.
+Longwave through layers that absorb, emit, transmit and reflect, solved exactly in one
+sweep up and one down. The reflected share comes from `canopy_projection_ratio`
+(Flerchinger & Yu 2007). With leaf emissivity 1 it equals [`LayeredLongwaveExchange`](@ref).
 
 # References
 - Flerchinger, G. N., and Yu, Q. 2007. Simplified expressions for radiation 

@@ -3,21 +3,11 @@
                             shelter_floor=0.003, shelter_plant_area_coefficient=0.1,
                             mixing_length_coefficient=2.0, mixing_length_plant_area_coefficient=0.25)
 
-Wind speed below canopy top decays from the canopy-top value via a
-structural attenuation-shape profile (Massman/Katul-style mixing-length
-argument); above and at canopy top, wind is the shared
-`AbstractBoundaryLayerModel` (e.g. `MoninObukhov`) evaluated with the
-canopy's displacement height and roughness length.
-
-`thermal_roughness_model` overrides the shared `boundary_layer_model`'s own
-`thermal_roughness_model` for this canopy-top evaluation specifically (bare-
-ground/soil surface fluxes elsewhere keep using the `boundary_layer_model`'s
-own setting). Defaults to `ScalarRoughnessRatio()`.
-
-`shelter_floor`/`shelter_plant_area_coefficient`/`mixing_length_coefficient`/
-`mixing_length_plant_area_coefficient` are the empirical shelter-factor/mixing-
-length constants in `_element_attenuation`/[`canopy_roughness_length`](@ref).
-Can over-attenuate wind at low total PAI -- tune per site if so.
+Below the canopy top, wind decays by a mixing-length shape; at and above it, the
+boundary-layer model runs with the canopy's displacement height and roughness length.
+`thermal_roughness_model` replaces the boundary-layer model's for the canopy top only.
+The other keywords are empirical shelter and mixing-length constants. May
+over-attenuate wind at low plant area index.
 """
 @kwdef struct MixingLengthCanopyWindAttenuation{TRM,SF,SPC,MLC,MLPC} <: AbstractCanopyWindModel
     thermal_roughness_model::TRM = ScalarRoughnessRatio()
@@ -48,9 +38,7 @@ end
     canopy_roughness_length(canopy_height, plant_area_index, displacement_height, karman_constant;
                              shelter_floor=0.003, shelter_plant_area_coefficient=0.1)
 
-Neutral roughness length from canopy structure. Atmospheric stability is
-applied separately by `atmospheric_surface_profile!`'s own Monin-Obukhov
-machinery, not folded in here.
+Neutral roughness length from canopy structure.
 """
 function canopy_roughness_length(canopy_height, plant_area_index, displacement_height, karman_constant;
     shelter_floor=0.003, shelter_plant_area_coefficient=0.1,
@@ -78,12 +66,8 @@ end
                               shelter_floor=0.003, shelter_plant_area_coefficient=0.1,
                               mixing_length_coefficient=2.0, mixing_length_plant_area_coefficient=0.25)
 
-Shape function giving each layer's wind speed as a fraction of the
-canopy-top wind speed (structural, computed once). `layer_plant_area_index`
-is ordered top-to-bottom (index 1 = canopy top), matching the radiation
-layer convention. Requires at least 10 layers; the bottom tenth uses a
-local log-law rather than the shelter recurrence, to avoid the wind speed
-collapsing to zero.
+Each layer's wind speed as a fraction of the canopy-top wind, top-to-bottom. Needs at
+least 10 layers; the bottom tenth uses a log law so wind doesn't reach zero.
 """
 function wind_attenuation_profile(layer_plant_area_index, canopy_height, plant_area_index_total, karman_constant;
     shelter_floor=0.003, shelter_plant_area_coefficient=0.1, mixing_length_coefficient=2.0, mixing_length_plant_area_coefficient=0.25,
@@ -204,10 +188,8 @@ The air temperature and vapor density at the top of the canopy.
 Heat and vapor reach the canopy top from the leaves and the ground, and leave it towards
 the reference height. Balancing these gives the canopy-top value directly, without iteration.
 
-In calm air the resistances grow without limit, so `max_resistance` caps them at a typical
-literature ceiling (Thom 1975; Monteith & Unsworth 2013). Calm air above a dense canopy can
-also take longer than an hour to reach that balance, so the result moves from the previous
-value towards the balance only as far as the air could in an hour.
+`max_resistance` caps resistances in calm air. The result moves from the previous value
+towards the balance only as far as the air could in an hour.
 
 Returns `(; top_temperature, top_vapor_density, sensible_flux)`, where `sensible_flux` is
 the upward heat flux from the canopy top to the reference height.

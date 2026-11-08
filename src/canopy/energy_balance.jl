@@ -1,8 +1,7 @@
 """
     CANOPY_TIMESTEP
 
-Fixed one-hour step for rain-interception storage depletion, matching
-`MicroModel`'s hourly forcing cadence.
+The canopy's one-hour step.
 """
 const CANOPY_TIMESTEP = 1.0u"hr"
 

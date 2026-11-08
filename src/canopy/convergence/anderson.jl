@@ -14,7 +14,7 @@ that is used, and `backend` differentiates the leaf energy balance.
 The hour is solved when every value is within its tolerance. A layer without leaves uses
 `air_temperature_tolerance` for its leaf.
 
-A pass can overshoot, leaving the canopy top outside [`CANOPY_TEMPERATURE_BOUNDS`](@ref). The
+A pass can overshoot past [`CANOPY_TEMPERATURE_BOUNDS`](@ref). The
 solver then moves halfway back to its last good guess and forgets its history. `on_failure`
 decides what happens if the hour starts out of bounds or hasn't settled after `maxiters` passes.
 

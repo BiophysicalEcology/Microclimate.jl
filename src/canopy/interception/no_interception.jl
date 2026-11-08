@@ -1,8 +1,7 @@
 """
     NoInterception()
 
-Default interception model: rain passes straight through, no leaf-surface
-wetness ever accrues. Reproduces pre-canopy rainfall handling bit-for-bit.
+Default interception model: rain passes straight through and leaves stay dry.
 """
 struct NoInterception <: AbstractCanopyInterceptionModel end
 

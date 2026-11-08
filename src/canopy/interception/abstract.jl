@@ -5,8 +5,7 @@ How a canopy resolves rain interception: per-layer catch vs. through-fall,
 and how a wetted leaf surface enhances evaporation. Held on
 `MultilayerCanopy.interception_model`.
 
-- [`NoInterception`](@ref) (default): rain passes straight through,
-  matching `NoCanopy`/`NoSnow`'s off-by-default convention.
+- [`NoInterception`](@ref) (default): rain passes straight through.
 - [`LayeredRainInterception`](@ref): per-layer extinction/storage/drip,
   wind-driven rain angle.
 - [`VerticalRainInterception`](@ref): same bookkeeping, fixed rain angle.
@@ -50,8 +49,7 @@ function deplete_canopy_water! end
 """
     reset_interception!(model, buffers)
 
-Zero accumulated leaf-surface water. Day-boundary reset (like
-`pool`/`soil_moisture`), not per canopy solve. No-op for `NoInterception`.
+Zero stored water, dew and frost. No-op for `NoInterception`.
 """
 function reset_interception! end
 
@@ -67,11 +65,7 @@ function wet_canopy_fraction end
 """
     available_canopy_water(model, buffers, layer) -> kg/m^2 (ground area)
 
-Leaf-surface water currently stored in layer `layer`, the hard ceiling on
-how much [`deplete_canopy_water!`](@ref) can remove this hour. Used to cap
-the wet-surface evaporation mass flow so it can't claim more water than is
-physically stored (see `canopy_energy_balance!`'s depletion loop). Always 0
-for `NoInterception`.
+Water stored on layer `layer`. Always 0 for `NoInterception`.
 """
 function available_canopy_water end
 
@@ -152,12 +146,7 @@ end
 """
     WET_SURFACE_CONDUCTANCE
 
-A stomatal/cuticular conductance large enough that `HeatExchange.evaporation`'s
-series combination with the boundary-layer mass-transfer coefficient
-collapses to the boundary layer alone (a free water film has no
-stomatal/cuticular resistance). Verified at ~1 m/s in-canopy wind: a further
-10x increase changes evaporation by <0.1% — see
-`test/canopy_interception_test.jl`.
+A conductance so large that evaporation from a wet leaf is limited only by its boundary layer.
 """
 const WET_SURFACE_CONDUCTANCE = 1000.0u"mol/m^2/s"
 

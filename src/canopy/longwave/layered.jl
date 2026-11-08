@@ -7,13 +7,8 @@ emit in proportion to `leaf_emissivity`, and longwave they intercept but don't
 absorb carries on in the same direction. Layer transmission assumes that
 diffuse extinction is almost independent of leaf angle (Goudriaan 1977).
 
-Sky longwave reuses [`precompute_longwave_sky`](@ref) with `shade=0` — the
-canopy resolves vegetation shading layer by layer, so the bulk `shade`
-adjustment is switched off. `atmospheric_radiation_model` is the same
-clear-sky block [`ViewFactorLongwave`](@ref) uses for bare ground.
-
-Ground temperature/emissivity are supplied per call, not stored — the
-lagged (previous-hour) soil-canopy coupling.
+Sky longwave comes from `atmospheric_radiation_model` via
+[`precompute_longwave_sky`](@ref) with no shade.
 
 # References
 - Goudriaan, J. (1977). *Crop micrometeorology: a simulation study*. PUDOC,
@@ -41,12 +36,8 @@ end
                       leaf_temperature, ground_temperature, ground_emissivity,
                       incoming_longwave)
 
-Sequential top-down (sky → ground) then bottom-up (ground → sky) gap-fraction
-exchange, each pass `O(n_layers)`, with no matrix solve (non-reflecting
-layers mean the two streams don't couple). Writes `absorbed_longwave`
-(gross per layer, per unit ground area — `leaf_heat_balance` subtracts the
-leaf's own emission separately) and returns `(; ground_absorbed_longwave,
-net_absorbed_longwave)`.
+One pass down, one pass up. Writes each layer's absorbed longwave per ground area and
+returns `(; ground_absorbed_longwave, net_absorbed_longwave)`.
 """
 function canopy_longwave!(buffers, model::LayeredLongwaveExchange, leaf_emissivity;
     leaf_temperature, ground_temperature, ground_emissivity,

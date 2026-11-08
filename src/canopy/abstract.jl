@@ -18,8 +18,7 @@ function allocate_canopy end
 """
     reset_canopy_scratch!(model, buffers)
 
-Zero day-boundary-reset canopy state (e.g. interception storage). No-op for
-`NoCanopy`.
+Empty stored canopy water at the start of a run or day. No-op for `NoCanopy`.
 """
 function reset_canopy_scratch! end
 
@@ -51,21 +50,16 @@ function restore_canopy_water! end
 """
     initial_ground_overrides(model)
 
-Properly-typed placeholder `(; ground_shortwave_transmission,
-ground_incoming_longwave)` for the initial `HourlySoilEnergyInputs` —
-`nothing` for `NoCanopy`, concrete for `MultilayerCanopy`. Fixes the field's
-type up front so later per-hour updates don't hit a `Nothing`-locked field.
+Starting values for the ground boundary the canopy gives the soil: `nothing` for
+`NoCanopy`, typed placeholders for `MultilayerCanopy`.
 """
 function initial_ground_overrides end
 
 """
     canopy_leaf_area_index(model)
 
-Leaf area index for Campbell soil-hydraulics' Beer's-law soil/canopy
-potential-ET split. `nothing` for `NoCanopy` (falls back to
-`environment_instant.leaf_area_index`, the weather-driven daily series);
-`sum(plant_area_index) * (1 - woody_area_fraction)` for `MultilayerCanopy`,
-narrowing total PAI down to living-leaf LAI.
+Living leaf area index, `sum(plant_area_index) * (1 - woody_area_fraction)`, for
+Campbell soil hydraulics. `nothing` for `NoCanopy`.
 """
 function canopy_leaf_area_index end
 
@@ -73,14 +67,8 @@ function canopy_leaf_area_index end
     canopy_shortwave!(buffers, model; zenith_angle, direct_horizontal_irradiance,
                        diffuse_horizontal_irradiance, ground_reflectance)
 
-Layer-resolved absorbed shortwave through the canopy for the current hour;
-writes per-layer results into `buffers`, returns `(;
-ground_absorbed_shortwave, net_absorbed_shortwave)`. `ground_reflectance`
-is supplied by the caller, not stored on the model. Despite the name,
-`net_absorbed_shortwave` is net radiation retained by the whole
-canopy+ground system below the top boundary (`incoming -
-top_of_canopy_reflected`), not canopy-only absorption — for that, sum the
-per-layer `absorbed_shortwave` buffer instead.
+Shortwave absorbed by each layer, written to `buffers`. Returns
+`(; ground_absorbed_shortwave, net_absorbed_shortwave)`; the net value includes the ground.
 """
 function canopy_shortwave! end
 
@@ -102,15 +90,8 @@ function canopy_wind_profile! end
 """
     canopy_longwave!(buffers, model; leaf_temperature, ground_temperature, ground_emissivity, incoming_longwave)
 
-Layer-resolved longwave exchange (leaf emission/absorption plus sky/ground
-boundary terms) for the current hour; writes per-layer results into
-`buffers`, returns `(; ground_absorbed_longwave, net_absorbed_longwave)`.
-`ground_temperature`/`ground_emissivity` are the lagged (previous-hour)
-soil-surface boundary condition. As with [`canopy_shortwave!`](@ref),
-`net_absorbed_longwave` is net longwave retained by the whole
-canopy+ground system below the top boundary (`incoming_longwave -
-top_of_canopy_upward`), not canopy-only absorption — sum the per-layer
-`absorbed_longwave` buffer for that.
+Longwave absorbed by each layer, written to `buffers`. Returns
+`(; ground_absorbed_longwave, net_absorbed_longwave)`; the net value includes the ground.
 """
 function canopy_longwave! end
 
