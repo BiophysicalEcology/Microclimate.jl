@@ -1,36 +1,3 @@
-"""
-    CanopyResidualForcing(; atmospheric_pressure, reference_temperature, reference_wind_speed,
-        reference_humidity, incoming_longwave, ground_emissivity,
-        ground_relative_humidity, leaf_water_potential, dry_conductance,
-        canopy_top_air_temperature, canopy_top_relative_humidity, stability_limits)
-
-Everything [`evaluate_canopy!`](@ref) needs for the hour that doesn't change as the canopy
-is solved. `canopy_top_air_temperature` and `canopy_top_relative_humidity` are the values at
-the canopy top when the hour starts. `stability_limits` are the most unstable and most stable
-inverse Obukhov lengths allowed, `(; unstable, stable)`.
-"""
-@kwdef struct CanopyResidualForcing{C}
-    atmospheric_pressure::typeof(1.0u"Pa")
-    reference_temperature::typeof(1.0u"K")
-    reference_wind_speed::typeof(1.0u"m/s")
-    reference_humidity::Float64
-    incoming_longwave::typeof(1.0u"W/m^2")
-    ground_emissivity::Float64
-    ground_relative_humidity::Float64
-    leaf_water_potential::typeof(1.0u"J/kg")
-    dry_conductance::C
-    canopy_top_air_temperature::typeof(1.0u"K")
-    canopy_top_relative_humidity::Float64
-    stability_limits::@NamedTuple{unstable::typeof(1.0u"m^-1"), stable::typeof(1.0u"m^-1")}
-end
-# Convert each field to its fixed unit, inferring only the conductance type
-CanopyResidualForcing(atmospheric_pressure, reference_temperature, reference_wind_speed, reference_humidity,
-    incoming_longwave, ground_emissivity, ground_relative_humidity, leaf_water_potential,
-    dry_conductance::C, canopy_top_air_temperature, canopy_top_relative_humidity, stability_limits) where C =
-    CanopyResidualForcing{C}(atmospheric_pressure, reference_temperature, reference_wind_speed, reference_humidity,
-        incoming_longwave, ground_emissivity, ground_relative_humidity, leaf_water_potential,
-        dry_conductance, canopy_top_air_temperature, canopy_top_relative_humidity, stability_limits)
-
 Unitful.@derived_dimension AreaPower Unitful.𝐌 * Unitful.𝐓^-3
 
 # The solver works on one vector of plain numbers, in these units
@@ -152,12 +119,14 @@ The lowest and highest temperatures a canopy state can have. Outside these,
 const CANOPY_TEMPERATURE_BOUNDS = (100.0u"K", 1000.0u"K")
 
 """
-    layer_leaf_balance(buffers, model::MultilayerCanopy, forcing::CanopyResidualForcing, layer, leaf_temperature)
+    layer_leaf_balance(buffers, model::MultilayerCanopy, layer, leaf_temperature,
+        atmospheric_pressure, leaf_water_potential, dry_conductance)
 
 A layer's leaf energy balance at `leaf_temperature`, as `(; balance, leaf_area)`.
 """
-function layer_leaf_balance(buffers, model::MultilayerCanopy, forcing::CanopyResidualForcing, layer, leaf_temperature)
-    (; atmospheric_pressure, leaf_water_potential, dry_conductance) = forcing
+function layer_leaf_balance(buffers, model::MultilayerCanopy, layer, leaf_temperature,
+    atmospheric_pressure, leaf_water_potential, dry_conductance,
+)
     air = buffers.air_profile
     air_temperature = air.current_air_temperature[layer]
     (; leaf_area, aerodynamic_area) = layer_leaf_areas(buffers, layer)
@@ -181,12 +150,13 @@ _within_bounds(value, lower_bound, upper_bound=typemax(value)) =
 
 """
     evaluate_canopy!(residual, inverse_obukhov_length, ground_temperature, buffers, model,
-        boundary_layer_model, forcing::CanopyResidualForcing; site, vapour_pressure_equation)
+        boundary_layer_model, inputs::CanopyEnergyBalanceInputs, hour_conditions; site, vapour_pressure_equation)
 
 Measures how far the canopy in `buffers`, with this `inverse_obukhov_length` and
 `ground_temperature`, is from solved. The hour is solved when every value written to `residual`
 (see [`allocate_canopy_residual`](@ref)), and the ground temperature residual, are close to zero.
 The ground temperature residual needs the soil, so the solver computes it.
+`hour_conditions` comes from [`canopy_hour_conditions`](@ref).
 
 The wind, radiation, leaf fluxes and air profile are left in `buffers`.
 
@@ -194,10 +164,11 @@ Returns `(; longwave_result, canopy_top_air_temperature,
 canopy_top_relative_humidity, friction_velocity, inverse_obukhov_length)`.
 """
 function evaluate_canopy!(residual, inverse_obukhov_length, ground_temperature, buffers, model::MultilayerCanopy, boundary_layer_model,
-    forcing::CanopyResidualForcing; site, vapour_pressure_equation,
+    inputs::CanopyEnergyBalanceInputs, hour_conditions; site, vapour_pressure_equation,
 )
-    (; atmospheric_pressure, reference_temperature, reference_wind_speed, reference_humidity, incoming_longwave,
-       ground_emissivity, ground_relative_humidity) = forcing
+    (; environment_instant, ground_emissivity, ground_relative_humidity, leaf_water_potential) = inputs
+    (; atmospheric_pressure, reference_temperature, reference_humidity) = environment_instant
+    (; incoming_longwave, dry_conductance, stability_limits) = hour_conditions
     (; leaf_temperature, sensible_heat_flux, evaporation_mass_flux, absorbed_radiation, net_balance) = buffers.leaf
     air = buffers.air_profile
     (; absorbed_shortwave) = buffers.shortwave
@@ -217,7 +188,6 @@ function evaluate_canopy!(residual, inverse_obukhov_length, ground_temperature, 
         air.current_vapor_density[i] = _within_bounds(air.current_vapor_density[i], zero(air.current_vapor_density[i]))
     end
 
-    environment_instant = (; atmospheric_pressure, reference_temperature, reference_wind_speed, reference_humidity)
     wind = canopy_wind_profile!(buffers, model, boundary_layer_model;
         site, environment_instant, canopy_source_temperature=leaf_temperature[1], vapour_pressure_equation,
         inverse_obukhov_length=isnan(inverse_obukhov_length) ? zero(inverse_obukhov_length) : inverse_obukhov_length)
@@ -239,7 +209,8 @@ function evaluate_canopy!(residual, inverse_obukhov_length, ground_temperature, 
         end
         # absorbed_shortwave/absorbed_longwave are per unit ground area
         absorbed_radiation[i] = (absorbed_shortwave[i] + absorbed_longwave[i]) / (2.0 * exchange_fraction)
-        (; balance, leaf_area) = layer_leaf_balance(buffers, model, forcing, i, leaf_temperature[i])
+        (; balance, leaf_area) = layer_leaf_balance(buffers, model, i, leaf_temperature[i],
+            atmospheric_pressure, leaf_water_potential, dry_conductance)
         sensible_heat_flux[i] = balance.convection.convection_flow / GROUND_AREA
         evaporation_mass_flux[i] = balance.evaporation.transpiration_mass_flow / GROUND_AREA
         net_balance[i] = balance.net_heat_flow
@@ -251,13 +222,13 @@ function evaluate_canopy!(residual, inverse_obukhov_length, ground_temperature, 
         vapour_pressure_equation).vapour_density
     ground_vapor_density = wet_air_properties(ground_temperature, ground_relative_humidity, atmospheric_pressure;
         vapour_pressure_equation).vapour_density
-    initial_top_vapor_density = wet_air_properties(forcing.canopy_top_air_temperature, forcing.canopy_top_relative_humidity,
+    initial_top_vapor_density = wet_air_properties(hour_conditions.canopy_top_air_temperature, hour_conditions.canopy_top_relative_humidity,
         atmospheric_pressure; vapour_pressure_equation).vapour_density
     boundary = canopy_top_flux_boundary(boundary_layer_model, model.canopy_height, buffers.wind.displacement_height,
         buffers.wind.above_canopy_profile.heights[2], wind.friction_velocity, wind.inverse_obukhov_length,
         sum(sensible_heat_flux), sum(evaporation_mass_flux),
         ground_temperature, ground_vapor_density, reference_temperature, reference_vapor_density,
-        forcing.canopy_top_air_temperature, initial_top_vapor_density)
+        hour_conditions.canopy_top_air_temperature, initial_top_vapor_density)
     in_bounds &= lowest_temperature <= boundary.top_temperature <= highest_temperature &&
         boundary.top_vapor_density >= zero(boundary.top_vapor_density)
     canopy_top_air_temperature = clamp(boundary.top_temperature, lowest_temperature, highest_temperature)
@@ -285,7 +256,7 @@ function evaluate_canopy!(residual, inverse_obukhov_length, ground_temperature, 
     κ = boundary_layer_model.karman_constant
     obukhov_coefficient = ρcₚ * reference_temperature / (κ * g_n)
     inverse_obukhov_length_update = limit_inverse_obukhov_length(stability_from_fluxes(InverseObukhovLength(), obukhov_coefficient,
-        wind.friction_velocity, -boundary.sensible_flux), forcing.stability_limits)
+        wind.friction_velocity, -boundary.sensible_flux), stability_limits)
     residual.inverse_obukhov_length[] = wind.inverse_obukhov_length - inverse_obukhov_length_update
     in_bounds || invalidate_canopy_residual!(residual)
 

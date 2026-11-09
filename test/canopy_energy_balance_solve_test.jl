@@ -88,14 +88,17 @@ end
     gappy_model = Microclimate.example_multilayer_canopy(; canopy_height,
         plant_area_index = [0.6, 0.5, 0.0, 0.4, 0.35, 0.3, 0.2, 0.15, 0.1, 0.05],
         convergence_model = AndersonCanopyConvergence())
-    _, gappy = solve_canopy(gappy_model, canopy_inputs(gappy_model))
-    (; state, step, next_state, forcing) = gappy.convergence
+    gappy_inputs = canopy_inputs(gappy_model)
+    gappy_result, gappy = solve_canopy(gappy_model, gappy_inputs)
+    hour_conditions = Microclimate.canopy_hour_conditions(gappy, gappy_model, boundary_layer_model, gappy_inputs, gappy_result;
+        site, vapour_pressure_equation = Microclimate.GoffGratch(), soil_hydraulic_model = nothing)
+    (; state, step, next_state) = gappy.convergence
     (; ground_temperature, inverse_obukhov_length) = Microclimate.unpack_canopy_state!(gappy, state)
     gappy.leaf.leaf_temperature[3] += 1.0u"K"
     starting_air_temperature = copy(gappy.air_profile.current_air_temperature)
     Microclimate.pack_canopy_state!(state, gappy.leaf.leaf_temperature, starting_air_temperature,
         gappy.air_profile.current_vapor_density, ground_temperature, inverse_obukhov_length)
-    Microclimate.canopy_fixed_point!(next_state, step, state, gappy, gappy_model, boundary_layer_model, forcing[];
+    Microclimate.canopy_fixed_point!(next_state, step, state, gappy, gappy_model, boundary_layer_model, gappy_inputs, hour_conditions;
         site, vapour_pressure_equation = Microclimate.GoffGratch(),
         ground_temperature_after_hour = (ground_temperature, _) -> ground_temperature)
     Microclimate.unpack_canopy_state!(gappy, next_state)

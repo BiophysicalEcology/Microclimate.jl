@@ -43,13 +43,13 @@ end
 
 # Handle an hour that didn't finish, as the convergence model's `on_failure` asks
 canopy_failure!(::ThrowError, convergence_model, return_code, best_state, smallest_residual, iterations, buffers, model,
-    boundary_layer_model, forcing, inputs; kw...) = canopy_convergence_error(convergence_model, return_code, inputs)
+    boundary_layer_model, inputs, hour_conditions; kw...) = canopy_convergence_error(convergence_model, return_code, inputs)
 function canopy_failure!(::SmallestResidual, convergence_model, return_code, best_state, smallest_residual, iterations, buffers,
-    model, boundary_layer_model, forcing, inputs; site, vapour_pressure_equation, soil_hydraulic_model,
+    model, boundary_layer_model, inputs, hour_conditions; site, vapour_pressure_equation, soil_hydraulic_model,
 )
     (; state, residual) = buffers.convergence
     copyto!(state, best_state)
-    result = canopy_solution!(residual, state, buffers, model, boundary_layer_model, forcing, inputs, iterations;
+    result = canopy_solution!(residual, state, buffers, model, boundary_layer_model, inputs, hour_conditions, iterations;
         site, vapour_pressure_equation, soil_hydraulic_model)
     @warn "Canopy solve did not converge, keeping the state with the smallest residual" return_code iterations residual_over_tolerance =
         smallest_residual maxlog = 5
@@ -62,57 +62,53 @@ canopy_convergence_error(convergence_model, return_code, inputs) =
         ", wind ", inputs.environment_instant.reference_wind_speed,
         ", ground temperature ", inputs.ground_temperature, ", zenith angle ", inputs.zenith_angle, ")")
 
-# A placeholder hour, so the solver's buffers can be built with the right types
-initial_residual_forcing(model, soil_hydraulic_model) = CanopyResidualForcing(;
-    atmospheric_pressure=101325.0u"Pa", reference_temperature=288.0u"K", reference_wind_speed=1.0u"m/s",
-    reference_humidity=0.5, incoming_longwave=300.0u"W/m^2",
-    ground_emissivity=0.95, ground_relative_humidity=0.5, leaf_water_potential=0.0u"J/kg",
-    dry_conductance=stomatal_conductance(model.stomatal_model, 0.0u"°", 0.0u"J/kg", soil_hydraulic_model),
-    canopy_top_air_temperature=288.0u"K", canopy_top_relative_humidity=0.5,
-    stability_limits=(; unstable=-Inf * u"m^-1", stable=Inf * u"m^-1"))
+"""
+    canopy_hour_conditions(buffers, model::MultilayerCanopy, boundary_layer_model, inputs::CanopyEnergyBalanceInputs,
+        initial_wind; site, vapour_pressure_equation, soil_hydraulic_model)
+
+What stays fixed while the canopy is solved for one hour, as `(; incoming_longwave, dry_conductance,
+stability_limits, canopy_top_air_temperature, canopy_top_relative_humidity)`. The canopy-top values are
+those when the hour starts. `stability_limits` are the most unstable and most stable inverse Obukhov
+lengths allowed, `(; unstable, stable)`.
+"""
+canopy_hour_conditions(buffers, model::MultilayerCanopy, boundary_layer_model, inputs::CanopyEnergyBalanceInputs,
+    initial_wind; site, vapour_pressure_equation, soil_hydraulic_model) = (;
+    incoming_longwave=canopy_incoming_longwave(model; site, inputs.environment_instant, vapour_pressure_equation),
+    dry_conductance=stomatal_conductance(model.stomatal_model, inputs.zenith_angle, inputs.leaf_water_potential,
+        soil_hydraulic_model),
+    stability_limits=canopy_stability_limits(buffers, boundary_layer_model),
+    canopy_top_air_temperature=initial_wind.canopy_top_air_temperature,
+    canopy_top_relative_humidity=initial_wind.canopy_top_relative_humidity)
 
 """
-    canopy_hour_setup!(state, forcing::Ref, buffers, model::MultilayerCanopy, boundary_layer_model,
-        inputs::CanopyEnergyBalanceInputs, initial_wind; site, vapour_pressure_equation, soil_hydraulic_model)
+    canopy_starting_state!(state, buffers, inputs::CanopyEnergyBalanceInputs, initial_wind, stability_limits;
+        vapour_pressure_equation)
 
-Prepares the solve for one hour: writes the hour's [`CanopyResidualForcing`](@ref) into
-`forcing`, and starts `state` from the previous hour's answer.
+Starts `state` from the previous hour's answer.
 """
-function canopy_hour_setup!(state, forcing::Ref, buffers, model::MultilayerCanopy, boundary_layer_model,
-    inputs::CanopyEnergyBalanceInputs, initial_wind; site, vapour_pressure_equation, soil_hydraulic_model,
+function canopy_starting_state!(state, buffers, inputs::CanopyEnergyBalanceInputs, initial_wind, stability_limits;
+    vapour_pressure_equation,
 )
-    (; environment_instant, zenith_angle, ground_temperature, ground_emissivity, ground_relative_humidity,
-       leaf_water_potential) = inputs
-    (; atmospheric_pressure, reference_temperature, reference_wind_speed, reference_humidity) = environment_instant
-    leaf_temperature = buffers.leaf.leaf_temperature
     air = buffers.air_profile
-
-    forcing[] = CanopyResidualForcing(; atmospheric_pressure, reference_temperature, reference_wind_speed,
-        reference_humidity, ground_emissivity, ground_relative_humidity, leaf_water_potential,
-        incoming_longwave=canopy_incoming_longwave(model; site, environment_instant, vapour_pressure_equation),
-        dry_conductance=stomatal_conductance(model.stomatal_model, zenith_angle, leaf_water_potential, soil_hydraulic_model),
-        canopy_top_air_temperature=initial_wind.canopy_top_air_temperature,
-        canopy_top_relative_humidity=initial_wind.canopy_top_relative_humidity,
-        stability_limits=canopy_stability_limits(buffers, boundary_layer_model))
-
     # The first hour has no previous answer for vapor density
     if all(iszero, air.vapor_density)
         fill!(air.vapor_density, wet_air_properties(initial_wind.canopy_top_air_temperature,
-            initial_wind.canopy_top_relative_humidity, atmospheric_pressure; vapour_pressure_equation).vapour_density)
+            initial_wind.canopy_top_relative_humidity, inputs.environment_instant.atmospheric_pressure;
+            vapour_pressure_equation).vapour_density)
     end
-    return pack_canopy_state!(state, leaf_temperature, air.air_temperature, air.vapor_density, ground_temperature,
-        limit_inverse_obukhov_length(initial_wind.inverse_obukhov_length, forcing[].stability_limits))
+    return pack_canopy_state!(state, buffers.leaf.leaf_temperature, air.air_temperature, air.vapor_density,
+        inputs.ground_temperature, limit_inverse_obukhov_length(initial_wind.inverse_obukhov_length, stability_limits))
 end
 
 """
     canopy_solution!(residual, state, buffers, model::MultilayerCanopy, boundary_layer_model,
-        forcing::CanopyResidualForcing, inputs::CanopyEnergyBalanceInputs, iterations;
+        inputs::CanopyEnergyBalanceInputs, hour_conditions, iterations;
         site, vapour_pressure_equation, soil_hydraulic_model)
 
 Fills `buffers` with the solved `state` and returns the result of [`converge_canopy!`](@ref).
 """
 function canopy_solution!(residual, state, buffers, model::MultilayerCanopy, boundary_layer_model,
-    forcing::CanopyResidualForcing, inputs::CanopyEnergyBalanceInputs, iterations;
+    inputs::CanopyEnergyBalanceInputs, hour_conditions, iterations;
     site, vapour_pressure_equation, soil_hydraulic_model,
 )
     (; zenith_angle) = inputs
@@ -124,8 +120,8 @@ function canopy_solution!(residual, state, buffers, model::MultilayerCanopy, bou
     # Evaluating fills the buffers, but leaves the air profile at what the leaves
     # produce, so it is then set back to the solved values
     (; ground_temperature, inverse_obukhov_length) = unpack_canopy_state!(buffers, state)
-    result = evaluate_canopy!(residual, inverse_obukhov_length, ground_temperature, buffers, model, boundary_layer_model, forcing;
-        site, vapour_pressure_equation)
+    result = evaluate_canopy!(residual, inverse_obukhov_length, ground_temperature, buffers, model, boundary_layer_model,
+        inputs, hour_conditions; site, vapour_pressure_equation)
     unstressed_dry_conductance = stomatal_conductance(model.stomatal_model, zenith_angle, 0.0u"J/kg", soil_hydraulic_model)
     for i in 1:n_layers
         air.air_temperature[i] = air.current_air_temperature[i]

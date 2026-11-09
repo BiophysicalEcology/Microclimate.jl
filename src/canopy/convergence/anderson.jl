@@ -50,11 +50,11 @@ function allocate_canopy_convergence(convergence_model::AndersonCanopyConvergenc
     lowest_temperature, highest_temperature = CANOPY_TEMPERATURE_BOUNDS
     lowest_state = canopy_state_filled(layer_count, lowest_temperature, lowest_temperature, 0.0u"g/m^3", lowest_temperature, -Inf * u"m^-1")
     highest_state = canopy_state_filled(layer_count, highest_temperature, highest_temperature, Inf * u"g/m^3", highest_temperature, Inf * u"m^-1")
-    forcing = Ref(initial_residual_forcing(model, soil_hydraulic_model))
-    # Prepared with a placeholder temperature and the first layer, to fix the argument types
+    # Prepared with placeholder values and the first layer, to fix the argument types
+    placeholder_dry_conductance = stomatal_conductance(model.stomatal_model, 0.0u"°", 0.0u"J/kg", soil_hydraulic_model)
     leaf_preparation = prepare_derivative(layer_leaf_balance_density, backend, 288.0,
-        Constant(buffers), Constant(model), Constant(forcing[]), Constant(1))
-    return (; forcing, tolerances, leaf_buffers=buffers, leaf_preparation, backend, step_scale, lowest_state, highest_state,
+        Constant(buffers), Constant(model), Constant(1), Constant(101325.0), Constant(0.0), Constant(placeholder_dry_conductance))
+    return (; tolerances, leaf_buffers=buffers, leaf_preparation, backend, step_scale, lowest_state, highest_state,
         residual=allocate_canopy_residual(layer_count), leaf_temperature_error=zeros(typeof(0.0u"K"), layer_count),
         state=zeros(state_length), best_state=zeros(state_length), last_good_state=zeros(state_length),
         next_state=zeros(state_length), step=zeros(state_length),
@@ -63,21 +63,27 @@ function allocate_canopy_convergence(convergence_model::AndersonCanopyConvergenc
         history_matrix=zeros(history, history), history_weights=zeros(history))
 end
 
-# One layer's leaf energy balance per unit leaf area (W/m²) at `leaf_temperature` (K)
-function layer_leaf_balance_density(leaf_temperature, buffers, model, forcing, layer)
-    (; balance, leaf_area) = layer_leaf_balance(buffers, model, forcing, layer, leaf_temperature * CANOPY_STATE_UNITS.temperature)
+# One layer's leaf energy balance per unit leaf area (W/m²) at `leaf_temperature` (K), with
+# `atmospheric_pressure` in Pa and `leaf_water_potential` in J/kg
+function layer_leaf_balance_density(leaf_temperature, buffers, model, layer, atmospheric_pressure, leaf_water_potential,
+    dry_conductance,
+)
+    (; balance, leaf_area) = layer_leaf_balance(buffers, model, layer, leaf_temperature * CANOPY_STATE_UNITS.temperature,
+        atmospheric_pressure * u"Pa", leaf_water_potential * u"J/kg", dry_conductance)
     return in_state_units(balance.net_heat_flow / leaf_area)
 end
 
 # One pass: writes the state this pass would move to into `next_state`, and the move into `step`.
 # Returns the ground temperature minus what the soil reaches by the end of the hour.
-function canopy_fixed_point!(next_state, step, state, buffers, model, boundary_layer_model, forcing;
+function canopy_fixed_point!(next_state, step, state, buffers, model, boundary_layer_model, inputs, hour_conditions;
     site, vapour_pressure_equation, ground_temperature_after_hour,
 )
     (; residual, tolerances, leaf_temperature_error, leaf_buffers, leaf_preparation, backend) = buffers.convergence
     (; ground_temperature, inverse_obukhov_length) = unpack_canopy_state!(buffers, state)
-    result = evaluate_canopy!(residual, inverse_obukhov_length, ground_temperature, buffers, model, boundary_layer_model, forcing;
-        site, vapour_pressure_equation)
+    result = evaluate_canopy!(residual, inverse_obukhov_length, ground_temperature, buffers, model, boundary_layer_model,
+        inputs, hour_conditions; site, vapour_pressure_equation)
+    atmospheric_pressure = ustrip(u"Pa", inputs.environment_instant.atmospheric_pressure)
+    leaf_water_potential = ustrip(u"J/kg", inputs.leaf_water_potential)
     # The soil can't take a canopy that overshot
     ground_temperature_residual = if isfinite(canopy_scaled_residual(residual, tolerances))
         ground_temperature - ground_temperature_after_hour(ground_temperature, result.longwave_result.ground_absorbed_longwave)
@@ -91,7 +97,8 @@ function canopy_fixed_point!(next_state, step, state, buffers, model, boundary_l
             continue
         end
         slope = derivative(layer_leaf_balance_density, leaf_preparation, backend, in_state_units(buffers.leaf.leaf_temperature[layer]),
-            Constant(leaf_buffers), Constant(model), Constant(forcing), Constant(layer))
+            Constant(leaf_buffers), Constant(model), Constant(layer), Constant(atmospheric_pressure),
+            Constant(leaf_water_potential), Constant(hour_conditions.dry_conductance))
         leaf_temperature_error[layer] = in_state_units(residual.leaf_balance[layer]) / slope * CANOPY_STATE_UNITS.temperature
     end
     # The residuals of air, vapor, ground and stability are already the distance to move back
@@ -132,12 +139,13 @@ function converge_canopy!(buffers, model::MultilayerCanopy, boundary_layer_model
     initial_wind, convergence_model::AndersonCanopyConvergence; site, vapour_pressure_equation, soil_hydraulic_model,
     ground_temperature_after_hour::G,
 ) where G
-    (; forcing, tolerances, state, best_state, last_good_state, residual, next_state, step, previous_next_state,
+    (; tolerances, state, best_state, last_good_state, residual, next_state, step, previous_next_state,
        previous_step, next_state_changes, step_changes, history_matrix, history_weights, step_scale,
        lowest_state, highest_state) = buffers.convergence
     (; damping, history, maxiters, on_failure) = convergence_model
     keywords = (; site, vapour_pressure_equation, soil_hydraulic_model)
-    canopy_hour_setup!(state, forcing, buffers, model, boundary_layer_model, inputs, initial_wind; keywords...)
+    hour_conditions = canopy_hour_conditions(buffers, model, boundary_layer_model, inputs, initial_wind; keywords...)
+    canopy_starting_state!(state, buffers, inputs, initial_wind, hour_conditions.stability_limits; vapour_pressure_equation)
 
     stored_count = 0
     oldest_column = 1
@@ -145,10 +153,10 @@ function converge_canopy!(buffers, model::MultilayerCanopy, boundary_layer_model
     copyto!(best_state, state)
     for pass in 1:maxiters
         ground_temperature_residual = canopy_fixed_point!(next_state, step, state, buffers, model, boundary_layer_model,
-            forcing[]; site, vapour_pressure_equation, ground_temperature_after_hour)
+            inputs, hour_conditions; site, vapour_pressure_equation, ground_temperature_after_hour)
         if !all(isfinite, next_state)
             pass == 1 && return canopy_failure!(on_failure, convergence_model, SciMLBase.ReturnCode.Unstable, best_state,
-                smallest_residual, pass, buffers, model, boundary_layer_model, forcing[], inputs; keywords...)
+                smallest_residual, pass, buffers, model, boundary_layer_model, inputs, hour_conditions; keywords...)
             # Overshot: go halfway back to the last good state, without the history that led here
             state .= (state .+ last_good_state) ./ 2
             stored_count = 0
@@ -158,8 +166,8 @@ function converge_canopy!(buffers, model::MultilayerCanopy, boundary_layer_model
         copyto!(last_good_state, state)
         scaled_residual = max(canopy_scaled_residual(residual, tolerances),
             abs(in_state_units(ground_temperature_residual)) / tolerances.ground_temperature)
-        scaled_residual <= 1 && return canopy_solution!(residual, state, buffers, model, boundary_layer_model, forcing[],
-            inputs, pass; keywords...)
+        scaled_residual <= 1 && return canopy_solution!(residual, state, buffers, model, boundary_layer_model, inputs,
+            hour_conditions, pass; keywords...)
         if scaled_residual < smallest_residual
             smallest_residual = scaled_residual
             copyto!(best_state, state)
@@ -198,5 +206,5 @@ function converge_canopy!(buffers, model::MultilayerCanopy, boundary_layer_model
         end
     end
     return canopy_failure!(on_failure, convergence_model, SciMLBase.ReturnCode.MaxIters, best_state, smallest_residual,
-        maxiters, buffers, model, boundary_layer_model, forcing[], inputs; keywords...)
+        maxiters, buffers, model, boundary_layer_model, inputs, hour_conditions; keywords...)
 end
