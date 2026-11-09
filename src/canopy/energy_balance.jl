@@ -57,7 +57,7 @@ function _cap_wet_surface_evaporation(evaporation_mass_flux, sensible_heat_flux,
 end
 
 # A ground that stays at the temperature it was given
-keep_ground_temperature(ground_temperature, ground_absorbed_shortwave, ground_absorbed_longwave) = ground_temperature
+keep_ground_temperature(ground_temperature, ground_absorbed_shortwave, ground_absorbed_longwave, ground_air) = ground_temperature
 
 """
     canopy_energy_balance!(buffers, model::MultilayerCanopy, boundary_layer_model, inputs::CanopyEnergyBalanceInputs;
@@ -68,8 +68,9 @@ Solves the canopy for one hour. Shortwave and rain interception don't depend on 
 temperature, so they are computed once. Leaf temperature, air temperature, vapor density,
 ground temperature, longwave and stability are then solved together by [`converge_canopy!`](@ref).
 
-`ground_temperature_after_hour(ground_temperature, ground_absorbed_shortwave, ground_absorbed_longwave)`
-returns the ground temperature the soil reaches by the end of the hour. Any soil solve can be used.
+`ground_temperature_after_hour(ground_temperature, ground_absorbed_shortwave, ground_absorbed_longwave, ground_air)`
+returns the ground temperature the soil reaches by the end of the hour, with `ground_air` the
+[`GroundAirExchange`](@ref). Any soil solve can be used.
 
 Water on a leaf ([`wet_canopy_fraction`](@ref)) moves its conductance towards
 [`WET_SURFACE_CONDUCTANCE`](@ref) ([`blend_stomatal_conductance`](@ref)). The water that
@@ -82,14 +83,13 @@ can't happen is added to the sensible heat, without solving leaf temperature aga
 
 Returns `(; ground_absorbed_shortwave, net_absorbed_shortwave, ground_absorbed_longwave,
 net_absorbed_longwave, ground_throughfall, canopy_potential_transpiration,
-ground_heat_conductance, ground_vapor_conductance, iterations, canopy_top_air_temperature,
+ground_air, iterations, canopy_top_air_temperature,
 canopy_top_relative_humidity, canopy_top_sensible_heat_flux, ground_sensible_heat_flux,
 friction_velocity, obukhov_length, displacement_height)`.
 
 - `canopy_potential_transpiration` is what the canopy would transpire with no water stress,
   which the soil hydraulics model (e.g. `CampbellSoilHydraulics`) uses as demand.
-- `ground_heat_conductance` and `ground_vapor_conductance` connect the ground to the lowest
-  layer. The soil's surface exchange uses them (see `ground_convection_conditions`).
+- `ground_air` is the [`GroundAirExchange`](@ref) the soil's surface uses.
 """
 function canopy_energy_balance!(buffers, model::MultilayerCanopy, boundary_layer_model, inputs::CanopyEnergyBalanceInputs;
     site, vapour_pressure_equation=GoffGratch(), soil_hydraulic_model=nothing,
@@ -125,11 +125,11 @@ function canopy_energy_balance!(buffers, model::MultilayerCanopy, boundary_layer
     iszero(leaf_temperature[1]) && fill!(leaf_temperature, wind_result.canopy_top_air_temperature)
 
     (; longwave_result, iterations, canopy_top_air_temperature, canopy_top_relative_humidity, canopy_top_sensible_heat_flux,
-       ground_sensible_heat_flux, friction_velocity, inverse_obukhov_length) =
+       ground_sensible_heat_flux, ground_air, friction_velocity, inverse_obukhov_length) =
         converge_canopy!(buffers, model, boundary_layer_model, inputs, wind_result, model.convergence_model;
             site, vapour_pressure_equation, soil_hydraulic_model,
-            ground_temperature_after_hour=(ground_temperature, ground_absorbed_longwave) -> ground_temperature_after_hour(
-                ground_temperature, shortwave_result.ground_absorbed_shortwave, ground_absorbed_longwave))
+            ground_temperature_after_hour=(ground_temperature, ground_absorbed_longwave, ground_air) -> ground_temperature_after_hour(
+                ground_temperature, shortwave_result.ground_absorbed_shortwave, ground_absorbed_longwave, ground_air))
 
     melt_drip_total = 0.0u"kg/m^2"
     for layer in 1:n_layers
@@ -204,13 +204,10 @@ function canopy_energy_balance!(buffers, model::MultilayerCanopy, boundary_layer
     end
 
     canopy_potential_transpiration = sum(potential_evaporation_mass_flux)
-    ground_heat_conductance = buffers.air_profile.ground_heat_conductance[]
-    ground_vapor_conductance = buffers.air_profile.ground_vapor_conductance[]
 
     return (; shortwave_result..., longwave_result..., interception_result...,
         ground_throughfall = interception_result.ground_throughfall + melt_drip_total,
-        canopy_potential_transpiration,
-        ground_heat_conductance, ground_vapor_conductance, iterations,
+        canopy_potential_transpiration, ground_air, iterations,
         canopy_top_air_temperature, canopy_top_relative_humidity, canopy_top_sensible_heat_flux, ground_sensible_heat_flux,
         friction_velocity, obukhov_length=inv(inverse_obukhov_length),
         displacement_height=buffers.wind.displacement_height)

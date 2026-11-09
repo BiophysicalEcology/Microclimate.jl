@@ -435,13 +435,11 @@ end
         site, environment_instant, soil_temperatures, pool, standing_dew, standing_frost,
         condensation_model=GarrattSegalCondensation(), evaporation_model=BulkTransferEvaporation(),
         vapour_pressure_equation=GoffGratch(), snow_present=false, actual_soil_wetness,
-        sky_temperature, absorbed_solar_radiation, reference_height,
-        ground_wind_speed=nothing, ground_air_temperature=nothing,
-        ground_air_relative_humidity=nothing, ground_reference_height=nothing,
-        ground_heat_conductance=nothing, ground_vapor_conductance=nothing)
+        sky_temperature, absorbed_solar_radiation, reference_height, ground_air=nothing)
 
 One-hour ground-surface dew/frost step, independent of soil moisture
 strategy (runs once per hour regardless of moisture-solver sub-stepping).
+Under a canopy, `ground_air` is the canopy's [`GroundAirExchange`](@ref).
 Frost is its own reservoir shielding the returned `evaporation_potential`;
 dew merges into `pool` with its standing balance tracked in parallel; frost
 melts into dew above 0°C.
@@ -458,18 +456,14 @@ function ground_condensation_step!(buffers, boundary_layer_model;
     vapour_pressure_equation=GoffGratch(),
     snow_present=false,
     actual_soil_wetness,
-    sky_temperature, absorbed_solar_radiation, reference_height,
-    ground_wind_speed=nothing, ground_air_temperature=nothing,
-    ground_air_relative_humidity=nothing, ground_reference_height=nothing,
-    ground_heat_conductance=nothing, ground_vapor_conductance=nothing,
+    sky_temperature, absorbed_solar_radiation, reference_height, ground_air=nothing,
 )
     atmospheric_pressure = environment_instant.atmospheric_pressure
     surface_temperature = soil_temperatures[1]
     surface_emissivity = environment_instant.surface_emissivity
 
-    if isnothing(ground_air_relative_humidity)
-        # NoCanopy: full MOST profile from the free-atmosphere reference down
-        # to the soil surface, as before.
+    if isnothing(ground_air)
+        # No canopy: a Monin-Obukhov profile from the reference height down to the ground
         air_temperature = environment_instant.reference_temperature
         relative_humidity = environment_instant.reference_humidity
         wind_speed = environment_instant.reference_wind_speed
@@ -485,41 +479,14 @@ function ground_condensation_step!(buffers, boundary_layer_model;
         wet_air_out_loc = wet_air_properties(u"K"(profile_out.air_temperature[1]), 1.0, atmospheric_pressure; vapour_pressure_equation)
         local_relative_humidity = clamp(wet_air_out_ref.vapour_pressure / wet_air_out_loc.vapour_pressure, 0.0, 0.99)
     else
-        # Canopy present: MOST is only valid above canopy top (already used
-        # there, in canopy_wind_profile!) -- within the canopy, transport is
-        # the canopy's own resolved profile. The canopy's resolved ground-
-        # layer humidity is already the near-surface value directly, no MOST
-        # profile approximation needed.
-        air_temperature = ground_air_temperature
-        relative_humidity = ground_air_relative_humidity
-        wind_speed = ground_wind_speed
-        z_reference = ground_reference_height
-        local_relative_humidity = clamp(ground_air_relative_humidity, 0.0, 0.99)
-        if isnothing(ground_heat_conductance)
-            # Fallback (canopy supplied ground_air_* but not its own
-            # conductances): surface_fluxes's Monin-Obukhov log-law
-            # inversion, invalid at the canopy's ground-most layer height
-            # (too close to roughness_height -- see _MIN_LOGLAW_RATIO).
-            flux_out = surface_fluxes(boundary_layer_model;
-                surface_temperature, air_temperature=u"K"(ground_air_temperature), wind_speed=ground_wind_speed,
-                zenith_angle=environment_instant.zenith_angle,
-                roughness_height=site.roughness_height, reference_height=ground_reference_height,
-                atmospheric_pressure, obukhov_length_prev=buffers.condensation_profile.obukhov_length_prev,
-            )
-            convective_heat_flux = flux_out.convective_heat_flux
-            heat_transfer_coefficient = max(abs(convective_heat_flux / (surface_temperature - air_temperature)), 0.5u"W/m^2/K")
-            wet_air_out = wet_air_properties(air_temperature, relative_humidity, atmospheric_pressure; vapour_pressure_equation)
-            mass_transfer_coefficient = calc_mass_transfer_coefficient(heat_transfer_coefficient, wet_air_out.specific_heat, wet_air_out.density)
-        else
-            # Canopy's own resolved ground-to-lowest-layer conductances --
-            # avoids surface_fluxes's invalid-geometry log-law inversion
-            # entirely rather than working around it. ground_vapor_conductance
-            # shares its resistance with ground_heat_conductance (implicit
-            # Pr=Sc=1), unlike the other two branches' calc_mass_transfer_coefficient
-            # -- apply the same Lewis-relation factor here for consistency.
-            convective_heat_flux = ground_heat_conductance * (air_temperature - surface_temperature)
-            mass_transfer_coefficient = ground_vapor_conductance * LEWIS_HEAT_TO_MASS_RATIO
-        end
+        # Under a canopy: the air and conductances the canopy gives the ground
+        air_temperature = ground_air.air_temperature
+        relative_humidity = ground_air.air_relative_humidity
+        wind_speed = ground_air.wind_speed
+        z_reference = ground_air.height
+        local_relative_humidity = clamp(relative_humidity, 0.0, 0.99)
+        convective_heat_flux = ground_air.heat_conductance * (air_temperature - surface_temperature)
+        mass_transfer_coefficient = ground_air.vapor_conductance
     end
 
     # Drives evaporation_potential below, independent of condensation_model.

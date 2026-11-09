@@ -17,9 +17,7 @@ restore_canopy_water!(::NoCanopy, buffers) = nothing
 
 initial_ground_overrides(::NoCanopy) = (;
     ground_shortwave_transmission = nothing, ground_incoming_longwave = nothing,
-    ground_wind_speed = nothing, ground_air_temperature = nothing,
-    ground_air_relative_humidity = nothing, ground_reference_height = nothing,
-    ground_heat_conductance = nothing, ground_vapor_conductance = nothing,
+    ground_air = nothing,
 )
 
 n_canopy_layers(::NoCanopy, heights) = 0

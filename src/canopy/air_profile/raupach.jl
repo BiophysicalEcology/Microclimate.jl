@@ -82,8 +82,6 @@ function allocate_air_profile(model::RaupachLTheoryAirProfile, canopy_height, di
         vapor_density,
         current_vapor_density = similar(vapor_density),
         relative_humidity = zeros(n_layers),
-        ground_heat_conductance = Ref(0.0u"W/m^2/K"),
-        ground_vapor_conductance = Ref(0.0u"m/s"),
     )
 end
 

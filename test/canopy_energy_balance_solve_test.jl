@@ -44,10 +44,11 @@ end
 @testset "the heat leaving the canopy top is the heat the leaves and the ground give the air" begin
     model = canopy()
     result, buffers = solve_canopy(model, canopy_inputs(model))
-    ground_sensible_heat_flux = result.ground_heat_conductance * (290.0u"K" - last(buffers.air_profile.air_temperature))
-    @test result.ground_sensible_heat_flux ≈ ground_sensible_heat_flux atol = result.ground_heat_conductance * model.convergence_model.air_temperature_tolerance
+    (; heat_conductance) = result.ground_air
+    ground_sensible_heat_flux = heat_conductance * (290.0u"K" - last(buffers.air_profile.air_temperature))
+    @test result.ground_sensible_heat_flux ≈ ground_sensible_heat_flux atol = heat_conductance * model.convergence_model.air_temperature_tolerance
     @test result.canopy_top_sensible_heat_flux ≈ sum(buffers.leaf.sensible_heat_flux) + ground_sensible_heat_flux atol =
-        result.ground_heat_conductance * model.convergence_model.air_temperature_tolerance
+        heat_conductance * model.convergence_model.air_temperature_tolerance
 end
 
 @testset "new hourly inputs drive day -> night on the same buffers" begin
@@ -109,7 +110,7 @@ end
         gappy.air_profile.current_vapor_density, ground_temperature, inverse_obukhov_length)
     Microclimate.canopy_fixed_point!(next_state, step, state, gappy, gappy_model, boundary_layer_model, gappy_inputs, hour_conditions;
         site, vapour_pressure_equation = Microclimate.GoffGratch(),
-        ground_temperature_after_hour = (ground_temperature, _) -> ground_temperature)
+        ground_temperature_after_hour = (ground_temperature, _, _) -> ground_temperature)
     Microclimate.unpack_canopy_state!(gappy, next_state)
     @test gappy.leaf.leaf_temperature[3] ≈ starting_air_temperature[3]
 end
@@ -119,10 +120,11 @@ end
     buffers = allocate(model)
     calls = Ref(0)
     # A soil that moves halfway towards 290 K, whatever the canopy does
-    function ground_temperature_after_hour(ground_temperature, ground_absorbed_shortwave, ground_absorbed_longwave)
+    function ground_temperature_after_hour(ground_temperature, ground_absorbed_shortwave, ground_absorbed_longwave, ground_air)
         calls[] += 1
         @test ground_absorbed_shortwave > 0.0u"W/m^2"
         @test ground_absorbed_longwave > 0.0u"W/m^2"
+        @test ground_air.heat_conductance > 0.0u"W/m^2/K"
         return (ground_temperature + 290.0u"K") / 2
     end
     canopy_energy_balance!(buffers, model, boundary_layer_model, canopy_inputs(model; ground_temperature = 300.0u"K");
@@ -133,7 +135,7 @@ end
     @test isapprox(solved.ground_temperature, 290.0u"K"; atol = 0.2u"K")
     # A soil that never settles is an error, not an accepted hour
     @test_throws r"did not converge" canopy_energy_balance!(allocate(model), model, boundary_layer_model,
-        canopy_inputs(model); site, ground_temperature_after_hour = (ground_temperature, _, _) -> ground_temperature + 1.0u"K")
+        canopy_inputs(model); site, ground_temperature_after_hour = (ground_temperature, _, _, _) -> ground_temperature + 1.0u"K")
 end
 
 # An air profile that gives NaN on one call, the way a pass that overshoots does

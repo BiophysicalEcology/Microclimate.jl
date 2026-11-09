@@ -43,8 +43,6 @@ function allocate_air_profile(::KTheoryAirProfile, canopy_height, displacement_h
         vapor_density = zeros(typeof(0.0u"kg/m^3"), n_layers),
         current_vapor_density = zeros(typeof(0.0u"kg/m^3"), n_layers),
         relative_humidity = zeros(n_layers),
-        ground_heat_conductance = Ref(0.0u"W/m^2/K"),
-        ground_vapor_conductance = Ref(0.0u"m/s"),
     )
 end
 

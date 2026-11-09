@@ -192,9 +192,8 @@ end
 
 initial_ground_overrides(::MultilayerCanopy) = (;
     ground_shortwave_transmission = 1.0, ground_incoming_longwave = 0.0u"W/m^2",
-    ground_wind_speed = 0.0u"m/s", ground_air_temperature = 288.0u"K",
-    ground_air_relative_humidity = 0.5, ground_reference_height = 1.0u"m",
-    ground_heat_conductance = 0.0u"W/m^2/K", ground_vapor_conductance = 0.0u"m/s",
+    ground_air = GroundAirExchange(; air_temperature = 288.0u"K", air_relative_humidity = 0.5,
+        wind_speed = 0.0u"m/s", height = 1.0u"m", heat_conductance = 0.0u"W/m^2/K", vapor_conductance = 0.0u"m/s"),
 )
 
 canopy_leaf_area_index(model::MultilayerCanopy) = sum(model.plant_area_index) * (1 - model.woody_area_fraction)

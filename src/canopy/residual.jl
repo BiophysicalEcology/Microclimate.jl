@@ -161,8 +161,9 @@ The ground temperature residual needs the soil, so the solver computes it.
 The wind, radiation, leaf fluxes and air profile are left in `buffers`.
 
 Returns `(; longwave_result, canopy_top_air_temperature, canopy_top_relative_humidity,
-canopy_top_sensible_heat_flux, ground_sensible_heat_flux, friction_velocity, inverse_obukhov_length)`.
-The two heat fluxes are upwards, out of the canopy top and out of the ground.
+canopy_top_sensible_heat_flux, ground_sensible_heat_flux, ground_air, friction_velocity, inverse_obukhov_length)`.
+The two heat fluxes are upwards, out of the canopy top and out of the ground. `ground_air` is
+the [`GroundAirExchange`](@ref) the soil uses.
 """
 function evaluate_canopy!(residual, inverse_obukhov_length, ground_temperature, buffers, model::MultilayerCanopy, boundary_layer_model,
     inputs::CanopyEnergyBalanceInputs, hour_conditions; site, vapour_pressure_equation,
@@ -233,10 +234,13 @@ function evaluate_canopy!(residual, inverse_obukhov_length, ground_temperature, 
         lowest_wind_speed=wind_speed[n_layers], lowest_air_temperature, ground_temperature, atmospheric_pressure, site)
     # Fixed from the reference and ground temperatures, not the unknown canopy air, which keeps the canopy-top balance linear
     ρcₚ = calc_air_volumetric_heat_capacity((reference_temperature + ground_temperature) / 2)
-    air.ground_heat_conductance[] = ρcₚ / ground_resistance.heat
-    air.ground_vapor_conductance[] = 1 / ground_resistance.vapor
-    ground_sensible_heat_flux = air.ground_heat_conductance[] * (ground_temperature - lowest_air_temperature)
-    ground_vapor_flux = air.ground_vapor_conductance[] * (ground_vapor_density - air.current_vapor_density[n_layers])
+    ground_air = GroundAirExchange(; air_temperature=lowest_air_temperature,
+        air_relative_humidity=layer_relative_humidity(air, n_layers, atmospheric_pressure, vapour_pressure_equation),
+        wind_speed=wind_speed[n_layers], height=buffers.wind.ground_layer_height,
+        heat_conductance=uconvert(u"W/m^2/K", ρcₚ / ground_resistance.heat),
+        vapor_conductance=uconvert(u"m/s", 1 / ground_resistance.vapor))
+    ground_sensible_heat_flux = ground_air.heat_conductance * (ground_temperature - lowest_air_temperature)
+    ground_vapor_flux = ground_air.vapor_conductance * (ground_vapor_density - air.current_vapor_density[n_layers])
 
     boundary = canopy_top_flux_boundary(boundary_layer_model, model.canopy_height, buffers.wind.displacement_height,
         buffers.wind.above_canopy_profile.heights[2], wind.friction_velocity, wind.inverse_obukhov_length,
@@ -272,7 +276,7 @@ function evaluate_canopy!(residual, inverse_obukhov_length, ground_temperature, 
     in_bounds || invalidate_canopy_residual!(residual)
 
     return (; longwave_result, canopy_top_air_temperature, canopy_top_relative_humidity,
-        canopy_top_sensible_heat_flux=boundary.sensible_flux, ground_sensible_heat_flux,
+        canopy_top_sensible_heat_flux=boundary.sensible_flux, ground_sensible_heat_flux, ground_air,
         friction_velocity=wind.friction_velocity, inverse_obukhov_length=wind.inverse_obukhov_length)
 end
 
