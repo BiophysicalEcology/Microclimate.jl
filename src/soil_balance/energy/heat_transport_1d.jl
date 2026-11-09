@@ -14,8 +14,7 @@ deep soil temperature (Dirichlet BC).
 Solver tuning lives here, not on `MicroConfig`, because each
 `SoilHeatTransportModel` chooses its own integration strategy:
 
-- `ode_solver` — any SciML algorithm (`Tsit5()`, `RK4()`, …), explicit or implicit. An
-  implicit one needs `autodiff=AutoFiniteDiff()`, as the soil balance can't be auto-differentiated.
+- `ode_solver` — any SciML algorithm (`Tsit5()`, `RK4()`, …), explicit or implicit.
 - `ode_kwargs` — NamedTuple of kwargs forwarded to the integrator, such as `dt=60u"minute"`
 - `maximum_surface_temperature` — surface-temperature safety clamp
   (Fortran microinput[74])
