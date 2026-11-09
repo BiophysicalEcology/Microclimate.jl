@@ -1,5 +1,6 @@
 using Microclimate
-using Microclimate: CanopyAirProfileForcing, allocate_air_profile, canopy_heat_vapor_transport!, wet_air_properties
+using Microclimate: CanopyAirProfileForcing, allocate_air_profile, canopy_ground_resistance, canopy_heat_vapor_transport!,
+    calc_air_volumetric_heat_capacity, wet_air_properties
 using Unitful
 using Test
 
@@ -20,16 +21,20 @@ mid_layer = n_layers ÷ 2
 mid_heat = [i == mid_layer ? 50.0u"W/m^2" : 0.0u"W/m^2" for i in 1:n_layers]
 mid_evaporation = [i == mid_layer ? 1.0e-3u"g/s/m^2" : 0.0u"g/s/m^2" for i in 1:n_layers]
 
-forcing(; sensible_heat_flux = no_heat, evaporation_mass_flux = no_evaporation,
-    friction_velocity = 0.3u"m/s", ground_temperature = T) = CanopyAirProfileForcing(;
-    friction_velocity, inverse_obukhov_length = 0.0u"m^-1",
-    wind_speed = fill(1.0u"m/s", n_layers),
-    canopy_top_air_temperature = T, canopy_top_vapor_density = top_vapor_density,
-    ground_temperature, ground_relative_humidity = 0.5,
-    sensible_heat_flux, evaporation_mass_flux, atmospheric_pressure = 101325.0u"Pa",
-)
-
 top_vapor_density = wet_air_properties(T, 0.5, 101325.0u"Pa").vapour_density
+
+function forcing(model, buffers; sensible_heat_flux = no_heat, evaporation_mass_flux = no_evaporation,
+    friction_velocity = 0.3u"m/s", ground_temperature = T,
+)
+    inverse_obukhov_length = 0.0u"m^-1"
+    ground_resistance = canopy_ground_resistance(buffers, model, boundary_layer_model; friction_velocity, inverse_obukhov_length,
+        lowest_wind_speed = 1.0u"m/s", lowest_air_temperature = T, ground_temperature, atmospheric_pressure = 101325.0u"Pa", site)
+    return CanopyAirProfileForcing(; friction_velocity, inverse_obukhov_length,
+        canopy_top_air_temperature = T, canopy_top_vapor_density = top_vapor_density,
+        ground_temperature, ground_vapor_density = wet_air_properties(ground_temperature, 0.5, 101325.0u"Pa").vapour_density,
+        ground_resistance, air_volumetric_heat_capacity = calc_air_volumetric_heat_capacity(T),
+        sensible_heat_flux, evaporation_mass_flux)
+end
 
 # Fresh buffers with the current air state isothermal at the boundary humidity
 function initial_buffers(model)
@@ -41,7 +46,7 @@ end
 
 function profile(model; kw...)
     buffers = initial_buffers(model)
-    canopy_heat_vapor_transport!(buffers, model, boundary_layer_model, forcing(; kw...); site)
+    canopy_heat_vapor_transport!(buffers, model, boundary_layer_model, forcing(model, buffers; kw...))
     return buffers
 end
 
@@ -76,9 +81,9 @@ is_local_bump(values) = abs(argmax(values) - mid_layer) <= 1 && count(==(maximum
 
     @testset "zero allocations" begin
         buffers = initial_buffers(model)
-        hour_forcing = forcing(; sensible_heat_flux = fill(10.0u"W/m^2", n_layers),
+        hour_forcing = forcing(model, buffers; sensible_heat_flux = fill(10.0u"W/m^2", n_layers),
             evaporation_mass_flux = fill(1.0e-4u"g/s/m^2", n_layers), ground_temperature = 288.0u"K")
-        @test allocations(canopy_heat_vapor_transport!, buffers, model, boundary_layer_model, hour_forcing; site) == 0
+        @test allocations(canopy_heat_vapor_transport!, buffers, model, boundary_layer_model, hour_forcing) == 0
     end
 end
 

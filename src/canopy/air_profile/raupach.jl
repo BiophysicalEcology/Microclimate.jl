@@ -253,60 +253,72 @@ _raupach_near_field_scale(::BulkRaupachFormulation, layer_count) = 1.0 + 0.894 *
 _raupach_layer_heat_capacity(::ExactRaupachFormulation, volumetric_heat_capacity, _current_air_temperature, _layer) = volumetric_heat_capacity
 _raupach_layer_heat_capacity(::BulkRaupachFormulation, _volumetric_heat_capacity, current_air_temperature, layer) = calc_air_volumetric_heat_capacity(current_air_temperature[layer])
 
-function canopy_heat_vapor_transport!(buffers, model::RaupachLTheoryAirProfile, boundary_layer_model,
-    forcing::CanopyAirProfileForcing; site, vapour_pressure_equation=GoffGratch(),
+# The Lagrangian timescale T_L is the same at every height. It makes the diffusivity at the
+# canopy top, K(h) = σw(h)²T_L, match the Monin-Obukhov diffusivity above it, κu*(h-d)/Φh:
+#   T_L = min(a₂h/u*, max_lagrangian_timescale), with a₂ = κ(1-d/h)/(a₁²Φh)
+function _raupach_lagrangian_timescale(model, boundary_layer_model, canopy_height, displacement_height, friction_velocity,
+    inverse_obukhov_length,
 )
-    (; friction_velocity, inverse_obukhov_length, wind_speed, canopy_top_air_temperature, canopy_top_vapor_density,
-       ground_temperature, ground_relative_humidity, sensible_heat_flux, evaporation_mass_flux,
-       atmospheric_pressure) = forcing
+    h, d, u★, κ = canopy_height, displacement_height, friction_velocity, boundary_layer_model.karman_constant
+    a₁ = model.canopy_top_velocity_deviation_factor
+    canopy_top_depth = max(h - d, 1.0e-3u"m")
+    Φh = heat_gradient_stability_factor(boundary_layer_model.stability_functions,
+        stability_parameter_at_height(InverseObukhovLength(), canopy_top_depth, inverse_obukhov_length))
+    a₂ = κ * (1.0 - d / h) / (a₁^2 * Φh)
+    return min(a₂ * h / u★, model.max_lagrangian_timescale)
+end
+
+# The standard deviation of vertical velocity at `height`
+function _raupach_vertical_velocity_deviation(model, height, canopy_height, friction_velocity)
+    a₀, a₁, u★ = model.ground_velocity_deviation_factor, model.canopy_top_velocity_deviation_factor, friction_velocity
+    return (a₁ + a₀) * u★ / 2 + (a₁ - a₀) * u★ / 2 * cos(π * (1.0 - height / canopy_height))
+end
+
+# The lowest layer's turbulent resistance plus a thin sublayer at the ground, with a friction
+# velocity from the log law in that layer. allocate_canopy checks the layer is above the roughness.
+function canopy_ground_resistance(buffers, model::RaupachLTheoryAirProfile, boundary_layer_model;
+    friction_velocity, inverse_obukhov_length, lowest_wind_speed, lowest_air_temperature, ground_temperature,
+    atmospheric_pressure, site,
+)
+    (; canopy_height, displacement_height, layer_heights, layer_thickness) = buffers
+    T_L = _raupach_lagrangian_timescale(model, boundary_layer_model, canopy_height, displacement_height, friction_velocity,
+        inverse_obukhov_length)
+    σw = _raupach_vertical_velocity_deviation(model, last(layer_heights), canopy_height, friction_velocity)
+    lowest_layer_resistance = last(layer_thickness) / (σw^2 * T_L)
+
+    κ = boundary_layer_model.karman_constant
+    z₀ = site.roughness_height
+    ground_friction_velocity = κ * lowest_wind_speed / log(last(layer_heights) / z₀)
+    kinematic_viscosity = dry_air_properties((lowest_air_temperature + ground_temperature) / 2, atmospheric_pressure).kinematic_viscosity
+    sublayer_heat_resistance = 1 / (ground_friction_velocity * sublayer_stanton(z₀, ground_friction_velocity, kinematic_viscosity))
+    return (; heat=lowest_layer_resistance + sublayer_heat_resistance,
+        vapor=lowest_layer_resistance + sublayer_heat_resistance / LEWIS_HEAT_TO_MASS_RATIO)
+end
+
+function canopy_heat_vapor_transport!(buffers, model::RaupachLTheoryAirProfile, boundary_layer_model,
+    forcing::CanopyAirProfileForcing,
+)
+    (; friction_velocity, inverse_obukhov_length, canopy_top_air_temperature, canopy_top_vapor_density,
+       ground_temperature, ground_vapor_density, ground_resistance, air_volumetric_heat_capacity,
+       sensible_heat_flux, evaporation_mass_flux) = forcing
     (; canopy_height, displacement_height, layer_heights, layer_thickness, inverse_near_field_length, layer_resistance,
        far_field_heat, far_field_vapor, cumulative_sensible_below, sensible_near_field_weight, cumulative_latent_below,
-       latent_near_field_weight, air_temperature, current_air_temperature, vapor_density,
-       ground_heat_conductance, ground_vapor_conductance) = buffers
-    (; ground_velocity_deviation_factor, canopy_top_velocity_deviation_factor, max_lagrangian_timescale, formulation) = model
-    (; karman_constant) = boundary_layer_model
-    ground_roughness_height = site.roughness_height
+       latent_near_field_weight, air_temperature, current_air_temperature, vapor_density) = buffers
+    (; formulation) = model
 
     layer_count = length(air_temperature)
     length(sensible_heat_flux) == layer_count || throw(ArgumentError("sensible_heat_flux must have one entry per canopy layer"))
     length(evaporation_mass_flux) == layer_count || throw(ArgumentError("evaporation_mass_flux must have one entry per canopy layer"))
 
-    # The Lagrangian timescale T_L is the same at every height. It makes the diffusivity at the
-    # canopy top, K(h) = σw(h)²T_L, match the Monin-Obukhov diffusivity above it, κu*(h-d)/Φh:
-    #   T_L = min(a₂h/u*, max_lagrangian_timescale), with a₂ = κ(1-d/h)/(a₁²Φh)
-    h, d, u★, κ = canopy_height, displacement_height, friction_velocity, karman_constant
-    a₀, a₁ = ground_velocity_deviation_factor, canopy_top_velocity_deviation_factor
-    canopy_top_depth = max(h - d, 1.0e-3u"m")
-    Φh = heat_gradient_stability_factor(boundary_layer_model.stability_functions,
-        stability_parameter_at_height(InverseObukhovLength(), canopy_top_depth, inverse_obukhov_length))
-    a₂ = κ * (1.0 - d / h) / (a₁^2 * Φh)
-    T_L = min(a₂ * h / u★, max_lagrangian_timescale)
-
-    σw_mean = (a₁ + a₀) * u★ / 2
-    σw_amplitude = (a₁ - a₀) * u★ / 2
+    T_L = _raupach_lagrangian_timescale(model, boundary_layer_model, canopy_height, displacement_height, friction_velocity,
+        inverse_obukhov_length)
     for layer in 1:layer_count
-        σw = σw_mean + σw_amplitude * cos(π * (1.0 - layer_heights[layer] / h))
+        σw = _raupach_vertical_velocity_deviation(model, layer_heights[layer], canopy_height, friction_velocity)
         inverse_near_field_length[layer] = 1 / (σw * T_L)
-        eddy_diffusivity = σw^2 * T_L
-        layer_resistance[layer] = layer_thickness[layer] / eddy_diffusivity
+        layer_resistance[layer] = layer_thickness[layer] / (σw^2 * T_L)
         sensible_near_field_weight[layer] = sensible_heat_flux[layer] / σw
         latent_near_field_weight[layer] = evaporation_mass_flux[layer] / σw
     end
-
-    # The ground's resistance is the lowest layer's plus a sublayer in series, with a friction
-    # velocity from the log law in that layer. allocate_canopy checks it is above the roughness.
-    ground_friction_velocity = κ * wind_speed[layer_count] / log(layer_heights[layer_count] / ground_roughness_height)
-    kinematic_viscosity = dry_air_properties((canopy_top_air_temperature + ground_temperature) / 2, atmospheric_pressure).kinematic_viscosity
-    sublayer_heat_resistance = 1.0 / (ground_friction_velocity * sublayer_stanton(ground_roughness_height, ground_friction_velocity, kinematic_viscosity))
-    ground_heat_resistance = layer_resistance[layer_count] + sublayer_heat_resistance
-    ground_vapor_resistance = layer_resistance[layer_count] + sublayer_heat_resistance / LEWIS_HEAT_TO_MASS_RATIO
-
-    # Fixed from the boundary temperatures rather than each layer's current temperature.
-    # calc_air_volumetric_heat_capacity ∝ 1/T, so using the current value would amplify warming on every pass.
-    volumetric_heat_capacity = calc_air_volumetric_heat_capacity((canopy_top_air_temperature + ground_temperature) / 2)
-
-    ground_heat_conductance[] = volumetric_heat_capacity / ground_heat_resistance
-    ground_vapor_conductance[] = 1 / ground_vapor_resistance
 
     cumulative_sensible_below[layer_count] = sensible_heat_flux[layer_count]
     cumulative_latent_below[layer_count] = evaporation_mass_flux[layer_count]
@@ -315,7 +327,6 @@ function canopy_heat_vapor_transport!(buffers, model::RaupachLTheoryAirProfile, 
         cumulative_latent_below[layer] = cumulative_latent_below[layer + 1] + evaporation_mass_flux[layer]
     end
 
-    ground_vapor_density = wet_air_properties(ground_temperature, ground_relative_humidity, atmospheric_pressure; vapour_pressure_equation).vapour_density
     near_field_scale = _raupach_near_field_scale(formulation, layer_count)
 
     # The near field at the canopy top, subtracted from every layer's own near field below
@@ -331,15 +342,15 @@ function canopy_heat_vapor_transport!(buffers, model::RaupachLTheoryAirProfile, 
 
     bottom_near_field = _raupach_near_field(formulation, layer_count, layer_heights, layer_thickness, inverse_near_field_length,
         sensible_near_field_weight, latent_near_field_weight, near_field_scale)
-    _raupach_far_field!(formulation, buffers, ground_temperature, ground_vapor_density, ground_heat_resistance, ground_vapor_resistance,
-        volumetric_heat_capacity, layer_count;
-        bottom_offset_heat=canopy_top_air_temperature * volumetric_heat_capacity + bottom_near_field.heat - top_near_field_heat,
+    _raupach_far_field!(formulation, buffers, ground_temperature, ground_vapor_density, ground_resistance.heat, ground_resistance.vapor,
+        air_volumetric_heat_capacity, layer_count;
+        bottom_offset_heat=canopy_top_air_temperature * air_volumetric_heat_capacity + bottom_near_field.heat - top_near_field_heat,
         bottom_offset_vapor=canopy_top_vapor_density + bottom_near_field.vapor - top_near_field_vapor)
 
     for layer in 1:layer_count
         near_field = _raupach_near_field(formulation, layer, layer_heights, layer_thickness, inverse_near_field_length,
             sensible_near_field_weight, latent_near_field_weight, near_field_scale)
-        layer_heat_capacity = _raupach_layer_heat_capacity(formulation, volumetric_heat_capacity, current_air_temperature, layer)
+        layer_heat_capacity = _raupach_layer_heat_capacity(formulation, air_volumetric_heat_capacity, current_air_temperature, layer)
         air_temperature[layer] = canopy_top_air_temperature + (far_field_heat[layer] + near_field.heat - top_near_field_heat) / layer_heat_capacity
         vapor_density[layer] = canopy_top_vapor_density + far_field_vapor[layer] + near_field.vapor - top_near_field_vapor
     end

@@ -178,26 +178,24 @@ end
 
 """
     canopy_top_flux_boundary(boundary_layer_model, canopy_height, displacement_height, reference_height,
-                              friction_velocity, inverse_obukhov_length, total_sensible_flux, total_vapor_flux,
-                              ground_temperature, ground_vapor_density, reference_temperature,
-                              reference_vapor_density, previous_top_temperature, previous_top_vapor_density;
-                              max_resistance=2000.0u"s/m")
+                              friction_velocity, inverse_obukhov_length, sensible_heat_flux, vapor_flux,
+                              air_volumetric_heat_capacity, reference_temperature, reference_vapor_density,
+                              previous_top_temperature, previous_top_vapor_density; max_resistance=2000.0u"s/m")
 
 The air temperature and vapor density at the top of the canopy.
 
-Heat and vapor reach the canopy top from the leaves and the ground, and leave it towards
-the reference height. Balancing these gives the canopy-top value directly, without iteration.
+`sensible_heat_flux` and `vapor_flux` are what the leaves and the ground send up through the
+canopy top. The canopy-top value is the one that carries them on to the reference height.
 
-`max_resistance` caps resistances in calm air. The result moves from the previous value
+`max_resistance` caps the resistance in calm air. The result moves from the previous value
 towards the balance only as far as the air could in an hour.
 
 Returns `(; top_temperature, top_vapor_density, sensible_flux)`, where `sensible_flux` is
 the upward heat flux from the canopy top to the reference height.
 """
 function canopy_top_flux_boundary(boundary_layer_model, canopy_height, displacement_height, reference_height,
-    friction_velocity, inverse_obukhov_length, total_sensible_flux, total_vapor_flux,
-    ground_temperature, ground_vapor_density, reference_temperature, reference_vapor_density,
-    previous_top_temperature, previous_top_vapor_density;
+    friction_velocity, inverse_obukhov_length, sensible_heat_flux, vapor_flux, air_volumetric_heat_capacity,
+    reference_temperature, reference_vapor_density, previous_top_temperature, previous_top_vapor_density;
     max_resistance=2000.0u"s/m",
 )
     (; karman_constant, stability_functions) = boundary_layer_model
@@ -208,20 +206,12 @@ function canopy_top_flux_boundary(boundary_layer_model, canopy_height, displacem
 
     κ = karman_constant
     u★ = friction_velocity
-    R_ground = min(canopy_height / (κ * u★ * top_depth), max_resistance)
+    ρcₚ = air_volumetric_heat_capacity
     R_top = min((log(reference_depth / top_depth) - heat_correction(reference_depth) + heat_correction(top_depth)) /
         (κ * u★), max_resistance)
-    resistance_ratio = R_top / R_ground
 
-    # Fixed from the reference and ground temperatures, not the unknown canopy-top
-    # temperature, which keeps the balance linear
-    ρcₚ = calc_air_volumetric_heat_capacity((reference_temperature + ground_temperature) / 2)
-
-    # Solving T_top = T_reference + (H + (ρcₚ/R_ground)(T_ground - T_top)) R_top/ρcₚ for T_top; vapor likewise
-    balanced_temperature = (reference_temperature + total_sensible_flux * R_top / ρcₚ +
-        resistance_ratio * ground_temperature) / (1.0 + resistance_ratio)
-    balanced_vapor_density = (reference_vapor_density + total_vapor_flux * R_top +
-        resistance_ratio * ground_vapor_density) / (1.0 + resistance_ratio)
+    balanced_temperature = reference_temperature + sensible_heat_flux * R_top / ρcₚ
+    balanced_vapor_density = reference_vapor_density + vapor_flux * R_top
 
     residence_time = top_depth * R_top
     fraction_reached = 1.0 - exp(-CANOPY_TIMESTEP / residence_time)

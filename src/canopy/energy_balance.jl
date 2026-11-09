@@ -83,7 +83,8 @@ can't happen is added to the sensible heat, without solving leaf temperature aga
 Returns `(; ground_absorbed_shortwave, net_absorbed_shortwave, ground_absorbed_longwave,
 net_absorbed_longwave, ground_throughfall, canopy_potential_transpiration,
 ground_heat_conductance, ground_vapor_conductance, iterations, canopy_top_air_temperature,
-canopy_top_relative_humidity, friction_velocity, obukhov_length, displacement_height)`.
+canopy_top_relative_humidity, canopy_top_sensible_heat_flux, ground_sensible_heat_flux,
+friction_velocity, obukhov_length, displacement_height)`.
 
 - `canopy_potential_transpiration` is what the canopy would transpire with no water stress,
   which the soil hydraulics model (e.g. `CampbellSoilHydraulics`) uses as demand.
@@ -123,7 +124,8 @@ function canopy_energy_balance!(buffers, model::MultilayerCanopy, boundary_layer
     iszero(air_temperature[1]) && fill!(air_temperature, wind_result.canopy_top_air_temperature)
     iszero(leaf_temperature[1]) && fill!(leaf_temperature, wind_result.canopy_top_air_temperature)
 
-    longwave_result, iterations, canopy_top_air_temperature, canopy_top_relative_humidity, friction_velocity, inverse_obukhov_length =
+    (; longwave_result, iterations, canopy_top_air_temperature, canopy_top_relative_humidity, canopy_top_sensible_heat_flux,
+       ground_sensible_heat_flux, friction_velocity, inverse_obukhov_length) =
         converge_canopy!(buffers, model, boundary_layer_model, inputs, wind_result, model.convergence_model;
             site, vapour_pressure_equation, soil_hydraulic_model,
             ground_temperature_after_hour=(ground_temperature, ground_absorbed_longwave) -> ground_temperature_after_hour(
@@ -209,7 +211,7 @@ function canopy_energy_balance!(buffers, model::MultilayerCanopy, boundary_layer
         ground_throughfall = interception_result.ground_throughfall + melt_drip_total,
         canopy_potential_transpiration,
         ground_heat_conductance, ground_vapor_conductance, iterations,
-        canopy_top_air_temperature, canopy_top_relative_humidity,
+        canopy_top_air_temperature, canopy_top_relative_humidity, canopy_top_sensible_heat_flux, ground_sensible_heat_flux,
         friction_velocity, obukhov_length=inv(inverse_obukhov_length),
         displacement_height=buffers.wind.displacement_height)
 end
@@ -221,8 +223,7 @@ end
 
 Solves the hour's canopy state with `convergence_model` ([`AndersonCanopyConvergence`](@ref)).
 `initial_wind` is the hour's [`canopy_wind_profile!`](@ref) result, which gives the canopy-top
-air temperature and humidity the hour starts from. Returns `(longwave_result, iterations,
-canopy_top_air_temperature, canopy_top_relative_humidity, friction_velocity,
-inverse_obukhov_length)` at the solution.
+air temperature and humidity the hour starts from. Returns [`evaluate_canopy!`](@ref)'s result
+at the solution, with `iterations`.
 """
 function converge_canopy! end

@@ -144,6 +144,5 @@ function canopy_solution!(residual, state, buffers, model::MultilayerCanopy, bou
             water_potential=0.0u"J/kg").transpiration_mass_flow / GROUND_AREA
     end
 
-    return result.longwave_result, iterations, result.canopy_top_air_temperature,
-        result.canopy_top_relative_humidity, result.friction_velocity, result.inverse_obukhov_length
+    return (; result..., iterations)
 end

@@ -160,8 +160,9 @@ The ground temperature residual needs the soil, so the solver computes it.
 
 The wind, radiation, leaf fluxes and air profile are left in `buffers`.
 
-Returns `(; longwave_result, canopy_top_air_temperature,
-canopy_top_relative_humidity, friction_velocity, inverse_obukhov_length)`.
+Returns `(; longwave_result, canopy_top_air_temperature, canopy_top_relative_humidity,
+canopy_top_sensible_heat_flux, ground_sensible_heat_flux, friction_velocity, inverse_obukhov_length)`.
+The two heat fluxes are upwards, out of the canopy top and out of the ground.
 """
 function evaluate_canopy!(residual, inverse_obukhov_length, ground_temperature, buffers, model::MultilayerCanopy, boundary_layer_model,
     inputs::CanopyEnergyBalanceInputs, hour_conditions; site, vapour_pressure_equation,
@@ -224,11 +225,23 @@ function evaluate_canopy!(residual, inverse_obukhov_length, ground_temperature, 
         vapour_pressure_equation).vapour_density
     initial_top_vapor_density = wet_air_properties(hour_conditions.canopy_top_air_temperature, hour_conditions.canopy_top_relative_humidity,
         atmospheric_pressure; vapour_pressure_equation).vapour_density
+
+    # The ground exchanges with the lowest layer. The air profile, the canopy top and the soil all use this one exchange.
+    lowest_air_temperature = air.current_air_temperature[n_layers]
+    ground_resistance = canopy_ground_resistance(air, model.air_profile_model, boundary_layer_model;
+        friction_velocity=wind.friction_velocity, inverse_obukhov_length=wind.inverse_obukhov_length,
+        lowest_wind_speed=wind_speed[n_layers], lowest_air_temperature, ground_temperature, atmospheric_pressure, site)
+    # Fixed from the reference and ground temperatures, not the unknown canopy air, which keeps the canopy-top balance linear
+    ρcₚ = calc_air_volumetric_heat_capacity((reference_temperature + ground_temperature) / 2)
+    air.ground_heat_conductance[] = ρcₚ / ground_resistance.heat
+    air.ground_vapor_conductance[] = 1 / ground_resistance.vapor
+    ground_sensible_heat_flux = air.ground_heat_conductance[] * (ground_temperature - lowest_air_temperature)
+    ground_vapor_flux = air.ground_vapor_conductance[] * (ground_vapor_density - air.current_vapor_density[n_layers])
+
     boundary = canopy_top_flux_boundary(boundary_layer_model, model.canopy_height, buffers.wind.displacement_height,
         buffers.wind.above_canopy_profile.heights[2], wind.friction_velocity, wind.inverse_obukhov_length,
-        sum(sensible_heat_flux), sum(evaporation_mass_flux),
-        ground_temperature, ground_vapor_density, reference_temperature, reference_vapor_density,
-        hour_conditions.canopy_top_air_temperature, initial_top_vapor_density)
+        sum(sensible_heat_flux) + ground_sensible_heat_flux, sum(evaporation_mass_flux) + ground_vapor_flux, ρcₚ,
+        reference_temperature, reference_vapor_density, hour_conditions.canopy_top_air_temperature, initial_top_vapor_density)
     in_bounds &= lowest_temperature <= boundary.top_temperature <= highest_temperature &&
         boundary.top_vapor_density >= zero(boundary.top_vapor_density)
     canopy_top_air_temperature = clamp(boundary.top_temperature, lowest_temperature, highest_temperature)
@@ -240,11 +253,10 @@ function evaluate_canopy!(residual, inverse_obukhov_length, ground_temperature, 
     canopy_top_relative_humidity = clamp(canopy_top_vapor_density / top_saturation, 0.0, 1.0)
 
     air_forcing = CanopyAirProfileForcing(; friction_velocity=wind.friction_velocity,
-        inverse_obukhov_length=wind.inverse_obukhov_length, wind_speed, canopy_top_air_temperature,
-        canopy_top_vapor_density, ground_temperature, ground_relative_humidity, sensible_heat_flux,
-        evaporation_mass_flux, atmospheric_pressure)
-    canopy_heat_vapor_transport!(air, model.air_profile_model, boundary_layer_model, air_forcing;
-        site, vapour_pressure_equation)
+        inverse_obukhov_length=wind.inverse_obukhov_length, canopy_top_air_temperature, canopy_top_vapor_density,
+        ground_temperature, ground_vapor_density, ground_resistance, air_volumetric_heat_capacity=ρcₚ,
+        sensible_heat_flux, evaporation_mass_flux)
+    canopy_heat_vapor_transport!(air, model.air_profile_model, boundary_layer_model, air_forcing)
 
     for i in 1:n_layers
         residual.air_temperature[i] = air.current_air_temperature[i] - air.air_temperature[i]
@@ -252,15 +264,15 @@ function evaluate_canopy!(residual, inverse_obukhov_length, ground_temperature, 
     end
     # The stability the whole canopy's sensible flux through its top implies; the Obukhov
     # relation takes the downward flux
-    ρcₚ = calc_air_volumetric_heat_capacity(reference_temperature)
     κ = boundary_layer_model.karman_constant
-    obukhov_coefficient = ρcₚ * reference_temperature / (κ * g_n)
+    obukhov_coefficient = calc_air_volumetric_heat_capacity(reference_temperature) * reference_temperature / (κ * g_n)
     inverse_obukhov_length_update = limit_inverse_obukhov_length(stability_from_fluxes(InverseObukhovLength(), obukhov_coefficient,
         wind.friction_velocity, -boundary.sensible_flux), stability_limits)
     residual.inverse_obukhov_length[] = wind.inverse_obukhov_length - inverse_obukhov_length_update
     in_bounds || invalidate_canopy_residual!(residual)
 
     return (; longwave_result, canopy_top_air_temperature, canopy_top_relative_humidity,
+        canopy_top_sensible_heat_flux=boundary.sensible_flux, ground_sensible_heat_flux,
         friction_velocity=wind.friction_velocity, inverse_obukhov_length=wind.inverse_obukhov_length)
 end
 

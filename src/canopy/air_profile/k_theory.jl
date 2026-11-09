@@ -48,22 +48,31 @@ function allocate_air_profile(::KTheoryAirProfile, canopy_height, displacement_h
     )
 end
 
+# The floor stops the diffusivity reaching zero when displacement reaches the canopy top
+_ktheory_canopy_top_eddy_diffusivity(buffers, boundary_layer_model, friction_velocity) =
+    boundary_layer_model.karman_constant * friction_velocity * max(buffers.canopy_height - buffers.displacement_height, 1.0e-3u"m")
+
+# The lowest layer's spacing over its diffusivity, the same for heat and vapor
+function canopy_ground_resistance(buffers, ::KTheoryAirProfile, boundary_layer_model; friction_velocity, kw...)
+    eddy_diffusivity = _ktheory_canopy_top_eddy_diffusivity(buffers, boundary_layer_model, friction_velocity) *
+        last(buffers.relative_eddy_diffusivity)
+    resistance = last(buffers.layer_spacing) / eddy_diffusivity
+    return (; heat=resistance, vapor=resistance)
+end
+
 # Writes the conductance between each pair of free layers into `conductance_between_layers`, and
-# returns the conductances from the fixed layer 1 to the first free layer and from the last free
-# layer to the ground. `scale` turns the diffusivity over the spacing into the flux's units.
+# returns the conductance from the fixed layer 1 to the first free layer. `scale` turns the
+# diffusivity over the spacing into the flux's units.
 function _ktheory_conductances!(conductance_between_layers, relative_eddy_diffusivity, canopy_top_eddy_diffusivity, layer_spacing, scale)
     free_layer_count = length(conductance_between_layers) + 1
-    conductance_type = eltype(conductance_between_layers)
-    top_conductance = convert(conductance_type, scale * canopy_top_eddy_diffusivity * 0.5 *
+    top_conductance = convert(eltype(conductance_between_layers), scale * canopy_top_eddy_diffusivity * 0.5 *
         (relative_eddy_diffusivity[1] + relative_eddy_diffusivity[2]) / layer_spacing[1])
-    ground_conductance = convert(conductance_type, scale * canopy_top_eddy_diffusivity * relative_eddy_diffusivity[free_layer_count + 1] /
-        layer_spacing[free_layer_count + 1])
     for i in 1:(free_layer_count - 1)
         boundary_eddy_diffusivity = canopy_top_eddy_diffusivity * 0.5 *
             (relative_eddy_diffusivity[i + 1] + relative_eddy_diffusivity[i + 2])
         conductance_between_layers[i] = scale * boundary_eddy_diffusivity / layer_spacing[i + 1]
     end
-    return top_conductance, ground_conductance
+    return top_conductance
 end
 
 # Fills in and solves one flux balance on the free layers, writing the answer into `profile`:
@@ -95,14 +104,14 @@ function _ktheory_solve!(profile, layer_total_conductance, conductance_between_l
 end
 
 function canopy_heat_vapor_transport!(buffers, ::KTheoryAirProfile, boundary_layer_model,
-    forcing::CanopyAirProfileForcing; site, vapour_pressure_equation=GoffGratch(),
+    forcing::CanopyAirProfileForcing,
 )
-    (; friction_velocity, canopy_top_air_temperature, canopy_top_vapor_density, ground_temperature,
-       ground_relative_humidity, sensible_heat_flux, evaporation_mass_flux, atmospheric_pressure) = forcing
-    (; canopy_height, displacement_height, layer_spacing, relative_eddy_diffusivity,
+    (; friction_velocity, canopy_top_air_temperature, canopy_top_vapor_density, ground_temperature, ground_vapor_density,
+       ground_resistance, air_volumetric_heat_capacity, sensible_heat_flux, evaporation_mass_flux) = forcing
+    (; layer_spacing, relative_eddy_diffusivity,
        heat_layer_total_conductance, heat_conductance_between_layers, heat_known_flux,
        vapor_layer_total_conductance, vapor_conductance_between_layers, vapor_known_flux,
-       air_temperature, vapor_density, ground_heat_conductance, ground_vapor_conductance) = buffers
+       air_temperature, vapor_density) = buffers
 
     layer_count = length(air_temperature)
     length(sensible_heat_flux) == layer_count || throw(ArgumentError("sensible_heat_flux must have one entry per canopy layer"))
@@ -111,22 +120,18 @@ function canopy_heat_vapor_transport!(buffers, ::KTheoryAirProfile, boundary_lay
     air_temperature[1] = canopy_top_air_temperature
     vapor_density[1] = canopy_top_vapor_density
 
-    # The floor stops the diffusivity reaching zero when displacement reaches the canopy top
-    κ = boundary_layer_model.karman_constant
-    u★ = friction_velocity
-    canopy_top_eddy_diffusivity = κ * u★ * max(canopy_height - displacement_height, 1.0e-3u"m")
+    canopy_top_eddy_diffusivity = _ktheory_canopy_top_eddy_diffusivity(buffers, boundary_layer_model, friction_velocity)
 
-    heat_top_conductance, heat_ground_conductance = _ktheory_conductances!(heat_conductance_between_layers, relative_eddy_diffusivity,
-        canopy_top_eddy_diffusivity, layer_spacing, calc_air_volumetric_heat_capacity(canopy_top_air_temperature))
-    ground_heat_conductance[] = heat_ground_conductance
+    heat_top_conductance = _ktheory_conductances!(heat_conductance_between_layers, relative_eddy_diffusivity,
+        canopy_top_eddy_diffusivity, layer_spacing, air_volumetric_heat_capacity)
+    heat_ground_conductance = convert(eltype(heat_conductance_between_layers), air_volumetric_heat_capacity / ground_resistance.heat)
     _ktheory_solve!(air_temperature, heat_layer_total_conductance, heat_conductance_between_layers, heat_known_flux, heat_top_conductance, heat_ground_conductance,
         canopy_top_air_temperature, ground_temperature, layer -> sensible_heat_flux[layer])
 
     # A diffusivity over a spacing is already a velocity, so vapor needs no scaling
-    vapor_top_conductance, vapor_ground_conductance = _ktheory_conductances!(vapor_conductance_between_layers, relative_eddy_diffusivity,
+    vapor_top_conductance = _ktheory_conductances!(vapor_conductance_between_layers, relative_eddy_diffusivity,
         canopy_top_eddy_diffusivity, layer_spacing, 1.0)
-    ground_vapor_conductance[] = vapor_ground_conductance
-    ground_vapor_density = wet_air_properties(ground_temperature, ground_relative_humidity, atmospheric_pressure; vapour_pressure_equation).vapour_density
+    vapor_ground_conductance = convert(eltype(vapor_conductance_between_layers), 1 / ground_resistance.vapor)
     _ktheory_solve!(vapor_density, vapor_layer_total_conductance, vapor_conductance_between_layers, vapor_known_flux, vapor_top_conductance, vapor_ground_conductance,
         canopy_top_vapor_density, ground_vapor_density, layer -> evaporation_mass_flux[layer])
 

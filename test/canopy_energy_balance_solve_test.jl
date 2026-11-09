@@ -41,6 +41,15 @@ end
     @test result.canopy_potential_transpiration >= sum(buffers.leaf.evaporation_mass_flux)
 end
 
+@testset "the heat leaving the canopy top is the heat the leaves and the ground give the air" begin
+    model = canopy()
+    result, buffers = solve_canopy(model, canopy_inputs(model))
+    ground_sensible_heat_flux = result.ground_heat_conductance * (290.0u"K" - last(buffers.air_profile.air_temperature))
+    @test result.ground_sensible_heat_flux ≈ ground_sensible_heat_flux atol = result.ground_heat_conductance * model.convergence_model.air_temperature_tolerance
+    @test result.canopy_top_sensible_heat_flux ≈ sum(buffers.leaf.sensible_heat_flux) + ground_sensible_heat_flux atol =
+        result.ground_heat_conductance * model.convergence_model.air_temperature_tolerance
+end
+
 @testset "new hourly inputs drive day -> night on the same buffers" begin
     model = canopy()
     buffers = allocate(model)
@@ -136,6 +145,8 @@ end
 OvershootingAirProfile(overshooting_call) = OvershootingAirProfile(KTheoryAirProfile(), overshooting_call, Ref(0))
 Microclimate.allocate_air_profile(model::OvershootingAirProfile, arguments...) =
     Microclimate.allocate_air_profile(model.air_profile_model, arguments...)
+Microclimate.canopy_ground_resistance(buffers, model::OvershootingAirProfile, arguments...; keywords...) =
+    Microclimate.canopy_ground_resistance(buffers, model.air_profile_model, arguments...; keywords...)
 function Microclimate.canopy_heat_vapor_transport!(buffers, model::OvershootingAirProfile, arguments...; keywords...)
     Microclimate.canopy_heat_vapor_transport!(buffers, model.air_profile_model, arguments...; keywords...)
     model.calls[] += 1
