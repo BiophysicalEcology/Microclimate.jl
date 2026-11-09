@@ -27,10 +27,10 @@ Warn, keep the best guess the solve reached, and carry on.
 """
 struct SmallestResidual <: AbstractCanopyFailure end
 
-# The largest residual, measured in units of its own tolerance. At or below 1, the hour is solved.
+# The largest residual from `evaluate_canopy!`, measured in units of its own tolerance.
+# The ground temperature residual needs the soil, so the solver adds it.
 function canopy_scaled_residual(residual, tolerances)
-    largest = max(abs(in_state_units(residual.inverse_obukhov_length[])) / tolerances.inverse_obukhov_length,
-        abs(in_state_units(residual.ground_temperature[])) / tolerances.ground_temperature)
+    largest = abs(in_state_units(residual.inverse_obukhov_length[])) / tolerances.inverse_obukhov_length
     for layer in eachindex(residual.leaf_balance)
         largest = max(largest,
             abs(in_state_units(residual.leaf_balance[layer])) / tolerances.leaf_balance,
@@ -42,17 +42,17 @@ function canopy_scaled_residual(residual, tolerances)
 end
 
 # Handle an hour that didn't finish, as the convergence model's `on_failure` asks
-canopy_failure!(::ThrowError, convergence_model, return_code, best_state, iterations, buffers, model, boundary_layer_model,
-    forcing, inputs; kw...) = canopy_convergence_error(convergence_model, return_code, inputs)
-function canopy_failure!(::SmallestResidual, convergence_model, return_code, best_state, iterations, buffers, model, boundary_layer_model,
-    forcing, inputs; site, vapour_pressure_equation, soil_hydraulic_model,
+canopy_failure!(::ThrowError, convergence_model, return_code, best_state, smallest_residual, iterations, buffers, model,
+    boundary_layer_model, forcing, inputs; kw...) = canopy_convergence_error(convergence_model, return_code, inputs)
+function canopy_failure!(::SmallestResidual, convergence_model, return_code, best_state, smallest_residual, iterations, buffers,
+    model, boundary_layer_model, forcing, inputs; site, vapour_pressure_equation, soil_hydraulic_model,
 )
-    (; state, residual, tolerances) = buffers.convergence
+    (; state, residual) = buffers.convergence
     copyto!(state, best_state)
     result = canopy_solution!(residual, state, buffers, model, boundary_layer_model, forcing, inputs, iterations;
         site, vapour_pressure_equation, soil_hydraulic_model)
     @warn "Canopy solve did not converge, keeping the state with the smallest residual" return_code iterations residual_over_tolerance =
-        canopy_scaled_residual(residual, tolerances) maxlog = 5
+        smallest_residual maxlog = 5
     return result
 end
 

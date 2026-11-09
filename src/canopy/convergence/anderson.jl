@@ -69,19 +69,20 @@ function layer_leaf_balance_density(leaf_temperature, buffers, model, forcing, l
     return in_state_units(balance.net_heat_flow / leaf_area)
 end
 
-# One pass: writes the state this pass would move to into `next_state`, and the move into `step`
+# One pass: writes the state this pass would move to into `next_state`, and the move into `step`.
+# Returns the ground temperature minus what the soil reaches by the end of the hour.
 function canopy_fixed_point!(next_state, step, state, buffers, model, boundary_layer_model, forcing;
     site, vapour_pressure_equation, ground_temperature_after_hour,
 )
     (; residual, tolerances, leaf_temperature_error, leaf_buffers, leaf_preparation, backend) = buffers.convergence
     (; ground_temperature, inverse_obukhov_length) = unpack_canopy_state!(buffers, state)
-    residual.ground_temperature[] = zero(ground_temperature)
     result = evaluate_canopy!(residual, inverse_obukhov_length, ground_temperature, buffers, model, boundary_layer_model, forcing;
         site, vapour_pressure_equation)
     # The soil can't take a canopy that overshot
-    if isfinite(canopy_scaled_residual(residual, tolerances))
-        residual.ground_temperature[] = ground_temperature -
-            ground_temperature_after_hour(ground_temperature, result.longwave_result.ground_absorbed_longwave)
+    ground_temperature_residual = if isfinite(canopy_scaled_residual(residual, tolerances))
+        ground_temperature - ground_temperature_after_hour(ground_temperature, result.longwave_result.ground_absorbed_longwave)
+    else
+        zero(ground_temperature)
     end
     for layer in eachindex(leaf_temperature_error)
         if iszero(layer_leaf_areas(buffers, layer).exchange_fraction)
@@ -95,10 +96,10 @@ function canopy_fixed_point!(next_state, step, state, buffers, model, boundary_l
     end
     # The residuals of air, vapor, ground and stability are already the distance to move back
     pack_canopy_state!(step, leaf_temperature_error, residual.air_temperature, residual.vapor_density,
-        residual.ground_temperature[], residual.inverse_obukhov_length[])
+        ground_temperature_residual, residual.inverse_obukhov_length[])
     next_state .= state .- step
     step .= .-step
-    return next_state
+    return ground_temperature_residual
 end
 
 # Finds, by least squares, the weight of each stored pass that best cancels the current step.
@@ -143,11 +144,11 @@ function converge_canopy!(buffers, model::MultilayerCanopy, boundary_layer_model
     smallest_residual = Inf
     copyto!(best_state, state)
     for pass in 1:maxiters
-        canopy_fixed_point!(next_state, step, state, buffers, model, boundary_layer_model, forcing[];
-            site, vapour_pressure_equation, ground_temperature_after_hour)
+        ground_temperature_residual = canopy_fixed_point!(next_state, step, state, buffers, model, boundary_layer_model,
+            forcing[]; site, vapour_pressure_equation, ground_temperature_after_hour)
         if !all(isfinite, next_state)
-            pass == 1 && return canopy_failure!(on_failure, convergence_model, SciMLBase.ReturnCode.Unstable, best_state, pass,
-                buffers, model, boundary_layer_model, forcing[], inputs; keywords...)
+            pass == 1 && return canopy_failure!(on_failure, convergence_model, SciMLBase.ReturnCode.Unstable, best_state,
+                smallest_residual, pass, buffers, model, boundary_layer_model, forcing[], inputs; keywords...)
             # Overshot: go halfway back to the last good state, without the history that led here
             state .= (state .+ last_good_state) ./ 2
             stored_count = 0
@@ -155,7 +156,8 @@ function converge_canopy!(buffers, model::MultilayerCanopy, boundary_layer_model
             continue
         end
         copyto!(last_good_state, state)
-        scaled_residual = canopy_scaled_residual(residual, tolerances)
+        scaled_residual = max(canopy_scaled_residual(residual, tolerances),
+            abs(in_state_units(ground_temperature_residual)) / tolerances.ground_temperature)
         scaled_residual <= 1 && return canopy_solution!(residual, state, buffers, model, boundary_layer_model, forcing[],
             inputs, pass; keywords...)
         if scaled_residual < smallest_residual
@@ -195,6 +197,6 @@ function converge_canopy!(buffers, model::MultilayerCanopy, boundary_layer_model
             state[index] = clamp(updated, lowest_state[index], highest_state[index])
         end
     end
-    return canopy_failure!(on_failure, convergence_model, SciMLBase.ReturnCode.MaxIters, best_state, maxiters,
-        buffers, model, boundary_layer_model, forcing[], inputs; keywords...)
+    return canopy_failure!(on_failure, convergence_model, SciMLBase.ReturnCode.MaxIters, best_state, smallest_residual,
+        maxiters, buffers, model, boundary_layer_model, forcing[], inputs; keywords...)
 end

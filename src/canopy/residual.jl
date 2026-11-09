@@ -99,7 +99,6 @@ Vectors for how far each layer is from solved, written by [`evaluate_canopy!`](@
   has no energy balance of its own. Zero everywhere else.
 - `air_temperature`: air temperature minus what the air-profile model gets from the leaves.
 - `vapor_density`: vapor density minus what the air-profile model gets from the leaves.
-- `ground_temperature`: one value, minus what the soil reaches by the end of the hour.
 - `inverse_obukhov_length`: one value for the canopy, minus what the canopy's heat flux implies.
 """
 allocate_canopy_residual(layer_count) = (;
@@ -107,7 +106,6 @@ allocate_canopy_residual(layer_count) = (;
     leafless_temperature_difference=zeros(typeof(0.0u"K"), layer_count),
     air_temperature=zeros(typeof(0.0u"K"), layer_count),
     vapor_density=zeros(typeof(0.0u"g/m^3"), layer_count),
-    ground_temperature=Ref(0.0u"K"),
     inverse_obukhov_length=Ref(0.0u"m^-1"))
 
 # Marks an evaluation as unusable, so that the solver treats it as an overshoot
@@ -116,7 +114,6 @@ function invalidate_canopy_residual!(residual)
     fill!(residual.leafless_temperature_difference, NaN * u"K")
     fill!(residual.air_temperature, NaN * u"K")
     fill!(residual.vapor_density, NaN * u"g/m^3")
-    residual.ground_temperature[] = NaN * u"K"
     residual.inverse_obukhov_length[] = NaN * u"m^-1"
     return residual
 end
@@ -188,8 +185,8 @@ _within_bounds(value, lower_bound, upper_bound=typemax(value)) =
 
 Measures how far the canopy in `buffers`, with this `inverse_obukhov_length` and
 `ground_temperature`, is from solved. The hour is solved when every value written to `residual`
-(see [`allocate_canopy_residual`](@ref)) is close to zero. `residual.ground_temperature` needs the
-soil, so the solver writes that one.
+(see [`allocate_canopy_residual`](@ref)), and the ground temperature residual, are close to zero.
+The ground temperature residual needs the soil, so the solver computes it.
 
 The wind, radiation, leaf fluxes and air profile are left in `buffers`.
 
