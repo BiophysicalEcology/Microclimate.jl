@@ -39,18 +39,26 @@ Integrates the whole soil column over the hour.
 struct SoilIntegration <: AbstractGroundTemperatureModel end
 
 """
-    SurfaceNodePrediction()
+    SurfaceNodePrediction(; nodes=3, tolerance=1e-3u"K")
 
-One backward Euler step over the hour for the surface node alone. The nodes below it keep
-their temperatures from the start of the hour.
+One backward Euler step over the hour for the surface node and the `nodes - 1` nodes below it.
+The deeper nodes keep their temperatures from the start of the hour. The step is solved to
+within `tolerance`.
 """
-struct SurfaceNodePrediction <: AbstractGroundTemperatureModel end
+struct SurfaceNodePrediction{N,T} <: AbstractGroundTemperatureModel
+    tolerance::T
+end
+function SurfaceNodePrediction(; nodes::Int=3, tolerance=1e-3u"K")
+    nodes >= 1 || throw(ArgumentError("SurfaceNodePrediction needs at least 1 node, got $nodes"))
+    return SurfaceNodePrediction{nodes,typeof(tolerance)}(tolerance)
+end
 
 """
-    ground_temperature(model::AbstractGroundTemperatureModel, integrator, hour_state, hour_index; surface_node)
+    ground_temperature(model::AbstractGroundTemperatureModel, solver, integrator, hour_state, hour_index; surface_node)
 
 The temperature of node `surface_node` at the end of hour `hour_index`, starting from
-`hour_state`. The surface boundary is the one in `integrator`'s inputs.
+`hour_state`. The surface boundary is the one in `integrator`'s inputs. `solver` is
+`model`'s own solver, from `allocate_ground_temperature`.
 """
 function ground_temperature end
 

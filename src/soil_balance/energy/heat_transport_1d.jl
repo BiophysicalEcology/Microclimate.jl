@@ -177,7 +177,7 @@ function allocate_soil_energy_balance(::SoilHeatTransport1D, num_nodes::Int)
 end
 
 # The surface node of state `temperature` at time `t`
-function surface_node(p::SoilEnergyInputs, temperature, t)
+function first_active_node(p::SoilEnergyInputs, temperature, t)
     (; atmospheric_pressure) = interpolate_forcings(p.forcing, t)
     snow_model = p.model.snow
     properties = node_properties(snow_model, p, temperature, atmospheric_pressure, p.model.vapour_pressure_equation)
