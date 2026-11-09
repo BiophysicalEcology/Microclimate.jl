@@ -1114,9 +1114,7 @@ function ground_temperature(::SurfaceNodePrediction, integrator, hour_state::SVe
     hour_length = 60.0u"minute"
     T_lo = u"K"(-81.0u"°C")
     T_hi = u"K"(inputs.model.soil.energy_model.maximum_surface_temperature)
-    # The surface node is the first with any heat capacity, which the balance writes to the buffers
-    soil_energy_balance(hour_state, inputs, hour_end)
-    first_active = _first_active_node(inputs.buffers.soil_energy_balance.heat_capacity, N)
+    first_active = surface_node(inputs, hour_state, hour_end)
     start_temperature = hour_state[first_active]
     # The surface node and the nodes above it, which follow it, all at `temperature`
     with_surface(temperature) = SVector{N}(ntuple(node -> node <= first_active ? temperature : hour_state[node], Val(N)))

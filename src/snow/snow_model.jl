@@ -202,15 +202,16 @@ end
 
 # ── Snow thermal properties ──────────────────────────────────────────────
 
-function write_snow_properties!(snow_model::SnowModel{N}, state::SnowState, scratch, snow_temperature,
-    property_buffers, atmospheric_pressure, vapour_pressure_equation=GoffGratch(),
+function snow_node_properties(snow_model::SnowModel{N}, state::SnowState, node_depths, snow_temperature,
+    soil_surface, atmospheric_pressure, vapour_pressure_equation=GoffGratch(),
 ) where N
     # Evolve density for property calculations only — do NOT update state.density here.
     # The density update belongs in update_snow!, which needs the old density for the
     # compaction ratio (densrat = snowdens/prevden, Fortran OSUB.f line 754).
     snowdens = evolve_snow_density(snow_model, state)
-
-    (; node_depths) = scratch
+    conductivity_unit = unit(soil_surface.bulk_thermal_conductivity)
+    heat_capacity_unit = unit(soil_surface.bulk_heat_capacity)
+    density_unit = unit(soil_surface.bulk_density)
 
     if state.current_depth >= snow_model.min_snow_depth
         specific_heat = snow_specific_heat(snowdens, atmospheric_pressure; vapour_pressure_equation)
@@ -223,22 +224,18 @@ function write_snow_properties!(snow_model::SnowModel{N}, state::SnowState, scra
             (0.00395 + 0.00084 * ρ - 1.7756e-6 * ρ^2 + 3.80635e-9 * ρ^3)u"W/m/K"
         end
 
-        for i in 1:N
-            property_buffers.bulk_thermal_conductivity[i] = uconvert(unit(property_buffers.bulk_thermal_conductivity[N+1]), conductivity)
+        return SVector(ntuple(Val(N)) do i
             cp_eff = apparent_heat_capacity(snow_model.apparent_heat_capacity,
                                             snow_temperature[i], specific_heat, LATENT_HEAT_FUSION)
-            property_buffers.bulk_heat_capacity[i] = uconvert(unit(property_buffers.bulk_heat_capacity[N+1]), cp_eff)
             is_active = node_depths[i] > 0.0u"cm" || (i < N && node_depths[min(N, i + 1)] > 0.0u"cm")
-            property_buffers.bulk_density[i] = uconvert(unit(property_buffers.bulk_density[N+1]), is_active ? snowdens : 0.0u"g/cm^3")
-        end
+            (; bulk_thermal_conductivity=uconvert(conductivity_unit, conductivity),
+                bulk_heat_capacity=uconvert(heat_capacity_unit, cp_eff),
+                bulk_density=uconvert(density_unit, is_active ? snowdens : 0.0u"g/cm^3"))
+        end)
     else
-        for i in 1:N
-            property_buffers.bulk_thermal_conductivity[i] = property_buffers.bulk_thermal_conductivity[N + 1]
-            property_buffers.bulk_heat_capacity[i] = property_buffers.bulk_heat_capacity[N + 1]
-            property_buffers.bulk_density[i] = uconvert(unit(property_buffers.bulk_density[N+1]), 0.0u"g/cm^3")
-        end
+        return SVector(ntuple(_ -> (; soil_surface.bulk_thermal_conductivity, soil_surface.bulk_heat_capacity,
+            bulk_density=uconvert(density_unit, 0.0u"g/cm^3")), Val(N)))
     end
-    return state
 end
 
 # ── Snow temperature operations ──────────────────────────────────────────
@@ -666,29 +663,14 @@ end
 
 @inline _n_snow(::SnowModel{N}) where N = N
 
-# ODE-rhs soil-properties recompute. Uses Val(N_snow) to keep ntuple SVector
-# sizes compile-time so no boxing occurs inside the ODE rhs. The ::Nothing
-# branch (no snow_model at all) is in soil_balance.jl.
-@inline function _recompute_soil_snow_properties!(snow_model::SnowModel{N_snow}, p,
-    soil_temperature::SVector{N_total}, atmospheric_pressure, vapour_pressure_equation,
+# Every node's thermal properties at `temperature`: the snow nodes, then the soil nodes
+function node_properties(snow_model::SnowModel{N_snow}, p, temperature::SVector{N_total},
+    atmospheric_pressure, vapour_pressure_equation,
 ) where {N_snow, N_total}
-    soil_props = p.buffers.soil_properties
-    soil_view = (;
-        bulk_thermal_conductivity = view(soil_props.bulk_thermal_conductivity, N_snow+1:N_total),
-        bulk_heat_capacity = view(soil_props.bulk_heat_capacity, N_snow+1:N_total),
-        bulk_density = view(soil_props.bulk_density, N_snow+1:N_total),
-    )
-    soil_temp_soil = SVector(ntuple(k -> soil_temperature[N_snow + k], Val(N_total - N_snow)))
-    (; properties_model, profile) = p.model.soil
-    soil_properties!(soil_view, properties_model;
-        soil_temperature=soil_temp_soil,
-        soil_moisture=p.soil_moisture,
-        bulk_density=profile.bulk_density, mineral_density=profile.mineral_density,
-        mineral_conductivity=profile.mineral_conductivity, mineral_heat_capacity=profile.mineral_heat_capacity,
-        atmospheric_pressure, vapour_pressure_equation,
-    )
-    soil_temp_snow = SVector(ntuple(k -> soil_temperature[k], Val(N_snow)))
-    write_snow_properties!(snow_model, p.hourly.snow_state, p.buffers.snow,
-        soil_temp_snow, soil_props, atmospheric_pressure, vapour_pressure_equation)
-    return nothing
+    soil_temperature = SVector(ntuple(k -> temperature[N_snow + k], Val(N_total - N_snow)))
+    soil = soil_column_properties(p, soil_temperature, atmospheric_pressure, vapour_pressure_equation)
+    snow_temperature = SVector(ntuple(k -> temperature[k], Val(N_snow)))
+    snow = snow_node_properties(snow_model, p.hourly.snow_state, p.buffers.snow.node_depths, snow_temperature,
+        first(soil), atmospheric_pressure, vapour_pressure_equation)
+    return vcat(snow, soil)
 end

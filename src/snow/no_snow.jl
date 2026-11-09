@@ -33,5 +33,5 @@ adjust_snow_near_nodes!(::NoSnow, args...) = nothing
 
 @inline _n_snow(::NoSnow) = 0
 
-@inline _recompute_soil_snow_properties!(::NoSnow, p, st, ap, vpe) =
-    _recompute_soil_snow_properties_no_snow!(p, st, ap, vpe)
+node_properties(::NoSnow, p, temperature, atmospheric_pressure, vapour_pressure_equation) =
+    soil_column_properties(p, temperature, atmospheric_pressure, vapour_pressure_equation)
