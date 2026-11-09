@@ -25,7 +25,8 @@ struct BulkRaupachFormulation <: AbstractRaupachFormulation end
 
 """
     RaupachLTheoryAirProfile(; ground_velocity_deviation_factor=0.25, canopy_top_velocity_deviation_factor=1.25,
-                              formulation=ExactRaupachFormulation(), max_lagrangian_timescale=200.0u"s")
+                              formulation=ExactRaupachFormulation(), max_lagrangian_timescale=200.0u"s",
+                              ground_sublayer_model=StantonGroundSublayer())
 
 Air temperature and vapor density through the canopy, from Raupach's (1989) Lagrangian
 transport model. Each layer's value is the canopy-top value plus two parts:
@@ -43,16 +44,19 @@ standard deviation of vertical velocity `σ_w`, from `a0·u*` at the ground to `
 
 `formulation` is an [`AbstractRaupachFormulation`](@ref), which sets how both fields are calculated.
 
+`ground_sublayer_model` is an [`AbstractGroundSublayerModel`](@ref), the air on the ground surface.
+
 # References
 - Raupach, M. R. (1989). A practical Lagrangian method for relating scalar
   concentrations to source distributions in vegetation canopies. *Quarterly
   Journal of the Royal Meteorological Society*, 115(487), 609-632.
 """
-@kwdef struct RaupachLTheoryAirProfile{GVSF,CVSF,F<:AbstractRaupachFormulation,MTL} <: AbstractCanopyAirProfileModel
+@kwdef struct RaupachLTheoryAirProfile{GVSF,CVSF,F<:AbstractRaupachFormulation,MTL,GSM<:AbstractGroundSublayerModel} <: AbstractCanopyAirProfileModel
     ground_velocity_deviation_factor::GVSF = 0.25
     canopy_top_velocity_deviation_factor::CVSF = 1.25
     formulation::F = ExactRaupachFormulation()
     max_lagrangian_timescale::MTL = 200.0u"s"
+    ground_sublayer_model::GSM = StantonGroundSublayer()
 end
 
 function allocate_air_profile(model::RaupachLTheoryAirProfile, canopy_height, displacement_height, plant_area_index, heights, n_layers, boundary_layer_model)

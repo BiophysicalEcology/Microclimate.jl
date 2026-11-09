@@ -1,5 +1,5 @@
 """
-    KTheoryAirProfile()
+    KTheoryAirProfile(; ground_sublayer_model=NoGroundSublayer())
 
 Air temperature and vapor density through the canopy, from steady diffusion between
 neighbouring layers: `d/dz(K dT/dz) = -S`, with each layer's leaves as the source `S`.
@@ -8,12 +8,16 @@ Layer 1 is the canopy-top value; each layer exchanges only with its neighbours. 
 diffusivity `K`, shared by heat and vapor, follows the wind profile, scaled at the top to
 von Kármán constant × friction velocity × (`canopy_height` − `displacement_height`).
 
+`ground_sublayer_model` is an [`AbstractGroundSublayerModel`](@ref), the air on the ground surface.
+
 # References
 - Raupach, M. R. (1989). A practical Lagrangian method for relating scalar
   concentrations to source distributions in vegetation canopies. *Quarterly
   Journal of the Royal Meteorological Society*, 115(487), 609-632.
 """
-struct KTheoryAirProfile <: AbstractCanopyAirProfileModel end
+@kwdef struct KTheoryAirProfile{GSM<:AbstractGroundSublayerModel} <: AbstractCanopyAirProfileModel
+    ground_sublayer_model::GSM = NoGroundSublayer()
+end
 
 function allocate_air_profile(::KTheoryAirProfile, canopy_height, displacement_height, plant_area_index, heights, n_layers, boundary_layer_model)
     (; layer_thickness) = canopy_layer_heights(heights, canopy_height, n_layers)

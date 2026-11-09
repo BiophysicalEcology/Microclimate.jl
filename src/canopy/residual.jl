@@ -232,10 +232,9 @@ function evaluate_canopy!(residual, inverse_obukhov_length, ground_temperature, 
     # Turbulent mixing from the lowest layer, then the air on the ground surface
     turbulent_resistance = ground_turbulent_resistance(air, model.air_profile_model, boundary_layer_model;
         friction_velocity=wind.friction_velocity, inverse_obukhov_length=wind.inverse_obukhov_length)
-    sublayer_resistance = ground_sublayer_resistance(model.ground_sublayer_model, boundary_layer_model;
+    sublayer_resistance = ground_sublayer_resistance(model.air_profile_model.ground_sublayer_model, boundary_layer_model;
         lowest_wind_speed=wind_speed[n_layers], lowest_layer_height=buffers.wind.ground_layer_height,
-        lowest_air_temperature, ground_temperature, atmospheric_pressure, canopy_height=model.canopy_height,
-        plant_area_index=sum(model.plant_area_index), site)
+        lowest_air_temperature, ground_temperature, atmospheric_pressure, site)
     ground_resistance = (; heat=turbulent_resistance + sublayer_resistance.heat,
         vapor=turbulent_resistance + sublayer_resistance.vapor)
     # Fixed from the reference and ground temperatures, not the unknown canopy air, which keeps the canopy-top balance linear

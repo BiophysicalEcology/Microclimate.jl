@@ -51,20 +51,14 @@ end
         heat_conductance * model.convergence_model.air_temperature_tolerance
 end
 
-@testset "every ground sublayer model solves" begin
-    for ground_sublayer_model in (StantonGroundSublayer(), SakaguchiZengGroundSublayer(), NoGroundSublayer())
-        model = Microclimate.example_multilayer_canopy(; canopy_height, plant_area_index, ground_sublayer_model)
+@testset "every air profile and ground sublayer model solves" begin
+    for ground_sublayer_model in (StantonGroundSublayer(), NoGroundSublayer()),
+            air_profile_model in (RaupachLTheoryAirProfile(; ground_sublayer_model), KTheoryAirProfile(; ground_sublayer_model))
+        model = Microclimate.example_multilayer_canopy(; canopy_height, plant_area_index, air_profile_model)
         result, buffers = solve_canopy(model, canopy_inputs(model))
         @test residual_within_tolerance(buffers)
         @test result.ground_air.heat_conductance > 0.0u"W/m^2/K"
     end
-end
-
-@testset "Sakaguchi-Zeng resistance is larger under stable air" begin
-    resistance(lowest_air_temperature) = Microclimate.ground_sublayer_resistance(SakaguchiZengGroundSublayer(),
-        boundary_layer_model; lowest_wind_speed = 0.5u"m/s", lowest_layer_height = 0.1u"m", lowest_air_temperature,
-        ground_temperature = 290.0u"K", atmospheric_pressure = 101325.0u"Pa", canopy_height, plant_area_index, site).heat
-    @test resistance(295.0u"K") > resistance(285.0u"K")
 end
 
 @testset "new hourly inputs drive day -> night on the same buffers" begin
@@ -155,12 +149,13 @@ end
 end
 
 # An air profile that gives NaN on one call, the way a pass that overshoots does
-struct OvershootingAirProfile{M} <: Microclimate.AbstractCanopyAirProfileModel
+struct OvershootingAirProfile{M,GSM} <: Microclimate.AbstractCanopyAirProfileModel
     air_profile_model::M
+    ground_sublayer_model::GSM
     overshooting_call::Int
     calls::Base.RefValue{Int}
 end
-OvershootingAirProfile(overshooting_call) = OvershootingAirProfile(KTheoryAirProfile(), overshooting_call, Ref(0))
+OvershootingAirProfile(overshooting_call) = OvershootingAirProfile(KTheoryAirProfile(), NoGroundSublayer(), overshooting_call, Ref(0))
 Microclimate.allocate_air_profile(model::OvershootingAirProfile, arguments...) =
     Microclimate.allocate_air_profile(model.air_profile_model, arguments...)
 Microclimate.ground_turbulent_resistance(buffers, model::OvershootingAirProfile, arguments...; keywords...) =
