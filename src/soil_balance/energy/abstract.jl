@@ -24,6 +24,38 @@ Allocate per-layer scratch buffers (`layer_depths`, `heat_capacity`,
 function allocate_soil_energy_balance end
 
 """
+    AbstractGroundTemperatureModel
+
+How the soil gives the ground temperature at the end of an hour for a surface boundary.
+Concrete models implement [`ground_temperature`](@ref):
+[`SoilIntegration`](@ref) and [`SurfaceNodePrediction`](@ref).
+"""
+abstract type AbstractGroundTemperatureModel end
+
+"""
+    SoilIntegration()
+
+Integrates the whole soil column over the hour.
+"""
+struct SoilIntegration <: AbstractGroundTemperatureModel end
+
+"""
+    SurfaceNodePrediction()
+
+One backward Euler step over the hour for the surface node alone. The nodes below it keep
+their temperatures from the start of the hour.
+"""
+struct SurfaceNodePrediction <: AbstractGroundTemperatureModel end
+
+"""
+    ground_temperature(model::AbstractGroundTemperatureModel, integrator, hour_state, hour_index; surface_node)
+
+The temperature of node `surface_node` at the end of hour `hour_index`, starting from
+`hour_state`. The surface boundary is the one in `integrator`'s inputs.
+"""
+function ground_temperature end
+
+"""
     GroundAirExchange(; air_temperature, air_relative_humidity, wind_speed, height,
         heat_conductance, vapor_conductance)
 

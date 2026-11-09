@@ -1,13 +1,14 @@
 """
     AndersonCanopyConvergence(; leaf_balance_tolerance=1.5u"W/m^2", air_temperature_tolerance=0.1u"K",
         vapor_density_tolerance=0.07u"g/m^3", ground_temperature_tolerance=0.1u"K", inverse_obukhov_length_tolerance=1e-2u"m^-1",
-        history=5, damping=1.0, maxiters=100, on_failure=ThrowError(), backend=AutoEnzyme(; mode=Enzyme.Forward))
+        history=5, damping=1.0, maxiters=100, on_failure=ThrowError(), backend=AutoEnzyme(; mode=Enzyme.Forward),
+        ground_temperature_model=SoilIntegration())
 
 Solves the canopy for one hour by improving a guess until nothing changes.
 
 Each pass updates the air and vapor from how they move through the canopy, each leaf from a
 Newton step on its energy balance, and the ground from what the soil reaches by the end of the
-hour. Anderson acceleration then uses the last `history`
+hour, using `ground_temperature_model`, an [`AbstractGroundTemperatureModel`](@ref). Anderson acceleration then uses the last `history`
 passes to take a larger step towards the answer. `damping` is the share of each new pass
 that is used, and `backend` differentiates the leaf energy balance.
 
@@ -22,7 +23,7 @@ decides what happens if the hour starts out of bounds or hasn't settled after `m
 - Walker, H. F., & Ni, P. (2011). Anderson acceleration for fixed-point iterations.
   *SIAM Journal on Numerical Analysis*, 49(4), 1715-1735.
 """
-@kwdef struct AndersonCanopyConvergence{LB,AT,VD,GT,IL,D,F<:AbstractCanopyFailure,B} <: AbstractCanopyConvergenceModel
+@kwdef struct AndersonCanopyConvergence{LB,AT,VD,GT,IL,D,F<:AbstractCanopyFailure,B,GTM<:AbstractGroundTemperatureModel} <: AbstractCanopyConvergenceModel
     leaf_balance_tolerance::LB = 1.5u"W/m^2"
     air_temperature_tolerance::AT = 0.1u"K"
     vapor_density_tolerance::VD = 0.07u"g/m^3"
@@ -33,6 +34,7 @@ decides what happens if the hour starts out of bounds or hasn't settled after `m
     maxiters::Int = 100
     on_failure::F = ThrowError()
     backend::B = AutoEnzyme(; mode=Enzyme.Forward)
+    ground_temperature_model::GTM = SoilIntegration()
 end
 
 function allocate_canopy_convergence(convergence_model::AndersonCanopyConvergence, buffers, model, boundary_layer_model;
