@@ -8,20 +8,9 @@ Concrete models implement [`ground_sublayer_resistance`](@ref):
 abstract type AbstractGroundSublayerModel end
 
 """
-    ground_sublayer_resistance(model, boundary_layer_model; lowest_wind_speed, lowest_layer_height,
-        lowest_air_temperature, ground_temperature, atmospheric_pressure, site)
-
-The resistance of the air on the ground surface, as `(; heat, vapor)`. It adds to the air
-profile's [`ground_turbulent_resistance`](@ref).
-"""
-function ground_sublayer_resistance end
-
-"""
     StantonGroundSublayer()
 
-A sublayer with the Stanton number [`sublayer_stanton`](@ref), and a friction velocity from
-the log law between the ground's roughness height and the lowest layer's wind. Vapor crosses
-it [`LEWIS_HEAT_TO_MASS_RATIO`](@ref) times faster than heat.
+A thin layer of air on the ground surface that heat and vapor must cross.
 """
 struct StantonGroundSublayer <: AbstractGroundSublayerModel end
 
@@ -32,6 +21,22 @@ No sublayer: the ground exchanges with the lowest layer through turbulent mixing
 """
 struct NoGroundSublayer <: AbstractGroundSublayerModel end
 
+
+"""
+    ground_sublayer_resistance(model::AbstractGroundSublayerModel, boundary_layer_model::AbstractBoundaryLayerModel; kw...)
+
+The resistance of the air on the ground surface, as `(; heat, vapor)`.
+
+## Keywords
+
+- lowest_wind_speed
+- lowest_layer_height
+- lowest_air_temperature
+- ground_temperature
+- atmospheric_pressure
+- site
+"""
+function ground_sublayer_resistance end
 # allocate_canopy checks the lowest layer is above the roughness height
 function ground_sublayer_resistance(::StantonGroundSublayer, boundary_layer_model;
     lowest_wind_speed, lowest_layer_height, lowest_air_temperature, ground_temperature, atmospheric_pressure, site,
@@ -43,7 +48,4 @@ function ground_sublayer_resistance(::StantonGroundSublayer, boundary_layer_mode
     heat = 1 / (friction_velocity * sublayer_stanton(roughness_height, friction_velocity, kinematic_viscosity))
     return (; heat, vapor=heat / LEWIS_HEAT_TO_MASS_RATIO)
 end
-
-ground_sublayer_resistance(::NoGroundSublayer, boundary_layer_model;
-    lowest_wind_speed, lowest_layer_height, lowest_air_temperature, ground_temperature, atmospheric_pressure, site,
-) = (; heat=0.0u"s/m", vapor=0.0u"s/m")
+ground_sublayer_resistance(::NoGroundSublayer, boundary_layer_model; kw...) = (; heat=0.0u"s/m", vapor=0.0u"s/m")
