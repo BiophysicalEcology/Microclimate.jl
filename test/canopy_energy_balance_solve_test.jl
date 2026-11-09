@@ -51,6 +51,22 @@ end
         heat_conductance * model.convergence_model.air_temperature_tolerance
 end
 
+@testset "every ground sublayer model solves" begin
+    for ground_sublayer_model in (StantonGroundSublayer(), SakaguchiZengGroundSublayer(), NoGroundSublayer())
+        model = Microclimate.example_multilayer_canopy(; canopy_height, plant_area_index, ground_sublayer_model)
+        result, buffers = solve_canopy(model, canopy_inputs(model))
+        @test residual_within_tolerance(buffers)
+        @test result.ground_air.heat_conductance > 0.0u"W/m^2/K"
+    end
+end
+
+@testset "Sakaguchi-Zeng resistance is larger under stable air" begin
+    resistance(lowest_air_temperature) = Microclimate.ground_sublayer_resistance(SakaguchiZengGroundSublayer(),
+        boundary_layer_model; lowest_wind_speed = 0.5u"m/s", lowest_layer_height = 0.1u"m", lowest_air_temperature,
+        ground_temperature = 290.0u"K", atmospheric_pressure = 101325.0u"Pa", canopy_height, plant_area_index, site).heat
+    @test resistance(295.0u"K") > resistance(285.0u"K")
+end
+
 @testset "new hourly inputs drive day -> night on the same buffers" begin
     model = canopy()
     buffers = allocate(model)
@@ -147,8 +163,8 @@ end
 OvershootingAirProfile(overshooting_call) = OvershootingAirProfile(KTheoryAirProfile(), overshooting_call, Ref(0))
 Microclimate.allocate_air_profile(model::OvershootingAirProfile, arguments...) =
     Microclimate.allocate_air_profile(model.air_profile_model, arguments...)
-Microclimate.canopy_ground_resistance(buffers, model::OvershootingAirProfile, arguments...; keywords...) =
-    Microclimate.canopy_ground_resistance(buffers, model.air_profile_model, arguments...; keywords...)
+Microclimate.ground_turbulent_resistance(buffers, model::OvershootingAirProfile, arguments...; keywords...) =
+    Microclimate.ground_turbulent_resistance(buffers, model.air_profile_model, arguments...; keywords...)
 function Microclimate.canopy_heat_vapor_transport!(buffers, model::OvershootingAirProfile, arguments...; keywords...)
     Microclimate.canopy_heat_vapor_transport!(buffers, model.air_profile_model, arguments...; keywords...)
     model.calls[] += 1

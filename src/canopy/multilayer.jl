@@ -4,6 +4,7 @@
                        longwave_model=LayeredRadiosityExchange(),
                        wind_model=ExponentialCanopyWindAttenuation(),
                        air_profile_model=RaupachLTheoryAirProfile(),
+                       ground_sublayer_model=StantonGroundSublayer(),
                        interception_model=NoInterception(),
                        condensation_model=MonteithLeafCondensation(),
                        leaf_parameters=LeafParameters(),
@@ -30,6 +31,9 @@ many layers as there are `MicroModel.atmosphere.heights` entries at or below
 - `air_profile_model::AbstractCanopyAirProfileModel` — in-canopy air-
   temperature profile (default [`RaupachLTheoryAirProfile`](@ref); see also
   [`KTheoryAirProfile`](@ref))
+- `ground_sublayer_model::AbstractGroundSublayerModel` — the air on the ground surface, below
+  the canopy's turbulent mixing (default [`StantonGroundSublayer`](@ref); [`NoGroundSublayer`](@ref)
+  to leave it out)
 - `interception_model::AbstractCanopyInterceptionModel` — rain interception
   (default [`NoInterception`](@ref): off)
 - `condensation_model::AbstractCondensationModel` — leaf dew/frost formation
@@ -45,7 +49,7 @@ many layers as there are `MicroModel.atmosphere.heights` entries at or below
 - `convergence_model::AbstractCanopyConvergenceModel` — how each hour's canopy
   state is solved (default [`AndersonCanopyConvergence`](@ref))
 """
-@kwdef struct MultilayerCanopy{H,PAI,WAF,RM,LWM,WM,APM,IM,CDM,LP,SM,LCM,CVM} <: AbstractCanopyModel
+@kwdef struct MultilayerCanopy{H,PAI,WAF,RM,LWM,WM,APM,GSM,IM,CDM,LP,SM,LCM,CVM} <: AbstractCanopyModel
     canopy_height::H
     plant_area_index::PAI
     woody_area_fraction::WAF = 0.0
@@ -53,6 +57,7 @@ many layers as there are `MicroModel.atmosphere.heights` entries at or below
     longwave_model::LWM = LayeredRadiosityExchange()
     wind_model::WM = ExponentialCanopyWindAttenuation()
     air_profile_model::APM = RaupachLTheoryAirProfile()
+    ground_sublayer_model::GSM = StantonGroundSublayer()
     interception_model::IM = NoInterception()
     condensation_model::CDM = MonteithLeafCondensation()
     leaf_parameters::LP = LeafParameters()
@@ -75,6 +80,7 @@ function example_multilayer_canopy(;
     longwave_model = LayeredRadiosityExchange(),
     wind_model = ExponentialCanopyWindAttenuation(),
     air_profile_model = RaupachLTheoryAirProfile(),
+    ground_sublayer_model = StantonGroundSublayer(),
     interception_model = NoInterception(),
     condensation_model = MonteithLeafCondensation(),
     leaf_parameters = LeafParameters(),
@@ -84,7 +90,7 @@ function example_multilayer_canopy(;
 )
     MultilayerCanopy(;
         canopy_height, plant_area_index, woody_area_fraction, shortwave_model, longwave_model, wind_model,
-        air_profile_model, interception_model, condensation_model, leaf_parameters, stomatal_model,
+        air_profile_model, ground_sublayer_model, interception_model, condensation_model, leaf_parameters, stomatal_model,
         leaf_convection_model, convergence_model,
     )
 end

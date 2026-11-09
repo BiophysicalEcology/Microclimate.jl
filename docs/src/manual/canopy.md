@@ -32,6 +32,9 @@ The literature sources for each sub-model are as follows:
   near-field/far-field scheme (its [`BulkRaupachFormulation`](@ref) matches micropoint's
   `LangrangianOne` closely); [`KTheoryAirProfile`](@ref) is a simpler K-theory diffusion
   alternative.
+- **Air on the ground surface**: [`StantonGroundSublayer`](@ref) adds a thin sublayer below
+  either air profile's turbulent mixing; [`SakaguchiZengGroundSublayer`](@ref) is CLM's
+  under-canopy resistance; [`NoGroundSublayer`](@ref) leaves it out.
 - **Rain interception**: [`LayeredRainInterception`](@ref) reuses micropoint's
   `rainintercept` drop-velocity formula (``3.78 \cdot rainfall^{0.067}``) in conjunction
   with the leaf-angle extinction machinery note above for shortwave radiation;

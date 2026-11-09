@@ -50,12 +50,11 @@ end
 _ktheory_canopy_top_eddy_diffusivity(buffers, boundary_layer_model, friction_velocity) =
     boundary_layer_model.karman_constant * friction_velocity * max(buffers.canopy_height - buffers.displacement_height, 1.0e-3u"m")
 
-# The lowest layer's spacing over its diffusivity, the same for heat and vapor
-function canopy_ground_resistance(buffers, ::KTheoryAirProfile, boundary_layer_model; friction_velocity, kw...)
+# The lowest layer's spacing over its eddy diffusivity
+function ground_turbulent_resistance(buffers, ::KTheoryAirProfile, boundary_layer_model; friction_velocity, inverse_obukhov_length)
     eddy_diffusivity = _ktheory_canopy_top_eddy_diffusivity(buffers, boundary_layer_model, friction_velocity) *
         last(buffers.relative_eddy_diffusivity)
-    resistance = last(buffers.layer_spacing) / eddy_diffusivity
-    return (; heat=resistance, vapor=resistance)
+    return last(buffers.layer_spacing) / eddy_diffusivity
 end
 
 # Writes the conductance between each pair of free layers into `conductance_between_layers`, and

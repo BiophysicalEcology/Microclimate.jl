@@ -229,9 +229,15 @@ function evaluate_canopy!(residual, inverse_obukhov_length, ground_temperature, 
 
     # The ground exchanges with the lowest layer. The air profile, the canopy top and the soil all use this one exchange.
     lowest_air_temperature = air.current_air_temperature[n_layers]
-    ground_resistance = canopy_ground_resistance(air, model.air_profile_model, boundary_layer_model;
-        friction_velocity=wind.friction_velocity, inverse_obukhov_length=wind.inverse_obukhov_length,
-        lowest_wind_speed=wind_speed[n_layers], lowest_air_temperature, ground_temperature, atmospheric_pressure, site)
+    # Turbulent mixing from the lowest layer, then the air on the ground surface
+    turbulent_resistance = ground_turbulent_resistance(air, model.air_profile_model, boundary_layer_model;
+        friction_velocity=wind.friction_velocity, inverse_obukhov_length=wind.inverse_obukhov_length)
+    sublayer_resistance = ground_sublayer_resistance(model.ground_sublayer_model, boundary_layer_model;
+        lowest_wind_speed=wind_speed[n_layers], lowest_layer_height=buffers.wind.ground_layer_height,
+        lowest_air_temperature, ground_temperature, atmospheric_pressure, canopy_height=model.canopy_height,
+        plant_area_index=sum(model.plant_area_index), site)
+    ground_resistance = (; heat=turbulent_resistance + sublayer_resistance.heat,
+        vapor=turbulent_resistance + sublayer_resistance.vapor)
     # Fixed from the reference and ground temperatures, not the unknown canopy air, which keeps the canopy-top balance linear
     ρcₚ = calc_air_volumetric_heat_capacity((reference_temperature + ground_temperature) / 2)
     ground_air = GroundAirExchange(; air_temperature=lowest_air_temperature,

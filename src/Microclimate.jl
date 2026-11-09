@@ -53,6 +53,7 @@ export AbstractCanopyShortwaveModel, TwoStreamRadiation
 export AbstractCanopyLongwaveModel, LayeredLongwaveExchange, LayeredRadiosityExchange
 export AbstractCanopyWindModel, MixingLengthCanopyWindAttenuation, ExponentialCanopyWindAttenuation
 export AbstractCanopyAirProfileModel, KTheoryAirProfile, RaupachLTheoryAirProfile
+export AbstractGroundSublayerModel, StantonGroundSublayer, SakaguchiZengGroundSublayer, NoGroundSublayer
 export AbstractRaupachFormulation, ExactRaupachFormulation, BulkRaupachFormulation
 export AbstractCanopyInterceptionModel, NoInterception, LayeredRainInterception, VerticalRainInterception
 export LeafParameters
@@ -262,6 +263,7 @@ include("canopy/wind/exponential.jl")
 include("canopy/air_profile/abstract.jl")
 include("canopy/air_profile/k_theory.jl")
 include("canopy/air_profile/raupach.jl")
+include("canopy/ground_sublayer.jl")
 
 include("canopy/interception/abstract.jl")
 include("canopy/interception/no_interception.jl")

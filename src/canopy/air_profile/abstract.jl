@@ -3,7 +3,7 @@
 
 How a canopy turns each layer's leaf heat and vapor sources, plus the values at the canopy top
 and the ground, into air temperature and vapor density through the canopy. Concrete models
-implement [`allocate_air_profile`](@ref), [`canopy_ground_resistance`](@ref) and
+implement [`allocate_air_profile`](@ref), [`ground_turbulent_resistance`](@ref) and
 [`canopy_heat_vapor_transport!`](@ref):
 [`RaupachLTheoryAirProfile`](@ref) and [`KTheoryAirProfile`](@ref).
 """
@@ -17,12 +17,12 @@ Allocate the buffers a model needs, and compute what depends only on the canopy'
 function allocate_air_profile end
 
 """
-    canopy_ground_resistance(buffers, model, boundary_layer_model; friction_velocity, inverse_obukhov_length,
-        lowest_wind_speed, lowest_air_temperature, ground_temperature, atmospheric_pressure, site)
+    ground_turbulent_resistance(buffers, model, boundary_layer_model; friction_velocity, inverse_obukhov_length)
 
-The resistance between the ground and the lowest canopy layer, as `(; heat, vapor)`.
+The resistance of turbulent mixing between the lowest canopy layer and the ground, the same for
+heat and vapor. The [`AbstractGroundSublayerModel`](@ref) adds the air on the ground surface.
 """
-function canopy_ground_resistance end
+function ground_turbulent_resistance end
 
 """
     CanopyAirProfileForcing(; friction_velocity, inverse_obukhov_length,
@@ -31,7 +31,7 @@ function canopy_ground_resistance end
 
 Everything [`canopy_heat_vapor_transport!`](@ref) takes from the current canopy state: the
 turbulence above the canopy, the values at the canopy top and the ground, the
-[`canopy_ground_resistance`](@ref), and each layer's leaf sources. Every air-profile model
+ground resistance (turbulent plus sublayer), and each layer's leaf sources. Every air-profile model
 receives the same forcing and reads the fields it needs.
 """
 @kwdef struct CanopyAirProfileForcing{FV,OL,TT,TVD,GT,GVD,GR,HC,SH,EM}

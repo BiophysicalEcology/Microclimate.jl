@@ -39,9 +39,6 @@ Every layer depends on every layer's source.
 standard deviation of vertical velocity `σ_w`, from `a0·u*` at the ground to `a1·u*` at the top
 (`u*` friction velocity, `h` canopy height): `σ_w(z) = (a1+a0)/2·u* + (a1-a0)/2·u*·cos(π(1 - z/h))`.
 
-The ground's resistance is the lowest layer's turbulent resistance plus a thin sublayer at
-the ground ([`sublayer_stanton`](@ref), with a friction velocity from the wind in that layer).
-
 `max_lagrangian_timescale` caps the Lagrangian timescale, which grows in calm and unstable air.
 
 `formulation` is an [`AbstractRaupachFormulation`](@ref), which sets how both fields are calculated.
@@ -272,25 +269,15 @@ function _raupach_vertical_velocity_deviation(model, height, canopy_height, fric
     return (a₁ + a₀) * u★ / 2 + (a₁ - a₀) * u★ / 2 * cos(π * (1.0 - height / canopy_height))
 end
 
-# The lowest layer's turbulent resistance plus a thin sublayer at the ground, with a friction
-# velocity from the log law in that layer. allocate_canopy checks the layer is above the roughness.
-function canopy_ground_resistance(buffers, model::RaupachLTheoryAirProfile, boundary_layer_model;
-    friction_velocity, inverse_obukhov_length, lowest_wind_speed, lowest_air_temperature, ground_temperature,
-    atmospheric_pressure, site,
+# The lowest layer's thickness over σw²·T_L
+function ground_turbulent_resistance(buffers, model::RaupachLTheoryAirProfile, boundary_layer_model;
+    friction_velocity, inverse_obukhov_length,
 )
     (; canopy_height, displacement_height, layer_heights, layer_thickness) = buffers
     T_L = _raupach_lagrangian_timescale(model, boundary_layer_model, canopy_height, displacement_height, friction_velocity,
         inverse_obukhov_length)
     σw = _raupach_vertical_velocity_deviation(model, last(layer_heights), canopy_height, friction_velocity)
-    lowest_layer_resistance = last(layer_thickness) / (σw^2 * T_L)
-
-    κ = boundary_layer_model.karman_constant
-    z₀ = site.roughness_height
-    ground_friction_velocity = κ * lowest_wind_speed / log(last(layer_heights) / z₀)
-    kinematic_viscosity = dry_air_properties((lowest_air_temperature + ground_temperature) / 2, atmospheric_pressure).kinematic_viscosity
-    sublayer_heat_resistance = 1 / (ground_friction_velocity * sublayer_stanton(z₀, ground_friction_velocity, kinematic_viscosity))
-    return (; heat=lowest_layer_resistance + sublayer_heat_resistance,
-        vapor=lowest_layer_resistance + sublayer_heat_resistance / LEWIS_HEAT_TO_MASS_RATIO)
+    return last(layer_thickness) / (σw^2 * T_L)
 end
 
 function canopy_heat_vapor_transport!(buffers, model::RaupachLTheoryAirProfile, boundary_layer_model,

@@ -1,5 +1,6 @@
 using Microclimate
-using Microclimate: CanopyAirProfileForcing, allocate_air_profile, canopy_ground_resistance, canopy_heat_vapor_transport!,
+using Microclimate: CanopyAirProfileForcing, allocate_air_profile, ground_turbulent_resistance, ground_sublayer_resistance,
+    StantonGroundSublayer, canopy_heat_vapor_transport!,
     calc_air_volumetric_heat_capacity, wet_air_properties
 using Unitful
 using Test
@@ -27,8 +28,11 @@ function forcing(model, buffers; sensible_heat_flux = no_heat, evaporation_mass_
     friction_velocity = 0.3u"m/s", ground_temperature = T,
 )
     inverse_obukhov_length = 0.0u"m^-1"
-    ground_resistance = canopy_ground_resistance(buffers, model, boundary_layer_model; friction_velocity, inverse_obukhov_length,
-        lowest_wind_speed = 1.0u"m/s", lowest_air_temperature = T, ground_temperature, atmospheric_pressure = 101325.0u"Pa", site)
+    turbulent = ground_turbulent_resistance(buffers, model, boundary_layer_model; friction_velocity, inverse_obukhov_length)
+    sublayer = ground_sublayer_resistance(StantonGroundSublayer(), boundary_layer_model; lowest_wind_speed = 1.0u"m/s",
+        lowest_layer_height = 0.1u"m", lowest_air_temperature = T, ground_temperature, atmospheric_pressure = 101325.0u"Pa",
+        canopy_height, plant_area_index, site)
+    ground_resistance = (; heat = turbulent + sublayer.heat, vapor = turbulent + sublayer.vapor)
     return CanopyAirProfileForcing(; friction_velocity, inverse_obukhov_length,
         canopy_top_air_temperature = T, canopy_top_vapor_density = top_vapor_density,
         ground_temperature, ground_vapor_density = wet_air_properties(ground_temperature, 0.5, 101325.0u"Pa").vapour_density,
