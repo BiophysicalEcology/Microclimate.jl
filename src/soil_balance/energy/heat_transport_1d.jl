@@ -201,10 +201,10 @@ function soil_energy_balance(model::SoilHeatTransport1D,
     snow_model = p.model.snow
     (; depths, environment_instant, soil_wetness, longwave_sky, albedo, Q_freeze) = hourly
     maximum_surface_temperature = model.maximum_surface_temperature
-    (; shade) = environment_instant
+    (; shade, roughness_height) = environment_instant
     # Get environmental data at time t
     (; atmospheric_pressure, air_temperature, wind_speed, zenith_angle, solar_radiation, cloud_cover, relative_humidity, slope_zenith_angle, diffuse_fraction) = interpolate_forcings(forcing, t)
-    (; roughness_height, slope) = site
+    (; slope) = site
 
     reference_height = last(heights)
     absorptivity = 1.0 - albedo

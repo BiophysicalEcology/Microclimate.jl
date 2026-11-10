@@ -25,8 +25,8 @@ n_canopy_layers(::NoCanopy, heights) = 0
 canopy_leaf_area_index(::NoCanopy) = nothing
 
 # Bare-ground origin -- temperature_anchor_height=nothing keeps the default z0-anchored behavior.
-canopy_profile_origin(::NoCanopy, buffers, site, boundary_layer_model) =
-    (; displacement_height = 0.0u"m", roughness_length = site.roughness_height,
+canopy_profile_origin(::NoCanopy, buffers, ground_roughness_height, boundary_layer_model) =
+    (; displacement_height = 0.0u"m", roughness_length = ground_roughness_height,
         thermal_roughness_model = boundary_layer_model.thermal_roughness_model,
         temperature_anchor_height = nothing)
 

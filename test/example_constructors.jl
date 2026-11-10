@@ -42,7 +42,7 @@ end
 
 @testset "reinit! with a new model: same result as a fresh solve" begin
     problem = example_microclimate_problem()
-    site = example_site(; latitude = -30.0u"°", albedo = 0.3)
+    site = example_site(; latitude = -30.0u"°")
     model = Microclimate.ConstructionBase.setproperties(problem.model, (; site))
     cache = init(problem)
     solve!(cache)

@@ -118,9 +118,6 @@ site = Site(;
     aspect         = 0.0u"°",
     horizon_angles = zeros(24)u"°",
     sky_view_fraction = 1.0,
-    albedo         = ALBEDO,
-    roughness_height = RUF,
-    atmospheric_pressure = atmospheric_pressure(ELEVATION),
 )
 boundary_layer_model = MoninObukhov(; karman_constant=0.4)
 
@@ -168,6 +165,8 @@ environment_daily = DailyTimeseries(;
     rainfall              = forcing.RAINFALL[days2do] .* u"kg/m^2",
     deep_soil_temperature = nmr.D200cm[1:24:size(nmr, 1)] .* u"°C",
     leaf_area_index       = fill(0.1, NDAYS),
+    albedo                = fill(ALBEDO, NDAYS),
+    roughness_height      = fill(RUF, NDAYS),
 )
 
 # ── Hourly placeholder (pressure only) ───────────────────────────────────────

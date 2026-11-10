@@ -34,14 +34,13 @@ The resistance of the air on the ground surface, as `(; heat, vapor)`.
 - lowest_air_temperature
 - ground_temperature
 - atmospheric_pressure
-- site
+- roughness_height
 """
 function ground_sublayer_resistance end
 # allocate_canopy checks the lowest layer is above the roughness height
 function ground_sublayer_resistance(::StantonGroundSublayer, boundary_layer_model;
-    lowest_wind_speed, lowest_layer_height, lowest_air_temperature, ground_temperature, atmospheric_pressure, site,
+    lowest_wind_speed, lowest_layer_height, lowest_air_temperature, ground_temperature, atmospheric_pressure, roughness_height,
 )
-    roughness_height = site.roughness_height
     friction_velocity = boundary_layer_model.karman_constant * lowest_wind_speed / log(lowest_layer_height / roughness_height)
     kinematic_viscosity = dry_air_properties((lowest_air_temperature + ground_temperature) / 2,
         atmospheric_pressure).kinematic_viscosity

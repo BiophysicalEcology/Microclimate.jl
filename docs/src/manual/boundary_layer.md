@@ -50,7 +50,6 @@ bare ground is less appropriate.
 using Microclimate, Unitful
 
 boundary_layer_model = MoninObukhov()
-site = example_site()
 environment_instant = (;
     reference_temperature = 25u"°C",
     reference_wind_speed  = 2.0u"m/s",
@@ -61,7 +60,7 @@ environment_instant = (;
 profile = atmospheric_surface_profile(boundary_layer_model;
     heights = [0.01, 0.5, 2.0]u"m",
     reference_height = 2.0u"m",
-    site,
+    roughness_length = 0.004u"m",
     environment_instant,
     surface_temperature = 35u"°C",
 )

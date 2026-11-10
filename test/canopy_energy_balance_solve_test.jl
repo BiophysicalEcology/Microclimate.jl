@@ -14,7 +14,7 @@ site = Microclimate.example_site()
 canopy(; plant_area_index = plant_area_index) = Microclimate.example_multilayer_canopy(; canopy_height, plant_area_index)
 
 allocate(model) = allocate_canopy(model, heights, boundary_layer_model;
-    site, vapour_pressure_equation = Microclimate.GoffGratch(), soil_hydraulic_model = nothing)
+    ground_roughness_height = 0.004u"m", vapour_pressure_equation = Microclimate.GoffGratch(), soil_hydraulic_model = nothing)
 
 function solve_canopy(model, inputs)
     buffers = allocate(model)
@@ -200,7 +200,7 @@ end
 
 @testset "lowest canopy layer must be above the ground roughness height" begin
     @test_throws ArgumentError allocate_canopy(canopy(), heights, boundary_layer_model;
-        site = Microclimate.example_site(; roughness_height = 0.1u"m"),
+        ground_roughness_height = 0.1u"m",
         vapour_pressure_equation = Microclimate.GoffGratch(), soil_hydraulic_model = nothing)
 end
 

@@ -164,7 +164,7 @@ temperature; heights above `reference_height` are extrapolated via the log-law.
 - `heights`: Heights at which profiles are returned (default: `DEFAULT_HEIGHTS`).
 - `reference_height`: Measurement height for met inputs (default: `last(heights)`).
 - `surface_temperature`: Soil/surface temperature.
-- `site`: `Site` holding `roughness_height` and `elevation`.
+- `roughness_length`: roughness length of the surface, e.g. the ground roughness height.
 - `environment_instant`: Named tuple with `reference_temperature`, `reference_wind_speed`,
   `reference_humidity` and `atmospheric_pressure`.
 
@@ -182,7 +182,6 @@ Named tuple: `wind_speed`, `air_temperature`, `relative_humidity` (profiles at e
 using Microclimate, Unitful
 
 boundary_layer_model = MoninObukhov()
-site = example_site()
 environment_instant = (;
     reference_temperature = 25u"°C",
     reference_wind_speed  = 2.0u"m/s",
@@ -193,7 +192,7 @@ environment_instant = (;
 profile = atmospheric_surface_profile(boundary_layer_model;
     heights          = [0.01, 0.5, 2.0, 5.0]u"m",  # 5 m is above the reference height
     reference_height = 2.0u"m",
-    site,
+    roughness_length = 0.004u"m",
     environment_instant,
     surface_temperature = 35u"°C",
 )
@@ -204,10 +203,10 @@ profile.air_temperature
 atmospheric_surface_profile(boundary_layer_model::MoninObukhov; heights=DEFAULT_HEIGHTS, reference_height=last(heights), kw...) =
     atmospheric_surface_profile!(boundary_layer_model, allocate_profile(boundary_layer_model, heights); reference_height, kw...)
 """
-    atmospheric_surface_profile!(boundary_layer_model::MoninObukhov, buffers; site, environment_instant,
+    atmospheric_surface_profile!(boundary_layer_model::MoninObukhov, buffers; roughness_length, environment_instant,
                                   surface_temperature, vapour_pressure_equation=GoffGratch(),
                                   reference_height=last(buffers.heights),
-                                  displacement_height=0.0u"m", roughness_length=site.roughness_height,
+                                  displacement_height=0.0u"m",
                                   thermal_roughness_model=boundary_layer_model.thermal_roughness_model,
                                   temperature_anchor_height=nothing, surface_relative_humidity=nothing,
                                   stability_variable=ObukhovLength(), stability=nothing)
@@ -226,20 +225,18 @@ stability; `stability_update` in the result is then what the Obukhov
 relation gives back for it, equal to `stability` when self-consistent.
 """
 function atmospheric_surface_profile!(boundary_layer_model::MoninObukhov, buffers;
-    site,
+    roughness_length,
     environment_instant,
     surface_temperature,
     vapour_pressure_equation=GoffGratch(),
     reference_height=last(buffers.heights),
     displacement_height=0.0u"m",
-    roughness_length=site.roughness_height,
     thermal_roughness_model=boundary_layer_model.thermal_roughness_model,
     temperature_anchor_height=nothing,
     surface_relative_humidity=nothing,
     stability_variable=ObukhovLength(),
     stability=nothing,
 )
-    (; elevation) = site
     (; karman_constant, stability_functions) = boundary_layer_model
     (; atmospheric_pressure, reference_temperature, reference_wind_speed, reference_humidity) = environment_instant
 
@@ -398,18 +395,17 @@ function surface_fluxes(boundary_layer_model::MoninObukhov;
     return (; convective_heat_flux, friction_velocity, temperature_difference)
 end
 
-function init_surface_fluxes!(boundary_layer_model::MoninObukhov, buffers, forcing, site, heights, soil_temperatures, i)
+function init_surface_fluxes!(boundary_layer_model::MoninObukhov, buffers, forcing, roughness_height, heights, soil_temperatures, i)
     t_next = ((i - 1) * 60)u"minute"
-    (; air_temperature, wind_speed, zenith_angle) = interpolate_forcings(forcing, t_next)
+    (; air_temperature, wind_speed, zenith_angle, atmospheric_pressure) = interpolate_forcings(forcing, t_next)
     surface_temperature = soil_temperatures[1]
     if air_temperature < surface_temperature && zenith_angle < 90u"°"
         karman_constant = boundary_layer_model.karman_constant
-        roughness_height = site.roughness_height
         reference_height = last(heights)
         temperature_difference = air_temperature - surface_temperature
         mean_temperature = (surface_temperature + air_temperature) / 2
         air_volumetric_heat_capacity = calc_air_volumetric_heat_capacity(mean_temperature)
-        kinematic_viscosity = dry_air_properties(mean_temperature, site.atmospheric_pressure).kinematic_viscosity
+        kinematic_viscosity = dry_air_properties(mean_temperature, atmospheric_pressure).kinematic_viscosity
         previous_obukhov_length = buffers.soil_energy_balance.obukhov_length_prev[]
         initial_obukhov_length = previous_obukhov_length >= 0.0u"m" ? INITIAL_OBUKHOV_LENGTH : previous_obukhov_length
         out = calc_obukhov_length(boundary_layer_model, air_temperature, surface_temperature, wind_speed,

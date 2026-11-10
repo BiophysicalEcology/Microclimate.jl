@@ -192,7 +192,7 @@ function evaluate_canopy!(residual, inverse_obukhov_length, ground_temperature, 
     end
 
     wind = canopy_wind_profile!(buffers, model, boundary_layer_model;
-        site, environment_instant, canopy_source_temperature=leaf_temperature[1], vapour_pressure_equation,
+        environment_instant, canopy_source_temperature=leaf_temperature[1], vapour_pressure_equation,
         inverse_obukhov_length=isnan(inverse_obukhov_length) ? zero(inverse_obukhov_length) : inverse_obukhov_length)
     wind_speed = buffers.wind.wind_speed
     longwave_result = canopy_longwave!(buffers, model;
@@ -235,7 +235,7 @@ function evaluate_canopy!(residual, inverse_obukhov_length, ground_temperature, 
         friction_velocity=wind.friction_velocity, inverse_obukhov_length=wind.inverse_obukhov_length)
     sublayer_resistance = ground_sublayer_resistance(model.air_profile_model.ground_sublayer_model, boundary_layer_model;
         lowest_wind_speed=wind_speed[n_layers], lowest_layer_height=buffers.wind.ground_layer_height,
-        lowest_air_temperature, ground_temperature, atmospheric_pressure, site)
+        lowest_air_temperature, ground_temperature, atmospheric_pressure, roughness_height=environment_instant.roughness_height)
     ground_resistance = (; heat=turbulent_resistance + sublayer_resistance.heat,
         vapor=turbulent_resistance + sublayer_resistance.vapor)
     # Fixed from the reference and ground temperatures, not the unknown canopy air, which keeps the canopy-top balance linear

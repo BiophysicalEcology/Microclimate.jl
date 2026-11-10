@@ -110,7 +110,7 @@ function canopy_energy_balance!(buffers, model::MultilayerCanopy, boundary_layer
         zenith_angle, direct_horizontal_irradiance, diffuse_horizontal_irradiance, ground)
 
     wind_result = canopy_wind_profile!(buffers, model, boundary_layer_model;
-        site, environment_instant, canopy_source_temperature, vapour_pressure_equation)
+        environment_instant, canopy_source_temperature, vapour_pressure_equation)
 
     interception_result = canopy_interception!(buffers, model; rainfall, wind_speed)
 

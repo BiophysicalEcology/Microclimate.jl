@@ -11,7 +11,6 @@ canopy_height = 1.0u"m"
 plant_area_index = 3.0
 heights = vcat(0.1:0.1:1.0, [2.0]) .* u"m"
 boundary_layer_model = MoninObukhov()
-site = Microclimate.example_site()
 displacement_height = 0.65u"m"
 n_layers = 10
 T = 290.0u"K"
@@ -30,7 +29,7 @@ function forcing(model, buffers; sensible_heat_flux = no_heat, evaporation_mass_
     inverse_obukhov_length = 0.0u"m^-1"
     turbulent = ground_turbulent_resistance(buffers, model, boundary_layer_model; friction_velocity, inverse_obukhov_length)
     sublayer = ground_sublayer_resistance(model.ground_sublayer_model, boundary_layer_model; lowest_wind_speed = 1.0u"m/s",
-        lowest_layer_height = 0.1u"m", lowest_air_temperature = T, ground_temperature, atmospheric_pressure = 101325.0u"Pa", site)
+        lowest_layer_height = 0.1u"m", lowest_air_temperature = T, ground_temperature, atmospheric_pressure = 101325.0u"Pa", roughness_height = 0.004u"m")
     ground_resistance = (; heat = turbulent + sublayer.heat, vapor = turbulent + sublayer.vapor)
     return CanopyAirProfileForcing(; friction_velocity, inverse_obukhov_length,
         canopy_top_air_temperature = T, canopy_top_vapor_density = top_vapor_density,

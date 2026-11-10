@@ -101,9 +101,6 @@ end
 
 @testset "$(nameof(typeof(bl.stability_functions))) atmospheric_surface_profile!: no crash, sensible output across regimes" for bl in
         (MoninObukhov(), MoninObukhov(; stability_functions=BusingerDyer()))
-    site = Site(; latitude=0.0u"°", longitude=0.0u"°", elevation=0.0u"m", slope=0.0u"°", aspect=0.0u"°",
-        horizon_angles=fill(0.0u"°", 24), sky_view_fraction=1.0, albedo=0.15, roughness_height=0.01u"m",
-        atmospheric_pressure=101325.0u"Pa")
     heights = [0.5, 1.0, 2.0, 5.0, 10.0]u"m"
     buffers = allocate_profile(bl, heights)
     for (reference_temperature, zenith_angle) in (
@@ -114,7 +111,7 @@ end
     )
         environment_instant = (; atmospheric_pressure=101325.0u"Pa", reference_temperature,
             reference_wind_speed=2.0u"m/s", reference_humidity=0.6, zenith_angle)
-        result = atmospheric_surface_profile!(bl, buffers; site, environment_instant, surface_temperature=290.0u"K")
+        result = atmospheric_surface_profile!(bl, buffers; roughness_length=0.01u"m", environment_instant, surface_temperature=290.0u"K")
         @test all(isfinite, ustrip.(u"K", result.air_temperature))
         @test all(isfinite, ustrip.(u"m/s", result.wind_speed))
         @test all(t -> 0.0 <= t <= 1.0, result.relative_humidity)
@@ -123,14 +120,11 @@ end
 end
 
 @testset "atmospheric_surface_profile!: calm air keeps the log-law wind profile" begin
-    site = Site(; latitude=0.0u"°", longitude=0.0u"°", elevation=0.0u"m", slope=0.0u"°", aspect=0.0u"°",
-        horizon_angles=fill(0.0u"°", 24), sky_view_fraction=1.0, albedo=0.15, roughness_height=0.01u"m",
-        atmospheric_pressure=101325.0u"Pa")
     heights = [0.5, 10.0]u"m"
     buffers = allocate_profile(bl, heights)
     environment_instant = (; atmospheric_pressure=101325.0u"Pa", reference_temperature=293.0u"K",
         reference_wind_speed=0.2u"m/s", reference_humidity=0.6, zenith_angle=30.0u"°")
-    result = atmospheric_surface_profile!(bl, buffers; site, environment_instant, surface_temperature=293.0u"K")
+    result = atmospheric_surface_profile!(bl, buffers; roughness_length=0.01u"m", environment_instant, surface_temperature=293.0u"K")
     @test result.friction_velocity == bl.min_friction_velocity
     @test result.wind_speed[1] ≈ 0.2u"m/s" * log(0.5 / 0.01) / log(10.0 / 0.01) rtol = 1e-6
 end

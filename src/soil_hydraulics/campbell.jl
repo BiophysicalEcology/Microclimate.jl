@@ -432,7 +432,7 @@ end
 
 """
     ground_condensation_step!(buffers, boundary_layer_model;
-        site, environment_instant, soil_temperatures, pool, standing_dew, standing_frost,
+        environment_instant, soil_temperatures, pool, standing_dew, standing_frost,
         condensation_model=GarrattSegalCondensation(), evaporation_model=BulkTransferEvaporation(),
         vapour_pressure_equation=GoffGratch(), snow_present=false, actual_soil_wetness,
         sky_temperature, absorbed_solar_radiation, reference_height, ground_air=nothing)
@@ -450,7 +450,7 @@ the model's own bulk-transfer flux still separately drives
 `evaporation_potential` for the LOSS branch regardless of that choice.
 """
 function ground_condensation_step!(buffers, boundary_layer_model;
-    site, environment_instant, soil_temperatures, pool, standing_dew, standing_frost,
+    environment_instant, soil_temperatures, pool, standing_dew, standing_frost,
     condensation_model::AbstractCondensationModel=GarrattSegalCondensation(),
     evaporation_model::AbstractEvaporationModel=BulkTransferEvaporation(),
     vapour_pressure_equation=GoffGratch(),
@@ -469,7 +469,8 @@ function ground_condensation_step!(buffers, boundary_layer_model;
         wind_speed = environment_instant.reference_wind_speed
         z_reference = reference_height
         profile_out = atmospheric_surface_profile!(boundary_layer_model, buffers.condensation_profile;
-            site, environment_instant, surface_temperature, vapour_pressure_equation,
+            roughness_length=environment_instant.roughness_height, environment_instant, surface_temperature,
+            vapour_pressure_equation,
         )
         convective_heat_flux = profile_out.convective_heat_flux
         heat_transfer_coefficient = max(abs(convective_heat_flux / (surface_temperature - air_temperature)), 0.5u"W/m^2/K")
@@ -503,7 +504,7 @@ function ground_condensation_step!(buffers, boundary_layer_model;
     dew_frost_energy_flux = condensation_energy_flux(condensation_model;
         evaporation_model, surface_temperature, air_temperature, relative_humidity, atmospheric_pressure,
         convective_heat_flux, mass_transfer_coefficient, actual_soil_wetness,
-        wind_speed, reference_height=z_reference, roughness_height=site.roughness_height,
+        wind_speed, reference_height=z_reference, roughness_height=environment_instant.roughness_height,
         karman_constant=boundary_layer_model.karman_constant,
         sky_temperature, surface_emissivity, absorbed_solar_radiation,
         vapour_pressure_equation,

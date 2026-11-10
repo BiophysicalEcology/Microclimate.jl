@@ -38,7 +38,7 @@ decides what happens if the hour starts out of bounds or hasn't settled after `m
 end
 
 function allocate_canopy_convergence(convergence_model::AndersonCanopyConvergence, buffers, model, boundary_layer_model;
-    site, vapour_pressure_equation, soil_hydraulic_model,
+    vapour_pressure_equation, soil_hydraulic_model,
 )
     layer_count = length(buffers.leaf.leaf_temperature)
     state_length = canopy_state_length(layer_count)
