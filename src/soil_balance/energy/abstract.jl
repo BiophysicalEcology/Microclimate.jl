@@ -39,18 +39,19 @@ Integrates the whole soil column over the hour.
 struct SoilIntegration <: AbstractGroundTemperatureModel end
 
 """
-    SurfaceNodePrediction(; nodes=3, tolerance=1e-3u"K")
+    SurfaceNodePrediction(; nodes=3, solver=NewtonRaphson(), tolerance=1e-3u"K")
 
 One backward Euler step over the hour for the surface node and the `nodes - 1` nodes below it.
-The deeper nodes keep their temperatures from the start of the hour. The step is solved to
-within `tolerance`.
+The deeper nodes keep their temperatures from the start of the hour. `solver`, a NonlinearSolve
+algorithm, solves the step to within `tolerance`.
 """
-struct SurfaceNodePrediction{N,T} <: AbstractGroundTemperatureModel
+struct SurfaceNodePrediction{N,S,T} <: AbstractGroundTemperatureModel
+    solver::S
     tolerance::T
 end
-function SurfaceNodePrediction(; nodes::Int=3, tolerance=1e-3u"K")
+function SurfaceNodePrediction(; nodes::Int=3, solver=NewtonRaphson(), tolerance=1e-3u"K")
     nodes >= 1 || throw(ArgumentError("SurfaceNodePrediction needs at least 1 node, got $nodes"))
-    return SurfaceNodePrediction{nodes,typeof(tolerance)}(tolerance)
+    return SurfaceNodePrediction{nodes,typeof(solver),typeof(tolerance)}(solver, tolerance)
 end
 
 """

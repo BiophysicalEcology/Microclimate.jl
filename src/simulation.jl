@@ -1115,8 +1115,7 @@ allocate_ground_temperature(::SoilIntegration, integrator, hour_state) = nothing
 function allocate_ground_temperature(model::SurfaceNodePrediction{K}, integrator, hour_state) where K
     hour = surface_node_hour(integrator, hour_state, 1, 1)
     problem = NonlinearProblem{false}(surface_node_residual, predicted_start(Val(K), hour), hour)
-    autodiff = AutoEnzyme(; mode=Enzyme.set_runtime_activity(Enzyme.Forward), function_annotation=Enzyme.Const)
-    return init(problem, NewtonRaphson(; autodiff); abstol=ustrip(u"K", model.tolerance))
+    return init(problem, model.solver; abstol=ustrip(u"K", model.tolerance))
 end
 
 ground_temperature(::SoilIntegration, ::Nothing, integrator, hour_state, hour_index; surface_node) =
@@ -1152,7 +1151,7 @@ function with_predicted(temperatures::SVector{K}, (; hour_state, first_active)) 
         elseif node < first_active + K
             temperatures[node - first_active + 1]
         else
-            hour_state[node]
+            oftype(temperatures[1], hour_state[node])
         end
     end)
 end

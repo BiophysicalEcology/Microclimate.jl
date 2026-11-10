@@ -268,7 +268,7 @@ function soil_energy_balance(model::SoilHeatTransport1D,
     # Fortran DSUB.f lines 551-561: temperature safety guards before convection
     surface_temperature = soil_temperature[j]
     if abs(u"°C"(surface_temperature)) > 100u"°C"
-        surface_temperature = air_temperature + 1.0u"K"  # DSUB.f line 557
+        surface_temperature = oftype(surface_temperature, air_temperature + 1.0u"K")  # DSUB.f line 557
     end
     if surface_temperature == air_temperature
         surface_temperature = surface_temperature + 0.1u"K"  # DSUB.f line 561: prevent divide-by-zero
@@ -299,10 +299,10 @@ function soil_energy_balance(model::SoilHeatTransport1D,
             surface_dtdt
         elseif i == N
             # Lower boundary: pinned at TDS (Dirichlet). Matches Fortran DSUB.f:579.
-            0.0u"K/minute"
+            zero(surface_dtdt)
         else
             # Internal conduction
-            iszero(heat_capacity[i]) ? 0.0u"K/minute" :
+            iszero(heat_capacity[i]) ? zero(surface_dtdt) :
                 u"K/minute"((thermal_conductance[i-1] * (soil_temperature[i-1] - soil_temperature[i]) + thermal_conductance[i] * (soil_temperature[i+1] - soil_temperature[i])) / heat_capacity[i])
         end
     end)

@@ -21,7 +21,7 @@ function evaporation(::BulkTransferEvaporation;
 )
     # Assumes all units are SI (Kelvin, Pascal, meters, seconds, kg, etc.)
 
-    clamped_surface_temperature = surface_temperature < u"K"(-81.0u"°C") ? u"K"(-81.0u"°C") : surface_temperature
+    clamped_surface_temperature = surface_temperature < u"K"(-81.0u"°C") ? oftype(surface_temperature, u"K"(-81.0u"°C")) : surface_temperature
 
     # surface and air vapor densities
     surface_vapour_density = wet_air_properties(u"K"(clamped_surface_temperature), surface_relative_humidity, atmospheric_pressure; vapour_pressure_equation).vapour_density
@@ -52,7 +52,7 @@ function evaporation(::BulkTransferEvaporation;
     # No water loss (but condensation -- dew/frost -- still allowed) if
     # surface temperature ≤ 0°C (e.g., melting snow only)
     if surface_temperature <= u"K"(0.0u"°C") && water_flux > 0.0u"kg/m^2/s"
-        evaporation_mass_flux = 0.0u"g/s/m^2"
+        evaporation_mass_flux = zero(evaporation_mass_flux)
     end
 
     return Q_evaporation, evaporation_mass_flux
