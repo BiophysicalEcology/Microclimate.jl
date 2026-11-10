@@ -33,7 +33,7 @@ function soil_properties!(buffers::NamedTuple, soil_properties_model::AbstractSo
     (; bulk_thermal_conductivity, bulk_heat_capacity) = buffers
     out_bulk_density = buffers.bulk_density
     bd_unit = unit(eltype(out_bulk_density))
-    @inbounds for i in 1:num_layers
+    for i in 1:num_layers
         result = soil_properties(maybegetindex(soil_properties_model, i);
             atmospheric_pressure,
             soil_temperature = soil_temperature[i],

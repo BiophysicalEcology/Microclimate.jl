@@ -432,7 +432,7 @@ end
 
 """
     ground_condensation_step!(buffers, boundary_layer_model;
-        site, environment_instant, T0, pool, standing_dew, standing_frost,
+        site, environment_instant, soil_temperatures, pool, standing_dew, standing_frost,
         condensation_model=GarrattSegalCondensation(), evaporation_model=BulkTransferEvaporation(),
         vapour_pressure_equation=GoffGratch(), snow_present=false, actual_soil_wetness,
         sky_temperature, absorbed_solar_radiation, reference_height,
@@ -452,7 +452,7 @@ the model's own bulk-transfer flux still separately drives
 `evaporation_potential` for the LOSS branch regardless of that choice.
 """
 function ground_condensation_step!(buffers, boundary_layer_model;
-    site, environment_instant, T0, pool, standing_dew, standing_frost,
+    site, environment_instant, soil_temperatures, pool, standing_dew, standing_frost,
     condensation_model::AbstractCondensationModel=GarrattSegalCondensation(),
     evaporation_model::AbstractEvaporationModel=BulkTransferEvaporation(),
     vapour_pressure_equation=GoffGratch(),
@@ -464,7 +464,7 @@ function ground_condensation_step!(buffers, boundary_layer_model;
     ground_heat_conductance=nothing, ground_vapor_conductance=nothing,
 )
     atmospheric_pressure = environment_instant.atmospheric_pressure
-    surface_temperature = T0[1]
+    surface_temperature = soil_temperatures[1]
     surface_emissivity = environment_instant.surface_emissivity
 
     if isnothing(ground_air_relative_humidity)
@@ -559,14 +559,14 @@ function ground_condensation_step!(buffers, boundary_layer_model;
     if snow_present
         evaporation_potential = 1e-7u"kg/m^2/s"
     elseif raw_flux_condensation < 0.0u"kg/m^2/s" && surface_temperature <= u"K"(0.0u"°C")
-        candidate = -raw_flux_condensation * Δt
+        candidate = uconvert(u"kg/m^2", -raw_flux_condensation * Δt)
         if candidate <= max_plausible_formed
             frost_formed = candidate
             standing_frost += frost_formed
         end
         evaporation_potential = 1e-7u"kg/m^2/s"
     elseif raw_flux_condensation < 0.0u"kg/m^2/s"
-        candidate = -raw_flux_condensation * Δt
+        candidate = uconvert(u"kg/m^2", -raw_flux_condensation * Δt)
         if candidate <= max_plausible_formed
             dew_formed = candidate
             standing_dew += dew_formed
@@ -577,7 +577,7 @@ function ground_condensation_step!(buffers, boundary_layer_model;
         # Loss demand: sublimate standing frost, then evaporate standing dew, before
         # drawing on soil moisture via the residual evaporation_potential
         # (DynamicSoilMoisture's own infiltration_step! demand).
-        demand = raw_flux * Δt
+        demand = uconvert(u"kg/m^2", raw_flux * Δt)
         frost_sublimated = min(demand, standing_frost)
         standing_frost -= frost_sublimated
         demand -= frost_sublimated
@@ -585,7 +585,7 @@ function ground_condensation_step!(buffers, boundary_layer_model;
         standing_dew -= dew_evaporated
         pool -= dew_evaporated
         demand -= dew_evaporated
-        evaporation_potential = max(1e-7u"kg/m^2/s", demand / Δt)
+        evaporation_potential = max(1e-7u"kg/m^2/s", uconvert(u"kg/m^2/s", demand / Δt))
     end
 
     return (; pool, standing_dew, standing_frost, dew_formed, frost_formed, evaporation_potential, local_relative_humidity)
@@ -646,7 +646,7 @@ function soil_water_balance!(buffers, soil_hydraulic_model::CampbellSoilHydrauli
     evaporation_potential,
     local_relative_humidity,
     soil_moisture,
-    T0,
+    soil_temperatures,
     frozen_water_content,
     vapour_pressure_equation=GoffGratch(),
     canopy_transpiration_potential=nothing,
@@ -670,7 +670,7 @@ function soil_water_balance!(buffers, soil_hydraulic_model::CampbellSoilHydrauli
         local_relative_humidity,
         leaf_area_index,
         evapotranspiration=evaporation_potential,
-        input_soil_temperature=T0,
+        input_soil_temperature=soil_temperatures,
         vapour_pressure_equation, canopy_transpiration_potential,
     )
     # Fortran OSUB.f line 1239: ptwet = surflux / (ep * timestep) * 100

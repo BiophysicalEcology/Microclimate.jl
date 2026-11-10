@@ -21,10 +21,10 @@ Whether the strategy ever performs more than one iteration per day.
 function may_iterate end
 
 """
-    is_converged(convergence, iter, niter, T0, T0_prev) -> Bool
+    is_converged(convergence, iter, niter, soil_temperatures, previous_soil_temperatures) -> Bool
 
 Whether iteration should stop. `iter` is the current iteration, `niter` the
-target (from `max_iterations`), `T0`/`T0_prev` the latest two temperature
-states.
+target (from `max_iterations`), `soil_temperatures`/`previous_soil_temperatures`
+the latest two temperature states.
 """
 function is_converged end

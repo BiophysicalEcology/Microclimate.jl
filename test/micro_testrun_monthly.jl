@@ -49,7 +49,7 @@ site = Site(;
     roughness_height = microinput[:RUF] * 1.0u"m",
     atmospheric_pressure = atmospheric_pressure(microinput[:ALTT] * 1.0u"m"),
 )
-boundary_layer_model = MoninObukhov(; karman_constant=0.4, dyer_constant=16.0)
+boundary_layer_model = MoninObukhov(; karman_constant=0.4)
 
 mineral_density = (CSV.File("$testdir/data/init_monthly/soilprop.csv")[1, 1][6]) * 1.0u"Mg/m^3" # soil minerals density (Mg/m3)
 bulk_density = (CSV.File("$testdir/data/init_monthly/soilprop.csv")[1, 1][2]) * 1.0u"Mg/m^3" # dry soil bulk density (Mg/m3)
@@ -173,7 +173,7 @@ wind_matrix = micro_out.profile.wind_speed
 @testset "runmicro comparisons" begin
     @test humidity_matrix[:, 1] ≈ rh1cm_nmr rtol=1e-1
     @test humidity_matrix[:, 2] ≈ rh2m_nmr rtol=5e-2
-    @test wind_matrix[:, 1] ≈ vel1cm_nmr rtol=0.15  # pre-existing marginal drift at the 1cm node, unrelated to dew/frost (never forms in this scenario)
+    @test wind_matrix[:, 1] ≈ vel1cm_nmr rtol=0.06
     @test wind_matrix[:, 2] ≈ vel2m_nmr rtol=1e-1
     @test u"K".(air_temperature_matrix[:, 1]) ≈ ta1cm_nmr rtol=1e-2
     @test u"K".(air_temperature_matrix[:, 2]) ≈ ta2m_nmr rtol=2e-3
@@ -187,23 +187,21 @@ end
     cache = init(problem)
     @test cache isa Microclimate.MicroCache
     out2 = solve!(cache)
-    @test out2.soil_temperature ≈ micro_out.soil_temperature rtol=1e-4
-    @test out2.profile.air_temperature ≈ micro_out.profile.air_temperature rtol=1e-4
-    @test out2.profile.relative_humidity ≈ micro_out.profile.relative_humidity rtol=1e-4
-    @test out2.profile.wind_speed ≈ micro_out.profile.wind_speed rtol=1e-4
-    @test out2.sky_temperature ≈ micro_out.sky_temperature rtol=1e-4
-    @test out2.global_radiation ≈ micro_out.global_radiation rtol=1e-4
+    @test out2.soil_temperature == micro_out.soil_temperature
+    @test out2.profile.air_temperature == micro_out.profile.air_temperature
+    @test out2.profile.relative_humidity == micro_out.profile.relative_humidity
+    @test out2.profile.wind_speed == micro_out.profile.wind_speed
+    @test out2.sky_temperature == micro_out.sky_temperature
+    @test out2.global_radiation == micro_out.global_radiation
 end
 
-# Test reinit!/solve! reuse (ODE integrator carries internal step-size state,
-# so results are close but not bit-identical across reinitializations)
 @testset "reinit! and re-solve!" begin
     cache = init(problem)
     solve!(cache)
     reinit!(cache, inputs)
     out3 = solve!(cache)
-    @test out3.soil_temperature ≈ micro_out.soil_temperature rtol=1e-3
-    @test out3.profile.air_temperature ≈ micro_out.profile.air_temperature rtol=1e-3
+    @test out3.soil_temperature == micro_out.soil_temperature
+    @test out3.profile.air_temperature == micro_out.profile.air_temperature
 end
 
 # Visual comparisons — run manually (not in CI)

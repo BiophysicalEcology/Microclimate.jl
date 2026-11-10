@@ -48,7 +48,7 @@ site = Site(;
     roughness_height = microinput[:RUF] * 1.0u"m",
     atmospheric_pressure = atmospheric_pressure(microinput[:ALTT] * 1.0u"m"),
 )
-boundary_layer_model = MoninObukhov(; karman_constant=0.4, dyer_constant=16.0)
+boundary_layer_model = MoninObukhov(; karman_constant=0.4)
 
 mineral_density = (CSV.File("$testdir/data/init_monthly_snow/soilprop.csv")[1, 1][6]) * 1.0u"Mg/m^3" # soil minerals density (Mg/m3)
 bulk_density = (CSV.File("$testdir/data/init_monthly_snow/soilprop.csv")[1, 1][2]) * 1.0u"Mg/m^3" # dry soil bulk density (Mg/m3)
@@ -188,13 +188,11 @@ snow_valid = .!ismissing.(snowdepth_nmr)
     @test wind_matrix[:, 2] ≈ vel2m_nmr rtol=1e-1
     @test micro_out.sky_temperature ≈ u"K".(tskyC_nmr) rtol=2e-3
     @test micro_out.global_radiation ≈ solr_nmr rtol=1e-2
-    # Snow outputs: tolerances follow PR #102. Snow physics across non-consecutive
-    # days is approximate (precipitation distribution, density carry-over, albedo
-    # — see PR description). Depth/density compared only over the first 3 days
-    # where Julia ↔ Fortran tracks essentially exactly.
     @test ustrip.(u"cm/hr", micro_out.snow_fall[snow_valid]) ≈ ustrip.(u"cm/hr", snowfall_nmr[snow_valid]) rtol=1e-3
+    # TODO compare the whole run: from hour 74, after 33 cm of snow on warm soil, NicheMapR
+    # melts the snow from below within an hour and Julia only over several hours (11 cm apart)
     @test ustrip.(u"cm", micro_out.snow_depth[1:72]) ≈ ustrip.(u"cm", snowdepth_nmr[1:72]) rtol=1e-2
-    @test ustrip.(u"g/cm^3", micro_out.snow_density[1:72]) ≈ ustrip.(u"g/cm^3", snowdensity_nmr[1:72]) rtol=1e-2
+    @test ustrip.(u"g/cm^3", micro_out.snow_density) ≈ ustrip.(u"g/cm^3", snowdensity_nmr) rtol=1e-2
 end
 
 # Visual comparisons — run manually (not in CI)

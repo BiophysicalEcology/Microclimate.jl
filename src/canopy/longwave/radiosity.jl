@@ -1,20 +1,9 @@
 """
     LayeredRadiosityExchange(; atmospheric_radiation_model=CampbellNormanAtmosphericRadiation())
 
-Multi-layer longwave exchange: reflecting/transmitting/emitting slabs,
-solved implicitly in one pass. Layer `i`'s gap transmission `τ_d[i]`
-leaves a scattered remainder `(1-εₗ)(1-τ_d[i])`, split by
-`backscatter_fraction` (Flerchinger & Yu 2007, from
-`canopy_projection_ratio`) into reflectance `ρ[i]` and an effective
-transmission `τ[i]` (forward-scatter folded in). `εₗ=1` reduces this to
-[`LayeredLongwaveExchange`](@ref)'s cascade.
-
-Solved via the two-stream "adding" recursion `L_u[i] = R[i]*L_d[i] + S[i]`:
-a ground-to-sky sweep gives `R`/`Γ` as pure geometry and `S` as the only
-temperature-dependent piece, then one sky-to-ground pass recovers every
-`L_d`/`L_u`. `O(n)` per call. Non-adjacent-layer coupling falls out of the 
-implicit solve. `ρ[i]+τ[i]+εₗ(1-τ_d[i])=1` keeps this energy-conserving and 
-Kirchhoff-consistent for any `backscatter_fraction`.
+Longwave through layers that absorb, emit, transmit and reflect, solved exactly in one
+sweep up and one down. The reflected share comes from `canopy_projection_ratio`
+(Flerchinger & Yu 2007). With leaf emissivity 1 it equals [`LayeredLongwaveExchange`](@ref).
 
 # References
 - Flerchinger, G. N., and Yu, Q. 2007. Simplified expressions for radiation 
@@ -59,14 +48,14 @@ end
 """
     canopy_longwave!(buffers, model::LayeredRadiosityExchange, leaf_emissivity;
                       leaf_temperature, ground_temperature, ground_emissivity,
-                      site, environment_instant, vapour_pressure_equation=GoffGratch())
+                      incoming_longwave)
 
 Layer index 1 is canopy top. Returns `(; ground_absorbed_longwave,
 net_absorbed_longwave)`.
 """
 function canopy_longwave!(buffers, model::LayeredRadiosityExchange, leaf_emissivity;
     leaf_temperature, ground_temperature, ground_emissivity,
-    site, environment_instant, vapour_pressure_equation=GoffGratch(),
+    incoming_longwave,
 )
     (; layer_transmission, backscatter_fraction, boundary_downward_longwave, boundary_upward_longwave,
        absorbed_longwave, layer_reflectance, layer_effective_transmission, layer_emission_source,
@@ -74,21 +63,23 @@ function canopy_longwave!(buffers, model::LayeredRadiosityExchange, leaf_emissiv
 
     n = length(layer_transmission)
 
-    τ_d = layer_transmission; f_d = backscatter_fraction
+    τ_d = layer_transmission
+    f_d = backscatter_fraction
     εₗ = leaf_emissivity
-    εₛ = ground_emissivity;    Tₛ = u"K"(ground_temperature)
+    εₛ = ground_emissivity
+    Tₛ = u"K"(ground_temperature)
 
-    ρ = layer_reflectance;     τ = layer_effective_transmission
+    ρ = layer_reflectance
+    τ = layer_effective_transmission
     E = layer_emission_source
 
     L_d = boundary_downward_longwave
     L_u = boundary_upward_longwave
 
-    A = absorbed_longwave;     R = reflectance_response
-    Γ = response_gain;         S = effective_source
-
-    sky = precompute_longwave_sky(model.atmospheric_radiation_model;
-    site, environment_instant, vapour_pressure_equation, shade=0.0)   
+    A = absorbed_longwave
+    R = reflectance_response
+    Γ = response_gain
+    S = effective_source
 
     # optical coefficients of each canopy layer
     for i in 1:n
@@ -113,7 +104,7 @@ function canopy_longwave!(buffers, model::LayeredRadiosityExchange, leaf_emissiv
 
     # sky-to-ground recovery sweep
 
-    L_d[1] = sky.incoming_longwave
+    L_d[1] = incoming_longwave
     for i in 1:n
         L_u[i] = R[i] * L_d[i] + S[i]
         L_d[i + 1] = Γ[i] * (τ[i] * L_d[i] + ρ[i] * S[i + 1] + E[i])

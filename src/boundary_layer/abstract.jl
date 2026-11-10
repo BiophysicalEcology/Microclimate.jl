@@ -32,16 +32,16 @@ pre-allocated buffers.
 function atmospheric_surface_profile! end
 
 """
-    surface_fluxes(boundary_layer_model; surface_temperature, air_temperature, wind_speed, zenith_angle, roughness_height, reference_height, obukhov_length_prev)
+    surface_fluxes(boundary_layer_model; surface_temperature, air_temperature, wind_speed, zenith_angle, roughness_height, reference_height, atmospheric_pressure, obukhov_length_prev=nothing)
 
 Surface-layer convective heat flux and friction velocity. Variants apply
 whichever atmospheric-stability parameterisation they use. Returns
-`(; convective_heat_flux, friction_velocity, ΔT, ρ_cp)`.
+`(; convective_heat_flux, friction_velocity, temperature_difference)`.
 """
 function surface_fluxes end
 
 """
-    init_surface_fluxes!(boundary_layer_model, buffers, forcing, site, heights, T0, i)
+    init_surface_fluxes!(boundary_layer_model, buffers, forcing, site, heights, soil_temperatures, i)
 
 Refresh any internal state the model needs for `surface_fluxes` on the
 upcoming hour `i`. Default no-op for models that don't carry warm-start state.

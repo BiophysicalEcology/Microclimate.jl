@@ -2,6 +2,8 @@ using Microclimate
 using Microclimate: allocate_canopy, canopy_energy_balance!
 using Unitful
 using Test
+using ADTypes: AutoFiniteDiff
+using OrdinaryDiffEqSDIRK: ImplicitEuler
 
 heights = vcat(0.1:0.1:1.0, [2.0]) .* u"m"
 
@@ -32,6 +34,31 @@ heights = vcat(0.1:0.1:1.0, [2.0]) .* u"m"
     @test all(output.canopy.boundary_downward_shortwave[:, 1] .>= output.canopy.boundary_downward_shortwave[:, end])
 end
 
+@testset "An implicit soil solver follows the default, with or without a canopy" begin
+    implicit_soil = SoilHeatTransport1D(; ode_solver = ImplicitEuler(; autodiff = AutoFiniteDiff()),
+        ode_kwargs = (; adaptive = false, dt = 60.0u"minute"))
+    for canopy_model in (NoCanopy(), example_multilayer_canopy(; canopy_height = 1.0u"m", plant_area_index = 2.0))
+        surface_temperature(soil_energy_model) = solve(example_microclimate_problem(; heights, canopy_model,
+            soil_energy_model)).soil_temperature[:, 1]
+        @test isapprox(surface_temperature(implicit_soil), surface_temperature(SoilHeatTransport1D()); rtol = 2e-3)
+    end
+end
+
+@testset "solve! allocates nothing, whatever the canopy and soil solver" begin
+    function solve_allocations(cache)
+        solve!(cache)
+        solve!(cache)
+        return @allocated solve!(cache)
+    end
+    implicit_soil = SoilHeatTransport1D(; ode_solver = ImplicitEuler(; autodiff = AutoFiniteDiff()),
+        ode_kwargs = (; adaptive = false, dt = 60.0u"minute"))
+    for canopy_model in (NoCanopy(), example_multilayer_canopy(; canopy_height = 1.0u"m", plant_area_index = 2.0)),
+        soil_energy_model in (SoilHeatTransport1D(), implicit_soil)
+        cache = init(example_microclimate_problem(; heights, canopy_model, soil_energy_model))
+        @test solve_allocations(cache) == 0
+    end
+end
+
 @testset "NoCanopy leaves canopy output zero-columned" begin
     output = solve(example_microclimate_problem(; heights))
     @test size(output.canopy.leaf_temperature) == (size(output.soil_temperature, 1), 0)
@@ -48,6 +75,18 @@ end
     @test canopy_output.soil_temperature != bare_output.soil_temperature
 end
 
+@testset "reinit! with a canopy: same result as a fresh solve" begin
+    problem = example_microclimate_problem(; heights,
+        canopy_model = example_multilayer_canopy(; canopy_height = 1.0u"m", plant_area_index = 3.0))
+    fresh = solve(problem)
+    cache = init(problem)
+    solve!(cache)
+    reinit!(cache, problem.inputs)
+    reused = solve!(cache)
+    @test reused.soil_temperature == fresh.soil_temperature
+    @test reused.canopy.leaf_temperature == fresh.canopy.leaf_temperature
+end
+
 @testset "MultilayerCanopy leaf temperature responds to soil moisture via Campbell coupling" begin
     canopy_model = example_multilayer_canopy(; canopy_height = 1.0u"m", plant_area_index = 3.0)
     soil_moisture_strategy = DynamicSoilMoisture()
@@ -60,11 +99,6 @@ end
 
     @test all(isfinite, ustrip.(u"K", wet_output.canopy.leaf_temperature))
     @test all(isfinite, ustrip.(u"K", dry_output.canopy.leaf_temperature))
-    # Different initial soil moisture propagates through Campbell's demand/supply
-    # solve into a different leaf_water_potential and hence leaf temperature. The
-    # *direction* of that difference over a multi-day run also depends on ground-
-    # temperature feedback and how quickly soil moisture re-equilibrates (verified
-    # separately, directly on canopy_energy_balance!, that more negative
-    # leaf_water_potential warms the leaf — see canopy_energy_balance_picard_test.jl).
-    @test wet_output.canopy.leaf_temperature != dry_output.canopy.leaf_temperature
+    peak_sun = argmax(wet_output.global_radiation)
+    @test all(dry_output.canopy.leaf_temperature[peak_sun, :] .> wet_output.canopy.leaf_temperature[peak_sun, :])
 end

@@ -1,16 +1,15 @@
 """
     NoCanopy()
 
-Default canopy model: no canopy-layer structure. Vegetation influence is a
-scalar `environment_daily.shade` fraction consumed directly by the longwave
-(`ViewFactorLongwave`) and soil-energy (`SoilHeatTransport1D`) budgets.
-Reproduces existing behaviour bit-for-bit.
+Default: no canopy layers. Vegetation is the scalar `environment_daily.shade`.
 """
 struct NoCanopy <: AbstractCanopyModel end
 
-allocate_canopy(::NoCanopy, heights, boundary_layer_model) = nothing
+allocate_canopy(::NoCanopy, heights, boundary_layer_model; kw...) = nothing
 
 reset_canopy_scratch!(::NoCanopy, buffers) = nothing
+
+reset_canopy_starting_state!(::NoCanopy, buffers) = nothing
 
 snapshot_canopy_water!(::NoCanopy, buffers) = nothing
 

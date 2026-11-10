@@ -46,7 +46,7 @@ function phase_transition!(::PhaseTransitionLatentHeat,
     specific_heat_water = 4184.0u"J/kg/K"
     num_nodes = length(depths)
     temperature = temperature_scratch
-    @inbounds for i in eachindex(temperatures)
+    for i in eachindex(temperatures)
         temperature[i] = temperatures[i]
     end
     tolerance = 1.0e-4u"K"  # tolerance is a temperature *difference*, so use K directly

@@ -54,7 +54,7 @@ site = Site(;
     roughness_height = microinput[:RUF] * 1.0u"m",
     atmospheric_pressure = atmospheric_pressure(microinput[:ALTT] * 1.0u"m"),
 )
-boundary_layer_model = MoninObukhov(; karman_constant=0.4, dyer_constant=16.0)
+boundary_layer_model = MoninObukhov(; karman_constant=0.4)
 
 mineral_conductivity = (CSV.File("$testdir/data/init_daily/soilprop.csv")[1, 1][4]) * 1.0u"W/m/K" # soil minerals thermal conductivity (W/mC)
 mineral_heat_capacity = (CSV.File("$testdir/data/init_daily/soilprop.csv")[1, 1][5]) * 1.0u"J/kg/K" # soil minerals specific heat (J/kg-K)
@@ -209,7 +209,7 @@ coarse_indices = [1, 3, 5, 7, 9, 11, 13, 15, 17, 19] # indices of original 10 co
     @test all(isapprox.(micro_out.soil_thermal_conductivity[:, coarse_indices[1:3]], Matrix(soil_conductivity_nmr[1:hours2do, 1:3])u"W * m^-1 * K^-1"; rtol=1e1)) # TODO make better!
     @test humidity_matrix[:, 1] ≈ rh1cm_nmr[1:hours2do] rtol=1e-1
     @test humidity_matrix[:, 2] ≈ rh2m_nmr[1:hours2do] rtol=1e-5
-    @test wind_matrix[:, 1] ≈ vel1cm_nmr[1:hours2do] rtol=0.15  # pre-existing marginal drift at the 1cm node, now also slightly shifted by (physically expected) dew/frost formation the Fortran reference never modeled
+    @test wind_matrix[:, 1] ≈ vel1cm_nmr[1:hours2do] rtol=0.09
     @test wind_matrix[:, 2] ≈ vel2m_nmr[1:hours2do] rtol=1e-5 
     @test u"K".(air_temperature_matrix[:, 1]) ≈ ta1cm_nmr[1:hours2do] rtol=1e-2
     @test u"K".(air_temperature_matrix[:, 2]) ≈ ta2m_nmr[1:hours2do] rtol=1e-5

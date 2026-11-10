@@ -4,8 +4,9 @@ A single scalar `shade` fraction ([`NoCanopy`](@ref), the default) cannot repres
 how radiation, wind, temperature and humidity change with height through a
 canopy. [`MultilayerCanopy`](@ref) resolves the canopy into layers (one per 
 `MicroModel.atmosphere.heights` entry at or below `canopy_height`) and solves shortwave, longwave, 
-wind, air-profile, interception and leaf temperature sub-models per layer, each hour, 
-converging the canopy against the soil surface temperature with [`PicardCanopyConvergence`](@ref).
+wind, air-profile, interception and leaf temperature sub-models per layer. Each hour,
+[`AndersonCanopyConvergence`](@ref) solves the canopy and ground temperature together, and
+stops with an error if they don't settle.
 
 The default wind model, [`ExponentialCanopyWindAttenuation`](@ref), requires at least
 10 canopy layers (it replaces the bottom tenth of the profile with a local log-law
@@ -19,17 +20,16 @@ The literature sources for each sub-model are as follows:
 - **Shortwave**: [`TwoStreamRadiation`](@ref) is the classic Dickinson (1983)/
   Sellers (1985) two-stream scheme, with Campbell's (1990) ellipsoidal leaf-angle
   extinction coefficient.
-- **Longwave**: three interchangeable schemes.
+- **Longwave**: two interchangeable schemes.
   [`LayeredRadiosityExchange`](@ref) (the `MultilayerCanopy` default) is an implicit
   reflecting two-stream-slab scheme following Flerchinger's **SHAW** model.
   [`LayeredLongwaveExchange`](@ref) is a from-scratch sequential, non-reflecting
-  gap-fraction cascade. [`AllPairsLongwaveExchange`](@ref) is a direct **port** of
-  micropoint's `twostreamvegCpp`/microclimlearn's `longwavebelow`.
+  gap-fraction cascade.
 - **Wind attenuation**: [`ExponentialCanopyWindAttenuation`](@ref) (exponential decay
   with cumulative plant area index from canopy top, after Nikolov and Zeller 2003) and
   [`MixingLengthCanopyWindAttenuation`](@ref) (a shelter-factor alternative).
 - **In-canopy air profile**: [`RaupachLTheoryAirProfile`](@ref) is a Lagrangian 
-  near-field/far-field scheme (its `:bulk` formulation option matches micropoint's 
+  near-field/far-field scheme (its [`BulkRaupachFormulation`](@ref) matches micropoint's
   `LangrangianOne` closely); [`KTheoryAirProfile`](@ref) is a simpler K-theory diffusion
   alternative.
 - **Rain interception**: [`LayeredRainInterception`](@ref) reuses micropoint's
@@ -39,9 +39,8 @@ The literature sources for each sub-model are as follows:
   [`NoInterception`](@ref) switches it off (the `MultilayerCanopy` default).
 - **Leaf temperature**: solved by
   [HeatExchange.jl](https://github.com/BiophysicalEcology/HeatExchange.jl) — not by
-  Microclimate.jl itself. [`LinearizedLeafTemperature`](@ref) and
-  [`RootFindLeafTemperature`](@ref) (`src/canopy/leaf_temperature/`) both call through
-  to HeatExchange.jl's `convection`/`evaporation` (shape-specific Nusselt
+  Microclimate.jl itself. The leaf energy balance (`src/canopy/leaf_temperature/`)
+  calls through to HeatExchange.jl's `convection`/`evaporation` (shape-specific Nusselt
   correlations, water-potential-driven surface humidity via the Kelvin equation,
   Campbell's (1990) leaf-angle-dependent aerodynamic width); see HeatExchange.jl's own
   docs for the underlying equations.
@@ -104,6 +103,16 @@ using Microclimate, Unitful
 
 canopy_model = example_multilayer_canopy()
 canopy_model.canopy_height, canopy_model.shortwave_model, canopy_model.longwave_model
+```
+
+Any sub-model can be swapped by keyword:
+
+```@example canopy
+canopy_model = example_multilayer_canopy(;
+    air_profile_model = KTheoryAirProfile(),
+    convergence_model = AndersonCanopyConvergence(; on_failure = SmallestResidual()),
+)
+canopy_model.air_profile_model, canopy_model.convergence_model.on_failure
 ```
 
 [`plant_area_index_from_density`](@ref) builds a per-layer plant area index from a

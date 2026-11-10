@@ -7,7 +7,7 @@ Supertype for vegetation canopy models. [`NoCanopy`](@ref) (scalar shade fractio
 abstract type AbstractCanopyModel end
 
 """
-    allocate_canopy(model, heights, boundary_layer_model)
+    allocate_canopy(model, heights, boundary_layer_model; site, vapour_pressure_equation, soil_hydraulic_model)
 
 Pre-allocate a canopy model's per-layer buffers, sized to the sub-canopy
 portion of `heights`. Structural quantities depending only on `model`/
@@ -18,17 +18,24 @@ function allocate_canopy end
 """
     reset_canopy_scratch!(model, buffers)
 
-Zero day-boundary-reset canopy state (e.g. interception storage). No-op for
-`NoCanopy`.
+Empty stored canopy water at the start of a run or day. No-op for `NoCanopy`.
 """
 function reset_canopy_scratch! end
+
+"""
+    reset_canopy_starting_state!(model, buffers)
+
+Clear the values each hour's canopy solve starts from, so that a new run doesn't
+start from the end of the last one. No-op for `NoCanopy`.
+"""
+function reset_canopy_starting_state! end
 
 """
     snapshot_canopy_water!(model, buffers)
 
 Save day-start canopy water storage (e.g. interception), so
 [`restore_canopy_water!`](@ref) can reset spin-up passes back to it like
-T0/T_snow are. No-op for `NoCanopy`.
+the soil and snow temperatures are. No-op for `NoCanopy`.
 """
 function snapshot_canopy_water! end
 
@@ -43,21 +50,16 @@ function restore_canopy_water! end
 """
     initial_ground_overrides(model)
 
-Properly-typed placeholder `(; ground_shortwave_transmission,
-ground_incoming_longwave)` for the initial `HourlySoilEnergyInputs` —
-`nothing` for `NoCanopy`, concrete for `MultilayerCanopy`. Fixes the field's
-type up front so later per-hour updates don't hit a `Nothing`-locked field.
+Starting values for the ground boundary the canopy gives the soil: `nothing` for
+`NoCanopy`, typed placeholders for `MultilayerCanopy`.
 """
 function initial_ground_overrides end
 
 """
     canopy_leaf_area_index(model)
 
-Leaf area index for Campbell soil-hydraulics' Beer's-law soil/canopy
-potential-ET split. `nothing` for `NoCanopy` (falls back to
-`environment_instant.leaf_area_index`, the weather-driven daily series);
-`sum(plant_area_index) * (1 - woody_area_fraction)` for `MultilayerCanopy`,
-narrowing total PAI down to living-leaf LAI.
+Living leaf area index, `sum(plant_area_index) * (1 - woody_area_fraction)`, for
+Campbell soil hydraulics. `nothing` for `NoCanopy`.
 """
 function canopy_leaf_area_index end
 
@@ -65,45 +67,43 @@ function canopy_leaf_area_index end
     canopy_shortwave!(buffers, model; zenith_angle, direct_horizontal_irradiance,
                        diffuse_horizontal_irradiance, ground_reflectance)
 
-Layer-resolved absorbed shortwave through the canopy for the current hour;
-writes per-layer results into `buffers`, returns `(;
-ground_absorbed_shortwave, net_absorbed_shortwave)`. `ground_reflectance`
-is supplied by the caller, not stored on the model. Despite the name,
-`net_absorbed_shortwave` is net radiation retained by the whole
-canopy+ground system below the top boundary (`incoming -
-top_of_canopy_reflected`), not canopy-only absorption — for that, sum the
-per-layer `absorbed_shortwave` buffer instead.
+Shortwave absorbed by each layer, written to `buffers`. Returns
+`(; ground_absorbed_shortwave, net_absorbed_shortwave)`; the net value includes the ground.
 """
 function canopy_shortwave! end
 
 """
     canopy_wind_profile!(buffers, model, boundary_layer_model; site, environment_instant,
-                          canopy_source_temperature, vapour_pressure_equation)
+                          canopy_source_temperature, vapour_pressure_equation, inverse_obukhov_length=nothing)
 
 Per-layer wind-speed profile through the canopy for the current hour;
 writes into `buffers`, returns `(; canopy_top_wind_speed,
-canopy_top_air_temperature, friction_velocity)`. Above canopy top this is
+canopy_top_air_temperature, canopy_top_relative_humidity, friction_velocity,
+inverse_obukhov_length)`. Above canopy top this is
 `atmospheric_surface_profile!` with the canopy's displacement height and
 roughness length; below top, the wind-attenuation shape scales that
-boundary value down through the layers.
+boundary value down through the layers. Stability is iterated unless
+`inverse_obukhov_length` is given.
 """
 function canopy_wind_profile! end
 
 """
-    canopy_longwave!(buffers, model; leaf_temperature, ground_temperature, ground_emissivity,
-                      site, environment_instant, vapour_pressure_equation)
+    canopy_longwave!(buffers, model; leaf_temperature, ground_temperature, ground_emissivity, incoming_longwave)
 
-Layer-resolved longwave exchange (leaf emission/absorption plus sky/ground
-boundary terms) for the current hour; writes per-layer results into
-`buffers`, returns `(; ground_absorbed_longwave, net_absorbed_longwave)`.
-`ground_temperature`/`ground_emissivity` are the lagged (previous-hour)
-soil-surface boundary condition. As with [`canopy_shortwave!`](@ref),
-`net_absorbed_longwave` is net longwave retained by the whole
-canopy+ground system below the top boundary (`incoming_longwave -
-top_of_canopy_upward`), not canopy-only absorption — sum the per-layer
-`absorbed_longwave` buffer for that.
+Longwave absorbed by each layer, written to `buffers`. Returns
+`(; ground_absorbed_longwave, net_absorbed_longwave)`; the net value includes the ground.
 """
 function canopy_longwave! end
+
+"""
+    canopy_incoming_longwave(model; site, environment_instant, vapour_pressure_equation)
+
+Sky longwave arriving at the canopy top for the hour, from the longwave
+model's `atmospheric_radiation_model` ([`precompute_longwave_sky`](@ref),
+`shade=0`). Independent of canopy state, so computed once per hour and passed
+to [`canopy_longwave!`](@ref).
+"""
+function canopy_incoming_longwave end
 
 """
     canopy_layer_geometry(plant_area_index, n_layers)
@@ -131,22 +131,24 @@ function canopy_layer_geometry(layer_plant_area_index::AbstractVector, n_layers)
 end
 
 """
-    canopy_layer_heights(heights, canopy_height, n_layers; min_spacing=1.0e-3u"m")
+    canopy_layer_heights(heights, canopy_height, n_layers)
 
 Canopy layer node heights (top-to-bottom) and each layer's height thickness
-(distance to the next node, or to the ground for the bottom layer), floored
-at `min_spacing` (a node can legitimately sit exactly at `canopy_height`).
+(distance to the next node, or to the ground for the bottom layer). Throws
+unless the node heights are distinct and above the ground.
 """
-function canopy_layer_heights(heights, canopy_height, n_layers; min_spacing=1.0e-3u"m")
+function canopy_layer_heights(heights, canopy_height, n_layers)
     layer_heights = sort(heights[heights .<= canopy_height]; rev=true)
     length(layer_heights) == n_layers ||
         throw(ArgumentError("number of `heights` at or below `canopy_height` must equal n_layers"))
+    allunique(layer_heights) && last(layer_heights) > zero(last(layer_heights)) ||
+        throw(ArgumentError("canopy layer `heights` must be distinct and above the ground"))
 
     layer_thickness = similar(layer_heights)
     for i in 1:(n_layers - 1)
-        layer_thickness[i] = max(layer_heights[i] - layer_heights[i + 1], min_spacing)
+        layer_thickness[i] = layer_heights[i] - layer_heights[i + 1]
     end
-    layer_thickness[n_layers] = max(layer_heights[n_layers], min_spacing)  # bottom layer down to the ground (z=0)
+    layer_thickness[n_layers] = layer_heights[n_layers]  # bottom layer down to the ground (z=0)
     return (; layer_heights, layer_thickness)
 end
 
