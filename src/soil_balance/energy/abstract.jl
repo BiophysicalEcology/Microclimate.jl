@@ -41,3 +41,16 @@ vapor with it. A canopy gives this to the soil. Use the conductances as they are
     heat_conductance::HC
     vapor_conductance::VC
 end
+
+"""
+    GroundSurface(; temperature, emissivity, reflectance, relative_humidity)
+
+The ground surface a canopy sees: its temperature, longwave emissivity, shortwave
+reflectance and the relative humidity of the air at the surface.
+"""
+@kwdef struct GroundSurface{T,E,R,RH}
+    temperature::T
+    emissivity::E
+    reflectance::R
+    relative_humidity::RH
+end

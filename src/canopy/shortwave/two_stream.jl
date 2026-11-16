@@ -309,7 +309,7 @@ function allocate_shortwave(radiation_model::TwoStreamRadiation, canopy_height, 
 end
 
 function canopy_shortwave!(buffers, radiation_model::TwoStreamRadiation, plant_area_index;
-    zenith_angle, direct_horizontal_irradiance, diffuse_horizontal_irradiance, ground_reflectance,
+    zenith_angle, direct_horizontal_irradiance, diffuse_horizontal_irradiance, ground,
 )
     (; layer_plant_area_index_boundaries, layer_plant_area_index_above, boundary_downward_shortwave,
        boundary_upward_shortwave, downward_direct_shortwave, downward_diffuse_shortwave,
@@ -317,7 +317,7 @@ function canopy_shortwave!(buffers, radiation_model::TwoStreamRadiation, plant_a
 
     PAI = sum(plant_area_index)
     θ = zenith_angle
-    ρg = max(ground_reflectance, 1.0e-4) # the two-stream solution divides by ground reflectance
+    ρg = max(ground.reflectance, 1.0e-4) # the two-stream solution divides by ground reflectance
     Idir = direct_horizontal_irradiance
     Idiff = diffuse_horizontal_irradiance
     Iglobal = Idir + Idiff

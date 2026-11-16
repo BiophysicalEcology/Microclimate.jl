@@ -8,21 +8,18 @@ const CANOPY_TIMESTEP = 1.0u"hr"
 """
     CanopyEnergyBalanceInputs(model::MultilayerCanopy; environment_instant, zenith_angle,
                                direct_horizontal_irradiance, diffuse_horizontal_irradiance,
-                               ground_reflectance, ground_temperature, ground_emissivity,
-                               ground_relative_humidity, canopy_source_temperature, rainfall=0.0u"kg/m^2",
+                               ground, canopy_source_temperature, rainfall=0.0u"kg/m^2",
                                leaf_water_potential=model.leaf_parameters.leaf_water_potential)
 
-Hourly forcing and lagged state for [`canopy_energy_balance!`](@ref).
+Hourly forcing and lagged state for [`canopy_energy_balance!`](@ref). `ground` is the
+[`GroundSurface`](@ref).
 """
-struct CanopyEnergyBalanceInputs{EI,ZA,DHI,DFI,GR,GT,GE,GRH,CST,RF,LWP}
+struct CanopyEnergyBalanceInputs{EI,ZA,DHI,DFI,G<:GroundSurface,CST,RF,LWP}
     environment_instant::EI
     zenith_angle::ZA
     direct_horizontal_irradiance::DHI
     diffuse_horizontal_irradiance::DFI
-    ground_reflectance::GR
-    ground_temperature::GT
-    ground_emissivity::GE
-    ground_relative_humidity::GRH
+    ground::G
     canopy_source_temperature::CST
     rainfall::RF
     leaf_water_potential::LWP
@@ -30,12 +27,11 @@ end
 
 function CanopyEnergyBalanceInputs(model::MultilayerCanopy;
     environment_instant, zenith_angle, direct_horizontal_irradiance, diffuse_horizontal_irradiance,
-    ground_reflectance, ground_temperature, ground_emissivity, ground_relative_humidity, canopy_source_temperature,
+    ground, canopy_source_temperature,
     rainfall=0.0u"kg/m^2", leaf_water_potential=model.leaf_parameters.leaf_water_potential,
 )
     CanopyEnergyBalanceInputs(environment_instant, zenith_angle, direct_horizontal_irradiance,
-        diffuse_horizontal_irradiance, ground_reflectance, ground_temperature, ground_emissivity,
-        ground_relative_humidity, canopy_source_temperature, rainfall, leaf_water_potential)
+        diffuse_horizontal_irradiance, ground, canopy_source_temperature, rainfall, leaf_water_potential)
 end
 
 # Bounds the wet-surface share of evaporation_mass_flux to what storage can
@@ -78,7 +74,7 @@ evaporates or condenses is taken from storage once, after the solve. It is limit
 [`available_canopy_water`](@ref) and [`canopy_water_capacity`](@ref), and any latent heat that
 can't happen is added to the sensible heat, without solving leaf temperature again.
 
-`inputs.ground_temperature` is where the ground starts. `inputs.canopy_source_temperature` and
+`inputs.ground.temperature` is where the ground starts. `inputs.canopy_source_temperature` and
 `inputs.leaf_water_potential` come from the caller and stay fixed during the solve.
 
 Returns `(; ground_absorbed_shortwave, net_absorbed_shortwave, ground_absorbed_longwave,
@@ -96,8 +92,7 @@ function canopy_energy_balance!(buffers, model::MultilayerCanopy, boundary_layer
     ground_temperature_after_hour::G=keep_ground_temperature,
 ) where G
     (; environment_instant, zenith_angle, direct_horizontal_irradiance, diffuse_horizontal_irradiance,
-       ground_reflectance, ground_temperature, ground_emissivity, ground_relative_humidity, canopy_source_temperature,
-       rainfall, leaf_water_potential) = inputs
+       ground, canopy_source_temperature, rainfall, leaf_water_potential) = inputs
 
     leaf_temperature = buffers.leaf.leaf_temperature
     air_temperature = buffers.air_profile.air_temperature
@@ -112,7 +107,7 @@ function canopy_energy_balance!(buffers, model::MultilayerCanopy, boundary_layer
     n_layers = length(leaf_temperature)
 
     shortwave_result = canopy_shortwave!(buffers, model;
-        zenith_angle, direct_horizontal_irradiance, diffuse_horizontal_irradiance, ground_reflectance)
+        zenith_angle, direct_horizontal_irradiance, diffuse_horizontal_irradiance, ground)
 
     wind_result = canopy_wind_profile!(buffers, model, boundary_layer_model;
         site, environment_instant, canopy_source_temperature, vapour_pressure_equation)

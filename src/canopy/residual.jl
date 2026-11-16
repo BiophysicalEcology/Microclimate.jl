@@ -168,7 +168,7 @@ the [`GroundAirExchange`](@ref) the soil uses.
 function evaluate_canopy!(residual, inverse_obukhov_length, ground_temperature, buffers, model::MultilayerCanopy, boundary_layer_model,
     inputs::CanopyEnergyBalanceInputs, hour_conditions; site, vapour_pressure_equation,
 )
-    (; environment_instant, ground_emissivity, ground_relative_humidity, leaf_water_potential) = inputs
+    (; environment_instant, leaf_water_potential) = inputs
     (; atmospheric_pressure, reference_temperature, reference_humidity) = environment_instant
     (; incoming_longwave, dry_conductance, stability_limits) = hour_conditions
     (; leaf_temperature, sensible_heat_flux, evaporation_mass_flux, absorbed_radiation, net_balance) = buffers.leaf
@@ -181,6 +181,7 @@ function evaluate_canopy!(residual, inverse_obukhov_length, ground_temperature, 
     lowest_temperature, highest_temperature = CANOPY_TEMPERATURE_BOUNDS
     in_bounds = !isnan(inverse_obukhov_length) && lowest_temperature <= ground_temperature <= highest_temperature
     ground_temperature = _within_bounds(ground_temperature, lowest_temperature, highest_temperature)
+    ground = setproperties(inputs.ground, (; temperature=ground_temperature))
     for i in 1:n_layers
         in_bounds &= lowest_temperature <= leaf_temperature[i] <= highest_temperature &&
             lowest_temperature <= air.current_air_temperature[i] <= highest_temperature &&
@@ -195,7 +196,7 @@ function evaluate_canopy!(residual, inverse_obukhov_length, ground_temperature, 
         inverse_obukhov_length=isnan(inverse_obukhov_length) ? zero(inverse_obukhov_length) : inverse_obukhov_length)
     wind_speed = buffers.wind.wind_speed
     longwave_result = canopy_longwave!(buffers, model;
-        leaf_temperature, ground_temperature, ground_emissivity, incoming_longwave)
+        leaf_temperature, ground, incoming_longwave)
 
     for i in 1:n_layers
         air_temperature = air.current_air_temperature[i]
@@ -222,7 +223,7 @@ function evaluate_canopy!(residual, inverse_obukhov_length, ground_temperature, 
 
     reference_vapor_density = wet_air_properties(reference_temperature, reference_humidity, atmospheric_pressure;
         vapour_pressure_equation).vapour_density
-    ground_vapor_density = wet_air_properties(ground_temperature, ground_relative_humidity, atmospheric_pressure;
+    ground_vapor_density = wet_air_properties(ground_temperature, ground.relative_humidity, atmospheric_pressure;
         vapour_pressure_equation).vapour_density
     initial_top_vapor_density = wet_air_properties(hour_conditions.canopy_top_air_temperature, hour_conditions.canopy_top_relative_humidity,
         atmospheric_pressure; vapour_pressure_equation).vapour_density

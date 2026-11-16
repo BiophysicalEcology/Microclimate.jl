@@ -65,9 +65,9 @@ function canopy_leaf_area_index end
 
 """
     canopy_shortwave!(buffers, model; zenith_angle, direct_horizontal_irradiance,
-                       diffuse_horizontal_irradiance, ground_reflectance)
+                       diffuse_horizontal_irradiance, ground)
 
-Shortwave absorbed by each layer, written to `buffers`. Returns
+Shortwave absorbed by each layer over the [`GroundSurface`](@ref) `ground`, written to `buffers`. Returns
 `(; ground_absorbed_shortwave, net_absorbed_shortwave)`; the net value includes the ground.
 """
 function canopy_shortwave! end
@@ -88,9 +88,9 @@ boundary value down through the layers. Stability is iterated unless
 function canopy_wind_profile! end
 
 """
-    canopy_longwave!(buffers, model; leaf_temperature, ground_temperature, ground_emissivity, incoming_longwave)
+    canopy_longwave!(buffers, model; leaf_temperature, ground, incoming_longwave)
 
-Longwave absorbed by each layer, written to `buffers`. Returns
+Longwave absorbed by each layer over the [`GroundSurface`](@ref) `ground`, written to `buffers`. Returns
 `(; ground_absorbed_longwave, net_absorbed_longwave)`; the net value includes the ground.
 """
 function canopy_longwave! end
