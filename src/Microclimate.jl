@@ -104,7 +104,7 @@ export AbstractCondensationModel, NoCondensation, BulkTransferCondensation, Garr
 export SoilHeatTransportModel, SoilHeatTransport1D
 
 # Soil freezing models
-export SoilPhaseTransitionModel, PhaseTransitionLatentHeat
+export SoilPhaseTransitionModel, PhaseTransitionLatentHeat, IsothermalPhaseTransition
 
 # Rainfall schedule
 export AbstractRainfallSchedule, DailyRainfall, HourlyRainfall
@@ -218,6 +218,7 @@ include("forcing.jl")
 # ODE, so freezing/ must come before energy/.
 include("soil_balance/freezing/abstract.jl")
 include("soil_balance/freezing/latent_heat.jl")
+include("soil_balance/freezing/isothermal.jl")
 include("soil_balance/energy/abstract.jl")
 include("soil_balance/energy/heat_transport_1d.jl")
 

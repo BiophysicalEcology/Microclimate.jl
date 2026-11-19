@@ -26,5 +26,6 @@ using Microclimate, Test, SafeTestsets
 @safetestset "frozen infiltration" begin include("frozen_infiltration_test.jl") end
 @safetestset "monthly simulation" begin include("micro_testrun_monthly.jl") end
 @safetestset "monthly simulation with snow" begin include("micro_testrun_monthly_snow.jl") end
+@safetestset "soil freezing" begin include("soil_freezing_test.jl") end
 @safetestset "daily simulation" begin include("micro_testrun_daily.jl") end
 @safetestset "canopy in main solve loop" begin include("micro_testrun_canopy.jl") end
