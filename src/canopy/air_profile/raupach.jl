@@ -566,7 +566,6 @@ function canopy_air_profile!(buffers, model::RaupachLTheoryAirProfile, boundary_
     # Raupach's notation.
     a₀ = ground_velocity_std_factor
     a₁ = canopy_top_velocity_std_factor
-    γ = boundary_layer_model.dyer_constant
     κ = boundary_layer_model.karman_constant
 
 # Eq. 18 (K_f = σ_w²·T_L) → eddy_diffusivity[i]. T_L is Raupach's Lagrangian integral timescale, computed once above this function 
@@ -600,15 +599,7 @@ function canopy_air_profile!(buffers, model::RaupachLTheoryAirProfile, boundary_
     #   T_L = min(a₂h/u★, T_L,max)
     z★ = max(h - d, 1.0e-3u"m")
 
-    Φh = isfinite(obukhov_length) ?
-        calc_Φ_h(
-            z★,
-            γ,
-            obukhov_length,
-            boundary_layer_model.stable_Φ_h_coefficient,
-            boundary_layer_model.min_stable_Φ_h,
-            boundary_layer_model.max_stable_Φ_h,
-        ) : 1.0
+    Φh = calc_Φ_h(boundary_layer_model, stability_parameter(ObukhovLength(), z★, obukhov_length))
 
     a₂ = κ * (1.0 - d / h) / (a₁^2 * Φh)
     TL = min(a₂ * h / u★, max_lagrangian_timescale)

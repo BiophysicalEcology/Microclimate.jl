@@ -1,45 +1,179 @@
 """
-    MoninObukhov(; karman_constant=0.4, dyer_constant=16.0, stable_beta=4.7,
-                   turbulent_prandtl_number=0.74, stable_Φ_h_coefficient=6.0,
-                   min_stable_Φ_h=0.5, max_stable_Φ_h=1.5, min_friction_velocity=0.1u"m/s",
-                   thermal_roughness_model=SublayerStantonRoughness())
+    AbstractUnstableStability
 
-Monin–Obukhov similarity theory boundary-layer formulation. Holds the
-empirical constants of the unstable (Businger-Dyer/Paulson, `dyer_constant`)
-and stable Φ relations.
+Monin–Obukhov stability corrections in unstable air, `ζ = z/L < 0`: variants implement
+[`calc_ψ_m`](@ref), [`calc_ψ_h`](@ref) and [`calc_Φ_h`](@ref) of `ζ`.
+"""
+abstract type AbstractUnstableStability end
 
-Two distinct stable-branch parameterizations:
-- `stable_beta`/`turbulent_prandtl_number`: linear form (`ψ_m = -stable_beta·z/L`,
-  `ψ_h = -(stable_beta/turbulent_prandtl_number)·z/L`, `ζ=z/L≥0`) for the
-  log-profile offsets [`calc_ψ_m`](@ref)/[`calc_ψ_h`](@ref) use (Businger et al. 1971).
-- `stable_Φ_h_coefficient`/`min_stable_Φ_h`/`max_stable_Φ_h`: saturating form
-  (`Φ_h = clamp(1 + stable_Φ_h_coefficient·ζ/(1+ζ), min_stable_Φ_h,
-  max_stable_Φ_h)`) for the bulk diffusivity multiplier [`calc_Φ_h`](@ref). Saturates by
-  construction (→ `1+stable_Φ_h_coefficient` as `ζ→∞`) even before the explicit clamp,
-  keeping `RaupachLTheoryAirProfile`'s `T_L` bounded under strongly stable,
-  low-wind conditions.
+"""
+    AbstractStableStability
 
-The thermal_roughness_model is a z0-to-z0h correction for the sensible heat transfer 
+Monin–Obukhov stability corrections in stable air, `ζ = z/L ≥ 0`: variants implement
+[`calc_ψ_m`](@ref), [`calc_ψ_h`](@ref) and [`calc_Φ_h`](@ref) of `ζ`.
+"""
+abstract type AbstractStableStability end
+
+"""
+    MoninObukhov(; karman_constant=0.4, unstable_stability=PaulsonDyer(), stable_stability=ChengBrutsaert(),
+                   min_friction_velocity=0.1u"m/s", thermal_roughness_model=SublayerStantonRoughness(),
+                   stability_limit=NoStabilityLimit())
+
+Monin–Obukhov similarity theory boundary-layer formulation. Stability corrections come from
+`unstable_stability` ([`AbstractUnstableStability`](@ref)) in unstable air and
+`stable_stability` ([`AbstractStableStability`](@ref)) in stable air. The default pairs
+Paulson's integrated Businger–Dyer forms with Cheng & Brutsaert (2005);
+`PaulsonDyer()` with [`BeljaarsHoltslag`](@ref) is ECMWF's pair, and
+[`NicheMapRUnstable`](@ref) with [`NicheMapRStable`](@ref) is NicheMapR's.
+`stability_limit` bounds the canopy-top stability ([`NoStabilityLimit`](@ref) or
+[`MomentumCorrectionLimit`](@ref)).
+
+The thermal_roughness_model is a z0-to-z0h correction for the sensible heat transfer
 coefficient. Default is SublayerStantonRoughness(); canopy uses ScalarRoughnessRatio().
+"""
+@kwdef struct MoninObukhov{KC,US<:AbstractUnstableStability,SS<:AbstractStableStability,MINUF,TRM,SL} <: AbstractBoundaryLayerModel
+    karman_constant::KC = 0.4
+    unstable_stability::US = PaulsonDyer()
+    stable_stability::SS = ChengBrutsaert()
+    min_friction_velocity::MINUF = 0.1u"m/s" # stability clamp
+    thermal_roughness_model::TRM = SublayerStantonRoughness()
+    stability_limit::SL = NoStabilityLimit()
+end
+
+"""
+    AbstractStabilityLimit
+
+A bound on the canopy-top inverse Obukhov length the canopy's flux implies.
+"""
+abstract type AbstractStabilityLimit end
+
+"""
+    NoStabilityLimit()
+
+The inverse Obukhov length the flux implies, unbounded.
+"""
+struct NoStabilityLimit <: AbstractStabilityLimit end
+
+"""
+    MomentumCorrectionLimit(; fraction=0.9)
+
+Bounds the inverse Obukhov length where the momentum stability correction between the
+roughness length and the reference height reaches `fraction` of the log term, so the
+friction velocity changes with stability by at most a factor `1/(1 + fraction)` in stable
+air and `1/(1 - fraction)` in unstable air. The
+stability the flux implies approaches the limit smoothly, `limit·tanh(1/L / limit)`. Where the
+flux implies more stability than that, as in calm nights when cooling decouples the canopy
+faster than it suppresses the flux, there is no consistent state; the limit gives one.
+"""
+@kwdef struct MomentumCorrectionLimit{F} <: AbstractStabilityLimit
+    fraction::F = 0.9
+end
+
+"""
+    PaulsonDyer(; momentum_dyer_constant=16.0, heat_dyer_constant=16.0)
+
+Paulson's (1970) integrals of the Businger–Dyer flux-gradient relations,
+`φ_m = (1 - γ_m·ζ)^(-1/4)` and `Φ_h = (1 - γ_h·ζ)^(-1/2)`, with `γ_m` the
+`momentum_dyer_constant` and `γ_h` the `heat_dyer_constant` (Dyer 1974).
+
+# References
+- Paulson, C. A. (1970). The mathematical representation of wind speed and
+  temperature profiles in the unstable atmospheric surface layer.
+  *Journal of Applied Meteorology*, 9(6), 857–861.
+- Dyer, A. J. (1974). A review of flux–profile relationships.
+  *Boundary-Layer Meteorology*, 7(3), 363–372.
+"""
+@kwdef struct PaulsonDyer{DM,DH} <: AbstractUnstableStability
+    momentum_dyer_constant::DM = 16.0
+    heat_dyer_constant::DH = 16.0
+end
+
+"""
+    ChengBrutsaert(; momentum_a=6.1, momentum_b=2.5, heat_c=5.3, heat_d=1.1)
+
+Cheng & Brutsaert's (2005) stable corrections, fitted to CASES-99,
+`ψ_m = -a·ln(ζ + (1 + ζᵇ)^(1/b))` and `ψ_h = -c·ln(ζ + (1 + ζᵈ)^(1/d))`. They level
+off into the z-less limit rather than growing linearly, so the bulk Richardson number has
+no critical value and every stable state has a Monin–Obukhov solution. Paired with an
+unstable form they are continuous at neutral, but their slopes there differ from it.
+
+# References
+Cheng, Y., & Brutsaert, W. (2005). Flux-profile relationships for wind speed
+and temperature in the stable atmospheric boundary layer.
+*Boundary-Layer Meteorology*, 114, 519–538.
+"""
+@kwdef struct ChengBrutsaert{A,B,C,D} <: AbstractStableStability
+    momentum_a::A = 6.1
+    momentum_b::B = 2.5
+    heat_c::C = 5.3
+    heat_d::D = 1.1
+end
+
+"""
+    BusingerLinear(; coefficient=5.0)
+
+The log-linear stable corrections, `ψ_m = ψ_h = -coefficient·ζ` and
+`Φ_h = 1 + coefficient·ζ` (Dyer 1974). They overcorrect past `ζ ≈ 1`, where turbulence
+under them collapses at a critical bulk Richardson number of `1/coefficient`.
+
+# References
+- Dyer, A. J. (1974). A review of flux–profile relationships.
+  *Boundary-Layer Meteorology*, 7(3), 363–372.
+"""
+@kwdef struct BusingerLinear{C} <: AbstractStableStability
+    coefficient::C = 5.0
+end
+
+"""
+    BeljaarsHoltslag(; a=1.0, b=2/3, c=5.0, d=0.35)
+
+Beljaars & Holtslag's (1991) stable corrections, as ECMWF's IFS uses them,
+`ψ_m = -(a·ζ + b·(ζ - c/d)·exp(-d·ζ) + b·c/d)` and
+`ψ_h = -((1 + 2a·ζ/3)^(3/2) + b·(ζ - c/d)·exp(-d·ζ) + b·c/d - 1)`. Like
+[`ChengBrutsaert`](@ref) they weaken the correction at strong stability.
+
+# References
+Beljaars, A. C. M., & Holtslag, A. A. M. (1991). Flux parameterization over land
+surfaces for atmospheric models. *Journal of Applied Meteorology*, 30(3), 327–341.
+"""
+@kwdef struct BeljaarsHoltslag{A,B,C,D} <: AbstractStableStability
+    a::A = 1.0
+    b::B = 2 / 3
+    c::C = 5.0
+    d::D = 0.35
+end
+
+"""
+    NicheMapRUnstable(; dyer_constant=16.0)
+
+NicheMapR's unstable corrections: [`PaulsonDyer`](@ref) with one `dyer_constant` for
+momentum and heat, and `ζ` bounded at -10.
+"""
+@kwdef struct NicheMapRUnstable{DC} <: AbstractUnstableStability
+    dyer_constant::DC = 16.0
+end
+
+"""
+    NicheMapRStable(; stable_beta=4.7, turbulent_prandtl_number=0.74,
+        stable_Φ_h_coefficient=6.0, min_stable_Φ_h=0.5, max_stable_Φ_h=1.5)
+
+NicheMapR's stable corrections: Businger et al.'s (1971) linear form,
+`ψ_m = -stable_beta·ζ` and `ψ_h = -(stable_beta/turbulent_prandtl_number)·ζ`, clamped to
+`[-4, 3]`, and a separate saturating diffusivity multiplier
+`Φ_h = clamp(1 + stable_Φ_h_coefficient·ζ/(1+ζ), min_stable_Φ_h, max_stable_Φ_h)`, with
+`ζ` bounded at 10. The clamps put kinks in every function of stability.
 
 # References
 Businger, J. A., Wyngaard, J. C., Izumi, Y., & Bradley, E. F. (1971).
 Flux–profile relationships in the atmospheric surface layer.
 *Journal of the Atmospheric Sciences*, 28(2), 181–189.
-
-Dyer, A. J. (1974). A review of flux–profile relationships.
-*Boundary-Layer Meteorology*, 7(3), 363–372.
 """
-@kwdef struct MoninObukhov{KC,DC,SB,PR,PHC,MINPH,MAXPH,MINUF,TRM} <: AbstractBoundaryLayerModel
-    karman_constant::KC = 0.4
-    dyer_constant::DC = 16.0
+@kwdef struct NicheMapRStable{SB,PR,PHC,MINPH,MAXPH} <: AbstractStableStability
     stable_beta::SB = 4.7
     turbulent_prandtl_number::PR = 0.74
     stable_Φ_h_coefficient::PHC = 6.0
     min_stable_Φ_h::MINPH = 0.5
     max_stable_Φ_h::MAXPH = 1.5
-    min_friction_velocity::MINUF = 0.1u"m/s" # stability clamp
-    thermal_roughness_model::TRM = SublayerStantonRoughness()
 end
 
 """
@@ -72,11 +206,18 @@ end
 
 const _MIN_LOGLAW_RATIO = 5.0 # avoid the log-law inversion becoming ill-conditioned
 
+# The unstable first guess, before any previous value exists to start from
+const INITIAL_OBUKHOV_LENGTH = -0.3u"m"
+
+# ρ·cₚ·T/(κ·g), the factor in the Obukhov relation L = factor·u*³/H. A constant, as in
+# the original Fortran. TODO calculate it from the air properties.
+const OBUKHOV_LENGTH_FACTOR = u"J*s^2/m^4"(6.003e-8u"cal*minute^2/cm^4")
+
 function allocate_profile(::MoninObukhov, heights)
     wind_speed = similar(heights, typeof(0.0u"m/s")) # output wind speeds
     air_temperature = similar(heights, typeof(0.0u"K")) # output temperatures, need to do this otherwise get InexactError
     relative_humidity = similar(heights, Float64) # output relative humidities
-    obukhov_length_prev = Ref(-0.3u"m")  # warm-start across timesteps
+    obukhov_length_prev = Ref(INITIAL_OBUKHOV_LENGTH)  # warm-start across timesteps
     warned_below_roughness = Ref(false)  # emit warning at most once per buffer
     warned_above_reference = Ref(false)
     return (; heights, air_temperature, wind_speed, relative_humidity,
@@ -96,13 +237,13 @@ temperature; heights above `reference_height` are extrapolated via the log-law.
 - `heights`: Heights at which profiles are returned (default: `DEFAULT_HEIGHTS`).
 - `reference_height`: Measurement height for met inputs (default: `last(heights)`).
 - `surface_temperature`: Soil/surface temperature.
-- `site`: `Site` holding `roughness_height` and `elevation`.
+- `site`: `Site` holding `roughness_height`.
 - `environment_instant`: Named tuple with `reference_temperature`, `reference_wind_speed`,
   `reference_humidity`, `atmospheric_pressure`, and `zenith_angle`.
 
 # Returns
 Named tuple: `wind_speed`, `air_temperature`, `relative_humidity` (profiles at each height),
-`convective_heat_flux` (`W/m²`), `friction_velocity` (`m/s`).
+`convective_heat_flux` (`W/m²`), `friction_velocity` (`m/s`), `obukhov_length`, `inverse_obukhov_length`.
 
 # References
 - Businger et al. (1971). *J. Atmos. Sci.* 28, 181–189.
@@ -158,6 +299,12 @@ is anchored at `z0` using `roughness_height_temperature`. Pass an absolute heigh
 `surface_relative_humidity` (only used when `temperature_anchor_height` is
 given): the known relative humidity *at* `temperature_anchor_height`,
 anchoring vapour pressure the same two-point way.
+
+`stability_variable` ([`ObukhovLength`](@ref) or [`InverseObukhovLength`](@ref))
+selects what the stability iteration solves for. Both are returned, as
+`obukhov_length` and `inverse_obukhov_length`. Passing `stability` (as
+`stability_variable`) skips the iteration and evaluates the profile at that
+stability.
 """
 function atmospheric_surface_profile!(bl::MoninObukhov, buffers;
     site,
@@ -170,9 +317,9 @@ function atmospheric_surface_profile!(bl::MoninObukhov, buffers;
     thermal_roughness_model=bl.thermal_roughness_model,
     temperature_anchor_height=nothing,
     surface_relative_humidity=nothing,
+    stability_variable=ObukhovLength(),
+    stability=nothing,
 )
-    (; elevation) = site
-    (; karman_constant, dyer_constant, stable_beta, turbulent_prandtl_number, min_friction_velocity) = bl
     (; atmospheric_pressure, reference_temperature, reference_wind_speed, reference_humidity) = environment_instant
 
     (; heights, air_temperature, wind_speed, relative_humidity,
@@ -184,9 +331,6 @@ function atmospheric_surface_profile!(bl::MoninObukhov, buffers;
     ref_height = u"m"(reference_height)
     z0 = roughness_length
     z = ref_height - displacement_height
-    # If the reference height appears in the heights array, pin its slot to measured values
-    # to avoid the small inconsistency in ψ_h between the penultimate and final Obukhov iterations.
-    ref_idx = findfirst(==(ref_height), heights)
 
     if !warned_below_roughness[] && minimum(heights) - displacement_height < z0
         @warn """Some heights are within the roughness length ($z0) of the displaced origin 
@@ -203,44 +347,31 @@ function atmospheric_surface_profile!(bl::MoninObukhov, buffers;
 
     reference_temp = u"K"(reference_temperature)
     surface_temp = u"K"(surface_temperature)
-    κ = karman_constant
-    γ = dyer_constant
     v_ref_height = reference_wind_speed
-
-    # compute rcptkg (was a constant in original Fortran version)
-    # dry_air_out = dry_air_properties(u"K"(reference_temperature), P_atmos)
-    # wet_air_out = wet_air_properties(u"K"(reference_temperature), rh=reference_humidity, P_atmos)
-    # ρ = dry_air_out.ρ_air
-    # c_p = wet_air_out.specific_heat
-    # TODO make this work with SI units
-    #ρcpTκg = u"cal*minute^2/cm^4"(ρ * c_p * T_ref_height / (κ * g_n))
-    ρcpTκg = u"J*s^2/m^4"(6.003e-8u"cal*minute^2/cm^4")
 
     ΔT = reference_temp - surface_temp
     mean_temp = (surface_temp + reference_temp) / 2
     # TODO call calc_ρ_cp method specific to elevation and RH in final version but do it this way for NicheMapR comparison
-    ρ_cp = calc_ρ_cp(mean_temp)#, elevation, reference_humidity)
+    ρ_cp = calc_ρ_cp(mean_temp)
     kinematic_viscosity = dry_air_properties(mean_temp, atmospheric_pressure).kinematic_viscosity
 
-    Obukhov_out = calc_Obukhov_length(reference_temp, surface_temp, v_ref_height, z0, z, ρcpTκg, κ, ΔT, ρ_cp, kinematic_viscosity;
-        γ, stable_beta, turbulent_prandtl_number, max_iter=30, tol=1e-2, initial_obukhov_length=obukhov_length_prev[],
-        min_friction_velocity, thermal_roughness_model)
-    obukhov_length = Obukhov_out.obukhov_length
-    obukhov_length_prev[] = obukhov_length
+    Obukhov_out = surface_layer_stability(bl, stability_variable, stability, obukhov_length_prev, reference_temp,
+        surface_temp, v_ref_height, z0, z, ΔT, ρ_cp, kinematic_viscosity; thermal_roughness_model)
+    stability = Obukhov_out.value
     roughness_height_temp = Obukhov_out.roughness_height_temperature
     convective_heat_flux = Obukhov_out.convective_heat_flux
     friction_velocity = Obukhov_out.friction_velocity
     ψ_h = Obukhov_out.ψ_h
     # See docstring: default anchors on z0/roughness_height_temp; temperature_anchor_height
-    # switches to a direct two-point interpolation, ψ_h included at the anchor.
+    # switches to a direct two-point interpolation.
     use_anchor = !isnothing(temperature_anchor_height)
     z_temp_anchor = use_anchor ? u"m"(temperature_anchor_height) - displacement_height : u"m"(z0)
     anchor_temp = use_anchor ? surface_temp : roughness_height_temp
-    ψ_h_anchor = use_anchor ? calc_ψ_h(z_temp_anchor, γ, obukhov_length, stable_beta, turbulent_prandtl_number) : 0.0
-    # Floor: under strong instability ψ_h can approach/exceed log(z/z_temp_anchor),
-    # blowing up every non-reference air_temperature.
-    ref_temp_log_ratio = log(z / z_temp_anchor)
-    temp_denom = max(ref_temp_log_ratio + ψ_h_anchor - ψ_h, 0.1 * ref_temp_log_ratio, 1e-6)
+    ψ_h_anchor = calc_ψ_h(bl, stability_parameter(stability_variable, z_temp_anchor, stability))
+    ψ_m_z0 = calc_ψ_m(bl, stability_parameter(stability_variable, z0, stability))
+    temp_denom = log(z / z_temp_anchor) + ψ_h_anchor - ψ_h
+    # Wind follows the reference wind, not the friction velocity, which has a floor in calm air
+    reference_momentum_term = log(z / z0) - calc_ψ_m(bl, stability_parameter(stability_variable, z, stability)) + ψ_m_z0
 
     reference_vapor_pressure = wet_air_properties(reference_temp, reference_humidity, atmospheric_pressure; vapour_pressure_equation).vapour_pressure
     # No surface_relative_humidity: constant vapour pressure with height, as before.
@@ -258,25 +389,12 @@ function atmospheric_surface_profile!(bl::MoninObukhov, buffers;
             wind_speed[i] = zero(friction_velocity)
             air_temperature[i] = surface_temp + (roughness_height_temp - surface_temp) * frac
             relative_humidity[i] = clamp(reference_vapor_pressure / vapour_pressure(vapour_pressure_equation, air_temperature[i]), 0.0, 1.0)
-        elseif i == ref_idx
-            wind_speed[i] = v_ref_height
-            air_temperature[i] = reference_temp
-            relative_humidity[i] = reference_humidity
         else
-            ψ_m1 = calc_ψ_m(h, γ, obukhov_length, stable_beta)
-            ψ_h2 = calc_ψ_h(h, γ, obukhov_length, stable_beta, turbulent_prandtl_number)
-            h_ratio = h / z0  # dimensionless h/z0
-            # Floor at a fraction of the neutral log term (see calc_Obukhov_length) --
-            # an absolute constant is meaningless when log(h_ratio) is itself O(1).
-            log_h_ratio = log(h_ratio)
-            wind_log_arg = max(log_h_ratio - ψ_m1, 0.1 * log_h_ratio, 1e-6)
-            wind_speed[i] = (friction_velocity / κ) * wind_log_arg
-            # Temperature uses its own anchor/ratio (z_temp_anchor may differ
-            # from z0 -- see above); only floored when h is above the anchor.
-            log_temp_h_ratio = log(h / z_temp_anchor)
-            temp_num = log_temp_h_ratio + ψ_h_anchor - ψ_h2
-            temp_log_arg = log_temp_h_ratio >= 0 ?
-                max(temp_num, 0.1 * log_temp_h_ratio, 1e-6) : temp_num
+            height_stability = stability_parameter(stability_variable, h, stability)
+            momentum_term = log(h / z0) - calc_ψ_m(bl, height_stability) + ψ_m_z0
+            wind_speed[i] = v_ref_height * momentum_term / reference_momentum_term
+            # Temperature uses its own anchor (z_temp_anchor may differ from z0 -- see above)
+            temp_log_arg = log(h / z_temp_anchor) + ψ_h_anchor - calc_ψ_h(bl, height_stability)
             air_temperature[i] = anchor_temp + (reference_temp - anchor_temp) * temp_log_arg / temp_denom
             vapor_pressure_h = use_humidity_anchor ?
                 anchor_vapor_pressure + (reference_vapor_pressure - anchor_vapor_pressure) * temp_log_arg / temp_denom :
@@ -291,9 +409,21 @@ function atmospheric_surface_profile!(bl::MoninObukhov, buffers;
         relative_humidity,
         convective_heat_flux=u"W/m^2"(convective_heat_flux),
         friction_velocity,
-        obukhov_length,
+        obukhov_length=to_obukhov_length(stability_variable, stability),
+        inverse_obukhov_length=to_inverse_obukhov_length(stability_variable, stability),
     )
 end
+
+# No stability given: iterate it, warm-started from (and updating) the buffer's previous value
+function surface_layer_stability(bl, stability_variable, ::Nothing, obukhov_length_prev, args...; kw...)
+    out = monin_obukhov_iteration(bl, stability_variable, args...; max_iterations=30, tolerance=1e-2,
+        initial_value=from_obukhov_length(stability_variable, obukhov_length_prev[]), kw...)
+    obukhov_length_prev[] = to_obukhov_length(stability_variable, out.value)
+    return out
+end
+# Stability given: one step at that value
+surface_layer_stability(bl, stability_variable, stability, obukhov_length_prev, args...; kw...) =
+    (; value=stability, monin_obukhov_step(bl, stability_variable, stability, args...; kw...)...)
 
 function surface_fluxes(bl::MoninObukhov;
     surface_temperature, air_temperature, wind_speed, zenith_angle,
@@ -324,19 +454,16 @@ function surface_fluxes(bl::MoninObukhov;
             calc_convection(; friction_velocity, log_z_ratio, ΔT, ρ_cp, z0=roughness_height, z=reference_height, κ,
                 kinematic_viscosity, thermal_roughness_model=bl.thermal_roughness_model))
     else
-        # Unstable: iterate Obukhov length. 
-        ρcpTκg = 6.003e-8u"cal*minute^2/cm^4"
-        L0_raw = isnothing(obukhov_length_prev) ? -0.3u"m" : obukhov_length_prev[]
-        L0 = L0_raw >= 0.0u"m" ? -0.3u"m" : L0_raw # Resetting to the default unstable guess?
-        out = calc_Obukhov_length(air_temperature, surface_temperature, wind_speed,
-            roughness_height, reference_height, ρcpTκg, κ, ΔT, ρ_cp, kinematic_viscosity;
-            initial_obukhov_length=L0, min_friction_velocity=bl.min_friction_velocity,
-            thermal_roughness_model=bl.thermal_roughness_model)
+        # Unstable: iterate Obukhov length.
+        L0_raw = isnothing(obukhov_length_prev) ? INITIAL_OBUKHOV_LENGTH : obukhov_length_prev[]
+        L0 = L0_raw >= 0.0u"m" ? INITIAL_OBUKHOV_LENGTH : L0_raw
+        out = calc_Obukhov_length(bl, air_temperature, surface_temperature, wind_speed,
+            roughness_height, reference_height, ΔT, ρ_cp, kinematic_viscosity; initial_obukhov_length=L0)
         friction_velocity = out.friction_velocity
         convective_heat_flux = out.convective_heat_flux
     end
 
-    return (; convective_heat_flux, friction_velocity, ΔT, ρ_cp)
+    return (; convective_heat_flux, friction_velocity, ΔT)
 end
 
 function init_surface_fluxes!(bl::MoninObukhov, buffers, forcing, site, heights, T0, i)
@@ -344,20 +471,16 @@ function init_surface_fluxes!(bl::MoninObukhov, buffers, forcing, site, heights,
     (; air_temperature, wind_speed, zenith_angle) = interpolate_forcings(forcing, t_next)
     surface_temperature = T0[1]
     if air_temperature < surface_temperature && zenith_angle < 90u"°"
-        κ = bl.karman_constant
         roughness_height = site.roughness_height
         reference_height = last(heights)
         ΔT = air_temperature - surface_temperature
         mean_temp = (surface_temperature + air_temperature) / 2
         ρ_cp = calc_ρ_cp(mean_temp)
         kinematic_viscosity = dry_air_properties(mean_temp, site.atmospheric_pressure).kinematic_viscosity
-        ρcpTκg = 6.003e-8u"cal*minute^2/cm^4"
         L0_raw = buffers.soil_energy_balance.obukhov_length_prev[]
-        L0 = L0_raw >= 0.0u"m" ? -0.3u"m" : L0_raw
-        out = calc_Obukhov_length(air_temperature, surface_temperature, wind_speed,
-            roughness_height, reference_height, ρcpTκg, κ, ΔT, ρ_cp, kinematic_viscosity;
-            initial_obukhov_length=L0, min_friction_velocity=bl.min_friction_velocity,
-            thermal_roughness_model=bl.thermal_roughness_model)
+        L0 = L0_raw >= 0.0u"m" ? INITIAL_OBUKHOV_LENGTH : L0_raw
+        out = calc_Obukhov_length(bl, air_temperature, surface_temperature, wind_speed,
+            roughness_height, reference_height, ΔT, ρ_cp, kinematic_viscosity; initial_obukhov_length=L0)
         buffers.soil_energy_balance.obukhov_length_prev[] = out.obukhov_length end
 end
 
@@ -380,14 +503,13 @@ function calc_ρ_cp(mean_temperature)
 end
 
 """
-    calc_ρ_cp(mean_temperature, elevation, relative_humidity, atmospheric_pressure)
+    calc_ρ_cp(mean_temperature, relative_humidity, atmospheric_pressure)
 
-Compute the volumetric heat capacity of moist air (ρ·cₚ) given temperature,
-elevation, and relative humidity.
+Compute the volumetric heat capacity of moist air (ρ·cₚ) given temperature
+and relative humidity.
 
 # Arguments
 - `mean_temperature`: Mean air temperature (`Unitful.Temperature`), in Kelvin.
-- `elevation`: Elevation above sea level (with units of length).
 - `relative_humidity`: Relative humidity (fraction between 0 and 1).
 - `atmospheric_pressure`: Atmospheric pressure.
 
@@ -397,7 +519,7 @@ elevation, and relative humidity.
 Uses `dry_air_properties` to compute air density (ρ) and
 `wet_air_properties` to compute specific heat capacity (cₚ).
 """
-function calc_ρ_cp(mean_temperature, elevation, relative_humidity, atmospheric_pressure; vapour_pressure_equation=GoffGratch())
+function calc_ρ_cp(mean_temperature, relative_humidity, atmospheric_pressure; vapour_pressure_equation=GoffGratch())
     dry_air_out = dry_air_properties(u"K"(mean_temperature), atmospheric_pressure)
     wet_air_out = wet_air_properties(u"K"(mean_temperature), relative_humidity, atmospheric_pressure; vapour_pressure_equation)
     air_density = dry_air_out.density
@@ -420,33 +542,11 @@ logarithmic wind profile.
 - Friction velocity `friction_velocity::Quantity{<:Real,𝐋/𝐓}`.
 
 # See also
-[`calc_convection`](@ref), [`calc_wind`](@ref)
+[`calc_convection`](@ref)
 """
 function calc_friction_velocity(; reference_wind_speed, log_z_ratio, κ=0.4)
     v_ref_height = reference_wind_speed
     return κ * v_ref_height / log_z_ratio
-end
-
-"""
-    calc_wind(z, z0, κ, friction_velocity, b)
-
-Calculate wind speed at height `z` using the logarithmic wind profile.
-
-# Arguments
-- `z::Quantity{<:Real,𝐋}`: Height above the surface (e.g. `m`, `cm`).
-- `z0::Quantity{<:Real,𝐋}`: Roughness length (e.g. `m`, `cm`).
-- `κ::Real`: von Kármán constant.
-- `friction_velocity::Quantity{<:Real,𝐋/𝐓}`: Friction velocity.
-- `b::Real`: Offset term (e.g. `1.0` for neutral stability, or stability correction).
-
-# Returns
-- Wind speed at height `z::Quantity{<:Real,𝐋/𝐓}`.
-
-# See also
-[`calc_friction_velocity`](@ref), [`calc_convection`](@ref)
-"""
-function calc_wind(z, z0, κ, friction_velocity, b)
-    return (friction_velocity / κ) * log(z / z0 + b)
 end
 
 
@@ -468,7 +568,7 @@ Calculate the convective heat flux (sensible heat exchange between surface and a
 Uses bulk and sublayer Stanton numbers to account for turbulence near the surface.
 
 # See also
-[`calc_friction_velocity`](@ref), [`calc_wind`](@ref), [`sublayer_stanton`](@ref), [`bulk_stanton`](@ref), [`convective_flux`](@ref)
+[`calc_friction_velocity`](@ref), [`sublayer_stanton`](@ref), [`bulk_stanton`](@ref), [`convective_flux`](@ref)
 """
 function calc_convection(; friction_velocity, log_z_ratio, ΔT, ρ_cp, z0, z, κ, kinematic_viscosity, thermal_roughness_model=SublayerStantonRoughness())
     return _stable_convective_heat_flux(thermal_roughness_model, ρ_cp, ΔT, friction_velocity, κ, z0, z, log_z_ratio, kinematic_viscosity)
@@ -483,35 +583,33 @@ Compute convective heat flux given bulk and sublayer Stanton numbers.
     return ρ_cp * ΔT * friction_velocity * bulk_stanton_number / (1 + bulk_stanton_number / sublayer_stanton_number)
 end
 
-# Scalar-roughness-ratio resistance, shared by the stable/neutral direct
-# branch (ψ_h=0) and the unstable iterative branch below.
-function _scalar_roughness_resistance(ratio, κ, friction_velocity, z0, z, ψ_h)
+# Scalar-roughness-ratio resistance, ln(z/zh) - ψ_h(z/L) + ψ_h(zh/L)
+function _scalar_roughness_resistance(ratio, κ, friction_velocity, z0, z, ψ_h_z, ψ_h_zh)
     zh = ratio * z0
-    log_z_ratio_h = log(z / zh)
-    log_ratio_h_corrected = max(log_z_ratio_h - ψ_h, 0.1 * log_z_ratio_h, 1.0e-6)
-    return log_ratio_h_corrected / (κ * friction_velocity)
+    return (log(z / zh) - ψ_h_z + ψ_h_zh) / (κ * friction_velocity)
 end
 
 # calc_convection's stable/neutral direct branch: no Obukhov iteration, ψ_h implicitly 0.
 _stable_convective_heat_flux(::SublayerStantonRoughness, ρ_cp, ΔT, friction_velocity, κ, z0, z, log_z_ratio, kinematic_viscosity) =
     convective_flux(ρ_cp, ΔT, friction_velocity, bulk_stanton(log_z_ratio), sublayer_stanton(z0, friction_velocity, kinematic_viscosity))
 function _stable_convective_heat_flux(m::ScalarRoughnessRatio, ρ_cp, ΔT, friction_velocity, κ, z0, z, log_z_ratio, kinematic_viscosity)
-    resistance = _scalar_roughness_resistance(m.ratio, κ, friction_velocity, z0, z, 0.0)
+    resistance = _scalar_roughness_resistance(m.ratio, κ, friction_velocity, z0, z, 0.0, 0.0)
     return ρ_cp * ΔT / resistance
 end
 
 # calc_Obukhov_length's iterative branch. Also returns roughness_height_temperature
 # (the below-z0 profile's own boundary value) since SublayerStantonRoughness derives
 # it from the same bulk/sublayer split as the flux itself.
-function _unstable_convective_heat_flux(::SublayerStantonRoughness, ρ_cp, ΔT, friction_velocity, κ, z0, z, log_ratio_corrected, ψ_h, obukhov_length, kinematic_viscosity, reference_temp, surface_temp)
+function _unstable_convective_heat_flux(::SublayerStantonRoughness, bl,ρ_cp, ΔT, friction_velocity, κ, z0, z, log_ratio_corrected, ψ_h, stability_parameter, kinematic_viscosity, reference_temp, surface_temp)
     sublayer_stanton_number = sublayer_stanton(z0, friction_velocity, kinematic_viscosity)
-    bulk_stanton_number = bulk_stanton(log_ratio_corrected, z, _floor_obukhov_length(z, obukhov_length))
+    bulk_stanton_number = _bulk_stanton(bl, log_ratio_corrected, ψ_h, stability_parameter, z0, z)
     convective_heat_flux = convective_flux(ρ_cp, ΔT, friction_velocity, bulk_stanton_number, sublayer_stanton_number)
     roughness_height_temperature = (reference_temp * bulk_stanton_number + surface_temp * sublayer_stanton_number) / (bulk_stanton_number + sublayer_stanton_number)
     return (; convective_heat_flux, roughness_height_temperature)
 end
-function _unstable_convective_heat_flux(m::ScalarRoughnessRatio, ρ_cp, ΔT, friction_velocity, κ, z0, z, log_ratio_corrected, ψ_h, obukhov_length, kinematic_viscosity, reference_temp, surface_temp)
-    resistance = _scalar_roughness_resistance(m.ratio, κ, friction_velocity, z0, z, ψ_h)
+function _unstable_convective_heat_flux(m::ScalarRoughnessRatio, bl,ρ_cp, ΔT, friction_velocity, κ, z0, z, log_ratio_corrected, ψ_h, stability_parameter, kinematic_viscosity, reference_temp, surface_temp)
+    ψ_h_zh = calc_ψ_h(bl, stability_parameter * m.ratio * z0 / z)
+    resistance = _scalar_roughness_resistance(m.ratio, κ, friction_velocity, z0, z, ψ_h, ψ_h_zh)
     return (; convective_heat_flux=ρ_cp * ΔT / resistance, roughness_height_temperature=surface_temp)
 end
 
@@ -563,24 +661,89 @@ Compute the bulk Stanton number for stable conditions.
 end
 
 """
-    bulk_stanton(log_z_ratio, z, obukhov_length)
+    bulk_stanton(log_z_ratio, stability_parameter)
 
 Compute the bulk Stanton number for unstable conditions.
 """
-@inline function bulk_stanton(log_z_ratio, z, obukhov_length)
-    return (0.64 / log_z_ratio) * (1 - 0.1 * z / obukhov_length)
+@inline function bulk_stanton(log_z_ratio, stability_parameter)
+    return (0.64 / log_z_ratio) * (1 - 0.1 * stability_parameter)
+end
+
+# The bulk Stanton number at either stability. Unstable air uses the NicheMapR form above.
+# In stable air (1 - 0.1·z/L) goes negative past z/L = 10, so stable air uses the heat log
+# law with its own stability correction instead, 0.64/(ln(z/z0) - ψ_h(z/L) + ψ_h(z0/L)).
+function _bulk_stanton(bl, log_ratio_corrected, ψ_h, stability_parameter, z0, z)
+    if stability_parameter > 0
+        return 0.64 / (log(z / z0) - ψ_h + calc_ψ_h(bl, stability_parameter * z0 / z))
+    else
+        return bulk_stanton(log_ratio_corrected, stability_parameter)
+    end
 end
 
 
 """
-    calc_φ_m(z, γ, obukhov_length)
+    AbstractStabilityVariable
+
+How atmospheric stability is represented: [`ObukhovLength`](@ref) or
+[`InverseObukhovLength`](@ref).
+"""
+abstract type AbstractStabilityVariable end
+
+"""
+    ObukhovLength()
+
+Stability as the Obukhov length (m), infinite at neutral.
+"""
+struct ObukhovLength <: AbstractStabilityVariable end
+
+"""
+    InverseObukhovLength()
+
+Stability as the inverse Obukhov length (1/m). It is zero rather than
+infinite at neutral, so it and its derivatives stay finite through neutral
+conditions.
+"""
+struct InverseObukhovLength <: AbstractStabilityVariable end
+
+"""
+    stability_parameter(stability_variable, height, value)
+
+The Monin–Obukhov stability parameter `height / obukhov_length`, from either
+stability variable. Zero at neutral.
+"""
+stability_parameter(::ObukhovLength, height, obukhov_length) = uconvert(NoUnits, height / obukhov_length)
+stability_parameter(::InverseObukhovLength, height, inverse_obukhov_length) = uconvert(NoUnits, height * inverse_obukhov_length)
+
+# Obukhov relation, obukhov_length = ρcpTκg·friction_velocity³/convective_heat_flux
+stability_from_fluxes(::ObukhovLength, ρcpTκg, friction_velocity, convective_heat_flux) =
+    u"m"(ρcpTκg * friction_velocity^3 / convective_heat_flux)
+stability_from_fluxes(::InverseObukhovLength, ρcpTκg, friction_velocity, convective_heat_flux) =
+    u"m^-1"(convective_heat_flux / (ρcpTκg * friction_velocity^3))
+
+# Convergence measure: the change in the stability parameter. A relative change in the
+# Obukhov length never settles at neutral, where it heads to infinity.
+stability_change(::ObukhovLength, height, new, old) = abs(uconvert(NoUnits, height * (inv(new) - inv(old))))
+stability_change(::InverseObukhovLength, height, new, old) = abs(uconvert(NoUnits, height * (new - old)))
+
+# Conversions to and from the Obukhov length kept in warm-start buffers
+from_obukhov_length(::ObukhovLength, obukhov_length) = obukhov_length
+from_obukhov_length(::InverseObukhovLength, obukhov_length) = inv(obukhov_length)
+to_obukhov_length(::ObukhovLength, obukhov_length) = obukhov_length
+to_obukhov_length(::InverseObukhovLength, inverse_obukhov_length) = inv(inverse_obukhov_length)
+to_inverse_obukhov_length(::ObukhovLength, obukhov_length) = inv(obukhov_length)
+to_inverse_obukhov_length(::InverseObukhovLength, inverse_obukhov_length) = inverse_obukhov_length
+from_inverse_obukhov_length(::ObukhovLength, inverse_obukhov_length) = inv(inverse_obukhov_length)
+from_inverse_obukhov_length(::InverseObukhovLength, inverse_obukhov_length) = inverse_obukhov_length
+
+
+"""
+    calc_φ_m(stability_parameter, γ)
 
 Stability correction function φ for momentum in Monin–Obukhov similarity theory (MOST).
 
 # Arguments
-- `z`: Height above surface (with units of length).
+- `stability_parameter`: `z/L`, negative (unstable), see [`stability_parameter`](@ref).
 - `γ`: Empirical constant (dimensionless, often ≈16).
-- `obukhov_length`: Monin–Obukhov length (with units of length).
 
 # Returns
 - Dimensionless stability correction factor φ.
@@ -599,52 +762,40 @@ of the true Businger–Dyer φₘ stability function, φₘ = (1 - γ z / L)^(-1
 - Dyer, A. J. (1974). A review of flux–profile relationships.
   *Boundary-Layer Meteorology*, 7(3), 363–372.
 """
-@inline function calc_φ_m(z, γ, obukhov_length)
-    # Businger-Dyer/Paulson relations are only valid for |z/L| up to ~10;
-    # unbounded, ζ→neutral can diverge and blow up friction_velocity/wind_speed.
-    # Floor |L| at z/10, always negative (unstable) since only called from there.
-    L_floor = z / 10.0
-    L = obukhov_length < -L_floor ? obukhov_length : -L_floor
+@inline function calc_φ_m(stability_parameter, γ)
     # sqrt is faster than ^1/4
-    return sqrt(sqrt(1.0 - γ * z / L))
+    return sqrt(sqrt(1.0 - γ * stability_parameter))
 end
 
 
 """
-    calc_Φ_h(z, γ, obukhov_length)
-    calc_Φ_h(z, γ, obukhov_length, stable_Φ_h_coefficient, min_stable_Φ_h, max_stable_Φ_h)
+    calc_Φ_h(stability_parameter, γ)
+    calc_Φ_h(model, stability_parameter)
 
-True Businger–Dyer stability correction function for heat, Φ_h = x⁻², the
-reciprocal square of `calc_φ_m`'s Paulson x-substitution (unlike `calc_φ_m`
-itself, which returns `x`, not the momentum φₘ = x⁻¹). 3-arg form: raw
-unstable expression. 6-arg form: general stable+unstable bulk heat
-stability multiplier, `Φ_h = clamp(1 + stable_Φ_h_coefficient·ζ/(1+ζ),
-min_stable_Φ_h, max_stable_Φ_h)` in the stable branch (`_floor_obukhov_length`
-bounds `ζ` but not `Φ_h` itself).
+Dimensionless heat gradient Φ_h, the eddy diffusivity's stability divisor.
+2-arg form with a number `γ`: the unstable Businger–Dyer expression, `x⁻²` of `calc_φ_m`'s
+Paulson x-substitution (unlike `calc_φ_m` itself, which returns `x`, not
+the momentum φₘ = x⁻¹). With an [`AbstractUnstableStability`](@ref) or
+[`AbstractStableStability`](@ref) `model`: its regime. With a [`MoninObukhov`](@ref)
+`model`: its unstable or stable corrections, by the sign of `stability_parameter`.
 
 # References
 - Businger, J. A., Wyngaard, J. C., Izumi, Y., & Bradley, E. F. (1971).
   Flux–profile relationships in the atmospheric surface layer.
   *Journal of the Atmospheric Sciences*, 28(2), 181–189.
 """
-function calc_Φ_h(z, γ, obukhov_length)
-    return calc_φ_m(z, γ, obukhov_length)^(-2)
+function calc_Φ_h(stability_parameter, γ)
+    return calc_φ_m(stability_parameter, γ)^(-2)
 end
 
 
 """
     calc_ψ_m(x)
-    calc_ψ_m(z, γ, obukhov_length, stable_beta)
+    calc_ψ_m(model, stability_parameter)
 
-Stability correction ψₘ for momentum, Businger–Dyer form. 1-arg form: raw
-unstable expression, `ψₘ(x) = 2 ln((1+x)/2) + ln((1+x²)/2) - 2 atan(x) + π/2`,
-`x` typically `(1 - γ z / L)^(1/4)`. 4-arg form: general stable+unstable
-(unstable via [`calc_φ_m`](@ref)/`calc_ψ_m(x)`; stable Dyer (1974) linear
-form `ψ_m = -stable_beta·z/L`) -- the two meet continuously at
-`obukhov_length → ±Inf` (neutral), so this is safe to call unconditionally
-without pre-classifying the regime. Clamped to `[-4, 3]` in the stable
-branch (same numerical bound Businger–Dyer's own unstable form is only
-valid within, |ζ| ≲ 10).
+Stability correction ψₘ for momentum. 1-arg form: the unstable Businger–Dyer
+expression, `ψₘ(x) = 2 ln((1+x)/2) + ln((1+x²)/2) - 2 atan(x) + π/2`, `x`
+typically `(1 - γ z / L)^(1/4)`. With a `model`: as for [`calc_Φ_h`](@ref).
 
 # References
 - Businger et al. (1971).
@@ -657,14 +808,11 @@ end
 
 """
     calc_ψ_h(x)
-    calc_ψ_h(z, γ, obukhov_length, stable_beta, turbulent_prandtl_number)
+    calc_ψ_h(model, stability_parameter)
 
-Stability correction ψ_h for heat/moisture, Businger–Dyer form. 1-arg form:
-raw unstable expression, `ψ_h(x) = 2 ln((1+x²)/2)`, `x` typically
-`(1 - γ z / L)^(1/4)`. 5-arg form: general stable+unstable -- see
-`calc_ψ_m`. Stable form
-`ψ_h = -(stable_beta/turbulent_prandtl_number)·z/L` (Businger et al. 1971's
-turbulent Prandtl number relates the heat and momentum coefficients).
+Stability correction ψ_h for heat and vapour. 1-arg form: the unstable
+Businger–Dyer expression, `ψ_h(x) = 2 ln((1+x²)/2)`, `x` typically
+`(1 - γ z / L)^(1/4)`. With a `model`: as for [`calc_Φ_h`](@ref).
 
 # References
 - Businger et al. (1971).
@@ -674,93 +822,197 @@ turbulent Prandtl number relates the heat and momentum coefficients).
     return 2.0 * log((1.0 + x^2.0) / 2.0)
 end
 
-# Numerical floor on |obukhov_length|, sign-preserving -- avoids ζ=z/L blowing
-# up ψ/Φ/bulk_stanton near L=0.
-function _floor_obukhov_length(z, obukhov_length)
-    L_floor = z / 10.0
-    return obukhov_length >= zero(obukhov_length) ? max(obukhov_length, L_floor) : min(obukhov_length, -L_floor)
+# The boundary layer model's unstable or stable corrections, by the sign of the stability parameter
+calc_ψ_m(bl::MoninObukhov, stability_parameter) = stability_parameter < 0 ?
+    calc_ψ_m(bl.unstable_stability, stability_parameter) : calc_ψ_m(bl.stable_stability, stability_parameter)
+calc_ψ_h(bl::MoninObukhov, stability_parameter) = stability_parameter < 0 ?
+    calc_ψ_h(bl.unstable_stability, stability_parameter) : calc_ψ_h(bl.stable_stability, stability_parameter)
+calc_Φ_h(bl::MoninObukhov, stability_parameter) = stability_parameter < 0 ?
+    calc_Φ_h(bl.unstable_stability, stability_parameter) : calc_Φ_h(bl.stable_stability, stability_parameter)
+
+calc_ψ_m(model::PaulsonDyer, stability_parameter) = calc_ψ_m(calc_φ_m(stability_parameter, model.momentum_dyer_constant))
+calc_ψ_h(model::PaulsonDyer, stability_parameter) = calc_ψ_h(calc_φ_m(stability_parameter, model.heat_dyer_constant))
+calc_Φ_h(model::PaulsonDyer, stability_parameter) = calc_Φ_h(stability_parameter, model.heat_dyer_constant)
+
+# NicheMapR bounds the stability parameter to ±10
+calc_ψ_m(model::NicheMapRUnstable, stability_parameter) = calc_ψ_m(calc_φ_m(max(stability_parameter, -10.0), model.dyer_constant))
+calc_ψ_h(model::NicheMapRUnstable, stability_parameter) = calc_ψ_h(calc_φ_m(max(stability_parameter, -10.0), model.dyer_constant))
+calc_Φ_h(model::NicheMapRUnstable, stability_parameter) = calc_Φ_h(max(stability_parameter, -10.0), model.dyer_constant)
+
+calc_ψ_m(model::NicheMapRStable, stability_parameter) = clamp(-model.stable_beta * min(stability_parameter, 10.0), -4.0, 3.0)
+calc_ψ_h(model::NicheMapRStable, stability_parameter) =
+    clamp(-(model.stable_beta * min(stability_parameter, 10.0)) / model.turbulent_prandtl_number, -4.0, 3.0)
+function calc_Φ_h(model::NicheMapRStable, stability_parameter)
+    bounded = min(stability_parameter, 10.0)
+    return clamp(1.0 + model.stable_Φ_h_coefficient * bounded / (1.0 + bounded), model.min_stable_Φ_h, model.max_stable_Φ_h)
 end
 
-function calc_ψ_m(z, γ, obukhov_length, stable_beta)
-    if obukhov_length < zero(obukhov_length)
-        return calc_ψ_m(calc_φ_m(z, γ, obukhov_length))
-    else
-        ζ = z / _floor_obukhov_length(z, obukhov_length)
-        return clamp(-stable_beta * ζ, -4.0, 3.0)
-    end
+calc_ψ_m(model::BusingerLinear, stability_parameter) = -model.coefficient * stability_parameter
+calc_ψ_h(model::BusingerLinear, stability_parameter) = -model.coefficient * stability_parameter
+calc_Φ_h(model::BusingerLinear, stability_parameter) = 1 + model.coefficient * stability_parameter
+
+function calc_ψ_m(model::BeljaarsHoltslag, stability_parameter)
+    (; a, b, c, d) = model
+    return -(a * stability_parameter + b * (stability_parameter - c / d) * exp(-d * stability_parameter) + b * c / d)
 end
 
-function calc_ψ_h(z, γ, obukhov_length, stable_beta, turbulent_prandtl_number)
-    if obukhov_length < zero(obukhov_length)
-        return calc_ψ_h(calc_φ_m(z, γ, obukhov_length))
-    else
-        ζ = z / _floor_obukhov_length(z, obukhov_length)
-        return clamp(-(stable_beta * ζ) / turbulent_prandtl_number, -4.0, 3.0)
-    end
+function calc_ψ_h(model::BeljaarsHoltslag, stability_parameter)
+    (; a, b, c, d) = model
+    return -((1 + 2a * stability_parameter / 3)^1.5 + b * (stability_parameter - c / d) * exp(-d * stability_parameter) + b * c / d - 1)
 end
 
-function calc_Φ_h(z, γ, obukhov_length, stable_Φ_h_coefficient, min_stable_Φ_h, max_stable_Φ_h)
-    if obukhov_length < zero(obukhov_length)
-        return calc_Φ_h(z, γ, obukhov_length)
-    else
-        ζ = z / _floor_obukhov_length(z, obukhov_length)
-        return clamp(1.0 + stable_Φ_h_coefficient * ζ / (1.0 + ζ), min_stable_Φ_h, max_stable_Φ_h)
-    end
+function calc_Φ_h(model::BeljaarsHoltslag, stability_parameter)
+    # 1 - stability_parameter times the derivative of calc_ψ_h
+    (; a, b, c, d) = model
+    return 1 + stability_parameter *
+        (a * sqrt(1 + 2a * stability_parameter / 3) + b * (1 + c - d * stability_parameter) * exp(-d * stability_parameter))
+end
+
+function calc_ψ_m(model::ChengBrutsaert, stability_parameter)
+    (; momentum_a, momentum_b) = model
+    return -momentum_a * log(stability_parameter + (1 + stability_parameter^momentum_b)^(1 / momentum_b))
+end
+
+function calc_ψ_h(model::ChengBrutsaert, stability_parameter)
+    (; heat_c, heat_d) = model
+    return -heat_c * log(stability_parameter + (1 + stability_parameter^heat_d)^(1 / heat_d))
+end
+
+function calc_Φ_h(model::ChengBrutsaert, stability_parameter)
+    # Φ_h = 1 - stability_parameter·dψ_h/dstability_parameter, with ψ_h = -heat_c·log(log_argument)
+    (; heat_c, heat_d) = model
+    power_sum = 1 + stability_parameter^heat_d
+    log_argument = stability_parameter + power_sum^(1 / heat_d)
+    # stability_parameter^heat_d rather than stability_parameter times its (heat_d - 1) power,
+    # whose derivative is infinite at neutral, so automatic differentiation stays finite there
+    return 1 + heat_c * (stability_parameter + stability_parameter^heat_d * power_sum^(1 / heat_d - 1)) / log_argument
 end
 
 
 """
-    calc_Obukhov_length(reference_temp, surface_temp, v_ref_height, z0, z, ρcpTκg, κ, ΔT, ρ_cp, kinematic_viscosity;
-                         γ=16.0, stable_beta=4.7, turbulent_prandtl_number=0.74,
-                         max_iter=30, tol=1e-2, initial_obukhov_length=-0.3u"m")
+    monin_obukhov_step(bl, stability_variable, value, reference_temp, surface_temp, v_ref_height, z0, z, ΔT,
+                       ρ_cp, kinematic_viscosity; thermal_roughness_model=bl.thermal_roughness_model)
 
+One evaluation of the Monin–Obukhov relations at stability `value` (as
+`stability_variable`, [`ObukhovLength`](@ref) or [`InverseObukhovLength`](@ref)):
+friction velocity and convective heat flux from the stability corrections,
+then `stability_update`, the stability those fluxes imply through the
+Obukhov relation. `value` is self-consistent when `stability_update == value`.
 `kinematic_viscosity` feeds `sublayer_stanton`'s roughness Reynolds number.
-Iteratively solve for the Monin–Obukhov length and convective heat flux, for
-either sign of `ΔT` -- `convective_flux`'s sign already tracks `ΔT`'s sign
-correctly either way (negative ΔT, surface warmer than reference → negative
-heat flux → negative L, unstable; positive ΔT → positive L, stable), so no
-pre-classification of the regime is needed before calling this: `calc_ψ_m`/
-`calc_ψ_h` (used internally) handle whichever sign `obukhov_length` iterates
-to. Converges to `±Inf` (neutral) as `ΔT → 0`.
+Works for either sign of `ΔT` -- `convective_flux`'s sign already tracks
+`ΔT`'s sign (negative ΔT, surface warmer than reference → negative heat flux
+→ unstable; positive ΔT → stable).
 """
-@inline function calc_Obukhov_length(
-    reference_temp, surface_temp, v_ref_height, z0, z, ρcpTκg, κ, ΔT, ρ_cp, kinematic_viscosity;
-    γ=16.0, stable_beta=4.7, turbulent_prandtl_number=0.74, max_iter=50, tol=1e-2, initial_obukhov_length=-0.3u"m",
-    min_friction_velocity=0.02u"m/s", thermal_roughness_model=SublayerStantonRoughness(), relax=0.5,
+function monin_obukhov_step(bl, stability_variable, value, reference_temp, surface_temp, v_ref_height, z0, z, ΔT,
+    ρ_cp, kinematic_viscosity;
+    thermal_roughness_model=bl.thermal_roughness_model,
 )
-    obukhov_length = initial_obukhov_length
-
-    # initialise with zeros
-    convective_heat_flux = 0.0u"W/m^2"
-    roughness_height_temperature = surface_temp
-    ψ_h = 0.0
-    friction_velocity = 0.0u"m/s"
-    obukhov_length_new = 0.0u"m"
-
-    relative_error = 1.0
-    count = 0
-    just_above_zero = 1.0e-6
-    while relative_error > tol && count < max_iter
-        count += 1
-        ψ_m = calc_ψ_m(z, γ, obukhov_length, stable_beta)
-        ψ_h = calc_ψ_h(z, γ, obukhov_length, stable_beta, turbulent_prandtl_number)
-        log_z_ratio_i = log(z / z0)
-        # Floor at a fraction of the neutral log term to avoid unstable friction_velocity
-        log_ratio_corrected = max(log_z_ratio_i - ψ_m, 0.1 * log_z_ratio_i, just_above_zero)
-        friction_velocity = max(κ * v_ref_height / log_ratio_corrected, min_friction_velocity)
-        convective_heat_flux, roughness_height_temperature = _unstable_convective_heat_flux(thermal_roughness_model,
-            ρ_cp, ΔT, friction_velocity, κ, z0, z, log_ratio_corrected, ψ_h, obukhov_length, kinematic_viscosity,
-            reference_temp, surface_temp)
-        obukhov_length_new = ρcpTκg * friction_velocity^3 / convective_heat_flux
-        relative_error = abs((obukhov_length_new - obukhov_length) / obukhov_length)
-        obukhov_length = relax * obukhov_length_new + (1.0 - relax) * obukhov_length
-    end
-
+    (; min_friction_velocity) = bl
+    κ = bl.karman_constant
+    reference_stability = stability_parameter(stability_variable, z, value)
+    ψ_m = calc_ψ_m(bl, reference_stability)
+    ψ_h = calc_ψ_h(bl, reference_stability)
+    log_ratio_corrected = log(z / z0) - ψ_m + calc_ψ_m(bl, reference_stability * z0 / z)
+    friction_velocity = max(κ * v_ref_height / log_ratio_corrected, min_friction_velocity)
+    convective_heat_flux, roughness_height_temperature = _unstable_convective_heat_flux(thermal_roughness_model,
+        bl, ρ_cp, ΔT, friction_velocity, κ, z0, z, log_ratio_corrected, ψ_h, reference_stability, kinematic_viscosity,
+        reference_temp, surface_temp)
+    stability_update = stability_from_fluxes(stability_variable, OBUKHOV_LENGTH_FACTOR, friction_velocity, convective_heat_flux)
     return (;
-        obukhov_length=u"m"(obukhov_length),
+        stability_update,
         friction_velocity,
         ψ_h,
         convective_heat_flux=u"W/m^2"(convective_heat_flux),
         roughness_height_temperature,
     )
+end
+
+"""
+    monin_obukhov_iteration(bl, stability_variable, args...; initial_value, max_iterations=50, tolerance=1e-2, relaxation=0.5, kw...)
+
+Iterate [`monin_obukhov_step`](@ref) (same `args` and `kw`) from
+`initial_value` until the stability stops changing, under-relaxing each
+update by `relaxation` in inverse Obukhov length. Returns the last step's fluxes and `value`, the
+stability that step was evaluated at.
+"""
+function monin_obukhov_iteration(bl, stability_variable, reference_temp, surface_temp, v_ref_height, z0, z, ΔT,
+    ρ_cp, kinematic_viscosity; initial_value, max_iterations=50, tolerance=1e-2, relaxation=0.5, kw...,
+)
+    value = initial_value
+    count = 1
+    while true
+        step = monin_obukhov_step(bl, stability_variable, value, reference_temp, surface_temp, v_ref_height, z0, z,
+            ΔT, ρ_cp, kinematic_viscosity; kw...)
+        change = stability_change(stability_variable, z, step.stability_update, value)
+        (change <= tolerance || count >= max_iterations) && return (; value, step...)
+        # Relax in 1/L, which passes through zero at neutral. Averaging two Obukhov lengths
+        # of opposite sign can land near L = 0, an extreme stability.
+        inverse_value = relaxation * to_inverse_obukhov_length(stability_variable, step.stability_update) +
+            (1.0 - relaxation) * to_inverse_obukhov_length(stability_variable, value)
+        value = from_inverse_obukhov_length(stability_variable, inverse_value)
+        count += 1
+    end
+end
+
+"""
+    calc_Obukhov_length(bl, reference_temp, surface_temp, v_ref_height, z0, z, ΔT, ρ_cp, kinematic_viscosity;
+                         initial_obukhov_length, kw...)
+
+[`monin_obukhov_iteration`](@ref) on the Obukhov length. Converges to `±Inf`
+(neutral) as `ΔT → 0`.
+"""
+function calc_Obukhov_length(bl, args...; initial_obukhov_length, kw...)
+    (; value, friction_velocity, ψ_h, convective_heat_flux, roughness_height_temperature) =
+        monin_obukhov_iteration(bl, ObukhovLength(), args...; initial_value=initial_obukhov_length, kw...)
+    return (; obukhov_length=value, friction_velocity, ψ_h, convective_heat_flux, roughness_height_temperature)
+end
+
+"""
+    inverse_obukhov_length_limits(stability_limit, bl, height, roughness_length)
+
+The range of inverse Obukhov length `stability_limit` allows, as `(; unstable, stable)`.
+
+[`NoStabilityLimit`](@ref) is unbounded. [`MomentumCorrectionLimit`](@ref) gives the values
+nearest to neutral where the momentum stability correction between `roughness_length` and
+`height` (above the displacement height), `ψ_m(z₀/L) - ψ_m(z/L)`, reaches `fraction` of the log
+term `ln(z/z₀)`, or an infinite value where it never does. Within these limits the friction
+velocity changes with stability by at most a factor `1/(1 + fraction)` in stable air and
+`1/(1 - fraction)` in unstable air.
+"""
+# |1/L| from 2⁻³⁰ to 2⁴⁰ m⁻¹ spans every stability a surface layer can have
+const LIMIT_SEARCH_EXPONENTS = -30:40
+# The limits' precision, relative to their size
+const LIMIT_RELATIVE_TOLERANCE = 1e-12
+
+inverse_obukhov_length_limits(::NoStabilityLimit, bl, height, roughness_length) =
+    (; unstable=-Inf * u"m^-1", stable=Inf * u"m^-1")
+function inverse_obukhov_length_limits(limit::MomentumCorrectionLimit, bl, height, roughness_length)
+    (; fraction) = limit
+    target = fraction * log(height / roughness_length)
+    # 1/L in m⁻¹
+    correction(inverse_length) = calc_ψ_m(bl, roughness_length * inverse_length * u"m^-1") -
+        calc_ψ_m(bl, height * inverse_length * u"m^-1")
+    nearest_to_neutral(sign) = begin
+        excess(inverse_length, _) = sign * correction(inverse_length) - target
+        # The first doubling of |1/L| past the target brackets it
+        previous = 0.0
+        for exponent in LIMIT_SEARCH_EXPONENTS
+            inverse_length = sign * 2.0^exponent
+            if excess(inverse_length, nothing) >= 0
+                problem = IntervalNonlinearProblem{false}(excess, minmax(previous, inverse_length))
+                return solve(problem, ITP(); abstol=LIMIT_RELATIVE_TOLERANCE * abs(inverse_length)).u * u"m^-1"
+            end
+            previous = inverse_length
+        end
+        return sign * Inf * u"m^-1"
+    end
+    return (; unstable=nearest_to_neutral(-1.0), stable=nearest_to_neutral(1.0))
+end
+
+# The inverse Obukhov length within `limits`: unchanged near neutral, approaching the limit
+# on its side smoothly, `limit·tanh(1/L / limit)`
+function limit_inverse_obukhov_length(inverse_obukhov_length, limits)
+    limit = inverse_obukhov_length < zero(inverse_obukhov_length) ? limits.unstable : limits.stable
+    isinf(limit) && return inverse_obukhov_length
+    return limit * tanh(inverse_obukhov_length / limit)
 end

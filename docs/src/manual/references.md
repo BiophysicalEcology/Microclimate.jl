@@ -32,6 +32,9 @@ Springer. [doi:10.1007/978-1-4612-1626-1](https://doi.org/10.1007/978-1-4612-162
 
 Carslaw HS, Jaeger JC (1959) *Conduction of Heat in Solids*. Oxford University Press.
 
+Cheng Y, Brutsaert W (2005) Flux-profile relationships for wind speed and temperature in
+the stable atmospheric boundary layer. *Boundary-Layer Meteorology* 114: 519–538.
+
 Comini G, Del Guidice S, Lewis RW, Zienkiewicz OC (1974) Finite element solution of
 non-linear heat conduction problems with special reference to phase change.
 *International Journal for Numerical Methods in Engineering* 8(3): 613–624.

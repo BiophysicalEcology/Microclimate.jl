@@ -226,15 +226,13 @@ function canopy_top_flux_boundary(boundary_layer_model, canopy_height, displacem
     max_resistance=2000.0u"s/m",
 )
     κ = boundary_layer_model.karman_constant
-    γ = boundary_layer_model.dyer_constant
     z_top = max(canopy_height - displacement_height, 1.0e-3u"m")
     z_ref = max(reference_height - displacement_height, 1.0e-3u"m")
 
     ground_resistance = min(canopy_height / (κ * friction_velocity * z_top), max_resistance)
 
     log_ratio = log(z_ref / roughness_length)
-    ψ_h = isfinite(obukhov_length) ?
-        calc_ψ_h(z_ref, γ, obukhov_length, boundary_layer_model.stable_beta, boundary_layer_model.turbulent_prandtl_number) : 0.0
+    ψ_h = calc_ψ_h(boundary_layer_model, stability_parameter(ObukhovLength(), z_ref, obukhov_length))
     top_resistance = min(max(log_ratio - ψ_h, 0.1 * log_ratio, 1.0e-6) / (κ * friction_velocity), max_resistance)
 
     # ρ_cp fixed from ambient data, not the solved top_temperature: calc_ρ_cp
