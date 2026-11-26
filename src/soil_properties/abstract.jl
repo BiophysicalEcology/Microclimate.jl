@@ -22,10 +22,7 @@ function soil_properties end
 # `soil_properties` method and the variant's `maybegetindex` accessor.
 function soil_properties!(buffers::NamedTuple, soil_properties_model::AbstractSoilProperties;
     atmospheric_pressure::Quantity, soil_temperature::AbstractVector, soil_moisture::AbstractVector,
-    bulk_density::AbstractVector,
-    mineral_density::AbstractVector,
-    mineral_conductivity::AbstractVector,
-    mineral_heat_capacity::AbstractVector,
+    soil_profile,
     vapour_pressure_equation=GoffGratch(),
 )
     num_layers = length(soil_temperature)
@@ -33,15 +30,15 @@ function soil_properties!(buffers::NamedTuple, soil_properties_model::AbstractSo
     (; bulk_thermal_conductivity, bulk_heat_capacity) = buffers
     out_bulk_density = buffers.bulk_density
     bd_unit = unit(eltype(out_bulk_density))
-    @inbounds for i in 1:num_layers
+    for i in 1:num_layers
         result = soil_properties(maybegetindex(soil_properties_model, i);
             atmospheric_pressure,
             soil_temperature = soil_temperature[i],
             soil_moisture = soil_moisture[i],
-            bulk_density = bulk_density[i],
-            mineral_density = mineral_density[i],
-            mineral_conductivity = mineral_conductivity[i],
-            mineral_heat_capacity = mineral_heat_capacity[i],
+            bulk_density = soil_profile.bulk_density[i],
+            mineral_density = soil_profile.mineral_density[i],
+            mineral_conductivity = soil_profile.mineral_conductivity[i],
+            mineral_heat_capacity = soil_profile.mineral_heat_capacity[i],
             vapour_pressure_equation,
         )
         bulk_thermal_conductivity[i] = result.bulk_thermal_conductivity

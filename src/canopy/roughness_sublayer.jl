@@ -42,7 +42,7 @@ end
 
 """
     canopy_top_diffusivity_enhancement(model::AbstractRoughnessSublayer; canopy_height, plant_area_index,
-        ground_roughness_height, karman_constant, canopy_top_wind_speed, kinematic_viscosity)
+        ground_roughness_length, karman_constant, canopy_top_wind_speed, kinematic_viscosity)
 
 Ratio of the eddy diffusivity at canopy top to its Monin-Obukhov value.
 """
@@ -51,11 +51,11 @@ function canopy_top_diffusivity_enhancement end
 canopy_top_diffusivity_enhancement(::NoRoughnessSublayer; kw...) = 1.0
 
 function canopy_top_diffusivity_enhancement(model::CanopyTopMixingEnhancement; canopy_height, plant_area_index,
-    ground_roughness_height, karman_constant, canopy_top_wind_speed, kinematic_viscosity,
+    ground_roughness_length, karman_constant, canopy_top_wind_speed, kinematic_viscosity,
 )
     (; max_enhancement, drag_coefficient, max_friction_velocity_ratio, transition_reynolds_number) = model
     # u★/U_h over bare ground, then with the canopy (Raupach 1994)
-    bare_ratio = min(karman_constant / log(canopy_height / ground_roughness_height), max_friction_velocity_ratio)
+    bare_ratio = min(karman_constant / log(canopy_height / ground_roughness_length), max_friction_velocity_ratio)
     # Bare ground already at the maximum ratio leaves no gap for the canopy to close
     bare_ratio >= max_friction_velocity_ratio && return 1.0
     canopy_ratio = min(sqrt(bare_ratio^2 + drag_coefficient * plant_area_index / 2), max_friction_velocity_ratio)

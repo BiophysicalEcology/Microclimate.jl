@@ -150,11 +150,11 @@ canopy_wind_profile!(buffers, ::MixingLengthCanopyWindAttenuation, boundary_laye
 # precomputed wind_attenuation shape array (MixingLengthCanopyWindAttenuation,
 # ExponentialCanopyWindAttenuation) -- only the shape differs between them.
 function _shape_based_canopy_wind_profile!(buffers, boundary_layer_model;
-    site, environment_instant, canopy_source_temperature, vapour_pressure_equation=GoffGratch(),
+    environment_instant, canopy_source_temperature, vapour_pressure_equation=GoffGratch(),
     inverse_obukhov_length=nothing,
 )
     profile = atmospheric_surface_profile!(boundary_layer_model, buffers.above_canopy_profile;
-        site, environment_instant, surface_temperature=canopy_source_temperature, vapour_pressure_equation,
+        environment_instant, surface_temperature=canopy_source_temperature, vapour_pressure_equation,
         displacement_height=buffers.displacement_height, roughness_length=buffers.roughness_length,
         thermal_roughness_model=buffers.thermal_roughness_model,
         temperature_anchor_height=buffers.canopy_height,

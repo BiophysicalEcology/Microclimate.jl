@@ -15,7 +15,7 @@ Allocate the per-variant scratch buffer needed by `atmospheric_surface_profile!`
 function allocate_profile end
 
 """
-    atmospheric_surface_profile(boundary_layer_model; heights, site, environment_instant, surface_temperature, vapour_pressure_equation)
+    atmospheric_surface_profile(boundary_layer_model; heights, roughness_length, environment_instant, surface_temperature, vapour_pressure_equation)
 
 Compute vertical profiles of wind speed, air temperature, and relative
 humidity above the surface. Variants supply the stability formulation.
@@ -24,7 +24,7 @@ Allocates the output buffer internally.
 function atmospheric_surface_profile end
 
 """
-    atmospheric_surface_profile!(boundary_layer_model, buffers; site, environment_instant, surface_temperature, vapour_pressure_equation)
+    atmospheric_surface_profile!(boundary_layer_model, buffers; roughness_length, environment_instant, surface_temperature, vapour_pressure_equation)
 
 In-place version of `atmospheric_surface_profile` that writes into
 pre-allocated buffers.
@@ -32,7 +32,7 @@ pre-allocated buffers.
 function atmospheric_surface_profile! end
 
 """
-    surface_fluxes(boundary_layer_model; surface_temperature, air_temperature, wind_speed, zenith_angle, roughness_height, reference_height, atmospheric_pressure, obukhov_length_prev=nothing)
+    surface_fluxes(boundary_layer_model; surface_temperature, air_temperature, wind_speed, zenith_angle, roughness_length, reference_height, atmospheric_pressure, obukhov_length_prev=nothing)
 
 Surface-layer convective heat flux and friction velocity. Variants apply
 whichever atmospheric-stability parameterisation they use. Returns
@@ -41,7 +41,7 @@ whichever atmospheric-stability parameterisation they use. Returns
 function surface_fluxes end
 
 """
-    init_surface_fluxes!(boundary_layer_model, buffers, forcing, site, heights, soil_temperatures, i)
+    init_surface_fluxes!(boundary_layer_model, buffers, forcing, roughness_length, heights, soil_temperatures, i)
 
 Refresh any internal state the model needs for `surface_fluxes` on the
 upcoming hour `i`. Default no-op for models that don't carry warm-start state.

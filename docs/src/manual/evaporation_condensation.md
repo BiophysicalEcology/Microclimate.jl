@@ -77,7 +77,7 @@ saturated specific humidity with temperature, from the reference height to the s
 (kg kg⁻¹ K⁻¹). In the second term, ``\rho`` is air density (kg m⁻³), ``\delta q`` the
 difference between the saturated and actual specific humidity of the air (kg kg⁻¹),
 ``C_e`` a dimensionless bulk transfer coefficient for heat or water vapour that
-depends on the roughness height, and ``\bar u`` the wind speed at the reference
+depends on the roughness length, and ``\bar u`` the wind speed at the reference
 height (m s⁻¹). [`GarrattSegalCondensation`](@ref) (the `MicroModel` default)
 implements this directly (eq. 6b of Garratt and Segal 1988), as a Penman-style
 combination of an energy-availability term and an aerodynamic term — the energy term

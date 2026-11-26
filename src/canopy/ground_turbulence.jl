@@ -52,25 +52,25 @@ and the friction velocity at the ground, as `(; resistance, friction_velocity)`.
 - lowest_layer_height
 - lowest_air_temperature
 - ground_temperature
-- roughness_height: of the ground
+- ground_roughness_length: of the ground
 """
 function ground_turbulence end
-# allocate_canopy checks the lowest layer is above the roughness height
+# allocate_canopy checks the lowest layer is above the roughness length
 function ground_turbulence(::ProfileGroundTurbulence, air_profile_buffers, air_profile_model, boundary_layer_model;
-    friction_velocity, inverse_obukhov_length, canopy_top_enhancement, lowest_wind_speed, lowest_layer_height, roughness_height,
+    friction_velocity, inverse_obukhov_length, canopy_top_enhancement, lowest_wind_speed, lowest_layer_height, ground_roughness_length,
     kw...,
 )
     resistance = ground_turbulent_resistance(air_profile_buffers, air_profile_model, boundary_layer_model;
         friction_velocity, inverse_obukhov_length, canopy_top_enhancement)
-    ground_friction_velocity = boundary_layer_model.karman_constant * lowest_wind_speed / log(lowest_layer_height / roughness_height)
+    ground_friction_velocity = boundary_layer_model.karman_constant * lowest_wind_speed / log(lowest_layer_height / ground_roughness_length)
     return (; resistance, friction_velocity=ground_friction_velocity)
 end
 function ground_turbulence(model::GroundTurbulence, air_profile_buffers, air_profile_model, boundary_layer_model;
-    friction_velocity, plant_area_index, lowest_layer_height, roughness_height, kw...,
+    friction_velocity, plant_area_index, lowest_layer_height, ground_roughness_length, kw...,
 )
     (; gust_decay, leaf_drag_coefficient, shelter_factor, free_convection_velocity) = model
     sheltering = exp(-gust_decay * leaf_drag_coefficient * plant_area_index / (1 + shelter_factor * plant_area_index))
     ground_friction_velocity = sqrt((sheltering * friction_velocity)^2 + free_convection_velocity^2)
-    resistance = log(lowest_layer_height / roughness_height) / (boundary_layer_model.karman_constant * ground_friction_velocity)
+    resistance = log(lowest_layer_height / ground_roughness_length) / (boundary_layer_model.karman_constant * ground_friction_velocity)
     return (; resistance, friction_velocity=ground_friction_velocity)
 end

@@ -44,9 +44,6 @@ site = Site(;
     aspect = microinput[:azmuth] * 1.0u"°",
     horizon_angles = (DataFrame(CSV.File("$testdir/data/init_monthly_snow/hori.csv"))[:, 2]) * 1.0u"°",
     sky_view_fraction = 1.0,
-    albedo = DataFrame(CSV.File("$testdir/data/init_monthly_snow/REFLS.csv"))[1, 2] * 1.0,
-    roughness_height = microinput[:RUF] * 1.0u"m",
-    atmospheric_pressure = atmospheric_pressure(microinput[:ALTT] * 1.0u"m"),
 )
 boundary_layer_model = MoninObukhov(; karman_constant=0.4, unstable_stability=NicheMapRUnstable(), stable_stability=NicheMapRStable())
 
@@ -85,6 +82,8 @@ environment_daily = DailyTimeseries(;
     rainfall, # monthly total rainfall (mm = kg/m²)
     deep_soil_temperature = (DataFrame(CSV.File("$testdir/data/init_monthly_snow/tannulrun.csv"))[days2do, 2] * 1.0)u"°C", # daily deep soil temperatures
     leaf_area_index = fill(0.1, length(days)),
+    albedo = DataFrame(CSV.File("$testdir/data/init_monthly_snow/REFLS.csv"))[days2do, 2] * 1.0,
+    ground_roughness_length = fill(microinput[:RUF] * 1.0u"m", length(days)),
 )
 
 environment_minmax = MonthlyMinMaxEnvironment(; forcings = minmax_forcings(;

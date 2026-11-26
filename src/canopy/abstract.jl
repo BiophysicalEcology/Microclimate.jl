@@ -7,7 +7,7 @@ Supertype for vegetation canopy models. [`NoCanopy`](@ref) (scalar shade fractio
 abstract type AbstractCanopyModel end
 
 """
-    allocate_canopy(model, heights, boundary_layer_model; site, vapour_pressure_equation, soil_hydraulic_model)
+    allocate_canopy(model, heights, boundary_layer_model; ground_roughness_length, vapour_pressure_equation, soil_hydraulic_model)
 
 Pre-allocate a canopy model's per-layer buffers, sized to the sub-canopy
 portion of `heights`. Structural quantities depending only on `model`/
@@ -75,7 +75,7 @@ which the soil takes.
 function canopy_shortwave! end
 
 """
-    canopy_wind_profile!(buffers, model, boundary_layer_model; site, environment_instant,
+    canopy_wind_profile!(buffers, model, boundary_layer_model; environment_instant,
                           canopy_source_temperature, vapour_pressure_equation, inverse_obukhov_length=nothing)
 
 Per-layer wind-speed profile through the canopy for the current hour;

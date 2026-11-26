@@ -1,19 +1,12 @@
 # Output quantities are written straight into the result buffers; any other
 # quantity in `forcings` (e.g. vapour pressure feeding a derived humidity) is an
 # intermediate and needs a scratch buffer. Allocate one per intermediate.
-allocate_interpolation_scratch(::Nothing) = nothing
-function allocate_interpolation_scratch(env)
+allocate_interpolation_scratch(::Nothing, output) = nothing
+function allocate_interpolation_scratch(env, output)
     fs = env.forcings
-    names = filter(k -> !_is_output_quantity(Val(k)), keys(fs))
+    names = filter(name -> !hasproperty(output, name), keys(fs))
     return NamedTuple{names}(map(k -> _quantity_buffer(getproperty(fs, k)), names))
 end
-
-# Quantity names that the solver writes directly into its result buffers.
-@inline _is_output_quantity(::Val) = false
-@inline _is_output_quantity(::Val{:reference_temperature}) = true
-@inline _is_output_quantity(::Val{:reference_humidity}) = true
-@inline _is_output_quantity(::Val{:reference_wind_speed}) = true
-@inline _is_output_quantity(::Val{:cloud_cover}) = true
 
 _quantity_buffer(f::DielForcing) = zeros(eltype(first(f.values)), 24 * n_days(f))
 
@@ -28,7 +21,10 @@ function populate_weather!(output, mp, solar_radiation_out, interpolation_scratc
     )
     output.diffuse_fraction .= diffuse_fraction
     if !isnothing(environment_hourly) && !isnothing(environment_hourly.global_radiation)
-        output.global_radiation .= environment_hourly.global_radiation
+        # Measured shortwave with the sun below the horizon (a pyranometer's night offset or a
+        # gap fill) is dropped, so the canopy and the ground see the same sky
+        output.global_radiation .= ifelse.(solar_radiation_out.zenith_angle .>= 90u"°",
+            0.0u"W/m^2", environment_hourly.global_radiation)
     else
         output.global_radiation .= global_radiation
     end
@@ -47,7 +43,7 @@ end
     longwave_sky = precompute_longwave_sky(longwave_model;
         site, environment_instant, vapour_pressure_equation)
     return (;
-        albedo = _baseline_albedo(site, environment_instant),
+        albedo = environment_instant.albedo,
         surface_emissivity = environment_instant.surface_emissivity,
         effective_wetness = get_soil_wetness(moisture_mode, environment_instant, soil_wetness),
         longwave_sky,
@@ -69,7 +65,7 @@ end
         surface_emissivity = SNOW_EMISSIVITY
         effective_wetness = 1.0
     else
-        albedo = _baseline_albedo(site, environment_instant)
+        albedo = environment_instant.albedo
         surface_emissivity = environment_instant.surface_emissivity
         effective_wetness = get_soil_wetness(moisture_mode, environment_instant, soil_wetness)
     end
@@ -135,16 +131,6 @@ function apply_canopy_overrides(model::MultilayerCanopy, buffers, soil_hour!::S;
         canopy_source_temperature = buffers.leaf.leaf_temperature[1], canopy_result)
 end
 
-# Resolve the non-snow baseline albedo: a populated `environment_daily.albedo`
-# (surfaced here as `environment_instant.albedo`) wins; otherwise fall back
-# to the `Site.albedo` scalar. The inner helper has two methods dispatched
-# on whether the env value is `Nothing`, so the return type stays concrete
-# per call site (no `Union{Float64, Nothing}` leakage).
-@inline _baseline_albedo(site, environment_instant) =
-    _pick_albedo(site.albedo, environment_instant.albedo)
-@inline _pick_albedo(site_albedo, ::Nothing)   = site_albedo
-@inline _pick_albedo(_site_albedo, env_albedo) = env_albedo
-
 function sync_inactive_snow_temps(snow_temperatures::SVector{N}, snow_scratch) where N
     sync = snow_temperatures[1]
     return SVector(ntuple(N) do k
@@ -171,11 +157,11 @@ combine_ode_state(snow_temperatures::SVector, soil_temperatures, _) = vcat(snow_
 # `[arr[r]; arr[r][1]]` concatenation which heap-allocates intermediate Vectors.
 @inline function _tins_mean_K(arr, start::Int, stop::Int)
     n = stop - start + 1
-    @inbounds s = u"K"(arr[start])
-    @inbounds for i in (start+1):stop
+    s = u"K"(arr[start])
+    for i in (start+1):stop
         s += u"K"(arr[i])
     end
-    @inbounds s += u"K"(arr[stop])  # 25th sample = repeat of last hour
+    s += u"K"(arr[stop])  # 25th sample = repeat of last hour
     return s / (n + 1)
 end
 
@@ -253,8 +239,10 @@ function CommonSolve.init(mp::MicroProblem)
         allocate_phase_transition(soil_energy_model.freezing_model, num_soil_nodes),
         allocate_soil_water_balance(soil_hydraulic_model, num_soil_nodes),
         snow_scratch,
-        allocate_interpolation_scratch(environment_minmax),
-        allocate_canopy(canopy_model, heights, boundary_layer_model; site, vapour_pressure_equation, soil_hydraulic_model),
+        allocate_interpolation_scratch(environment_minmax, output),
+        # The canopy checks its lowest layer is above the ground roughness on every day
+        allocate_canopy(canopy_model, heights, boundary_layer_model; vapour_pressure_equation, soil_hydraulic_model,
+            ground_roughness_length=maximum(environment_daily.ground_roughness_length)),
     )
 
     # ODE integrator — sized for the combined (snow + soil) vector
@@ -289,7 +277,7 @@ function CommonSolve.init(mp::MicroProblem)
         site, environment_instant, vapour_pressure_equation)
     hourly_proto = HourlySoilEnergyInputs(;
         depths=depths_proto, environment_instant,
-        soil_wetness=0.0, longwave_sky, albedo=site.albedo, environment_instant.surface_emissivity,
+        soil_wetness=0.0, longwave_sky, albedo=environment_instant.albedo, environment_instant.surface_emissivity,
         snow_state=initial_snow_state(snow_model),
         initial_ground_overrides(canopy_model)...,
     )
@@ -375,8 +363,9 @@ function solve_solar!(out::NamedTuple, buffers::NamedTuple, mp::MicroProblem)
     days = mp.days
     solar_radiation_model = mp.model.atmosphere.radiation.solar_radiation_model
     site = mp.model.site
+    # SolarRadiation takes one ground albedo for the whole run, for the terrain's reflected light, so it gets the mean daily albedo
     SolarRadiation.solar_radiation!(out, buffers, solar_radiation_model;
-        days, hours, solar_terrain=SolarRadiation.SolarTerrain(site),
+        days, hours, solar_terrain=SolarRadiation.SolarTerrain(site, mean(mp.inputs.environment_daily.albedo)),
     )
     # Cap zenith angles at 90° (sun-below-horizon sentinel). In-place broadcast
     # avoids the boolean-mask indexing path which allocates the mask vector.
@@ -391,17 +380,16 @@ function interpolate_minmax!(output, environment_minmax, environment_daily, envi
     # Fill every quantity buffer: output quantities into the result, intermediates
     # into scratch. Derived quantities (e.g. humidity from vapour pressure) read
     # the forcings filled before them.
-    buffer_for(vk) = _is_output_quantity(vk) ? getproperty(output, _name(vk)) :
-                                               getproperty(interpolation_scratch, _name(vk))
-    populate_quantities!(buffer_for, environment_minmax.forcings, solar_radiation_out, consecutive_days(environment_minmax))
+    buffers = merge(ConstructionBase.getproperties(output), interpolation_scratch)
+    populate_quantities!(buffers, environment_minmax.forcings, solar_radiation_out, consecutive_days(environment_minmax))
 
     # Clamp humidity and cloud cover to [_, 1.0] without allocating a mask Vector.
-    @inbounds for i in eachindex(output.reference_humidity)
+    for i in eachindex(output.reference_humidity)
         if output.reference_humidity[i] > 1.0
             output.reference_humidity[i] = 1.0
         end
     end
-    @inbounds for i in eachindex(output.cloud_cover)
+    for i in eachindex(output.cloud_cover)
         if output.cloud_cover[i] > 1.0
             output.cloud_cover[i] = 1.0
         end
@@ -468,7 +456,6 @@ function solve_soil!(cache::MicroCache)
     (; convergence, rainfall_schedule) = config
     time_mode = mp.time_mode
     (; campbell_b_parameter, air_entry_water_potential) = soil_profile.hydraulics
-    (; bulk_density, mineral_density, mineral_conductivity, mineral_heat_capacity) = soil_profile
 
     ndays = length(days)
     nhours = length(hours)
@@ -509,8 +496,7 @@ function solve_soil!(cache::MicroCache)
     SciMLBase.set_proposed_dt!(ode_integrator, ode_integrator.dt)
 
     update_soil_properties!(output, buffers.soil_properties, soil_properties_model;
-        soil_temperature=soil_temperatures, soil_moisture, bulk_density, mineral_density,
-        mineral_conductivity, mineral_heat_capacity,
+        soil_temperature=soil_temperatures, soil_moisture, soil_profile,
         atmospheric_pressure=101325.0u"Pa", step=1
     )
 
@@ -520,8 +506,8 @@ function solve_soil!(cache::MicroCache)
     # `num_soil_nodes` entries hold the same per-depth value (the +1 entry is
     # the deep boundary, set elsewhere).
     soil_saturation_moisture = buffers.soil_water_balance.saturation_water_content
-    @inbounds for i in eachindex(soil_moisture)
-        soil_saturation_moisture[i] = 1.0 - bulk_density[i] / mineral_density[i]
+    for i in eachindex(soil_moisture)
+        soil_saturation_moisture[i] = 1.0 - soil_profile.bulk_density[i] / soil_profile.mineral_density[i]
         output.soil_water_potential[1, i] =
             air_entry_water_potential[i] * (soil_saturation_moisture[i] / soil_moisture[i]) ^ campbell_b_parameter[i]
     end
@@ -557,8 +543,8 @@ function solve_soil!(cache::MicroCache)
         # `arr[range]` + `ustrip.(...)` broadcast allocations.
         day_offset = (j - 1) * nhours
         noon_i = 1
-        @inbounds best_zen = solar_radiation_out.zenith_angle[day_offset + 1]
-        @inbounds for i in 2:nhours
+        best_zen = solar_radiation_out.zenith_angle[day_offset + 1]
+        for i in 2:nhours
             z = solar_radiation_out.zenith_angle[day_offset + i]
             if z < best_zen
                 best_zen = z
@@ -623,7 +609,7 @@ function solve_soil!(cache::MicroCache)
         leaf_water_potential_day_start = leaf_water_potential
         snapshot_canopy_water!(canopy_model, buffers.canopy)
         # Snapshot day-start ∑phase into pre-allocated buffer (no copy alloc).
-        @inbounds for i in eachindex(∑phase)
+        for i in eachindex(∑phase)
             ∑phase_day_start[i] = ∑phase[i]
         end
         while !is_last_iter
@@ -667,7 +653,7 @@ function solve_soil!(cache::MicroCache)
                 output.ground_standing_frost[day_init_step] = standing_frost
                 output.runoff[day_init_step] = runoff
                 _write_row!(output.soil_moisture, day_init_step, soil_moisture)
-                @inbounds for i in eachindex(soil_moisture)
+                for i in eachindex(soil_moisture)
                     output.soil_water_potential[day_init_step, i] =
                         air_entry_water_potential[i] * (soil_saturation_moisture[i] / soil_moisture[i]) ^ campbell_b_parameter[i]
                 end
@@ -685,8 +671,7 @@ function solve_soil!(cache::MicroCache)
                     longwave_model, vapour_pressure_equation)
                 output.sky_temperature[day_init_step] = longwave_sky.sky_temperature
                 update_soil_properties!(output, buffers.soil_properties, soil_properties_model;
-                    soil_temperature=soil_temperatures, soil_moisture, bulk_density, mineral_density,
-                    mineral_conductivity, mineral_heat_capacity,
+                    soil_temperature=soil_temperatures, soil_moisture, soil_profile,
                     atmospheric_pressure=output.pressure[day_init_step],
                     step=day_init_step, vapour_pressure_equation,
                 )
@@ -782,7 +767,7 @@ function solve_soil!(cache::MicroCache)
                         wind_speed=environment_instant.reference_wind_speed,
                         relative_humidity=environment_instant.reference_humidity,
                         atmospheric_pressure=environment_instant.atmospheric_pressure,
-                        roughness_height=site.roughness_height,
+                        roughness_length=environment_instant.ground_roughness_length,
                         reference_height=last(heights),
                         soil_wetness=effective_wetness,
                         vapour_pressure_equation,
@@ -869,7 +854,7 @@ function solve_soil!(cache::MicroCache)
                 ode_state = combine_ode_state(snow_temperatures, soil_temperatures, n_snow)
                 set_soil_temperatures!(ode_integrator, ode_state)
 
-                init_surface_fluxes!(boundary_layer_model, buffers, forcing, site, heights, soil_temperatures, i)
+                init_surface_fluxes!(boundary_layer_model, buffers, forcing, environment_instant.ground_roughness_length, heights, soil_temperatures, i)
                 # Fortran OSUB.f: soil moisture runs only on final iteration (after line 353 guard)
                 if is_last_iter
                     # Rain reaching the ground is post-canopy-interception throughfall, not raw rainfall.
@@ -913,7 +898,7 @@ function solve_soil!(cache::MicroCache)
                     # hour past environment_instant; soil_temperatures_output stays aligned with it.
                     (; pool, standing_dew, standing_frost, dew_formed, frost_formed, evaporation_potential, local_relative_humidity) =
                         ground_condensation_step!(buffers, boundary_layer_model;
-                        site, environment_instant, soil_temperatures=soil_temperatures_output, pool, standing_dew, standing_frost,
+                        environment_instant, soil_temperatures=soil_temperatures_output, pool, standing_dew, standing_frost,
                         condensation_model, evaporation_model, vapour_pressure_equation, snow_present,
                         actual_soil_wetness = effective_wetness,
                         sky_temperature = longwave_sky.sky_temperature, absorbed_solar_radiation,
@@ -958,8 +943,7 @@ function solve_soil!(cache::MicroCache)
                     update_soil_water!(output, soil_moisture, infil_out, output_step)
                     environment_instant = get_instant(environment_day, environment_hourly, output, soil_moisture, output_step)
                     update_soil_properties!(output, buffers.soil_properties, soil_properties_model;
-                        soil_temperature=soil_temperatures, soil_moisture, bulk_density, mineral_density,
-                        mineral_conductivity, mineral_heat_capacity,
+                        soil_temperature=soil_temperatures, soil_moisture, soil_profile,
                         atmospheric_pressure=environment_instant.atmospheric_pressure, step=output_step, vapour_pressure_equation
                     )
                     _ground_heat_flux!(output, output_step, depths)
@@ -991,14 +975,16 @@ function solve_air!(cache::MicroCache)
     mp = cache.problem
     output = cache.output
     solar_radiation_out = cache.buffers.solar_out
-    (; site, vapour_pressure_equation) = mp.model
+    (; hours, vapour_pressure_equation) = mp.model
     (; boundary_layer_model) = mp.model.atmosphere
+    ground_roughness_lengths = mp.inputs.environment_daily.ground_roughness_length
     canopy_model = mp.model.canopy
     snow_model = mp.model.snow
     profile_buffers = cache.buffers.air_profile
     n_snow = n_snow_nodes(snow_model)
-    (; displacement_height, roughness_length, thermal_roughness_model, temperature_anchor_height) = canopy_profile_origin(canopy_model, cache.buffers.canopy, site, boundary_layer_model)
     for i in 1:size(output.profile.air_temperature, 1)
+        (; displacement_height, roughness_length, thermal_roughness_model, temperature_anchor_height) =
+            canopy_profile_origin(canopy_model, cache.buffers.canopy, ground_roughness_lengths[cld(i, length(hours))], boundary_layer_model)
         # PR #102: when snow is present, the boundary-layer surface is the
         # top of the snowpack (snow node 1) not the soil surface.
         has_snow = n_snow > 0 && output.snow_depth[i] > 0.0u"cm"
@@ -1014,7 +1000,7 @@ function solve_air!(cache::MicroCache)
             reference_humidity=output.reference_humidity[i],
             zenith_angle=solar_radiation_out.zenith_angle[i],
         )
-        result = atmospheric_surface_profile!(boundary_layer_model, profile_buffers; site, environment_instant, surface_temperature, vapour_pressure_equation, displacement_height, roughness_length, thermal_roughness_model, temperature_anchor_height, surface_relative_humidity)
+        result = atmospheric_surface_profile!(boundary_layer_model, profile_buffers; environment_instant, surface_temperature, vapour_pressure_equation, displacement_height, roughness_length, thermal_roughness_model, temperature_anchor_height, surface_relative_humidity)
         _write_row!(output.profile.air_temperature,   i, result.air_temperature)
         _write_row!(output.profile.wind_speed,        i, result.wind_speed)
         _write_row!(output.profile.relative_humidity, i, result.relative_humidity)
@@ -1233,7 +1219,7 @@ end
 # Explicit-loop row write into a Matrix. Avoids the SubArray + Broadcasted
 # heap allocations from `arr[step, :] .= vec` since matrices are column-major.
 @inline function _write_row!(arr::AbstractMatrix, step::Int, src::AbstractVector)
-    @inbounds for i in eachindex(src)
+    for i in eachindex(src)
         arr[step, i] = src[i]
     end
     return arr
@@ -1242,7 +1228,7 @@ end
 # Explicit-loop column read from a Matrix into a Vector. Avoids the
 # `dst .= arr[:, col]` SubArray + Broadcasted heap allocations.
 @inline function _read_col!(dst::AbstractVector, arr::AbstractMatrix, col::Int)
-    @inbounds for i in eachindex(dst)
+    for i in eachindex(dst)
         dst[i] = arr[i, col]
     end
     return dst
@@ -1358,18 +1344,18 @@ function allocate_forcing(output, solar_radiation_out)
 end
 
 @inline function _copy_day_into!(coefs::AbstractVector, src::AbstractVector, sub1::AbstractRange)
-    @inbounds for (k, i) in enumerate(sub1)
+    for (k, i) in enumerate(sub1)
         coefs[k] = src[i]
     end
-    @inbounds coefs[25] = src[last(sub1)]  # 25th node repeats hour 24
+    coefs[25] = src[last(sub1)]  # 25th node repeats hour 24
     return nothing
 end
 
 @inline function _copy_day_into!(coefs::AbstractVector, src::AbstractVector, sub1::AbstractRange, ::typeof(uconvert), unit)
-    @inbounds for (k, i) in enumerate(sub1)
+    for (k, i) in enumerate(sub1)
         coefs[k] = uconvert(unit, src[i])
     end
-    @inbounds coefs[25] = uconvert(unit, src[last(sub1)])
+    coefs[25] = uconvert(unit, src[last(sub1)])
     return nothing
 end
 
@@ -1406,9 +1392,8 @@ function get_day(environment_daily, iday)
         soil_wetness = environment_daily.soil_wetness[iday], # set up vector of soil wetness for each day
         deep_soil_temperature = u"K"(environment_daily.deep_soil_temperature[iday]), # daily deep soil temperature (°C)
         rainfall = environment_daily.rainfall[iday],
-        # `nothing` here → `apply_snow_overrides` falls back to `site.albedo`.
-        # A populated `environment_daily.albedo` overrides per-day.
-        albedo = _maybe_indexed(environment_daily.albedo, iday),
+        albedo = environment_daily.albedo[iday],
+        ground_roughness_length = environment_daily.ground_roughness_length[iday],
     )
 end
 
