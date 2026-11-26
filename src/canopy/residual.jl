@@ -214,8 +214,8 @@ function evaluate_canopy!(residual, inverse_obukhov_length, ground_temperature, 
             atmospheric_pressure, leaf_water_potential, dry_conductance)
         sensible_heat_flux[i] = balance.convection.convection_flow / GROUND_AREA
         evaporation_mass_flux[i] = balance.evaporation.transpiration_mass_flow / GROUND_AREA
-        net_balance[i] = balance.net
-        residual.leaf_balance[i] = balance.net / leaf_area
+        net_balance[i] = balance.net_heat_flow
+        residual.leaf_balance[i] = balance.net_heat_flow / leaf_area
         residual.leafless_temperature_difference[i] = zero(residual.leafless_temperature_difference[i])
     end
 
@@ -253,7 +253,8 @@ function evaluate_canopy!(residual, inverse_obukhov_length, ground_temperature, 
     end
     # The stability the whole canopy's sensible flux through its top implies; the Obukhov
     # relation takes the downward flux
-    obukhov_coefficient = calc_ρ_cp(reference_temperature) * reference_temperature / (boundary_layer_model.karman_constant * g_n)
+    volumetric_heat_capacity = calc_air_volumetric_heat_capacity(reference_temperature)
+    obukhov_coefficient = volumetric_heat_capacity * reference_temperature / (boundary_layer_model.karman_constant * g_n)
     inverse_obukhov_length_update = limit_inverse_obukhov_length(stability_from_fluxes(InverseObukhovLength(), obukhov_coefficient,
         wind.friction_velocity, -boundary.sensible_flux), stability_limits)
     residual.inverse_obukhov_length[] = wind.inverse_obukhov_length - inverse_obukhov_length_update

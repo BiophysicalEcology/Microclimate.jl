@@ -1,18 +1,10 @@
 """
     MoistureResponsiveStomatalConductance(; conductance=LeafEvaporationParameters(...))
 
-Stomatal (abaxial/adaxial) conductance closes as leaf water potential drops,
-using `CampbellSoilHydraulics`'s own `stomatal_closure_potential`/
-`stomatal_stability_parameter` (read from the `soil_hydraulic_model` passed
-to [`stomatal_conductance`](@ref) — not stored here, so the two models can't
-drift out of sync). Cuticular conductance is unaffected. Shuts fully at
-night (`zenith_angle >= 90°`).
-
-`leaf_water_potential` is supplied by the caller each call (e.g. from
-`CampbellSoilHydraulics`'s own solve). This is the stomatal_model to pair
-with `CampbellSoilHydraulics` on a `MultilayerCanopy` if soil-moisture
-stress should reach the leaf's transpiration/temperature — pairing with any
-other `soil_hydraulic_model` is a `MethodError` by construction.
+Stomata close as leaf water potential drops, using the `stomatal_closure_potential` and
+`stomatal_stability_parameter` of the `CampbellSoilHydraulics` passed to
+[`stomatal_conductance`](@ref). Cuticular conductance is unaffected. Shut at night
+(`zenith_angle >= 90°`). Use with `CampbellSoilHydraulics` so soil-water stress reaches the leaves.
 
 # References
 Campbell, G. S. 1985. “Soil Physics with Basic: Transport Models for Soil-Plant

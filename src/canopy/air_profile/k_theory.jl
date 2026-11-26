@@ -4,14 +4,9 @@
 Air temperature and vapor density through the canopy, from steady diffusion between
 neighbouring layers: `d/dz(K dT/dz) = -S`, with each layer's leaves as the source `S`.
 
-Layer 1 is fixed at the canopy-top value, and heat and vapor diffuse from there down to the
-ground. Unlike [`RaupachLTheoryAirProfile`](@ref), each layer only exchanges directly with
-its neighbours.
-
-The eddy diffusivity `K` follows the shape of the wind profile
-(`wind_attenuation_profile`), scaled to `κ u* (canopy_height - displacement_height)`
-at the canopy top. Heat and vapor share that diffusivity, and each is a tridiagonal system
-solved in preallocated buffers.
+Layer 1 is the canopy-top value; each layer exchanges only with its neighbours. The
+diffusivity `K`, shared by heat and vapor, follows the wind profile, scaled at the top to
+von Kármán constant × friction velocity × (`canopy_height` − `displacement_height`).
 
 # References
 - Raupach, M. R. (1989). A practical Lagrangian method for relating scalar
@@ -120,7 +115,7 @@ function canopy_heat_vapor_transport!(buffers, ::KTheoryAirProfile, boundary_lay
     canopy_top_eddy_diffusivity = boundary_layer_model.karman_constant * friction_velocity * max(canopy_height - displacement_height, 1.0e-3u"m")
 
     heat_top_conductance, heat_ground_conductance = _ktheory_conductances!(heat_conductance_between_layers, relative_eddy_diffusivity,
-        canopy_top_eddy_diffusivity, layer_spacing, calc_ρ_cp(canopy_top_air_temperature))
+        canopy_top_eddy_diffusivity, layer_spacing, calc_air_volumetric_heat_capacity(canopy_top_air_temperature))
     ground_heat_conductance[] = heat_ground_conductance
     _ktheory_solve!(air_temperature, heat_layer_total_conductance, heat_conductance_between_layers, heat_known_flux, heat_top_conductance, heat_ground_conductance,
         canopy_top_air_temperature, ground_temperature, layer -> sensible_heat_flux[layer])

@@ -2,14 +2,8 @@
     VerticalRainInterception(; leaf_water_storage_capacity=0.1u"kg/m^2",
                                 rain_zenith_angle=0.0u"°")
 
-Per-layer rain interception, same extinction/storage/drip bookkeeping as
-[`LayeredRainInterception`](@ref), but at a fixed `rain_zenith_angle`
-(default vertical) instead of a wind-driven one -- e.g. Shaw's `RAINC`,
-which reuses the canopy's own direct-beam transmittance geometry at a
-near-vertical, slope-adjusted angle rather than a terminal-velocity
-relation. Set `rain_zenith_angle` to the site's `slope` for that
-equivalence (rain falls vertically in the world frame, so its angle
-relative to the canopy's local zenith equals terrain slope).
+Like [`LayeredRainInterception`](@ref), but rain falls at a fixed `rain_zenith_angle`.
+Set it to the site slope for rain falling vertically on sloping ground.
 """
 @kwdef struct VerticalRainInterception{C,A} <: AbstractStorageInterception
     leaf_water_storage_capacity::C = 0.1u"kg/m^2"
@@ -62,13 +56,13 @@ end
 leaf_standing_dew(::AbstractStorageInterception, buffers, layer) = buffers.leaf_standing_dew[layer]
 leaf_standing_frost(::AbstractStorageInterception, buffers, layer) = buffers.leaf_standing_frost[layer]
 
-function add_leaf_standing_dew!(::AbstractStorageInterception, buffers, layer, Δ)
-    buffers.leaf_standing_dew[layer] = max(buffers.leaf_standing_dew[layer] + Δ, 0.0u"kg/m^2")
+function add_leaf_standing_dew!(::AbstractStorageInterception, buffers, layer, mass_change)
+    buffers.leaf_standing_dew[layer] = max(buffers.leaf_standing_dew[layer] + mass_change, 0.0u"kg/m^2")
     return nothing
 end
 
-function add_leaf_standing_frost!(::AbstractStorageInterception, buffers, layer, Δ)
-    buffers.leaf_standing_frost[layer] = max(buffers.leaf_standing_frost[layer] + Δ, 0.0u"kg/m^2")
+function add_leaf_standing_frost!(::AbstractStorageInterception, buffers, layer, mass_change)
+    buffers.leaf_standing_frost[layer] = max(buffers.leaf_standing_frost[layer] + mass_change, 0.0u"kg/m^2")
     return nothing
 end
 

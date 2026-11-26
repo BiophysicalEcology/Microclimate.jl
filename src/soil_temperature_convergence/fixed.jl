@@ -9,4 +9,4 @@ end
 
 max_iterations(c::FixedIterationConvergence) = c.iterations_per_day
 may_iterate(c::FixedIterationConvergence) = c.iterations_per_day > 1
-is_converged(::FixedIterationConvergence, iter, niter, T0, T0_prev) = iter >= niter
+is_converged(::FixedIterationConvergence, iter, niter, soil_temperatures, previous_soil_temperatures) = iter >= niter

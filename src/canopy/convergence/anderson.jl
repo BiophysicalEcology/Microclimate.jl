@@ -15,7 +15,7 @@ the leaf energy balance.
 The hour is solved when every value is within its tolerance. A layer without leaves uses
 `air_temperature_tolerance` for its leaf.
 
-A pass can overshoot, leaving the canopy top outside [`CANOPY_TEMPERATURE_BOUNDS`](@ref). The
+A pass can overshoot past [`CANOPY_TEMPERATURE_BOUNDS`](@ref). The
 solver then moves halfway back to its last good guess and forgets its history.
 
 An hour that hasn't settled after `maxiters` passes usually has its stability swinging either side of neutral. The
@@ -79,7 +79,7 @@ function layer_leaf_balance_density(leaf_temperature, buffers, model, layer, atm
 )
     (; balance, leaf_area) = layer_leaf_balance(buffers, model, layer, leaf_temperature * CANOPY_STATE_UNITS.temperature,
         atmospheric_pressure * u"Pa", leaf_water_potential * u"J/kg", dry_conductance)
-    return in_state_units(balance.net / leaf_area)
+    return in_state_units(balance.net_heat_flow / leaf_area)
 end
 
 # One pass: writes the state this pass would move to into `next_state`, and the move into `step`.

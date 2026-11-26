@@ -1,8 +1,7 @@
 """
     NoInterception()
 
-Default interception model: rain passes straight through, no leaf-surface
-wetness ever accrues. Reproduces pre-canopy rainfall handling bit-for-bit.
+Default interception model: rain passes straight through and leaves stay dry.
 """
 struct NoInterception <: AbstractCanopyInterceptionModel end
 
@@ -29,8 +28,8 @@ leaf_standing_dew(::NoInterception, buffers, layer) = 0.0u"kg/m^2"
 
 leaf_standing_frost(::NoInterception, buffers, layer) = 0.0u"kg/m^2"
 
-add_leaf_standing_dew!(::NoInterception, buffers, layer, Δ) = nothing
+add_leaf_standing_dew!(::NoInterception, buffers, layer, mass_change) = nothing
 
-add_leaf_standing_frost!(::NoInterception, buffers, layer, Δ) = nothing
+add_leaf_standing_frost!(::NoInterception, buffers, layer, mass_change) = nothing
 
 clamp_leaf_standing_dew!(::NoInterception, buffers, layer, ceiling) = nothing

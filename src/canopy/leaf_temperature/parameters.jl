@@ -2,19 +2,13 @@
     LeafParameters(; leaf_length=0.05u"m", leaf_width=0.02u"m", leaf_emissivity=0.97,
                       leaf_water_potential=0.0u"J/kg", canopy_projection_ratio=1.0)
 
-Per-leaf structural/physiological data — leaf traits, not a swappable
-model choice (analogous to `SoilProfile`'s per-depth soil data).
+Leaf traits.
 
-- `leaf_length`, `leaf_width` — for `HeatExchange.jl`'s boundary-layer
-  convection model (`leaf_body`). Defaults free/tunable, uncited.
-- `leaf_emissivity` — leaf longwave emissivity. Default free/tunable, uncited.
-- `leaf_water_potential` — fallback default for standalone/no-soil-coupling
-  use; normally overridden each hour by `CampbellSoilHydraulics`'s live
-  leaf-water-potential solve
-- `canopy_projection_ratio` — Campbell's ellipsoidal leaf-angle `x`
-  (1.0 = spherical, default; 0.0 = vertical; `Inf` = horizontal). Lives here
-  rather than on one radiative-transfer model since both
-  [`TwoStreamRadiation`](@ref) and the rain-interception model use it.
+- `leaf_length`, `leaf_width` — leaf size, for convection (`leaf_body`).
+- `leaf_emissivity` — leaf longwave emissivity.
+- `leaf_water_potential` — used when the caller gives none.
+- `canopy_projection_ratio` — Campbell's leaf-angle ratio (1.0 = spherical, default;
+  0.0 = vertical; `Inf` = horizontal), used by radiation and rain interception.
 """
 @kwdef struct LeafParameters{LL,LW,LE,WP,X}
     leaf_length::LL = 0.05u"m"
