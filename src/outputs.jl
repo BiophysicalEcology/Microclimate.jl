@@ -31,7 +31,7 @@ struct CanopyOutput{LT,AT,WS,RH,GAS,GAL,LAS,LAL,GTF,IT,DSW,USW,DLW,ULW,AR,NB,CSH
     net_absorbed_shortwave::LAS # nsteps Vector
     net_absorbed_longwave::LAL  # nsteps Vector
     ground_throughfall::GTF           # nsteps Vector
-    iterations::IT                    # nsteps Vector{Int}, Picard iteration count
+    iterations::IT                    # nsteps Vector{Int}, canopy solver iteration count
     boundary_downward_shortwave::DSW  # nsteps × (n_canopy_layers+1) Matrix, canopy top -> ground
     boundary_upward_shortwave::USW    # nsteps × (n_canopy_layers+1) Matrix, canopy top -> ground
     boundary_downward_longwave::DLW   # nsteps × (n_canopy_layers+1) Matrix, canopy top -> ground
@@ -40,7 +40,7 @@ struct CanopyOutput{LT,AT,WS,RH,GAS,GAL,LAS,LAL,GTF,IT,DSW,USW,DLW,ULW,AR,NB,CSH
     net_balance::NB                   # nsteps × n_canopy_layers Matrix, W, leaf_heat_balance's residual at the converged temperature
     canopy_sensible_heat_flux::CSH    # nsteps Vector, W/m^2 ground area, layers summed
     canopy_latent_heat_flux::CLH      # nsteps Vector, W/m^2 ground area, layers summed
-    friction_velocity::FV             # nsteps Vector, above-canopy boundary state canopy_air_profile! was driven with
+    friction_velocity::FV             # nsteps Vector, solved above-canopy boundary state
     obukhov_length::OL                # nsteps Vector, ditto (Inf = neutral/stable)
     displacement_height::DH           # nsteps Vector, ditto
     canopy_top_air_temperature::CTAT  # nsteps Vector, ditto

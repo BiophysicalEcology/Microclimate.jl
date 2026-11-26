@@ -7,7 +7,7 @@ Supertype for vegetation canopy models. [`NoCanopy`](@ref) (scalar shade fractio
 abstract type AbstractCanopyModel end
 
 """
-    allocate_canopy(model, heights, boundary_layer_model)
+    allocate_canopy(model, heights, boundary_layer_model; site, vapour_pressure_equation, soil_hydraulic_model)
 
 Pre-allocate a canopy model's per-layer buffers, sized to the sub-canopy
 portion of `heights`. Structural quantities depending only on `model`/
@@ -22,6 +22,14 @@ Zero day-boundary-reset canopy state (e.g. interception storage). No-op for
 `NoCanopy`.
 """
 function reset_canopy_scratch! end
+
+"""
+    reset_canopy_starting_state!(model, buffers)
+
+Clear the values each hour's canopy solve starts from, so that a new run doesn't
+start from the end of the last one. No-op for `NoCanopy`.
+"""
+function reset_canopy_starting_state! end
 
 """
     snapshot_canopy_water!(model, buffers)
@@ -78,14 +86,16 @@ function canopy_shortwave! end
 
 """
     canopy_wind_profile!(buffers, model, boundary_layer_model; site, environment_instant,
-                          canopy_source_temperature, vapour_pressure_equation)
+                          canopy_source_temperature, vapour_pressure_equation, inverse_obukhov_length=nothing)
 
 Per-layer wind-speed profile through the canopy for the current hour;
 writes into `buffers`, returns `(; canopy_top_wind_speed,
-canopy_top_air_temperature, friction_velocity)`. Above canopy top this is
+canopy_top_air_temperature, canopy_top_relative_humidity, friction_velocity,
+inverse_obukhov_length)`. Above canopy top this is
 `atmospheric_surface_profile!` with the canopy's displacement height and
 roughness length; below top, the wind-attenuation shape scales that
-boundary value down through the layers.
+boundary value down through the layers. Stability is iterated unless
+`inverse_obukhov_length` is given.
 """
 function canopy_wind_profile! end
 
@@ -131,22 +141,26 @@ function canopy_layer_geometry(layer_plant_area_index::AbstractVector, n_layers)
 end
 
 """
-    canopy_layer_heights(heights, canopy_height, n_layers; min_spacing=1.0e-3u"m")
+    canopy_layer_heights(heights, canopy_height, n_layers)
 
 Canopy layer node heights (top-to-bottom) and each layer's height thickness
-(distance to the next node, or to the ground for the bottom layer), floored
-at `min_spacing` (a node can legitimately sit exactly at `canopy_height`).
+(distance to the next node, or to the ground for the bottom layer). Throws
+unless the node heights are distinct and above the ground.
 """
-function canopy_layer_heights(heights, canopy_height, n_layers; min_spacing=1.0e-3u"m")
+function canopy_layer_heights(heights, canopy_height, n_layers)
     layer_heights = sort(heights[heights .<= canopy_height]; rev=true)
-    length(layer_heights) == n_layers ||
+    if length(layer_heights) != n_layers
         throw(ArgumentError("number of `heights` at or below `canopy_height` must equal n_layers"))
+    end
+    if !allunique(layer_heights) || last(layer_heights) <= zero(last(layer_heights))
+        throw(ArgumentError("canopy layer `heights` must be distinct and above the ground"))
+    end
 
     layer_thickness = similar(layer_heights)
     for i in 1:(n_layers - 1)
-        layer_thickness[i] = max(layer_heights[i] - layer_heights[i + 1], min_spacing)
+        layer_thickness[i] = layer_heights[i] - layer_heights[i + 1]
     end
-    layer_thickness[n_layers] = max(layer_heights[n_layers], min_spacing)  # bottom layer down to the ground (z=0)
+    layer_thickness[n_layers] = layer_heights[n_layers]  # bottom layer down to the ground (z=0)
     return (; layer_heights, layer_thickness)
 end
 
