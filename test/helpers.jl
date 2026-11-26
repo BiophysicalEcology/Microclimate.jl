@@ -13,15 +13,23 @@ environment_instant(; zenith_angle = 30.0u"°", reference_temperature = 293.0u"K
     surface_emissivity = 0.95, shade = 0.0, ground_roughness_length = 0.004u"m",
 )
 
-ground_surface(; temperature = 290.0u"K", emissivity = 0.95, reflectance = 0.15, wetness = 0.5) =
-    Microclimate.GroundSurface(; temperature, emissivity, reflectance, wetness)
+ground(; albedo = 0.15, emissivity = 0.95, absorption = EmissivityAbsorption(), wetness = 0.0,
+    litter = NoLitter(), litter_water_content = 0.0) =
+    Microclimate.Ground(; soil_albedo = albedo, soil_emissivity = emissivity, soil_longwave_absorption = absorption,
+        soil_wetness = wetness, litter, litter_water_content, snow_covered = false)
+
+# A bare soil surface as the canopy longwave sees it
+bare_ground_surface(; temperature = 290.0u"K", emissivity = 0.95, longwave_reflectance = 1 - emissivity) =
+    Microclimate.GroundSurface(; temperature, longwave_reflectance,
+        emitted_longwave = emissivity * Microclimate.σ * temperature^4,
+        reflectance = 0.15, vapor_density = 0.0u"kg/m^3")
 
 # Hourly canopy inputs for a clear midday hour over a 290 K ground
 canopy_inputs(model; zenith_angle = 30.0u"°", reference_temperature = 293.0u"K",
     direct_horizontal_irradiance = 500.0u"W/m^2", diffuse_horizontal_irradiance = 100.0u"W/m^2",
-    ground_temperature = 290.0u"K", canopy_source_temperature = reference_temperature, kw...) =
+    ground_temperature = 290.0u"K", canopy_source_temperature = reference_temperature, litter = NoLitter(), kw...) =
     Microclimate.CanopyEnergyBalanceInputs(model;
         environment_instant = environment_instant(; zenith_angle, reference_temperature), zenith_angle,
         direct_horizontal_irradiance, diffuse_horizontal_irradiance,
-        ground = ground_surface(; temperature = ground_temperature), canopy_source_temperature, kw...,
+        ground = ground(; litter), ground_temperature, canopy_source_temperature, kw...,
     )

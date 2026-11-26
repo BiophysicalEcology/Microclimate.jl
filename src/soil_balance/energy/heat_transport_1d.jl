@@ -33,20 +33,17 @@ end
 
 Forcing and state held fixed over one hour of the soil energy ODE.
 """
-@kwdef struct HourlySoilEnergyInputs{D<:Vector{<:Number},EI,SW,LW,QF,SNS,GST,GAL,GA}
+@kwdef struct HourlySoilEnergyInputs{D<:Vector{<:Number},EI,G<:Ground,LW,QF,SNS,GST,GDL,GA}
     # Node depths, including any active snow nodes
     depths::D
     environment_instant::EI
-    soil_wetness::SW
+    ground::G
     longwave_sky::LW
-    albedo::Float64
-    # Of the soil, or of snow covering it
-    surface_emissivity::Float64
     Q_freeze::QF = 0.0u"W/m^2"
     snow_state::SNS = nothing
     # Canopy ground-boundary overrides (nothing under NoCanopy; see apply_canopy_overrides)
     ground_shortwave_transmission::GST = nothing
-    ground_absorbed_longwave::GAL = nothing
+    ground_downward_longwave::GDL = nothing
     # The canopy's GroundAirExchange, or nothing without a canopy
     ground_air::GA = nothing
 end
@@ -159,26 +156,60 @@ end
 ground_shortwave_shares(shortwave, diffuse_fraction, shade, transmission::NamedTuple) =
     (shortwave * transmission.direct, shortwave * transmission.diffuse)
 
-# The longwave the ground absorbs and the fraction exchanging it: the unshaded fraction without a canopy, all of it under one
-soil_absorbed_longwave(absorption, downward_longwave, shade, emissivity, ::Nothing) =
-    ((1.0 - shade) * absorbed_ground_longwave(absorption, emissivity, downward_longwave), 1.0 - shade)
-soil_absorbed_longwave(absorption, downward_longwave, shade, emissivity, canopy_absorbed_longwave) =
-    (canopy_absorbed_longwave, 1.0)
+# The longwave reaching the ground, and the fraction of the ground that exchanges it. Without a
+# canopy, the sky and hillside longwave over the unshaded ground, the shaded ground being in
+# longwave balance with its shade (DSUB.f lines 396-465). Under a canopy, the canopy's over all of it.
+ground_longwave_terms(open_downward_longwave, shade, ::Nothing) = (open_downward_longwave, 1.0 - shade)
+ground_longwave_terms(open_downward_longwave, shade, canopy_downward_longwave) = (canopy_downward_longwave, 1.0)
 
-# Ground convection and evaporation. Without a canopy, from the reference air.
-ground_heat_vapor_flux(evaporation_model, ::Nothing, ctx) =
-    surface_convection_evaporation(evaporation_model; ctx...)
-# Under a canopy, with the air and conductances the canopy gives the ground
-function ground_heat_vapor_flux(evaporation_model, ground_air::GroundAirExchange, ctx)
-    convective_heat_flux = uconvert(u"W/m^2", ground_air.heat_conductance * (ground_air.air_temperature - ctx.surface_temperature))
-    Q_evaporation, _ = evaporation(evaporation_model;
-        surface_temperature=u"K"(ctx.surface_temperature), air_temperature=u"K"(ground_air.air_temperature),
-        relative_humidity=ground_air.air_relative_humidity, surface_relative_humidity=1.0,
-        mass_transfer_coefficient=ground_air.vapor_conductance,
-        atmospheric_pressure=ctx.atmospheric_pressure, soil_wetness=ctx.soil_wetness,
-        saturated=false, vapour_pressure_equation=ctx.vapour_pressure_equation,
-    )
-    return Q_evaporation, convective_heat_flux
+# The air the ground exchanges with: the reference air without a canopy, the canopy's under one
+ground_air_exchange(::Nothing, reference_air) = reference_air
+ground_air_exchange(ground_air::GroundAirExchange, reference_air) = ground_air
+
+"""
+    ground_conditions(p::SoilEnergyInputs, instant_forcing)
+
+The [`GroundConditions`](@ref) of the hour's soil energy ODE, from its forcing at one instant
+and the hour's inputs. Recomputed at every ODE evaluation, as DSUB.f recomputes radiation at
+every call.
+"""
+function ground_conditions(p::SoilEnergyInputs, instant_forcing)
+    (; hourly, buffers) = p
+    (; site, vapour_pressure_equation) = p.model
+    (; heights, boundary_layer_model) = p.model.atmosphere
+    (; atmospheric_radiation_model) = p.model.atmosphere.radiation.longwave_model
+    (; environment_instant) = hourly
+    (; shade, ground_roughness_length, cloud_emissivity) = environment_instant
+    (; atmospheric_pressure, air_temperature, wind_speed, zenith_angle, solar_radiation, cloud_cover,
+       relative_humidity, slope_zenith_angle, diffuse_fraction) = instant_forcing
+    (; slope, sky_view_fraction) = site
+
+    # Solar radiation, split into direct and diffuse so that self-shadowed slopes still receive the diffuse sky
+    (direct_shortwave, diffuse_shortwave) = ground_shortwave_shares(solar_radiation, diffuse_fraction, shade,
+        hourly.ground_shortwave_transmission)
+    sun_elevation_sine = cosd(zenith_angle)
+    if slope > 0 && zenith_angle < 90u"°"
+        cos_slope_zenith = cosd(slope_zenith_angle)
+        direct_shortwave = max(0.0u"W/m^2", (direct_shortwave / cosd(zenith_angle)) * cos_slope_zenith)
+        diffuse_shortwave = diffuse_shortwave * sky_view_fraction
+        sun_elevation_sine = cos_slope_zenith
+    end
+
+    # Longwave from the forcing interpolated to this instant (the interpolated cloud_cover, not
+    # the hourly snapshot), or the supplied hourly longwave
+    open_downward_longwave = downward_longwave(atmospheric_radiation_model; air_temperature, relative_humidity,
+        atmospheric_pressure, cloud_cover, cloud_emissivity, sky_view_fraction,
+        supplied_longwave=get(environment_instant, :longwave_radiation, nothing), vapour_pressure_equation).open_ground
+    (longwave_reaching_ground, exposed_fraction) = ground_longwave_terms(open_downward_longwave, shade,
+        hourly.ground_downward_longwave)
+
+    reference_air = ReferenceAirExchange(; boundary_layer_model, air_temperature, air_relative_humidity=relative_humidity,
+        wind_speed, height=last(heights), roughness_length=ground_roughness_length, zenith_angle,
+        obukhov_length_prev=buffers.soil_energy_balance.obukhov_length_prev)
+    # The downward longwave is held at what the sky, or the canopy's solve, sends down
+    return GroundConditions(; direct_shortwave, diffuse_shortwave, sun_elevation_sine, downward_longwave=longwave_reaching_ground,
+        longwave_return_fraction=0.0, exposed_fraction, atmospheric_pressure, vapour_pressure_equation,
+        air=ground_air_exchange(hourly.ground_air, reference_air))
 end
 
 function allocate_soil_energy_balance(::SoilHeatTransport1D, num_nodes::Int)
@@ -194,22 +225,14 @@ function soil_energy_balance(model::SoilHeatTransport1D,
     p::SoilEnergyInputs,   # "parameters"
     t::Quantity,           # timestep
 ) where U <: SVector{N} where N
-    # extract parameters
-    (; hourly, forcing, buffers) = p
-    (; site, vapour_pressure_equation) = p.model
-    (; heights, boundary_layer_model) = p.model.atmosphere
-    (; atmospheric_radiation_model, ground_absorption) = p.model.atmosphere.radiation.longwave_model
-    evaporation_model = p.model.surface.evaporation_model
+    (; hourly, forcing) = p
+    (; vapour_pressure_equation) = p.model
+    (; evaporation_model) = p.model.surface
     snow_model = p.model.snow
-    (; depths, environment_instant, soil_wetness, longwave_sky, albedo, surface_emissivity, Q_freeze) = hourly
+    (; depths, Q_freeze) = hourly
     maximum_surface_temperature = model.maximum_surface_temperature
-    (; shade, ground_roughness_length) = environment_instant
-    # Get environmental data at time t
-    (; atmospheric_pressure, air_temperature, wind_speed, zenith_angle, solar_radiation, cloud_cover, relative_humidity, slope_zenith_angle, diffuse_fraction) = interpolate_forcings(forcing, t)
-    (; slope) = site
-
-    reference_height = last(heights)
-    absorptivity = 1.0 - albedo
+    instant_forcing = interpolate_forcings(forcing, t)
+    (; atmospheric_pressure) = instant_forcing
 
     # check for unstable conditions of ground surface temperature.
     # Fortran microinput(74)=maxsurf (MICROCLIMATE.f:482); −81°C lower bound matches
@@ -221,62 +244,24 @@ function soil_energy_balance(model::SoilHeatTransport1D,
     # Soil and snow properties at the current temperatures, on every evaluation, as the Fortran
     # (DSUB.f lines 274-337) does
     properties = node_properties(snow_model, p, soil_temperature, atmospheric_pressure, vapour_pressure_equation)
-    (; heat_capacity, thermal_conductance) = soil_layers(properties, depths, _n_snow(snow_model))
+    n_snow = _n_snow(snow_model)
+    (; heat_capacity, thermal_conductance) = soil_layers(properties, depths, n_snow)
     j = first_active_node(heat_capacity)
 
-    # Solar radiation. Split into direct + diffuse so that self-shadowed
-    # slopes still receive the diffuse sky component. Scaling the entire
-    # global flux by `cos_slope_zenith / cos_zenith` (the old behaviour)
-    # zeroes both components when the sun is behind the slope, which
-    # produced sharp per-pixel sun/shadow streaks at fine DEM resolution.
-    (direct_share, diffuse_share) = ground_shortwave_shares(absorptivity * solar_radiation, diffuse_fraction, shade,
-        hourly.ground_shortwave_transmission)
-    Q_solar = direct_share + diffuse_share
-    if slope > 0 && zenith_angle < 90u"°"
-        cos_zenith = cosd(zenith_angle)
-        cos_slope_zenith = cosd(slope_zenith_angle)
-        Q_direct  = max(0.0u"W/m^2", (direct_share / cos_zenith) * cos_slope_zenith)
-        Q_diffuse = diffuse_share * site.sky_view_fraction
-        Q_solar = Q_direct + Q_diffuse
-    end
-
-    # Longwave from the forcing interpolated to this sub-step, as Fortran DSUB.f recomputes it at
-    # every call, or the supplied hourly longwave
-    (; cloud_emissivity) = environment_instant
-    open_downward_longwave = downward_longwave(atmospheric_radiation_model; air_temperature, relative_humidity,
-        atmospheric_pressure, cloud_cover, cloud_emissivity, site.sky_view_fraction,
-        supplied_longwave=get(environment_instant, :longwave_radiation, nothing), vapour_pressure_equation).open_ground
-    (absorbed_downward_longwave, exposed_fraction) = soil_absorbed_longwave(ground_absorption, open_downward_longwave, shade, surface_emissivity,
-        hourly.ground_absorbed_longwave)
-    Q_infrared = absorbed_downward_longwave - exposed_fraction * σ * surface_emissivity * (u"K"(soil_temperature[j]))^4
+    # Radiation, sensible and latent heat into the first active node from above. Snow buries
+    # any litter, so a snow surface exchanges with the air directly.
+    conditions = ground_conditions(p, instant_forcing)
+    (; ground) = hourly
+    surface_heat_flux = soil_surface_heat_flux(exposed_litter(ground), ground, conditions, evaporation_model, soil_temperature[j])
 
     # Conduction from first active node to the node below it
     # Fortran DSUB.f lines 483-487 uses T(1) here on the first call. We always use the
     # surface node, so that only neighbouring nodes enter each derivative.
     Q_conduction = j < N ? thermal_conductance[j] * (soil_temperature[j+1] - soil_temperature[j]) : 0.0u"W/m^2"
 
-    # Convection and evaporation using first active node as surface
-    # Fortran DSUB.f lines 551-561: temperature safety guards before convection
-    surface_temperature = soil_temperature[j]
-    if abs(u"°C"(surface_temperature)) > 100u"°C"
-        surface_temperature = oftype(surface_temperature, air_temperature + 1.0u"K")  # DSUB.f line 557
-    end
-    if surface_temperature == air_temperature
-        surface_temperature = surface_temperature + 0.1u"K"  # DSUB.f line 561: prevent divide-by-zero
-    end
-    # Fortran DSUB.f line 565: CALL EVAP(T(1),TAIR,RH,100.0D0,...) — the 100.0 is
-    # surface relative humidity (RHSURF), not wetness. PTWET comes from COMMON block.
-    convection_ctx = (; boundary_layer_model,
-        surface_temperature, air_temperature, wind_speed, relative_humidity,
-        atmospheric_pressure, roughness_length=ground_roughness_length, reference_height,
-        zenith_angle, soil_wetness, vapour_pressure_equation,
-        obukhov_length_prev=buffers.soil_energy_balance.obukhov_length_prev,
-    )
-    Q_evaporation, convective_heat_flux = ground_heat_vapor_flux(evaporation_model, hourly.ground_air, convection_ctx)
-
     # Surface energy derivative for the first active node
     # QFREZE: snow melt energy correction, matching Fortran DSUB.f line 567
-    surface_dtdt = u"K/minute"((Q_solar + Q_infrared + Q_conduction + convective_heat_flux + Q_freeze - Q_evaporation) / heat_capacity[j])
+    surface_dtdt = u"K/minute"((surface_heat_flux + Q_conduction + Q_freeze) / heat_capacity[j])
 
     # Build derivative vector: the surface node takes the surface balance, active nodes use
     # conduction. Inactive snow nodes above the surface hold still, so that each row only

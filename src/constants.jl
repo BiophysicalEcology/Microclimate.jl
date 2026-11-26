@@ -1,5 +1,6 @@
 const water_heat_capacity = 4184.0u"J/kg/K" # heat capacity of pure water
 const water_density = 1000.0u"kg/m^3" # density of pure water
+const water_molar_mass = 0.01801528u"kg/mol"
 const water_vapour_molar_density_stp = 44.65u"mol/m^3" # molar density of water vapour at STP, p. 309 Campbell et al 1994
 const water_vapour_diffusivity_stp = 2.12e-5u"m^2/s" # diffusivity of water vapour at STP, p. 309 Campbell et al 1994
 

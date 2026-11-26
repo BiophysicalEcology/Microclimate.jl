@@ -183,7 +183,6 @@ function evaluate_canopy!(residual, inverse_obukhov_length, ground_temperature, 
     lowest_temperature, highest_temperature = CANOPY_TEMPERATURE_BOUNDS
     in_bounds = !isnan(inverse_obukhov_length) && lowest_temperature <= ground_temperature <= highest_temperature
     ground_temperature = clamp_into_bounds(ground_temperature, lowest_temperature, highest_temperature)
-    ground = setproperties(inputs.ground, (; temperature=ground_temperature))
     for i in 1:n_layers
         in_bounds &= lowest_temperature <= leaf_temperature[i] <= highest_temperature &&
             lowest_temperature <= air.current_air_temperature[i] <= highest_temperature &&
@@ -197,6 +196,41 @@ function evaluate_canopy!(residual, inverse_obukhov_length, ground_temperature, 
         environment_instant, canopy_source_temperature=leaf_temperature[1], vapour_pressure_equation,
         inverse_obukhov_length=isnan(inverse_obukhov_length) ? zero(inverse_obukhov_length) : inverse_obukhov_length)
     wind_speed = buffers.wind.wind_speed
+    (; ground_roughness_length) = environment_instant
+    enhancement = canopy_top_diffusivity_enhancement(model.roughness_sublayer; model.canopy_height,
+        plant_area_index=sum(model.plant_area_index), ground_roughness_length,
+        boundary_layer_model.karman_constant, wind.canopy_top_wind_speed,
+        kinematic_viscosity=dry_air_properties(reference_temperature, atmospheric_pressure).kinematic_viscosity)
+
+    # The ground exchanges with the lowest layer. The air profile, the canopy top and the soil all
+    # use this one exchange, with conductances at the soil surface temperature.
+    lowest_air_temperature = air.current_air_temperature[n_layers]
+    # Turbulent mixing from the lowest layer, then the air on the ground surface
+    (; ground_turbulence_model, ground_sublayer_model) = model.air_profile_model
+    turbulence = ground_turbulence(ground_turbulence_model, air, model.air_profile_model, boundary_layer_model;
+        friction_velocity=wind.friction_velocity, inverse_obukhov_length=wind.inverse_obukhov_length, canopy_top_enhancement=enhancement,
+        plant_area_index=sum(model.plant_area_index), lowest_wind_speed=wind_speed[n_layers],
+        lowest_layer_height=buffers.wind.ground_layer_height, lowest_air_temperature, ground_temperature, ground_roughness_length)
+    sublayer_resistance = ground_sublayer_resistance(ground_sublayer_model; friction_velocity=turbulence.friction_velocity,
+        ground_roughness_length, lowest_air_temperature, ground_temperature, atmospheric_pressure)
+    turbulent_resistance = turbulence.resistance
+    # Fixed from the reference and ground temperatures, not the unknown canopy air, which keeps the canopy-top balance linear
+    volumetric_heat_capacity = calc_air_volumetric_heat_capacity((reference_temperature + ground_temperature) / 2)
+    # Unclamped, so the ground's evaporation is against the lowest layer's actual vapor density
+    lowest_saturation = wet_air_properties(lowest_air_temperature, 1.0, atmospheric_pressure; vapour_pressure_equation).vapour_density
+    ground_air = GroundAirExchange(; air_temperature=lowest_air_temperature,
+        air_relative_humidity=uconvert(NoUnits, air.current_vapor_density[n_layers] / lowest_saturation),
+        wind_speed=wind_speed[n_layers], height=buffers.wind.ground_layer_height,
+        heat_conductance=uconvert(u"W/m^2/K", volumetric_heat_capacity / (turbulent_resistance + sublayer_resistance.heat)),
+        vapor_conductance=uconvert(u"m/s", 1 / (turbulent_resistance + sublayer_resistance.vapor)))
+
+    # What the ground sees of the canopy, and what the canopy sees of the ground
+    ground_longwave = ground_longwave_conditions(buffers, model; leaf_temperature, incoming_longwave)
+    conditions = GroundConditions(; direct_shortwave=hour_conditions.ground_direct_shortwave,
+        diffuse_shortwave=hour_conditions.ground_diffuse_shortwave, sun_elevation_sine=cos(inputs.zenith_angle),
+        ground_longwave.downward_longwave, ground_longwave.longwave_return_fraction, exposed_fraction=1.0,
+        atmospheric_pressure, vapour_pressure_equation, air=ground_air)
+    ground = ground_surface(inputs.ground, conditions, ground_temperature)
     longwave_result = canopy_longwave!(buffers, model;
         leaf_temperature, ground, incoming_longwave)
 
@@ -227,44 +261,14 @@ function evaluate_canopy!(residual, inverse_obukhov_length, ground_temperature, 
 
     reference_vapor_density = wet_air_properties(reference_temperature, reference_humidity, atmospheric_pressure;
         vapour_pressure_equation).vapour_density
-    # The soil evaporates from its wet fraction, wetness·g·(ρsat(Tg) - ρ), into the lowest layer's
-    # vapor density ρ. Over the same conductance g that is a ground vapor density of ρ plus the wet
-    # fraction of its deficit, so the canopy air gains what the soil loses.
-    ground_saturation = wet_air_properties(ground_temperature, 1.0, atmospheric_pressure; vapour_pressure_equation).vapour_density
-    lowest_vapor_density = air.current_vapor_density[n_layers]
-    ground_vapor_density = lowest_vapor_density + ground.wetness * (ground_saturation - lowest_vapor_density)
     initial_top_vapor_density = wet_air_properties(hour_conditions.canopy_top_air_temperature, hour_conditions.canopy_top_relative_humidity,
         atmospheric_pressure; vapour_pressure_equation).vapour_density
 
-    (; ground_roughness_length) = environment_instant
-    enhancement = canopy_top_diffusivity_enhancement(model.roughness_sublayer; model.canopy_height,
-        plant_area_index=sum(model.plant_area_index), ground_roughness_length,
-        boundary_layer_model.karman_constant, wind.canopy_top_wind_speed,
-        kinematic_viscosity=dry_air_properties(reference_temperature, atmospheric_pressure).kinematic_viscosity)
-
-    # The ground exchanges with the lowest layer. The air profile, the canopy top and the soil all use this one exchange.
-    lowest_air_temperature = air.current_air_temperature[n_layers]
-    # Turbulent mixing from the lowest layer, then the air on the ground surface
-    (; ground_turbulence_model, ground_sublayer_model) = model.air_profile_model
-    turbulence = ground_turbulence(ground_turbulence_model, air, model.air_profile_model, boundary_layer_model;
-        friction_velocity=wind.friction_velocity, inverse_obukhov_length=wind.inverse_obukhov_length, canopy_top_enhancement=enhancement,
-        plant_area_index=sum(model.plant_area_index), lowest_wind_speed=wind_speed[n_layers],
-        lowest_layer_height=buffers.wind.ground_layer_height, lowest_air_temperature, ground_temperature, ground_roughness_length)
-    sublayer_resistance = ground_sublayer_resistance(ground_sublayer_model; friction_velocity=turbulence.friction_velocity,
-        ground_roughness_length, lowest_air_temperature, ground_temperature, atmospheric_pressure)
-    ground_resistance = (; heat=turbulence.resistance + sublayer_resistance.heat,
-        vapor=turbulence.resistance + sublayer_resistance.vapor)
-    # Fixed from the reference and ground temperatures, not the unknown canopy air, which keeps the canopy-top balance linear
-    volumetric_heat_capacity = calc_air_volumetric_heat_capacity((reference_temperature + ground_temperature) / 2)
-    ground_air = GroundAirExchange(; air_temperature=lowest_air_temperature,
-        # Not capped at 1, so the soil sees the same vapor density as the canopy air
-        air_relative_humidity=lowest_vapor_density / wet_air_properties(lowest_air_temperature, 1.0, atmospheric_pressure;
-            vapour_pressure_equation).vapour_density,
-        wind_speed=wind_speed[n_layers], height=buffers.wind.ground_layer_height,
-        heat_conductance=uconvert(u"W/m^2/K", volumetric_heat_capacity / ground_resistance.heat),
-        vapor_conductance=uconvert(u"m/s", 1 / ground_resistance.vapor))
-    ground_sensible_heat_flux = ground_air.heat_conductance * (ground_temperature - lowest_air_temperature)
-    ground_vapor_flux = ground_air.vapor_conductance * (ground_vapor_density - lowest_vapor_density)
+    ground_vapor_density = ground.vapor_density
+    ground_resistance = (; heat=turbulent_resistance + sublayer_resistance.heat,
+        vapor=turbulent_resistance + sublayer_resistance.vapor)
+    ground_sensible_heat_flux = ground_air.heat_conductance * (ground.temperature - lowest_air_temperature)
+    ground_vapor_flux = ground_air.vapor_conductance * (ground_vapor_density - air.current_vapor_density[n_layers])
 
     # Everything the leaves and the ground put into the canopy air leaves through the top
     boundary = canopy_top_flux_boundary(boundary_layer_model, model.canopy_height, buffers.wind.displacement_height,
@@ -284,7 +288,8 @@ function evaluate_canopy!(residual, inverse_obukhov_length, ground_temperature, 
 
     air_forcing = CanopyAirProfileForcing(; friction_velocity=wind.friction_velocity,
         inverse_obukhov_length=wind.inverse_obukhov_length, canopy_top_enhancement=enhancement, canopy_top_air_temperature,
-        canopy_top_vapor_density, ground_temperature, ground_vapor_density, ground_resistance, air_volumetric_heat_capacity=volumetric_heat_capacity,
+        canopy_top_vapor_density,
+        ground_temperature=ground.temperature, ground_vapor_density, ground_resistance, air_volumetric_heat_capacity=volumetric_heat_capacity,
         sensible_heat_flux, evaporation_mass_flux)
     canopy_heat_vapor_transport!(air, model.air_profile_model, boundary_layer_model, air_forcing)
 

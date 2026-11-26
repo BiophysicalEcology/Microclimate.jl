@@ -36,8 +36,7 @@ end
                       leaf_temperature, ground, incoming_longwave)
 
 One pass down, one pass up. Writes each layer's absorbed longwave per ground area and
-returns `(; ground_absorbed_longwave, net_absorbed_longwave)`. The ground absorbs its emissivity
-of the longwave reaching it, reflects the rest, and emits with its emissivity.
+returns `(; ground_absorbed_longwave, net_absorbed_longwave, ground_downward_longwave)`.
 """
 function canopy_longwave!(buffers, model::LayeredLongwaveExchange, leaf_emissivity;
     leaf_temperature, ground, incoming_longwave,
@@ -52,8 +51,7 @@ function canopy_longwave!(buffers, model::LayeredLongwaveExchange, leaf_emissivi
             absorptance * σ * u"K"(leaf_temperature[i])^4
     end
 
-    ground_emission = ground.emissivity * σ * u"K"(ground.temperature)^4
-    boundary_upward_longwave[n_layers + 1] = ground_emission + (1.0 - ground.emissivity) * boundary_downward_longwave[n_layers + 1]
+    boundary_upward_longwave[n_layers + 1] = ground.emitted_longwave + ground.longwave_reflectance * boundary_downward_longwave[n_layers + 1]
     for i in n_layers:-1:1
         absorptance = leaf_emissivity * (1.0 - layer_transmission[i])
         boundary_upward_longwave[i] = boundary_upward_longwave[i + 1] * (1.0 - absorptance) +
@@ -65,8 +63,21 @@ function canopy_longwave!(buffers, model::LayeredLongwaveExchange, leaf_emissivi
         absorbed_longwave[i] = absorptance * (boundary_downward_longwave[i] + boundary_upward_longwave[i + 1])
     end
 
-    ground_absorbed_longwave = ground.emissivity * boundary_downward_longwave[n_layers + 1]
+    ground_absorbed_longwave = (1.0 - ground.longwave_reflectance) * boundary_downward_longwave[n_layers + 1]
     net_absorbed_longwave = boundary_downward_longwave[1] - boundary_upward_longwave[1]
 
-    return (; ground_absorbed_longwave, net_absorbed_longwave)
+    return (; ground_absorbed_longwave, net_absorbed_longwave, ground_downward_longwave=boundary_downward_longwave[n_layers + 1])
+end
+
+# Layers don't reflect, so nothing the ground sends up comes back down
+function ground_longwave_conditions(buffers, model::LayeredLongwaveExchange, leaf_emissivity;
+    leaf_temperature, incoming_longwave,
+)
+    (; layer_transmission) = buffers
+    downward_longwave = incoming_longwave
+    for i in eachindex(layer_transmission)
+        absorptance = leaf_emissivity * (1.0 - layer_transmission[i])
+        downward_longwave = downward_longwave * (1.0 - absorptance) + absorptance * σ * u"K"(leaf_temperature[i])^4
+    end
+    return (; downward_longwave, longwave_return_fraction=0.0)
 end

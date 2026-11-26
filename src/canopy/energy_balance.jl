@@ -8,18 +8,19 @@ const CANOPY_TIMESTEP = 1.0u"hr"
 """
     CanopyEnergyBalanceInputs(model::MultilayerCanopy; environment_instant, zenith_angle,
                                direct_horizontal_irradiance, diffuse_horizontal_irradiance,
-                               ground, canopy_source_temperature, rainfall=0.0u"kg/m^2",
+                               ground, ground_temperature, canopy_source_temperature, rainfall=0.0u"kg/m^2",
                                leaf_water_potential=model.leaf_parameters.leaf_water_potential)
 
 Hourly forcing and lagged state for [`canopy_energy_balance!`](@ref). `ground` is the
-[`GroundSurface`](@ref).
+[`Ground`](@ref), with its soil surface starting at `ground_temperature`.
 """
-struct CanopyEnergyBalanceInputs{EI,ZA,DHI,DFI,G<:GroundSurface,CST,RF,LWP}
+struct CanopyEnergyBalanceInputs{EI,ZA,DHI,DFI,G<:Ground,GT,CST,RF,LWP}
     environment_instant::EI
     zenith_angle::ZA
     direct_horizontal_irradiance::DHI
     diffuse_horizontal_irradiance::DFI
     ground::G
+    ground_temperature::GT
     canopy_source_temperature::CST
     rainfall::RF
     leaf_water_potential::LWP
@@ -27,11 +28,11 @@ end
 
 function CanopyEnergyBalanceInputs(model::MultilayerCanopy;
     environment_instant, zenith_angle, direct_horizontal_irradiance, diffuse_horizontal_irradiance,
-    ground, canopy_source_temperature,
+    ground, ground_temperature, canopy_source_temperature,
     rainfall=0.0u"kg/m^2", leaf_water_potential=model.leaf_parameters.leaf_water_potential,
 )
     CanopyEnergyBalanceInputs(environment_instant, zenith_angle, direct_horizontal_irradiance,
-        diffuse_horizontal_irradiance, ground, canopy_source_temperature, rainfall, leaf_water_potential)
+        diffuse_horizontal_irradiance, ground, ground_temperature, canopy_source_temperature, rainfall, leaf_water_potential)
 end
 
 # Bounds wet-surface evaporation, or condensation, to what storage can supply or hold, and turns any latent heat that can't happen into sensible heat
@@ -49,7 +50,7 @@ function _cap_wet_surface_evaporation(evaporation_mass_flux, sensible_heat_flux,
 end
 
 # The ground stays at the temperature it was given
-keep_ground_temperature(ground_temperature, ground_shortwave, ground_absorbed_longwave, ground_air) = ground_temperature
+keep_ground_temperature(ground_temperature, ground_shortwave, ground_downward_longwave, ground_air) = ground_temperature
 
 """
     canopy_energy_balance!(buffers, model::MultilayerCanopy, boundary_layer_model, inputs::CanopyEnergyBalanceInputs;
@@ -60,10 +61,10 @@ Solves the canopy for one hour. Shortwave and rain interception don't depend on 
 temperature, so they are computed once. Leaf temperature, air temperature, vapor density,
 ground temperature, longwave and stability are then solved together by [`converge_canopy!`](@ref).
 
-`ground_temperature_after_hour(ground_temperature, ground_shortwave, ground_absorbed_longwave, ground_air)`
-returns the ground temperature the soil reaches by the end of the hour, with `ground_shortwave` the
-[`canopy_shortwave!`](@ref) result and `ground_air` the [`GroundAirExchange`](@ref). Any soil solve
-can be used.
+`ground_temperature_after_hour(ground_temperature, ground_shortwave, ground_downward_longwave, ground_air)`
+returns the soil surface temperature the soil reaches by the end of the hour, under the longwave
+reaching the ground, with `ground_shortwave` the [`canopy_shortwave!`](@ref) result and
+`ground_air` the [`GroundAirExchange`](@ref). Any soil solve can be used.
 
 The wet part of a leaf ([`wet_canopy_fraction`](@ref)) evaporates as free water
 ([`WET_SURFACE_EVAPORATION`](@ref)), and the rest transpires. The water that
@@ -71,11 +72,12 @@ evaporates or condenses is taken from storage once, after the solve. It is limit
 [`available_canopy_water`](@ref) and [`canopy_water_capacity`](@ref), and any latent heat that
 can't happen is added to the sensible heat, without solving leaf temperature again.
 
-`inputs.ground.temperature` is where the ground starts. `inputs.canopy_source_temperature` and
+`inputs.ground_temperature` is where the soil surface starts. `inputs.canopy_source_temperature` and
 `inputs.leaf_water_potential` come from the caller and stay fixed during the solve.
 
-Returns `(; ground_absorbed_shortwave, net_absorbed_shortwave, ground_absorbed_longwave,
-net_absorbed_longwave, ground_throughfall, canopy_potential_transpiration,
+Returns `(; ground_absorbed_shortwave, net_absorbed_shortwave, ground_direct_shortwave,
+ground_diffuse_shortwave, ground_absorbed_longwave, net_absorbed_longwave, ground_downward_longwave,
+ground_throughfall, canopy_potential_transpiration,
 ground_air, iterations, canopy_top_air_temperature,
 canopy_top_relative_humidity, canopy_top_sensible_heat_flux, ground_sensible_heat_flux,
 friction_velocity, obukhov_length, displacement_height)`.
@@ -122,9 +124,9 @@ function canopy_energy_balance!(buffers, model::MultilayerCanopy, boundary_layer
     (; longwave_result, iterations, canopy_top_air_temperature, canopy_top_relative_humidity, canopy_top_sensible_heat_flux,
        ground_sensible_heat_flux, ground_air, friction_velocity, inverse_obukhov_length) =
         converge_canopy!(buffers, model, boundary_layer_model, inputs, wind_result, model.convergence_model;
-            site, vapour_pressure_equation, soil_hydraulic_model,
-            ground_temperature_after_hour=(ground_temperature, ground_absorbed_longwave, ground_air) -> ground_temperature_after_hour(
-                ground_temperature, shortwave_result, ground_absorbed_longwave, ground_air))
+            site, vapour_pressure_equation, soil_hydraulic_model, ground_shortwave=shortwave_result,
+            ground_temperature_after_hour=(ground_temperature, ground_downward_longwave, ground_air) -> ground_temperature_after_hour(
+                ground_temperature, shortwave_result, ground_downward_longwave, ground_air))
     buffers.has_previous_hour[] = true
 
     melt_drip_total = 0.0u"kg/m^2"
@@ -209,11 +211,12 @@ end
 """
     converge_canopy!(buffers, model::MultilayerCanopy, boundary_layer_model, inputs::CanopyEnergyBalanceInputs,
         initial_wind, convergence_model; site, vapour_pressure_equation, soil_hydraulic_model,
-        ground_temperature_after_hour)
+        ground_shortwave, ground_temperature_after_hour)
 
 Solves the hour's canopy state with `convergence_model` ([`AndersonCanopyConvergence`](@ref)).
 `initial_wind` is the hour's [`canopy_wind_profile!`](@ref) result, which gives the canopy-top
-air temperature and humidity the hour starts from. Returns [`evaluate_canopy!`](@ref)'s result
+air temperature and humidity the hour starts from. `ground_shortwave` is the hour's
+[`canopy_shortwave!`](@ref) result. Returns [`evaluate_canopy!`](@ref)'s result
 at the solution, with `iterations`.
 """
 function converge_canopy! end
