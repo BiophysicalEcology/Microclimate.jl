@@ -4,11 +4,8 @@ using Test
 using Microclimate: allocate_soil_water_balance, infiltration_substeps!,
     rainfall_entry!, rainfall_flux_for_step, soil_water_storage
 
-# rainfall_entry_mode's interface functions are internal, same rationale as
-# infiltration_algorithm_comparison.jl's own white-box testing.
-
 function _test_profile()
-    profile = example_soil_profile(; bulk_density=1.3u"Mg/m^3", mineral_density=2.65u"Mg/m^3")
+    profile = example_soil_profile()
     num_layers = length(profile.hydraulics.campbell_b_parameter)
     depths = fill(0.05u"m", num_layers) .* (1:num_layers)  # 0.05, 0.10, ..., dense near-surface spacing
     (; profile, depths, num_layers)
@@ -26,7 +23,7 @@ function run_rainfall_hour(mode; soil_moisture, pool)
     rainfall_flux = rainfall_flux_for_step(mode, moisture_mode, pool)
     (; soil_moisture, pool) = infiltration_substeps!(buffers, model, moisture_mode;
         soil_profile=profile, depths, soil_moisture, pool, rainfall_flux, frozen_water_content=zeros(num_layers),
-        atmospheric_pressure=101325.0u"Pa", local_relative_humidity=0.5, leaf_area_index=1.0u"Mg/m^3",
+        atmospheric_pressure=101325.0u"Pa", local_relative_humidity=0.5, leaf_area_index=1.0,
         evapotranspiration=0.0u"kg/m^2/s", input_soil_temperature=fill(293.0u"K", num_layers),
     )
     return (; soil_moisture, pool, storage=soil_water_storage(soil_moisture, depths))
@@ -70,8 +67,7 @@ end
         for mode in modes
             soil_hydraulic_model = example_soil_hydraulic_model(; rainfall_entry_mode=mode)
             soil_moisture_strategy = DynamicSoilMoisture()
-            soil_profile = example_soil_profile(; bulk_density=1.3u"Mg/m^3", mineral_density=2.65u"Mg/m^3")
-            out = solve(example_microclimate_problem(; soil_hydraulic_model, soil_moisture_strategy, soil_profile))
+            out = solve(example_microclimate_problem(; soil_hydraulic_model, soil_moisture_strategy))
             @test !any(isnan, ustrip.(out.soil_temperature))
             @test !any(isnan, out.soil_moisture)
             @test all(0 .<= out.soil_moisture .<= 1)
@@ -103,9 +99,8 @@ end
 
     @testset "PoolCapacityRainfall() explicit == default (regression guard)" begin
         soil_moisture_strategy = DynamicSoilMoisture()
-        soil_profile = example_soil_profile(; bulk_density=1.3u"Mg/m^3", mineral_density=2.65u"Mg/m^3")
-        out_default = solve(example_microclimate_problem(; soil_hydraulic_model=example_soil_hydraulic_model(), soil_moisture_strategy, soil_profile))
-        out_explicit = solve(example_microclimate_problem(; soil_hydraulic_model=example_soil_hydraulic_model(; rainfall_entry_mode=PoolCapacityRainfall()), soil_moisture_strategy, soil_profile))
+        out_default = solve(example_microclimate_problem(; soil_hydraulic_model=example_soil_hydraulic_model(), soil_moisture_strategy))
+        out_explicit = solve(example_microclimate_problem(; soil_hydraulic_model=example_soil_hydraulic_model(; rainfall_entry_mode=PoolCapacityRainfall()), soil_moisture_strategy))
         @test out_default.soil_moisture == out_explicit.soil_moisture
         @test out_default.soil_temperature == out_explicit.soil_temperature
     end

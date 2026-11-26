@@ -77,6 +77,8 @@ export AbstractSoilProperties, CampbelldeVriesSoilProperties
 
 # Soil hydraulics
 export AbstractSoilHydraulicsModel, CampbellSoilHydraulics, CampbellHydraulicProfile
+export AbstractPedotransferModel, CosbyUnivariate, CosbyMultivariate, CampbellParticleSize, pedotransfer
+export pedotransfer_soil_profile, international_to_usda_texture
 export example_campbell_hydraulic_profile
 export AbstractInfiltrationAlgorithm, MatricPotentialAlgorithm, MatricFluxPotentialAlgorithm
 export AbstractRainfallEntryMode, PoolCapacityRainfall, ImplicitFluxRainfall, RateLimitedFrontRainfall
@@ -178,6 +180,7 @@ include("soil_hydraulics/rainfall_entry/implicit_flux.jl")
 include("soil_hydraulics/rainfall_entry/rate_limited_front.jl")
 include("soil_hydraulics/abstract.jl")
 include("soil_hydraulics/campbell.jl")
+include("soil_hydraulics/pedotransfer.jl")
 
 # Site
 include("site/abstract.jl")

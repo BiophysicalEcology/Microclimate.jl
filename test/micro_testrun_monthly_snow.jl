@@ -54,7 +54,6 @@ mineral_conductivity = (CSV.File("$testdir/data/init_monthly_snow/soilprop.csv")
 mineral_heat_capacity = (CSV.File("$testdir/data/init_monthly_snow/soilprop.csv")[1, 1][5]) * 1.0u"J/kg/K" # soil minerals specific heat (J/kg-K)
 
 soil_properties_model = CampbelldeVriesSoilProperties(;
-    de_vries_shape_factor = 0.1, # de Vries shape factor, 0.33 for organic soils, 0.1 for mineral
     recirculation_power = 4.0, # power for recirculation function
     return_flow_threshold = 0.162, # return-flow cutoff soil moisture, m^3/m^3
 )
@@ -103,6 +102,7 @@ soil_profile = SoilProfile(;
     mineral_density = fill(mineral_density, length(depths)),
     mineral_conductivity = fill(mineral_conductivity, length(depths)),
     mineral_heat_capacity = fill(mineral_heat_capacity, length(depths)),
+    de_vries_shape_factor = fill(0.1, length(depths)), # mineral soil; 0.33 for organic soils
     hydraulics = example_campbell_hydraulic_profile(depths;
         root_density = fill(0.0, length(depths))u"m/m^3"),
 )

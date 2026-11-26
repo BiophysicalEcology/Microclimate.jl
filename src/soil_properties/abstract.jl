@@ -7,7 +7,7 @@ is the only implementation.
 abstract type AbstractSoilProperties end
 
 """
-    soil_properties(soil_properties_model; atmospheric_pressure, soil_temperature, soil_moisture, bulk_density, mineral_density, mineral_conductivity, mineral_heat_capacity, vapour_pressure_equation)
+    soil_properties(soil_properties_model; atmospheric_pressure, soil_temperature, soil_moisture, bulk_density, mineral_density, mineral_conductivity, mineral_heat_capacity, de_vries_shape_factor, vapour_pressure_equation)
 
 Scalar bulk-property computation for one soil layer. Every variant must
 accept the listed kwargs and return
@@ -39,6 +39,7 @@ function soil_properties!(buffers::NamedTuple, soil_properties_model::AbstractSo
             mineral_density = soil_profile.mineral_density[i],
             mineral_conductivity = soil_profile.mineral_conductivity[i],
             mineral_heat_capacity = soil_profile.mineral_heat_capacity[i],
+            de_vries_shape_factor = soil_profile.de_vries_shape_factor[i],
             vapour_pressure_equation,
         )
         bulk_thermal_conductivity[i] = result.bulk_thermal_conductivity
