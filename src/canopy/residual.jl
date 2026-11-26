@@ -131,10 +131,10 @@ function layer_leaf_balance(buffers, model::MultilayerCanopy, layer, leaf_temper
     air = buffers.air_profile
     air_temperature = air.current_air_temperature[layer]
     (; leaf_area, aerodynamic_area) = layer_leaf_areas(buffers, layer)
-    conductance = blend_stomatal_conductance(dry_conductance, wet_canopy_fraction(model, buffers, layer))
     balance = leaf_heat_balance(leaf_temperature, buffers.leaf.absorbed_radiation[layer], air_temperature, air.current_vapor_density[layer],
-        buffers.wind.wind_speed[layer], atmospheric_pressure, model.leaf_parameters.leaf_emissivity, conductance,
-        leaf_water_potential, buffers.leaf.leaf_body, leaf_area, model.leaf_convection_model; aerodynamic_area)
+        buffers.wind.wind_speed[layer], atmospheric_pressure, model.leaf_parameters.leaf_emissivity, dry_conductance,
+        leaf_water_potential, buffers.leaf.leaf_body, leaf_area, model.leaf_convection_model; aerodynamic_area,
+        wet_fraction=wet_canopy_fraction(model, buffers, layer))
     return (; balance, leaf_area)
 end
 
@@ -169,8 +169,9 @@ function evaluate_canopy!(residual, inverse_obukhov_length, ground_temperature, 
 )
     (; environment_instant, ground_emissivity, ground_wetness, leaf_water_potential) = inputs
     (; atmospheric_pressure, reference_temperature, reference_humidity) = environment_instant
-    (; dry_conductance, stability_limits) = hour_conditions
-    (; leaf_temperature, sensible_heat_flux, evaporation_mass_flux, absorbed_radiation, net_balance) = buffers.leaf
+    (; incoming_longwave, dry_conductance, stability_limits) = hour_conditions
+    (; leaf_temperature, sensible_heat_flux, evaporation_mass_flux, wet_surface_evaporation_mass_flux, absorbed_radiation,
+        net_balance) = buffers.leaf
     air = buffers.air_profile
     (; absorbed_shortwave) = buffers.shortwave
     (; absorbed_longwave) = buffers.longwave
@@ -194,7 +195,7 @@ function evaluate_canopy!(residual, inverse_obukhov_length, ground_temperature, 
         inverse_obukhov_length=isnan(inverse_obukhov_length) ? zero(inverse_obukhov_length) : inverse_obukhov_length)
     wind_speed = buffers.wind.wind_speed
     longwave_result = canopy_longwave!(buffers, model;
-        leaf_temperature, ground_temperature, ground_emissivity, site, environment_instant, vapour_pressure_equation)
+        leaf_temperature, ground_temperature, ground_emissivity, incoming_longwave)
 
     for i in 1:n_layers
         air_temperature = air.current_air_temperature[i]
@@ -202,6 +203,7 @@ function evaluate_canopy!(residual, inverse_obukhov_length, ground_temperature, 
         if iszero(exchange_fraction)
             sensible_heat_flux[i] = zero(sensible_heat_flux[i])
             evaporation_mass_flux[i] = zero(evaporation_mass_flux[i])
+            wet_surface_evaporation_mass_flux[i] = zero(wet_surface_evaporation_mass_flux[i])
             absorbed_radiation[i] = zero(absorbed_radiation[i])
             net_balance[i] = zero(net_balance[i])
             residual.leaf_balance[i] = zero(residual.leaf_balance[i])
@@ -214,6 +216,7 @@ function evaluate_canopy!(residual, inverse_obukhov_length, ground_temperature, 
             atmospheric_pressure, leaf_water_potential, dry_conductance)
         sensible_heat_flux[i] = balance.convection.convection_flow / GROUND_AREA
         evaporation_mass_flux[i] = balance.evaporation.transpiration_mass_flow / GROUND_AREA
+        wet_surface_evaporation_mass_flux[i] = balance.evaporation.wet_surface_mass_flow / GROUND_AREA
         net_balance[i] = balance.net_heat_flow
         residual.leaf_balance[i] = balance.net_heat_flow / leaf_area
         residual.leafless_temperature_difference[i] = zero(residual.leafless_temperature_difference[i])

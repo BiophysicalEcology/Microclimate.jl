@@ -154,6 +154,7 @@ environment_hourly = HourlyTimeseries(;
 )
 
 radiation = RadiationModel(;
+    longwave_model = ViewFactorLongwave(; ground_absorption = FullAbsorption()),
     solar_radiation_model = SolarProblem(; diffuse_model = SolarRadiation.NoScattering()),
 )
 

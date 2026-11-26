@@ -21,10 +21,6 @@ activate_snow_nodes!(::NoSnow, args...) = nothing
 
 compute_effective_depths!(::NoSnow, _, _, _) = nothing
 
-snow_surface_overrides(::NoSnow, _, _, _) = (;
-    albedo=nothing, emissivity=nothing, soil_wetness=nothing, shade=nothing
-)
-
 snow_phase_transition(::NoSnow, args...) = (nothing, nothing, nothing)
 
 update_snow!(::NoSnow, args...; kw...) = (nothing, 0.0u"cm", 0.0u"cm")

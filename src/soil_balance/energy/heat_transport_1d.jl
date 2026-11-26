@@ -33,18 +33,20 @@ end
 
 Forcing and state held fixed over one hour of the soil energy ODE.
 """
-@kwdef struct HourlySoilEnergyInputs{D<:Vector{<:Number},EI,SW,LW,QF,SNS,GST,GIL,GWS,GAT,GRH,GRFH,GHC,GVC}
+@kwdef struct HourlySoilEnergyInputs{D<:Vector{<:Number},EI,SW,LW,QF,SNS,GST,GAL,GWS,GAT,GRH,GRFH,GHC,GVC}
     # Node depths, including any active snow nodes
     depths::D
     environment_instant::EI
     soil_wetness::SW
     longwave_sky::LW
     albedo::Float64
+    # Of the soil, or of snow covering it
+    surface_emissivity::Float64
     Q_freeze::QF = 0.0u"W/m^2"
     snow_state::SNS = nothing
     # Canopy ground-boundary overrides (nothing under NoCanopy; see apply_canopy_overrides)
     ground_shortwave_transmission::GST = nothing
-    ground_incoming_longwave::GIL = nothing
+    ground_absorbed_longwave::GAL = nothing
     # Canopy-resolved sub-canopy boundary layer for convection/evaporation
     # (nothing under NoCanopy): the canopy's ground-most-layer wind/air
     # temperature/humidity and that layer's height, used as the reference
@@ -159,17 +161,21 @@ end
 # method is in snow/snow_model.jl; both ::Nothing and ::NoSnow return 0.
 @inline _n_snow(::Nothing) = 0
 
-# Ground shortwave fraction: NoCanopy uses `shade`; MultilayerCanopy substitutes
-# its hourly transmission ratio (see apply_canopy_overrides).
-ground_shortwave_fraction(shade, ::Nothing) = 1.0 - shade
-ground_shortwave_fraction(shade, transmission) = transmission
+# Direct and diffuse shares of `shortwave` reaching the ground. NoCanopy shades it and splits
+# by the forcing's diffuse fraction; MultilayerCanopy gives the direct and diffuse fractions
+# of the global shortwave that reach the ground (see apply_canopy_overrides).
+function ground_shortwave_shares(shortwave, diffuse_fraction, shade, ::Nothing)
+    unshaded = shortwave * (1.0 - shade)
+    return ((1.0 - diffuse_fraction) * unshaded, diffuse_fraction * unshaded)
+end
+ground_shortwave_shares(shortwave, diffuse_fraction, shade, transmission::NamedTuple) =
+    (shortwave * transmission.direct, shortwave * transmission.diffuse)
 
-# Ground longwave terms: NoCanopy passes the shade-based split through;
-# MultilayerCanopy supersedes it with its own converged incoming flux.
-ground_longwave_terms(incoming, outgoing_coeff, shade_term, surface_emissivity, ::Nothing) =
-    (incoming, outgoing_coeff, shade_term)
-ground_longwave_terms(incoming, outgoing_coeff, shade_term, surface_emissivity, override) =
-    (override, σ * surface_emissivity, 0.0u"W/m^2")
+# The longwave the ground absorbs and the fraction exchanging it: the unshaded fraction without a canopy, all of it under one
+soil_absorbed_longwave(absorption, downward_longwave, shade, emissivity, ::Nothing) =
+    ((1.0 - shade) * absorbed_ground_longwave(absorption, emissivity, downward_longwave), 1.0 - shade)
+soil_absorbed_longwave(absorption, downward_longwave, shade, emissivity, canopy_absorbed_longwave) =
+    (canopy_absorbed_longwave, 1.0)
 
 # Sub-canopy convection/evaporation boundary condition: NoCanopy uses the
 # free-atmosphere forcing at reference_height directly; MultilayerCanopy
@@ -222,10 +228,10 @@ function soil_energy_balance(model::SoilHeatTransport1D,
     (; hourly, forcing, buffers) = p
     (; site, vapour_pressure_equation) = p.model
     (; heights, boundary_layer_model) = p.model.atmosphere
-    atmospheric_radiation_model = p.model.atmosphere.radiation.longwave_model.atmospheric_radiation_model
+    (; atmospheric_radiation_model, ground_absorption) = p.model.atmosphere.radiation.longwave_model
     evaporation_model = p.model.surface.evaporation_model
     snow_model = p.model.snow
-    (; depths, environment_instant, soil_wetness, longwave_sky, albedo, Q_freeze) = hourly
+    (; depths, environment_instant, soil_wetness, longwave_sky, albedo, surface_emissivity, Q_freeze) = hourly
     maximum_surface_temperature = model.maximum_surface_temperature
     (; shade) = environment_instant
     # Get environmental data at time t
@@ -253,36 +259,26 @@ function soil_energy_balance(model::SoilHeatTransport1D,
     # global flux by `cos_slope_zenith / cos_zenith` (the old behaviour)
     # zeroes both components when the sun is behind the slope, which
     # produced sharp per-pixel sun/shadow streaks at fine DEM resolution.
-    Q_solar = absorptivity * solar_radiation * ground_shortwave_fraction(shade, hourly.ground_shortwave_transmission)
+    (direct_share, diffuse_share) = ground_shortwave_shares(absorptivity * solar_radiation, diffuse_fraction, shade,
+        hourly.ground_shortwave_transmission)
+    Q_solar = direct_share + diffuse_share
     if slope > 0 && zenith_angle < 90u"°"
         cos_zenith = cosd(zenith_angle)
         cos_slope_zenith = cosd(slope_zenith_angle)
-        direct_share  = (1.0 - diffuse_fraction) * Q_solar
-        diffuse_share = diffuse_fraction * Q_solar
         Q_direct  = max(0.0u"W/m^2", (direct_share / cos_zenith) * cos_slope_zenith)
         Q_diffuse = diffuse_share * site.sky_view_fraction
         Q_solar = Q_direct + Q_diffuse
     end
 
-    # Longwave radiation — recompute from interpolated forcings at each ODE sub-step,
-    # matching Fortran DSUB.f lines 396-465 which recomputes at every call.
-    # Use interpolated cloud_cover (from line 20), not the hourly snapshot.
-    (; surface_emissivity, cloud_emissivity) = environment_instant
-    sky_view_fraction = site.sky_view_fraction
-    wet_air_out = wet_air_properties(u"K"(air_temperature), relative_humidity, atmospheric_pressure; vapour_pressure_equation)
-    atmospheric_longwave = atmospheric_radiation(atmospheric_radiation_model, wet_air_out.vapour_pressure, air_temperature)
-    cloud_radiation = σ * cloud_emissivity * (u"K"(air_temperature) - 2.0u"K")^4
-    hillshade_radiation = σ * (u"K"(air_temperature))^4 # TODO this is assuming unit emissivity, but should have a vegetation emissivity term
-    clear_sky_fraction = 1.0 - cloud_cover
-    longwave_radiation_sky = (atmospheric_longwave * clear_sky_fraction + cloud_radiation * cloud_cover) * (1.0 - shade)
-    longwave_radiation_vegetation = shade * hillshade_radiation
-    incoming_longwave = (longwave_radiation_sky + longwave_radiation_vegetation) * sky_view_fraction +
-                        hillshade_radiation * (1.0 - sky_view_fraction)
-    outgoing_coeff = (1.0 - shade) * σ * surface_emissivity
-    ground_shade_term = shade * hillshade_radiation
-    (incoming_longwave, outgoing_coeff, ground_shade_term) = ground_longwave_terms(
-        incoming_longwave, outgoing_coeff, ground_shade_term, surface_emissivity, hourly.ground_incoming_longwave)
-    Q_infrared = incoming_longwave - outgoing_coeff * (u"K"(soil_temperature[j]))^4 - ground_shade_term
+    # Longwave from the forcing interpolated to this sub-step, as Fortran DSUB.f recomputes it at
+    # every call, or the supplied hourly longwave
+    (; cloud_emissivity) = environment_instant
+    open_downward_longwave = downward_longwave(atmospheric_radiation_model; air_temperature, relative_humidity,
+        atmospheric_pressure, cloud_cover, cloud_emissivity, site.sky_view_fraction,
+        supplied_longwave=get(environment_instant, :longwave_radiation, nothing), vapour_pressure_equation).open_ground
+    (absorbed_downward_longwave, exposed_fraction) = soil_absorbed_longwave(ground_absorption, open_downward_longwave, shade, surface_emissivity,
+        hourly.ground_absorbed_longwave)
+    Q_infrared = absorbed_downward_longwave - exposed_fraction * σ * surface_emissivity * (u"K"(soil_temperature[j]))^4
 
     # Conduction from first active node to the node below it
     # Fortran DSUB.f lines 483-487 uses T(1) here on the first call. We always use the

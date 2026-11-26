@@ -83,20 +83,36 @@ leaf_convection(convection_model, body, leaf_area, air_temperature, leaf_tempera
 """
     leaf_heat_balance(leaf_temperature, absorbed_radiation, air_temperature, air_vapor_density,
                        wind_speed, atmospheric_pressure, leaf_emissivity, stomatal_conductance,
-                       leaf_water_potential, body, leaf_area, convection_model; aerodynamic_area=leaf_area)
+                       leaf_water_potential, body, leaf_area, convection_model; aerodynamic_area=leaf_area, wet_fraction=0.0)
 
 Net leaf energy (W, positive = gaining): absorbed radiation minus emitted longwave,
 convection and evaporation. `leaf_area` scales radiation, `aerodynamic_area` scales
 convection and evaporation; they differ inside a canopy, where leaves shade each other.
+
+The `wet_fraction` of the leaf covered in water evaporates as free water, saturated at the
+leaf temperature ([`WET_SURFACE_EVAPORATION`](@ref)). The rest transpires through
+`stomatal_conductance` at `leaf_water_potential`. When the air is above saturation at the leaf
+temperature the whole leaf collects dew as free water, whatever its `wet_fraction`, as in CLM.
+`evaporation.wet_surface_mass_flow` is the part drawn from, or added to, the water on the leaf.
 """
 function leaf_heat_balance(leaf_temperature, absorbed_radiation, air_temperature, air_vapor_density,
     wind_speed, atmospheric_pressure, leaf_emissivity, stomatal_conductance, leaf_water_potential,
-    body, leaf_area, convection_model=ElaborateLeafConvection(); aerodynamic_area=leaf_area,
+    body, leaf_area, convection_model=ElaborateLeafConvection(); aerodynamic_area=leaf_area, wet_fraction=0.0,
 )
     convection = leaf_convection(convection_model, body, aerodynamic_area, air_temperature, leaf_temperature, wind_speed, atmospheric_pressure)
     atmosphere = AtmosphericConditions(; vapour_density=air_vapor_density, wind_speed, atmospheric_pressure)
-    evaporation = HeatExchange.evaporation(stomatal_conductance, convection.mass_transfer_coefficient, atmosphere, aerodynamic_area,
+    mass_transfer = convection.mass_transfer_coefficient
+    transpiration = HeatExchange.evaporation(stomatal_conductance, mass_transfer, atmosphere, aerodynamic_area,
         leaf_temperature, air_temperature; water_potential=leaf_water_potential)
+    wet_surface = HeatExchange.evaporation(WET_SURFACE_EVAPORATION, mass_transfer, atmosphere, aerodynamic_area,
+        leaf_temperature, air_temperature)
+    # Dew forms on the leaf surface, not through the stomata, so it reaches the leaf's water store
+    surface_wet_fraction = wet_surface.transpiration_mass_flow < zero(wet_surface.transpiration_mass_flow) ? 1.0 : wet_fraction
+    wet_surface_mass_flow = surface_wet_fraction * wet_surface.transpiration_mass_flow
+    evaporation = (;
+        evaporation_heat_flow=(1 - surface_wet_fraction) * transpiration.evaporation_heat_flow + surface_wet_fraction * wet_surface.evaporation_heat_flow,
+        transpiration_mass_flow=(1 - surface_wet_fraction) * transpiration.transpiration_mass_flow + wet_surface_mass_flow,
+        wet_surface_mass_flow)
 
     emitted_longwave = leaf_emissivity * σ * leaf_temperature^4 * leaf_area
     net_heat_flow = absorbed_radiation * leaf_area - emitted_longwave - convection.convection_flow - evaporation.evaporation_heat_flow

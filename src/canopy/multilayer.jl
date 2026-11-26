@@ -118,6 +118,7 @@ function allocate_canopy(model::MultilayerCanopy, heights, boundary_layer_model;
             leaf_temperature = zeros(typeof(0.0u"K"), n_layers),
             sensible_heat_flux = zeros(typeof(0.0u"W/m^2"), n_layers),
             evaporation_mass_flux = zeros(typeof(0.0u"g/s/m^2"), n_layers),
+            wet_surface_evaporation_mass_flux = zeros(typeof(0.0u"g/s/m^2"), n_layers),
             potential_evaporation_mass_flux = zeros(typeof(0.0u"g/s/m^2"), n_layers),
             leaf_dew_formed = zeros(typeof(0.0u"kg/m^2"), n_layers),
             leaf_frost_formed = zeros(typeof(0.0u"kg/m^2"), n_layers),
@@ -137,6 +138,8 @@ canopy_shortwave!(buffers, model::MultilayerCanopy; kw...) =
 
 canopy_longwave!(buffers, model::MultilayerCanopy; kw...) =
     canopy_longwave!(buffers.longwave, model.longwave_model, model.leaf_parameters.leaf_emissivity; kw...)
+
+canopy_incoming_longwave(model::MultilayerCanopy; kw...) = canopy_incoming_longwave(model.longwave_model; kw...)
 
 canopy_wind_profile!(buffers, model::MultilayerCanopy, boundary_layer_model; kw...) =
     canopy_wind_profile!(buffers.wind, model.wind_model, boundary_layer_model; kw...)
@@ -189,7 +192,7 @@ function reset_canopy_starting_state!(::MultilayerCanopy, buffers)
 end
 
 initial_ground_overrides(::MultilayerCanopy) = (;
-    ground_shortwave_transmission = 1.0, ground_incoming_longwave = 0.0u"W/m^2",
+    ground_shortwave_transmission = (; direct = 0.0, diffuse = 0.0), ground_absorbed_longwave = 0.0u"W/m^2",
     ground_wind_speed = 0.0u"m/s", ground_air_temperature = 288.0u"K",
     ground_air_relative_humidity = 0.5, ground_reference_height = 1.0u"m",
     ground_heat_conductance = 0.0u"W/m^2/K", ground_vapor_conductance = 0.0u"m/s",

@@ -2,10 +2,10 @@
     LayeredLongwaveExchange(; atmospheric_radiation_model=CampbellNormanAtmosphericRadiation())
 
 Multi-layer longwave exchange. Each canopy layer is a semi-transparent,
-isothermal slab. Canopy-internal scattering is neglected, following, 
-Norman (1979); emission scales with `leaf_emissivity`. Layer transmission
-assumes that diffuse extinction is almost independent of leaf angle 
-(Goudriaan 1977).
+isothermal slab with no reflection, following Norman (1979). Leaves absorb and
+emit in proportion to `leaf_emissivity`, and longwave they intercept but don't
+absorb carries on in the same direction. Layer transmission assumes that
+diffuse extinction is almost independent of leaf angle (Goudriaan 1977).
 
 Sky longwave comes from `atmospheric_radiation_model` via
 [`precompute_longwave_sky`](@ref) with no shade.
@@ -34,38 +34,37 @@ end
 """
     canopy_longwave!(buffers, model::LayeredLongwaveExchange, leaf_emissivity;
                       leaf_temperature, ground_temperature, ground_emissivity,
-                      site, environment_instant, vapour_pressure_equation=GoffGratch())
+                      incoming_longwave)
 
 One pass down, one pass up. Writes each layer's absorbed longwave per ground area and
-returns `(; ground_absorbed_longwave, net_absorbed_longwave)`.
+returns `(; ground_absorbed_longwave, net_absorbed_longwave)`. The ground absorbs `ground_emissivity`
+of the longwave reaching it, reflects the rest, and emits with `ground_emissivity`.
 """
 function canopy_longwave!(buffers, model::LayeredLongwaveExchange, leaf_emissivity;
     leaf_temperature, ground_temperature, ground_emissivity,
-    site, environment_instant, vapour_pressure_equation=GoffGratch(),
+    incoming_longwave,
 )
     (; layer_transmission, boundary_downward_longwave, boundary_upward_longwave, absorbed_longwave) = buffers
     n_layers = length(layer_transmission)
 
-    sky = precompute_longwave_sky(model.atmospheric_radiation_model;
-        site, environment_instant, vapour_pressure_equation, shade=0.0)
-    boundary_downward_longwave[1] = sky.incoming_longwave
+    boundary_downward_longwave[1] = incoming_longwave
     for i in 1:n_layers
-        transmission = layer_transmission[i]
-        emission = leaf_emissivity * σ * u"K"(leaf_temperature[i])^4
-        boundary_downward_longwave[i + 1] = boundary_downward_longwave[i] * transmission + emission * (1.0 - transmission)
+        absorptance = leaf_emissivity * (1.0 - layer_transmission[i])
+        boundary_downward_longwave[i + 1] = boundary_downward_longwave[i] * (1.0 - absorptance) +
+            absorptance * σ * u"K"(leaf_temperature[i])^4
     end
 
     ground_emission = ground_emissivity * σ * u"K"(ground_temperature)^4
     boundary_upward_longwave[n_layers + 1] = ground_emission + (1.0 - ground_emissivity) * boundary_downward_longwave[n_layers + 1]
     for i in n_layers:-1:1
-        transmission = layer_transmission[i]
-        emission = leaf_emissivity * σ * u"K"(leaf_temperature[i])^4
-        boundary_upward_longwave[i] = boundary_upward_longwave[i + 1] * transmission + emission * (1.0 - transmission)
+        absorptance = leaf_emissivity * (1.0 - layer_transmission[i])
+        boundary_upward_longwave[i] = boundary_upward_longwave[i + 1] * (1.0 - absorptance) +
+            absorptance * σ * u"K"(leaf_temperature[i])^4
     end
 
     for i in 1:n_layers
-        transmission = layer_transmission[i]
-        absorbed_longwave[i] = (1.0 - transmission) * (boundary_downward_longwave[i] + boundary_upward_longwave[i + 1])
+        absorptance = leaf_emissivity * (1.0 - layer_transmission[i])
+        absorbed_longwave[i] = absorptance * (boundary_downward_longwave[i] + boundary_upward_longwave[i + 1])
     end
 
     ground_absorbed_longwave = ground_emissivity * boundary_downward_longwave[n_layers + 1]

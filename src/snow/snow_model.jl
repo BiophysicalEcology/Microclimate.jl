@@ -320,18 +320,12 @@ end
 
 # ── Snow surface overrides ───────────────────────────────────────────────
 
-function snow_surface_overrides(::SnowModel, state::SnowState, scratch, step)
-    prev_depth = step > 1 ? scratch.snow_depth_hourly[step - 1] : state.current_depth
-    if prev_depth > 0.0u"cm"
-        return (;
-            albedo    = snow_albedo(state.days_since_snow),
-            emissivity = 0.98,  # Fortran OSUB.f line 1028: SLE = 0.98
-            soil_wetness = 1.0,
-            shade = nothing,
-        )
-    end
-    return (; albedo=nothing, emissivity=nothing, soil_wetness=nothing, shade=nothing)
-end
+"""
+    SNOW_EMISSIVITY
+
+The longwave emissivity of a snow surface (Fortran OSUB.f line 1028: SLE = 0.98).
+"""
+const SNOW_EMISSIVITY = 0.98
 
 # ── Snow layer geometry ──────────────────────────────────────────────────
 

@@ -108,6 +108,7 @@ soil_profile = SoilProfile(;
 )
 soil_hydraulic_model = example_soil_hydraulic_model()
 radiation = RadiationModel(;
+    longwave_model = ViewFactorLongwave(; ground_absorption = FullAbsorption()),
     solar_radiation_model = SolarProblem(;
         diffuse_model = Bool(Int(microinput[:IUV])) ? SolarRadiation.ChandrasekharScattering() : SolarRadiation.NoScattering(),
     ),

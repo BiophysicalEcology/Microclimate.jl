@@ -57,7 +57,8 @@ function reset_interception! end
     wet_canopy_fraction(model, buffers, layer) -> Float64 ∈ [0, 1]
 
 Fractional saturation of layer `layer`'s stored leaf-surface water (0 =
-dry, 1 = at capacity), for [`blend_stomatal_conductance`](@ref). Always 0
+dry, 1 = at capacity), the share of the leaf that evaporates as free water
+([`WET_SURFACE_EVAPORATION`](@ref)). Always 0
 for `NoInterception`.
 """
 function wet_canopy_fraction end
@@ -151,17 +152,10 @@ A conductance so large that evaporation from a wet leaf is limited only by its b
 const WET_SURFACE_CONDUCTANCE = 1000.0u"mol/m^2/s"
 
 """
-    blend_stomatal_conductance(dry::LeafEvaporationParameters, wet_fraction)
+    WET_SURFACE_EVAPORATION
 
-Blend `dry` toward [`WET_SURFACE_CONDUCTANCE`](@ref) as `wet_fraction` (from
-[`wet_canopy_fraction`](@ref)) rises 0→1. Cuticular conductance is
-unaffected — already surface-independent.
+The conductances of water standing on a leaf: [`WET_SURFACE_CONDUCTANCE`](@ref) on both sides,
+so its evaporation is limited only by the leaf's boundary layer.
 """
-function blend_stomatal_conductance(dry::LeafEvaporationParameters, wet_fraction)
-    wet_fraction <= 0.0 && return dry
-    return LeafEvaporationParameters(;
-        abaxial_vapour_conductance = dry.abaxial_vapour_conductance + wet_fraction * (WET_SURFACE_CONDUCTANCE - dry.abaxial_vapour_conductance),
-        adaxial_vapour_conductance = dry.adaxial_vapour_conductance + wet_fraction * (WET_SURFACE_CONDUCTANCE - dry.adaxial_vapour_conductance),
-        cuticular_conductance = dry.cuticular_conductance,
-    )
-end
+const WET_SURFACE_EVAPORATION = LeafEvaporationParameters(; abaxial_vapour_conductance=WET_SURFACE_CONDUCTANCE,
+    adaxial_vapour_conductance=WET_SURFACE_CONDUCTANCE, cuticular_conductance=0.0u"mol/m^2/s")

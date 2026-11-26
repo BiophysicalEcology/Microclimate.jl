@@ -48,6 +48,7 @@ end
         site, environment_instant, vapour_pressure_equation)
     return (;
         albedo = _baseline_albedo(site, environment_instant),
+        surface_emissivity = environment_instant.surface_emissivity,
         effective_wetness = get_soil_wetness(moisture_mode, environment_instant, soil_wetness),
         longwave_sky,
     )
@@ -65,40 +66,36 @@ end
     )
     if snow_active
         albedo = snow_albedo(snow_state.days_since_snow)
+        surface_emissivity = SNOW_EMISSIVITY
         effective_wetness = 1.0
-        longwave_sky = precompute_longwave_sky(longwave_model;
-            site, environment_instant, vapour_pressure_equation,
-            surface_emissivity = 0.98,
-        )
     else
         albedo = _baseline_albedo(site, environment_instant)
+        surface_emissivity = environment_instant.surface_emissivity
         effective_wetness = get_soil_wetness(moisture_mode, environment_instant, soil_wetness)
-        longwave_sky = precompute_longwave_sky(longwave_model;
-            site, environment_instant, vapour_pressure_equation,
-        )
     end
-    return (; albedo, effective_wetness, longwave_sky)
+    longwave_sky = precompute_longwave_sky(longwave_model;
+        site, environment_instant, vapour_pressure_equation, surface_emissivity)
+    return (; albedo, surface_emissivity, effective_wetness, longwave_sky)
 end
 
-# The ground boundary the soil takes from the canopy: the shortwave/longwave terms
-# soil_energy_balance substitutes for its shade-based defaults, and the canopy's own
-# ground-most-layer wind, air temperature and humidity in place of the free-atmosphere
-# reference used by its NoCanopy default.
-function canopy_ground_boundary(buffers, ground_absorbed_shortwave, ground_absorbed_longwave;
-    environment_instant, vapour_pressure_equation, ground_emissivity, direct_horizontal_irradiance,
-    diffuse_horizontal_irradiance, ground_reflectance,
+# The ground boundary the soil takes from the canopy: the direct and diffuse fractions of the
+# global shortwave and the longwave reaching the ground, which soil_energy_balance substitutes
+# for its shade-based defaults, and the canopy's own ground-most-layer wind, air temperature
+# and humidity in place of the free-atmosphere reference used by its NoCanopy default.
+function canopy_ground_boundary(buffers, ground_shortwave, ground_absorbed_longwave;
+    environment_instant, vapour_pressure_equation, direct_horizontal_irradiance, diffuse_horizontal_irradiance,
 )
     global_horizontal_irradiance = direct_horizontal_irradiance + diffuse_horizontal_irradiance
-    absorptivity = 1.0 - ground_reflectance
     air = buffers.air_profile
     ground_shortwave_transmission = if global_horizontal_irradiance > 0.0u"W/m^2"
-        ground_absorbed_shortwave / (absorptivity * global_horizontal_irradiance)
+        (; direct = ground_shortwave.ground_direct_shortwave / global_horizontal_irradiance,
+           diffuse = ground_shortwave.ground_diffuse_shortwave / global_horizontal_irradiance)
     else
-        1.0
+        (; direct = 0.0, diffuse = 0.0)
     end
     return (;
         ground_shortwave_transmission,
-        ground_incoming_longwave = ground_absorbed_longwave / ground_emissivity,
+        ground_absorbed_longwave,
         ground_wind_speed = buffers.wind.wind_speed[end],
         ground_air_temperature = air.current_air_temperature[end],
         # Not capped at 1, so the soil sees the same vapor density as the canopy air
@@ -123,7 +120,7 @@ function apply_canopy_overrides(::NoCanopy, buffers, soil_hour!;
 )
     return (;
         ground_shortwave_transmission = nothing,
-        ground_incoming_longwave = nothing,
+        ground_absorbed_longwave = nothing,
         canopy_source_temperature,
         canopy_result = nothing,
         ground_wind_speed = nothing, ground_air_temperature = nothing,
@@ -142,14 +139,14 @@ function apply_canopy_overrides(model::MultilayerCanopy, buffers, soil_hour!::S;
         direct_horizontal_irradiance, diffuse_horizontal_irradiance, ground_reflectance,
         ground_temperature, ground_emissivity, ground_wetness, canopy_source_temperature, rainfall, leaf_water_potential,
     )
-    boundary(ground_absorbed_shortwave, ground_absorbed_longwave) = canopy_ground_boundary(buffers, ground_absorbed_shortwave,
-        ground_absorbed_longwave; environment_instant, vapour_pressure_equation, ground_emissivity,
-        direct_horizontal_irradiance, diffuse_horizontal_irradiance, ground_reflectance)
+    boundary(ground_shortwave, ground_absorbed_longwave) = canopy_ground_boundary(buffers, ground_shortwave,
+        ground_absorbed_longwave; environment_instant, vapour_pressure_equation,
+        direct_horizontal_irradiance, diffuse_horizontal_irradiance)
     canopy_result = canopy_energy_balance!(buffers, model, boundary_layer_model, canopy_inputs;
         site, vapour_pressure_equation, soil_hydraulic_model,
-        ground_temperature_after_hour=(_, ground_absorbed_shortwave, ground_absorbed_longwave) ->
-            soil_hour!(boundary(ground_absorbed_shortwave, ground_absorbed_longwave)).ground_temperature)
-    return (; boundary(canopy_result.ground_absorbed_shortwave, canopy_result.ground_absorbed_longwave)...,
+        ground_temperature_after_hour=(_, ground_shortwave, ground_absorbed_longwave) ->
+            soil_hour!(boundary(ground_shortwave, ground_absorbed_longwave)).ground_temperature)
+    return (; boundary(canopy_result, canopy_result.ground_absorbed_longwave)...,
         canopy_source_temperature = buffers.leaf.leaf_temperature[1], canopy_result)
 end
 
@@ -307,7 +304,7 @@ function CommonSolve.init(mp::MicroProblem)
         site, environment_instant, vapour_pressure_equation)
     hourly_proto = HourlySoilEnergyInputs(;
         depths=depths_proto, environment_instant,
-        soil_wetness=0.0, longwave_sky, albedo=site.albedo,
+        soil_wetness=0.0, longwave_sky, albedo=site.albedo, environment_instant.surface_emissivity,
         snow_state=initial_snow_state(snow_model),
         initial_ground_overrides(canopy_model)...,
     )
@@ -723,7 +720,7 @@ function solve_soil!(cache::MicroCache)
             step = (j - 1) * length(hours) + 1
             environment_instant = get_instant(environment_day, environment_hourly, output, soil_moisture, step)
             soil_temperatures = setindex(soil_temperatures, environment_instant.deep_soil_temperature, num_soil_nodes)
-            (; albedo, effective_wetness, longwave_sky) = apply_snow_overrides(
+            (; albedo, surface_emissivity, effective_wetness, longwave_sky) = apply_snow_overrides(
                 snow_model, snow_state, buffers.snow, step, site, moisture_mode, soil_wetness, environment_instant,
                 longwave_model, vapour_pressure_equation;
                 is_last_iter)
@@ -755,12 +752,12 @@ function solve_soil!(cache::MicroCache)
                 snow_present=snow_present_step, ground_temperature0=ground_temperature, canopy_source_temperature, ode_depths,
                 soil_wetness=effective_wetness, longwave_sky, albedo, Q_freeze, snow_state,
                 boundary_layer_model, site, vapour_pressure_equation, soil_hydraulic_model, environment_instant,
-                ground_emissivity = environment_instant.surface_emissivity,
+                surface_emissivity,
                 rainfall = rainfall_step, leaf_water_potential,
                 direct_horizontal_irradiance = output.global_radiation[step] * (1.0 - output.diffuse_fraction[step]),
                 diffuse_horizontal_irradiance = output.global_radiation[step] * output.diffuse_fraction[step],
             )
-            (; ground_shortwave_transmission, ground_incoming_longwave, canopy_source_temperature, canopy_result,
+            (; ground_shortwave_transmission, ground_absorbed_longwave, canopy_source_temperature, canopy_result,
                 ground_wind_speed, ground_air_temperature, ground_air_relative_humidity, ground_reference_height,
                 ground_heat_conductance, ground_vapor_conductance) = overrides
             # day_init_step == step here (both (j-1)*length(hours)+1) — the NMR
@@ -862,7 +859,7 @@ function solve_soil!(cache::MicroCache)
                     next_step = step + 1
                     environment_instant = get_instant(environment_day, environment_hourly, output, soil_moisture, next_step)
                     soil_temperatures = setindex(soil_temperatures, environment_instant.deep_soil_temperature, num_soil_nodes)
-                    (; albedo, effective_wetness, longwave_sky) = apply_snow_overrides(
+                    (; albedo, surface_emissivity, effective_wetness, longwave_sky) = apply_snow_overrides(
                         snow_model, snow_state, buffers.snow, next_step, site, moisture_mode, soil_wetness, environment_instant,
                         longwave_model, vapour_pressure_equation;
                         is_last_iter)
@@ -887,12 +884,12 @@ function solve_soil!(cache::MicroCache)
                         snow_present=snow_present_next, ground_temperature0=ground_temperature, canopy_source_temperature, ode_depths,
                         soil_wetness=effective_wetness, longwave_sky, albedo, Q_freeze, snow_state,
                         boundary_layer_model, site, vapour_pressure_equation, soil_hydraulic_model, environment_instant,
-                        ground_emissivity = environment_instant.surface_emissivity,
+                        surface_emissivity,
                         rainfall = rainfall_next, leaf_water_potential,
                         direct_horizontal_irradiance = output.global_radiation[next_step] * (1.0 - output.diffuse_fraction[next_step]),
                         diffuse_horizontal_irradiance = output.global_radiation[next_step] * output.diffuse_fraction[next_step],
                     )
-                    (; ground_shortwave_transmission, ground_incoming_longwave, canopy_source_temperature, canopy_result,
+                    (; ground_shortwave_transmission, ground_absorbed_longwave, canopy_source_temperature, canopy_result,
                         ground_wind_speed, ground_air_temperature, ground_air_relative_humidity, ground_reference_height,
                         ground_heat_conductance, ground_vapor_conductance) = overrides
                 end
@@ -1154,14 +1151,14 @@ function solve_canopy_soil_hour!(ode_integrator, hour_index, hour_ode_state,
     canopy_model, canopy_buffers, snow_model;
     snow_present, ground_temperature0, canopy_source_temperature, ode_depths, soil_wetness, longwave_sky, albedo, Q_freeze, snow_state,
     boundary_layer_model, site, vapour_pressure_equation, soil_hydraulic_model, environment_instant,
-    ground_emissivity, rainfall, leaf_water_potential,
+    surface_emissivity, rainfall, leaf_water_potential,
     direct_horizontal_irradiance, diffuse_horizontal_irradiance,
 )
     function soil_hour!(ground_boundary)
         set_hourly_inputs!(ode_integrator, HourlySoilEnergyInputs(;
-            depths=ode_depths, environment_instant, soil_wetness, longwave_sky, albedo, Q_freeze, snow_state,
+            depths=ode_depths, environment_instant, soil_wetness, longwave_sky, albedo, surface_emissivity, Q_freeze, snow_state,
             ground_shortwave_transmission=ground_boundary.ground_shortwave_transmission,
-            ground_incoming_longwave=ground_boundary.ground_incoming_longwave,
+            ground_absorbed_longwave=ground_boundary.ground_absorbed_longwave,
             ground_wind_speed=ground_boundary.ground_wind_speed, ground_air_temperature=ground_boundary.ground_air_temperature,
             ground_air_relative_humidity=ground_boundary.ground_air_relative_humidity,
             ground_reference_height=ground_boundary.ground_reference_height,
@@ -1174,7 +1171,7 @@ function solve_canopy_soil_hour!(ode_integrator, hour_index, hour_ode_state,
     overrides = apply_canopy_overrides(canopy_model, canopy_buffers, soil_hour!;
         boundary_layer_model, site, vapour_pressure_equation, soil_hydraulic_model, environment_instant,
         # The canopy takes the ground's vapor at the soil's own wet fraction (see evaluate_canopy!)
-        ground_temperature=ground_temperature0, ground_emissivity, ground_wetness=soil_wetness, canopy_source_temperature,
+        ground_temperature=ground_temperature0, ground_emissivity=surface_emissivity, ground_wetness=soil_wetness, canopy_source_temperature,
         rainfall, direct_horizontal_irradiance, diffuse_horizontal_irradiance,
         ground_reflectance=albedo, leaf_water_potential)
     soil = soil_hour!(overrides)

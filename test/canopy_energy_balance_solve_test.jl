@@ -110,9 +110,9 @@ end
     buffers = allocate(model)
     calls = Ref(0)
     # A soil that moves halfway towards 290 K, whatever the canopy does
-    function ground_temperature_after_hour(ground_temperature, ground_absorbed_shortwave, ground_absorbed_longwave)
+    function ground_temperature_after_hour(ground_temperature, ground_shortwave, ground_absorbed_longwave)
         calls[] += 1
-        @test ground_absorbed_shortwave > 0.0u"W/m^2"
+        @test ground_shortwave.ground_direct_shortwave + ground_shortwave.ground_diffuse_shortwave > 0.0u"W/m^2"
         @test ground_absorbed_longwave > 0.0u"W/m^2"
         return (ground_temperature + 290.0u"K") / 2
     end
