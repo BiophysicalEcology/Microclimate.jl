@@ -23,6 +23,55 @@ Allocate the buffers for the energy ODE.
 function allocate_soil_energy_balance end
 
 """
+    AbstractGroundTemperatureModel
+
+How the soil gives the ground temperature at the end of an hour for a surface boundary.
+Concrete models implement [`ground_temperature`](@ref):
+[`IntegratedGroundTemperature`](@ref), [`PredictedGroundTemperature`](@ref) and [`HourStartGroundTemperature`](@ref).
+"""
+abstract type AbstractGroundTemperatureModel end
+
+"""
+    HourStartGroundTemperature()
+
+Keeps the ground at its temperature at the start of the hour. The canopy is solved at that
+temperature, and the soil is integrated once, with the canopy's solved boundary.
+"""
+struct HourStartGroundTemperature <: AbstractGroundTemperatureModel end
+
+"""
+    IntegratedGroundTemperature()
+
+Integrates the whole soil column over the hour.
+"""
+struct IntegratedGroundTemperature <: AbstractGroundTemperatureModel end
+
+"""
+    PredictedGroundTemperature(; nodes=3, solver=NewtonRaphson(), tolerance=1e-3u"K")
+
+One backward Euler step over the hour for the surface node and the `nodes - 1` nodes below it.
+The deeper nodes keep their temperatures from the start of the hour. `solver`, a NonlinearSolve
+algorithm, solves the step to within `tolerance`.
+"""
+struct PredictedGroundTemperature{N,S,T} <: AbstractGroundTemperatureModel
+    solver::S
+    tolerance::T
+end
+function PredictedGroundTemperature(; nodes::Int=3, solver=NewtonRaphson(), tolerance=1e-3u"K")
+    nodes >= 1 || throw(ArgumentError("PredictedGroundTemperature needs at least 1 node, got $nodes"))
+    return PredictedGroundTemperature{nodes,typeof(solver),typeof(tolerance)}(solver, tolerance)
+end
+
+"""
+    ground_temperature(model::AbstractGroundTemperatureModel, solver, integrator, hour_state, hour_index; surface_node)
+
+The temperature of node `surface_node` at the end of hour `hour_index`, starting from
+`hour_state`. The surface boundary is the one in `integrator`'s inputs. `solver` is
+`model`'s own solver, from `allocate_ground_temperature`.
+"""
+function ground_temperature end
+
+"""
     GroundAirExchange(; air_temperature, air_relative_humidity, wind_speed, height,
         heat_conductance, vapor_conductance)
 
