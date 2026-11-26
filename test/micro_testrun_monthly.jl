@@ -187,23 +187,21 @@ end
     cache = init(problem)
     @test cache isa Microclimate.MicroCache
     out2 = solve!(cache)
-    @test out2.soil_temperature ≈ micro_out.soil_temperature rtol=1e-4
-    @test out2.profile.air_temperature ≈ micro_out.profile.air_temperature rtol=1e-4
-    @test out2.profile.relative_humidity ≈ micro_out.profile.relative_humidity rtol=1e-4
-    @test out2.profile.wind_speed ≈ micro_out.profile.wind_speed rtol=1e-4
-    @test out2.sky_temperature ≈ micro_out.sky_temperature rtol=1e-4
-    @test out2.global_radiation ≈ micro_out.global_radiation rtol=1e-4
+    @test out2.soil_temperature == micro_out.soil_temperature
+    @test out2.profile.air_temperature == micro_out.profile.air_temperature
+    @test out2.profile.relative_humidity == micro_out.profile.relative_humidity
+    @test out2.profile.wind_speed == micro_out.profile.wind_speed
+    @test out2.sky_temperature == micro_out.sky_temperature
+    @test out2.global_radiation == micro_out.global_radiation
 end
 
-# Test reinit!/solve! reuse (ODE integrator carries internal step-size state,
-# so results are close but not bit-identical across reinitializations)
 @testset "reinit! and re-solve!" begin
     cache = init(problem)
     solve!(cache)
     reinit!(cache, inputs)
     out3 = solve!(cache)
-    @test out3.soil_temperature ≈ micro_out.soil_temperature rtol=1e-3
-    @test out3.profile.air_temperature ≈ micro_out.profile.air_temperature rtol=1e-3
+    @test out3.soil_temperature == micro_out.soil_temperature
+    @test out3.profile.air_temperature == micro_out.profile.air_temperature
 end
 
 # Visual comparisons — run manually (not in CI)

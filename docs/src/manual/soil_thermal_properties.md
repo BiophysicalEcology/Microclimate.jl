@@ -27,7 +27,19 @@ Q_{cond} = -k_{so} \left.\frac{\delta T}{\delta z}\right|_{z_0} = Q_{solar} + Q_
 depth node, the deepest pinned at the deep soil temperature as a Dirichlet boundary
 condition. The system is handed to any [SciML](https://sciml.ai/) ODE solver
 (`Tsit5()` by default, configurable via `ode_solver`), with `ode_kwargs` controlling
-solver tolerances. For a given node ``i``, the discretized right-hand side is
+solver tolerances. Choosing a solver trades accuracy for speed. An implicit solver with long
+steps is much faster, which matters most under a canopy, where the soil is solved many times
+each hour:
+
+```julia
+using ADTypes: AutoFiniteDiff
+using OrdinaryDiffEqSDIRK: ImplicitEuler
+
+SoilHeatTransport1D(; ode_solver=ImplicitEuler(; autodiff=AutoFiniteDiff()),
+    ode_kwargs=(; adaptive=false, dt=60u"minute"))
+```
+
+For a given node ``i``, the discretized right-hand side is
 
 ```math
 \frac{dT_i}{dt} = \frac{K_{i-1}(T_{i-1}-T_i) + K_i(T_{i+1}-T_i)}{C_i},
