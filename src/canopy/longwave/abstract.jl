@@ -1,8 +1,8 @@
 """
     AbstractCanopyLongwaveModel
 
-Longwave exchange through canopy layers: [`LayeredLongwaveExchange`](@ref) or
-[`LayeredRadiosityExchange`](@ref).
+Longwave exchange through canopy layers: [`LayeredLongwaveExchange`](@ref),
+[`LayeredRadiosityExchange`](@ref) or [`BlackBodyLongwaveExchange`](@ref).
 """
 abstract type AbstractCanopyLongwaveModel end
 

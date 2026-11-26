@@ -1,6 +1,7 @@
 using Microclimate
 using Microclimate: calc_obukhov_length, monin_obukhov_iteration, ObukhovLength, InverseObukhovLength, stability_parameter_at_height,
-    momentum_stability_correction, heat_stability_correction, heat_gradient_stability_factor, calc_air_volumetric_heat_capacity, atmospheric_surface_profile!, allocate_profile, dry_air_properties
+    momentum_stability_correction, heat_stability_correction, heat_gradient_stability_factor, calc_air_volumetric_heat_capacity, atmospheric_surface_profile!, allocate_profile, dry_air_properties,
+    bulk_richardson_stability_parameter
 using Unitful
 using Test
 
@@ -100,6 +101,20 @@ end
     for L in (10.0u"m", 1.0u"m", 0.1u"m", 0.01u"m", 0.0001u"m")
         @test 1.0 <= heat_gradient_stability_factor(model, stability_parameter_for(L)) <= 10.0
     end
+end
+
+@testset "$(pair_name(model)) bulk_richardson_stability_parameter inverts the bulk Richardson number" for model in stability_pairs
+    height = 0.5u"m"
+    roughness_length = 0.01u"m"
+    neutral_log = log(height / roughness_length)
+    bulk_richardson(ζ) = ζ * (neutral_log - heat_stability_correction(model, ζ) + heat_stability_correction(model, ζ * roughness_length / height)) /
+        (neutral_log - momentum_stability_correction(model, ζ) + momentum_stability_correction(model, ζ * roughness_length / height))^2
+    for richardson_number in (-2.0, -0.3, -0.01, 0.01, 0.1)
+        ζ = bulk_richardson_stability_parameter(model, richardson_number, height, roughness_length)
+        @test bulk_richardson(ζ) ≈ richardson_number rtol = 1e-6
+    end
+    # Near neutral ζ ≈ Ri·ln(z/z₀), not the gradient relation's ζ ≈ Ri
+    @test bulk_richardson_stability_parameter(model, 1e-4, height, roughness_length) ≈ 1e-4 * neutral_log rtol = 1e-2
 end
 
 @testset "$(nameof(typeof(f))): Φ_h is the heat gradient of ψ_h, 1 - ζ dψ_h/dζ" for f in

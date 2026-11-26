@@ -53,7 +53,8 @@ end
 
 @testset "every air profile, ground turbulence and ground sublayer model solves" begin
     for ground_sublayer_model in (StantonGroundSublayer(), NoGroundSublayer()),
-            ground_turbulence_model in (ProfileGroundTurbulence(), GroundTurbulence()),
+            ground_turbulence_model in (ProfileGroundTurbulence(), GroundTurbulence(),
+                GroundTurbulence(; stability=LouisGroundRichardson()), GroundTurbulence(; stability=CanopyObukhovLength())),
             air_profile_model in (RaupachLTheoryAirProfile(; ground_turbulence_model, ground_sublayer_model),
                 KTheoryAirProfile(; ground_turbulence_model, ground_sublayer_model))
         model = Microclimate.example_multilayer_canopy(; canopy_height, plant_area_index, air_profile_model)

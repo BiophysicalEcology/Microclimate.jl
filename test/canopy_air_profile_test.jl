@@ -99,3 +99,35 @@ end
     @test issorted(result.air_temperature[peak:end]; rev = true)
 end
 
+@testset "GroundTurbulence: stability corrections to the ground's log law" begin
+    turbulence_resistance(stability; friction_velocity = 0.3u"m/s", lowest_wind_speed = 0.5u"m/s",
+        inverse_obukhov_length = 0.0u"m^-1", ground_temperature = T) =
+        ground_turbulence(GroundTurbulence(; stability), nothing, KTheoryAirProfile(), boundary_layer_model;
+            friction_velocity, inverse_obukhov_length, plant_area_index, lowest_wind_speed, lowest_layer_height = 0.1u"m",
+            lowest_air_temperature = T, ground_temperature, ground_roughness_length = 0.01u"m").resistance
+    richardsons = (GroundRichardson(), LouisGroundRichardson())
+    for stability in (richardsons..., CanopyObukhovLength())
+        @test turbulence_resistance(stability; friction_velocity = 1.0u"m/s") < turbulence_resistance(stability)
+    end
+    # The canopy's stability, not the ground's own temperature difference
+    canopy_obukhov = CanopyObukhovLength()
+    @test turbulence_resistance(canopy_obukhov; inverse_obukhov_length = -0.1u"m^-1") < turbulence_resistance(canopy_obukhov) <
+          turbulence_resistance(canopy_obukhov; inverse_obukhov_length = 0.1u"m^-1")
+    @test turbulence_resistance(canopy_obukhov; ground_temperature = T + 5.0u"K") ≈ turbulence_resistance(canopy_obukhov)
+    for stability in richardsons
+        # Free convection keeps the ground coupled in calm air
+        @test isfinite(turbulence_resistance(stability; friction_velocity = 0.0u"m/s", lowest_wind_speed = 0.0u"m/s"))
+        # The Richardson number takes the mean wind: more wind, less stability correction
+        @test turbulence_resistance(stability; ground_temperature = T - 5.0u"K", lowest_wind_speed = 2.0u"m/s") <
+              turbulence_resistance(stability; ground_temperature = T - 5.0u"K")
+        # A warm ground under cooler air is more strongly coupled; a cold one less
+        @test turbulence_resistance(stability; ground_temperature = T + 5.0u"K") < turbulence_resistance(stability) <
+              turbulence_resistance(stability; ground_temperature = T - 5.0u"K")
+    end
+    # Louis (1979) has no critical Richardson number, and its slope runs smoothly through neutral
+    resistances = [ustrip(u"s/m", turbulence_resistance(LouisGroundRichardson(); ground_temperature = T - ΔT * u"K"))
+        for ΔT in -1.0:0.01:2.0]
+    slopes = diff(resistances)
+    @test all(>(0), slopes)
+    @test maximum(abs, diff(slopes)) < 0.1 * maximum(slopes)
+end

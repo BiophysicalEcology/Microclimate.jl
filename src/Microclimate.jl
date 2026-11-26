@@ -51,11 +51,12 @@ export AbstractSnowModel, NoSnow, SnowModel, SnowState
 export AbstractCanopyModel, NoCanopy, MultilayerCanopy, plant_area_index_from_density
 export example_multilayer_canopy
 export AbstractCanopyShortwaveModel, TwoStreamRadiation
-export AbstractCanopyLongwaveModel, LayeredLongwaveExchange, LayeredRadiosityExchange
+export AbstractCanopyLongwaveModel, LayeredLongwaveExchange, LayeredRadiosityExchange, BlackBodyLongwaveExchange
 export AbstractCanopyWindModel, MixingLengthCanopyWindAttenuation, ExponentialCanopyWindAttenuation
 export AbstractCanopyAirProfileModel, KTheoryAirProfile, RaupachLTheoryAirProfile
 export AbstractGroundSublayerModel, StantonGroundSublayer, NoGroundSublayer
 export AbstractGroundTurbulenceModel, ProfileGroundTurbulence, GroundTurbulence
+export AbstractGroundStability, GroundRichardson, LouisGroundRichardson, CanopyObukhovLength
 export AbstractRaupachFormulation, ExactRaupachFormulation, BulkRaupachFormulation
 export AbstractRoughnessSublayer, NoRoughnessSublayer, CanopyTopMixingEnhancement
 export AbstractCanopyInterceptionModel, NoInterception, LayeredRainInterception, VerticalRainInterception
@@ -272,6 +273,7 @@ include("canopy/shortwave/two_stream.jl")
 include("canopy/longwave/abstract.jl")
 include("canopy/longwave/layered.jl")
 include("canopy/longwave/radiosity.jl")
+include("canopy/longwave/black_body.jl")
 
 include("canopy/wind/abstract.jl")
 include("canopy/wind/mixinglength.jl")
