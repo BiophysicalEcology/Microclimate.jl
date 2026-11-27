@@ -98,16 +98,18 @@ end
 n_canopy_layers(model::MultilayerCanopy, heights) = count(h -> h <= model.canopy_height, heights)
 
 """
-    allocate_canopy(model::MultilayerCanopy, heights, boundary_layer_model; site, vapour_pressure_equation, soil_hydraulic_model)
+    allocate_canopy(model::MultilayerCanopy, heights, boundary_layer_model; ground_roughness_length, vapour_pressure_equation, soil_hydraulic_model)
 
 Buffers per sub-model: `shortwave`, `longwave`, `wind`, `air_profile`,
 `interception`, `leaf` and `convergence`.
 """
-function allocate_canopy(model::MultilayerCanopy, heights, boundary_layer_model; site, vapour_pressure_equation, soil_hydraulic_model)
+function allocate_canopy(model::MultilayerCanopy, heights, boundary_layer_model; ground_roughness_length, vapour_pressure_equation, soil_hydraulic_model)
     n_layers = n_canopy_layers(model, heights)
     lowest_layer_height = minimum(h for h in heights if h <= model.canopy_height)
-    lowest_layer_height > site.roughness_height || throw(ArgumentError(
-        "lowest canopy layer height ($lowest_layer_height) must be above the ground roughness height ($(site.roughness_height))"))
+    if lowest_layer_height <= ground_roughness_length
+        throw(ArgumentError(
+            "lowest canopy layer height ($lowest_layer_height) must be above the ground roughness length ($ground_roughness_length)"))
+    end
     canopy_projection_ratio = model.leaf_parameters.canopy_projection_ratio
     wind = allocate_wind(model.wind_model, model.canopy_height, model.plant_area_index, boundary_layer_model, heights, n_layers)
 
@@ -134,7 +136,7 @@ function allocate_canopy(model::MultilayerCanopy, heights, boundary_layer_model;
         has_previous_hour = Ref(false),
     )
     convergence = allocate_canopy_convergence(model.convergence_model, buffers, model, boundary_layer_model;
-        site, vapour_pressure_equation, soil_hydraulic_model)
+        vapour_pressure_equation, soil_hydraulic_model)
     return (; buffers..., convergence)
 end
 
@@ -205,7 +207,7 @@ initial_ground_overrides(::MultilayerCanopy) = (;
 canopy_leaf_area_index(model::MultilayerCanopy) = sum(model.plant_area_index) * (1 - model.woody_area_fraction)
 
 # Canopy-displaced log-profile origin for solve_air!'s output.profile.
-canopy_profile_origin(::MultilayerCanopy, buffers, site, boundary_layer_model) =
+canopy_profile_origin(::MultilayerCanopy, buffers, ground_roughness_length, boundary_layer_model) =
     (; displacement_height = buffers.wind.displacement_height, roughness_length = buffers.wind.roughness_length,
         thermal_roughness_model = buffers.wind.thermal_roughness_model,
         temperature_anchor_height = buffers.wind.canopy_height)

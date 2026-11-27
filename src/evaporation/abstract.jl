@@ -15,7 +15,7 @@ and g/s/m². Variants supply the parameterisation.
 function evaporation end
 
 """
-    surface_convection_evaporation(model; boundary_layer_model, surface_temperature, air_temperature, wind_speed, relative_humidity, atmospheric_pressure, roughness_height, reference_height, zenith_angle, soil_wetness, vapour_pressure_equation, obukhov_length_prev)
+    surface_convection_evaporation(model; boundary_layer_model, surface_temperature, air_temperature, wind_speed, relative_humidity, atmospheric_pressure, roughness_length, reference_height, zenith_angle, soil_wetness, vapour_pressure_equation, obukhov_length_prev)
 
 Combined entry point: picks stable vs unstable atmosphere, computes friction
 velocity + convective heat flux via Monin–Obukhov, then calls `evaporation`

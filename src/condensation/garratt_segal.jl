@@ -25,14 +25,14 @@ struct GarrattSegalCondensation <: AbstractCondensationModel end
 function condensation_energy_flux(::GarrattSegalCondensation;
     evaporation_model, surface_temperature, air_temperature, relative_humidity, atmospheric_pressure,
     convective_heat_flux, mass_transfer_coefficient, actual_soil_wetness,
-    wind_speed, reference_height, roughness_height, karman_constant,
+    wind_speed, reference_height, roughness_length, karman_constant,
     sky_temperature, surface_emissivity, absorbed_solar_radiation,
     vapour_pressure_equation=GoffGratch(), kw...,
 )
     T_g = surface_temperature
     T_1 = air_temperature
     z = reference_height
-    z0 = roughness_height
+    z0 = roughness_length
     ū = wind_speed
 
     surface_saturated_air = wet_air_properties(u"K"(T_g), 1.0, atmospheric_pressure; vapour_pressure_equation)

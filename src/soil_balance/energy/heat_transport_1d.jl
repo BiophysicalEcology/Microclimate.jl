@@ -203,10 +203,10 @@ function soil_energy_balance(model::SoilHeatTransport1D,
     snow_model = p.model.snow
     (; depths, environment_instant, soil_wetness, longwave_sky, albedo, surface_emissivity, Q_freeze) = hourly
     maximum_surface_temperature = model.maximum_surface_temperature
-    (; shade) = environment_instant
+    (; shade, ground_roughness_length) = environment_instant
     # Get environmental data at time t
     (; atmospheric_pressure, air_temperature, wind_speed, zenith_angle, solar_radiation, cloud_cover, relative_humidity, slope_zenith_angle, diffuse_fraction) = interpolate_forcings(forcing, t)
-    (; roughness_height, slope) = site
+    (; slope) = site
 
     reference_height = last(heights)
     absorptivity = 1.0 - albedo
@@ -268,7 +268,7 @@ function soil_energy_balance(model::SoilHeatTransport1D,
     # surface relative humidity (RHSURF), not wetness. PTWET comes from COMMON block.
     convection_ctx = (; boundary_layer_model,
         surface_temperature, air_temperature, wind_speed, relative_humidity,
-        atmospheric_pressure, roughness_height, reference_height,
+        atmospheric_pressure, roughness_length=ground_roughness_length, reference_height,
         zenith_angle, soil_wetness, vapour_pressure_equation,
         obukhov_length_prev=buffers.soil_energy_balance.obukhov_length_prev,
     )

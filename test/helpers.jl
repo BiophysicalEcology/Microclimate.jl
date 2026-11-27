@@ -10,7 +10,7 @@ end
 environment_instant(; zenith_angle = 30.0u"°", reference_temperature = 293.0u"K") = (;
     atmospheric_pressure = 101325.0u"Pa", reference_temperature, reference_wind_speed = 2.0u"m/s",
     reference_humidity = 0.5, zenith_angle, cloud_emissivity = 1.0, cloud_cover = 0.3,
-    surface_emissivity = 0.95, shade = 0.0,
+    surface_emissivity = 0.95, shade = 0.0, ground_roughness_length = 0.004u"m",
 )
 
 ground_surface(; temperature = 290.0u"K", emissivity = 0.95, reflectance = 0.15, wetness = 0.5) =

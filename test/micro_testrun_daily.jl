@@ -50,9 +50,6 @@ site = Site(;
     aspect = microinput[:azmuth] * 1.0u"°",
     horizon_angles = (DataFrame(CSV.File("$testdir/data/init_daily/hori.csv"))[:, 2]) * 1.0u"°",
     sky_view_fraction = 1.0,
-    albedo = DataFrame(CSV.File("$testdir/data/init_daily/REFLS.csv"))[1, 2] * 1.0,
-    roughness_height = microinput[:RUF] * 1.0u"m",
-    atmospheric_pressure = atmospheric_pressure(microinput[:ALTT] * 1.0u"m"),
 )
 boundary_layer_model = MoninObukhov(; karman_constant=0.4, unstable_stability=NicheMapRUnstable(), stable_stability=NicheMapRStable())
 
@@ -110,6 +107,8 @@ environment_daily = DailyTimeseries(;
     rainfall = ((DataFrame(CSV.File("$testdir/data/init_daily/rain.csv"))[1:days2do, 2] * 1.0))u"kg/m^2",
     deep_soil_temperature = (DataFrame(CSV.File("$testdir/data/init_daily/tannulrun.csv"))[1:days2do, 2] * 1.0)u"°C", # daily deep soil temperatures
     leaf_area_index = (DataFrame(CSV.File("$testdir/data/init_daily/LAI.csv"))[:, 2] * 1.0u"Mg/m^3"), # leaf area indices per day
+    albedo = DataFrame(CSV.File("$testdir/data/init_daily/REFLS.csv"))[1:days2do, 2] * 1.0,
+    ground_roughness_length = fill(microinput[:RUF] * 1.0u"m", days2do),
 )
 
 environment_hourly = HourlyTimeseries(;

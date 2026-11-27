@@ -61,13 +61,13 @@ end
 function surface_convection_evaporation(model::BulkTransferEvaporation;
     boundary_layer_model,
     surface_temperature, air_temperature, wind_speed, relative_humidity,
-    atmospheric_pressure, roughness_height, reference_height,
+    atmospheric_pressure, roughness_length, reference_height,
     zenith_angle=90.0u"°", soil_wetness, vapour_pressure_equation=GoffGratch(),
     obukhov_length_prev=nothing,
 )
     (; convective_heat_flux, temperature_difference) = surface_fluxes(boundary_layer_model;
         surface_temperature, air_temperature, wind_speed, zenith_angle,
-        roughness_height, reference_height, atmospheric_pressure, obukhov_length_prev,
+        roughness_length, reference_height, atmospheric_pressure, obukhov_length_prev,
     )
     heat_transfer_coefficient = calc_heat_transfer_coefficient(convective_heat_flux, temperature_difference)
     wet_air_out = wet_air_properties(u"K"(air_temperature), relative_humidity, atmospheric_pressure; vapour_pressure_equation)

@@ -30,18 +30,18 @@ The resistance of the air on the ground surface, as `(; heat, vapor)`.
 ## Keywords
 
 - friction_velocity: at the ground, from the [`AbstractGroundTurbulenceModel`](@ref)
-- roughness_height: of the ground
+- ground_roughness_length: of the ground
 - lowest_air_temperature
 - ground_temperature
 - atmospheric_pressure
 """
 function ground_sublayer_resistance end
 function ground_sublayer_resistance(::StantonGroundSublayer;
-    friction_velocity, roughness_height, lowest_air_temperature, ground_temperature, atmospheric_pressure,
+    friction_velocity, ground_roughness_length, lowest_air_temperature, ground_temperature, atmospheric_pressure,
 )
     kinematic_viscosity = dry_air_properties((lowest_air_temperature + ground_temperature) / 2,
         atmospheric_pressure).kinematic_viscosity
-    heat = 1 / (friction_velocity * sublayer_stanton(roughness_height, friction_velocity, kinematic_viscosity))
+    heat = 1 / (friction_velocity * sublayer_stanton(ground_roughness_length, friction_velocity, kinematic_viscosity))
     return (; heat, vapor=heat / LEWIS_HEAT_TO_MASS_RATIO)
 end
 ground_sublayer_resistance(::NoGroundSublayer; kw...) = (; heat=0.0u"s/m", vapor=0.0u"s/m")

@@ -26,11 +26,12 @@ function example_soil_profile(depths=DEFAULT_DEPTHS;
     mineral_heat_capacity = 870.0u"J/kg/K",
     hydraulics = example_campbell_hydraulic_profile(depths),
 )
+    per_depth(value) = value isa AbstractVector ? value : fill(value, length(depths))
     SoilProfile(;
-        bulk_density = bulk_density isa AbstractVector ? bulk_density : fill(bulk_density, length(depths)),
-        mineral_density = mineral_density isa AbstractVector ? mineral_density : fill(mineral_density, length(depths)),
-        mineral_conductivity = mineral_conductivity isa AbstractVector ? mineral_conductivity : fill(mineral_conductivity, length(depths)),
-        mineral_heat_capacity = mineral_heat_capacity isa AbstractVector ? mineral_heat_capacity : fill(mineral_heat_capacity, length(depths)),
+        bulk_density = per_depth(bulk_density),
+        mineral_density = per_depth(mineral_density),
+        mineral_conductivity = per_depth(mineral_conductivity),
+        mineral_heat_capacity = per_depth(mineral_heat_capacity),
         hydraulics,
     )
 end

@@ -66,7 +66,7 @@ Fractional surface albedo changes with the age of the snowpack,
 
 where ``d_{snow}`` is the number of days since the last snowfall (floored at 0.3 to
 keep the logarithm finite), based on regressions fitted to Anderson (2006, fig. A4),
-reverting to the site's own albedo when snow is absent. Snow thermal conductivity, by
+reverting to the daily ground albedo when snow is absent. Snow thermal conductivity, by
 default, follows a cubic polynomial in density (Aggarwal 2009):
 
 ```math
