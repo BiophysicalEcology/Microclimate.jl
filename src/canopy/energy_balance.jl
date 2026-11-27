@@ -9,12 +9,13 @@ const CANOPY_TIMESTEP = 1.0u"hr"
     CanopyEnergyBalanceInputs(model::MultilayerCanopy; environment_instant, zenith_angle,
                                direct_horizontal_irradiance, diffuse_horizontal_irradiance,
                                ground_reflectance, ground_temperature, ground_emissivity,
-                               ground_relative_humidity, canopy_source_temperature, rainfall=0.0u"kg/m^2",
+                               ground_wetness, canopy_source_temperature, rainfall=0.0u"kg/m^2",
                                leaf_water_potential=model.leaf_parameters.leaf_water_potential)
 
-Hourly forcing and lagged state for [`canopy_energy_balance!`](@ref).
+Hourly forcing and lagged state for [`canopy_energy_balance!`](@ref). `ground_wetness` is the
+wet fraction of the soil surface, which evaporates as the soil's own evaporation does.
 """
-struct CanopyEnergyBalanceInputs{EI,ZA,DHI,DFI,GR,GT,GE,GRH,CST,RF,LWP}
+struct CanopyEnergyBalanceInputs{EI,ZA,DHI,DFI,GR,GT,GE,GW,CST,RF,LWP}
     environment_instant::EI
     zenith_angle::ZA
     direct_horizontal_irradiance::DHI
@@ -22,7 +23,7 @@ struct CanopyEnergyBalanceInputs{EI,ZA,DHI,DFI,GR,GT,GE,GRH,CST,RF,LWP}
     ground_reflectance::GR
     ground_temperature::GT
     ground_emissivity::GE
-    ground_relative_humidity::GRH
+    ground_wetness::GW
     canopy_source_temperature::CST
     rainfall::RF
     leaf_water_potential::LWP
@@ -30,12 +31,12 @@ end
 
 function CanopyEnergyBalanceInputs(model::MultilayerCanopy;
     environment_instant, zenith_angle, direct_horizontal_irradiance, diffuse_horizontal_irradiance,
-    ground_reflectance, ground_temperature, ground_emissivity, ground_relative_humidity, canopy_source_temperature,
+    ground_reflectance, ground_temperature, ground_emissivity, ground_wetness, canopy_source_temperature,
     rainfall=0.0u"kg/m^2", leaf_water_potential=model.leaf_parameters.leaf_water_potential,
 )
     CanopyEnergyBalanceInputs(environment_instant, zenith_angle, direct_horizontal_irradiance,
         diffuse_horizontal_irradiance, ground_reflectance, ground_temperature, ground_emissivity,
-        ground_relative_humidity, canopy_source_temperature, rainfall, leaf_water_potential)
+        ground_wetness, canopy_source_temperature, rainfall, leaf_water_potential)
 end
 
 # Bounds the wet-surface share of evaporation_mass_flux to what storage can
@@ -95,7 +96,7 @@ function canopy_energy_balance!(buffers, model::MultilayerCanopy, boundary_layer
     ground_temperature_after_hour::G=keep_ground_temperature,
 ) where G
     (; environment_instant, zenith_angle, direct_horizontal_irradiance, diffuse_horizontal_irradiance,
-       ground_reflectance, ground_temperature, ground_emissivity, ground_relative_humidity, canopy_source_temperature,
+       ground_reflectance, ground_temperature, ground_emissivity, canopy_source_temperature,
        rainfall, leaf_water_potential) = inputs
 
     leaf_temperature = buffers.leaf.leaf_temperature

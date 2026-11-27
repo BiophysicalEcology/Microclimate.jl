@@ -21,5 +21,5 @@ canopy_inputs(model; zenith_angle = 30.0u"°", reference_temperature = 293.0u"K"
         environment_instant = environment_instant(; zenith_angle, reference_temperature), zenith_angle,
         direct_horizontal_irradiance, diffuse_horizontal_irradiance,
         ground_reflectance = 0.15, ground_temperature, ground_emissivity = 0.95,
-        ground_relative_humidity = 0.5, canopy_source_temperature, kw...,
+        ground_wetness = 0.5, canopy_source_temperature, kw...,
     )
