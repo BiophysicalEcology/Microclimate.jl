@@ -194,7 +194,6 @@ function soil_energy_balance(model::SoilHeatTransport1D,
     # Get environmental data at time t
     (; atmospheric_pressure, air_temperature, wind_speed, zenith_angle, solar_radiation, cloud_cover, relative_humidity, slope_zenith_angle, diffuse_fraction) = interpolate_forcings(forcing, t)
     (; roughness_height, slope) = site
-    (; karman_constant, dyer_constant) = boundary_layer_model
 
     reference_height = last(heights)
     absorptivity = 1.0 - albedo

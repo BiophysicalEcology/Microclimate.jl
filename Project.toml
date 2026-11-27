@@ -6,6 +6,7 @@ authors = ["m.kearney@unimelb.edu.au", "rafaelschouten@gmail.com"]
 [deps]
 BiologicalScaling = "726553fe-cdfb-47ef-9d36-6d238d32ce3c"
 BiophysicalGeometry = "06c61620-4f66-4020-a018-07befe374221"
+BracketingNonlinearSolve = "70df07ce-3d50-431d-a3e7-ca6ddb60ac1e"
 CommonSolve = "38540f10-b2f7-11e9-35d8-d573e4eb0ff2"
 ConstructionBase = "187b0558-2788-49d3-abe0-74a17ed4e7c9"
 Dates = "ade2ca70-3891-5945-98fb-dc099432e06a"
@@ -43,6 +44,7 @@ MicroclimateMakieExt = "Makie"
 [compat]
 Aqua = "0.8"
 BiophysicalGeometry = "0.1"
+BracketingNonlinearSolve = "1"
 CSV = "0.10"
 CommonSolve = "0.2.6"
 ConstructionBase = "1"
