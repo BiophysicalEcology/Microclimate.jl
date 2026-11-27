@@ -50,7 +50,7 @@ export AbstractSnowModel, NoSnow, SnowModel, SnowState
 export AbstractCanopyModel, NoCanopy, MultilayerCanopy, plant_area_index_from_density
 export example_multilayer_canopy
 export AbstractCanopyShortwaveModel, TwoStreamRadiation
-export AbstractCanopyLongwaveModel, LayeredLongwaveExchange, AllPairsLongwaveExchange, LayeredRadiosityExchange
+export AbstractCanopyLongwaveModel, LayeredLongwaveExchange, LayeredRadiosityExchange
 export AbstractCanopyWindModel, MixingLengthCanopyWindAttenuation, ExponentialCanopyWindAttenuation
 export AbstractCanopyAirProfileModel, KTheoryAirProfile, RaupachLTheoryAirProfile
 export AbstractRaupachFormulation, ExactRaupachFormulation, BulkRaupachFormulation
@@ -98,6 +98,7 @@ export AbstractSunshineFractionModel, Angstrom
 
 # Longwave budget algorithms
 export AbstractLongwaveModel, ViewFactorLongwave
+export AbstractGroundLongwaveAbsorption, EmissivityAbsorption, FullAbsorption
 
 # Shortwave budget algorithms
 export AbstractShortwaveModel, AngstromMaxwellShortwave
@@ -255,7 +256,6 @@ include("canopy/shortwave/two_stream.jl")
 
 include("canopy/longwave/abstract.jl")
 include("canopy/longwave/layered.jl")
-include("canopy/longwave/all_pairs.jl")
 include("canopy/longwave/radiosity.jl")
 
 include("canopy/wind/abstract.jl")

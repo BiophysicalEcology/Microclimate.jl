@@ -67,8 +67,10 @@ function canopy_leaf_area_index end
     canopy_shortwave!(buffers, model; zenith_angle, direct_horizontal_irradiance,
                        diffuse_horizontal_irradiance, ground_reflectance)
 
-Shortwave absorbed by each layer, written to `buffers`. Returns
+Shortwave absorbed by each layer, written to `buffers`. Returns at least
 `(; ground_absorbed_shortwave, net_absorbed_shortwave)`; the net value includes the ground.
+[`TwoStreamRadiation`](@ref) also returns `ground_direct_shortwave` and `ground_diffuse_shortwave`,
+which the soil takes.
 """
 function canopy_shortwave! end
 
@@ -88,13 +90,22 @@ boundary value down through the layers. Stability is iterated unless
 function canopy_wind_profile! end
 
 """
-    canopy_longwave!(buffers, model; leaf_temperature, ground_temperature, ground_emissivity,
-                      site, environment_instant, vapour_pressure_equation)
+    canopy_longwave!(buffers, model; leaf_temperature, ground_temperature, ground_emissivity, incoming_longwave)
 
 Longwave absorbed by each layer, written to `buffers`. Returns
 `(; ground_absorbed_longwave, net_absorbed_longwave)`; the net value includes the ground.
 """
 function canopy_longwave! end
+
+"""
+    canopy_incoming_longwave(model; site, environment_instant, vapour_pressure_equation)
+
+Sky longwave arriving at the canopy top for the hour, from the longwave
+model's `atmospheric_radiation_model` ([`precompute_longwave_sky`](@ref),
+`shade=0`). Independent of canopy state, so computed once per hour and passed
+to [`canopy_longwave!`](@ref).
+"""
+function canopy_incoming_longwave end
 
 """
     canopy_layer_geometry(plant_area_index, n_layers)

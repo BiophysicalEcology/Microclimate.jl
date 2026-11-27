@@ -70,13 +70,14 @@ canopy_convergence_error(convergence_model, return_code, inputs) =
     canopy_hour_conditions(buffers, model::MultilayerCanopy, boundary_layer_model, inputs::CanopyEnergyBalanceInputs,
         initial_wind; site, vapour_pressure_equation, soil_hydraulic_model)
 
-What stays fixed while the canopy is solved for one hour, as `(; dry_conductance, stability_limits,
-canopy_top_air_temperature, canopy_top_relative_humidity)`. The canopy-top values are those when the
-hour starts. `stability_limits` are the most unstable and most stable inverse Obukhov lengths allowed,
-`(; unstable, stable)`.
+What stays fixed while the canopy is solved for one hour, as `(; incoming_longwave, dry_conductance,
+stability_limits, canopy_top_air_temperature, canopy_top_relative_humidity)`. The canopy-top values are
+those when the hour starts. `stability_limits` are the most unstable and most stable inverse Obukhov
+lengths allowed, `(; unstable, stable)`.
 """
 canopy_hour_conditions(buffers, model::MultilayerCanopy, boundary_layer_model, inputs::CanopyEnergyBalanceInputs,
     initial_wind; site, vapour_pressure_equation, soil_hydraulic_model) = (;
+    incoming_longwave=canopy_incoming_longwave(model; site, inputs.environment_instant, vapour_pressure_equation),
     dry_conductance=stomatal_conductance(model.stomatal_model, inputs.zenith_angle, inputs.leaf_water_potential,
         soil_hydraulic_model),
     stability_limits=canopy_stability_limits(buffers, boundary_layer_model),

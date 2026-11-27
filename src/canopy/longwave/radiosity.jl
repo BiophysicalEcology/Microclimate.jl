@@ -48,14 +48,15 @@ end
 """
     canopy_longwave!(buffers, model::LayeredRadiosityExchange, leaf_emissivity;
                       leaf_temperature, ground_temperature, ground_emissivity,
-                      site, environment_instant, vapour_pressure_equation=GoffGratch())
+                      incoming_longwave)
 
 Layer index 1 is canopy top. Returns `(; ground_absorbed_longwave,
-net_absorbed_longwave)`.
+net_absorbed_longwave)`. The ground absorbs `ground_emissivity` of the longwave
+reaching it, reflects the rest, and emits with `ground_emissivity`.
 """
 function canopy_longwave!(buffers, model::LayeredRadiosityExchange, leaf_emissivity;
     leaf_temperature, ground_temperature, ground_emissivity,
-    site, environment_instant, vapour_pressure_equation=GoffGratch(),
+    incoming_longwave,
 )
     (; layer_transmission, backscatter_fraction, boundary_downward_longwave, boundary_upward_longwave,
        absorbed_longwave, layer_reflectance, layer_effective_transmission, layer_emission_source,
@@ -81,9 +82,6 @@ function canopy_longwave!(buffers, model::LayeredRadiosityExchange, leaf_emissiv
     Γ = response_gain
     S = effective_source
 
-    sky = precompute_longwave_sky(model.atmospheric_radiation_model;
-        site, environment_instant, vapour_pressure_equation, shade=0.0)
-
     # optical coefficients of each canopy layer
     for i in 1:n
         interceptedᵢ = 1.0 - τ_d[i]
@@ -107,7 +105,7 @@ function canopy_longwave!(buffers, model::LayeredRadiosityExchange, leaf_emissiv
 
     # sky-to-ground recovery sweep
 
-    L_d[1] = sky.incoming_longwave
+    L_d[1] = incoming_longwave
     for i in 1:n
         L_u[i] = R[i] * L_d[i] + S[i]
         L_d[i + 1] = Γ[i] * (τ[i] * L_d[i] + ρ[i] * S[i + 1] + E[i])

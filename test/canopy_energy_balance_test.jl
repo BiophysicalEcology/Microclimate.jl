@@ -37,6 +37,30 @@ end
     @test closed_balance ≈ Rabs * 1.0u"m^2" atol=1e-9u"W"
 end
 
+@testset "leaf_heat_balance: water on a leaf evaporates however dry the leaf" begin
+    # A drought-stressed leaf (tissue at 50% humidity) in 80% humidity air: the tissue takes up vapour, its surface water evaporates
+    humid_air = Microclimate.wet_air_properties(air_temperature, 0.8, atmospheric_pressure).vapour_density
+    evaporation(wet_fraction) = Microclimate.leaf_heat_balance(air_temperature, 0.0u"W/m^2", air_temperature, humid_air,
+        wind_speed, atmospheric_pressure, leaf_emissivity, stomatal_conductance, -9.4e7u"J/kg", body, 1.0u"m^2";
+        wet_fraction).evaporation
+    @test evaporation(0.0).transpiration_mass_flow < 0.0u"g/s"
+    @test iszero(evaporation(0.0).wet_surface_mass_flow)
+    @test evaporation(1.0).transpiration_mass_flow > 0.0u"g/s"
+    @test evaporation(1.0).wet_surface_mass_flow == evaporation(1.0).transpiration_mass_flow
+    half = evaporation(0.5)
+    @test half.transpiration_mass_flow ≈ (evaporation(0.0).transpiration_mass_flow + evaporation(1.0).transpiration_mass_flow) / 2
+end
+
+@testset "leaf_heat_balance: a dry leaf collects dew as surface water" begin
+    # A leaf 3 K below air at 95% humidity is below the dew point
+    humid_air = Microclimate.wet_air_properties(air_temperature, 0.95, atmospheric_pressure).vapour_density
+    dry_leaf = Microclimate.leaf_heat_balance(air_temperature - 3.0u"K", 0.0u"W/m^2", air_temperature, humid_air,
+        wind_speed, atmospheric_pressure, leaf_emissivity, stomatal_conductance, leaf_water_potential, body, 1.0u"m^2";
+        wet_fraction=0.0).evaporation
+    @test dry_leaf.wet_surface_mass_flow < 0.0u"g/s"
+    @test dry_leaf.wet_surface_mass_flow == dry_leaf.transpiration_mass_flow
+end
+
 @testset "leaf_heat_balance is smooth through T_leaf = T_air" begin
     net(Tleaf, convection_model) = Microclimate.leaf_heat_balance(Tleaf, 300.0u"W/m^2", air_temperature, air_vapor_density,
         0.1u"m/s", atmospheric_pressure, leaf_emissivity, stomatal_conductance, leaf_water_potential, body, 1.0u"m^2",

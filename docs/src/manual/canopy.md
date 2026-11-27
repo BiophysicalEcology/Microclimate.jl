@@ -20,12 +20,11 @@ The literature sources for each sub-model are as follows:
 - **Shortwave**: [`TwoStreamRadiation`](@ref) is the classic Dickinson (1983)/
   Sellers (1985) two-stream scheme, with Campbell's (1990) ellipsoidal leaf-angle
   extinction coefficient.
-- **Longwave**: three interchangeable schemes.
+- **Longwave**: two interchangeable schemes.
   [`LayeredRadiosityExchange`](@ref) (the `MultilayerCanopy` default) is an implicit
   reflecting two-stream-slab scheme following Flerchinger's **SHAW** model.
   [`LayeredLongwaveExchange`](@ref) is a from-scratch sequential, non-reflecting
-  gap-fraction cascade. [`AllPairsLongwaveExchange`](@ref) is a direct **port** of
-  micropoint's `twostreamvegCpp`/microclimlearn's `longwavebelow`.
+  gap-fraction cascade.
 - **Wind attenuation**: [`ExponentialCanopyWindAttenuation`](@ref) (exponential decay
   with cumulative plant area index from canopy top, after Nikolov and Zeller 2003) and
   [`MixingLengthCanopyWindAttenuation`](@ref) (a shelter-factor alternative).

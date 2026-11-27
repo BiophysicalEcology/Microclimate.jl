@@ -25,8 +25,8 @@ end
 Campbell's (1990) ellipsoidal-leaf-angle-distribution extinction coefficient
 for a direct beam at `zenith_angle`, for a canopy where the ratio of horizontal
 to vertical projections of canopy elements is `canopy_projection_ratio`.
-A ratio of 1 (spherical), 0 (vertical leaves) and `Inf` (horizontal leaves) are
-closed-form special cases.
+A ratio of 1 (spherical) and `Inf` (horizontal leaves) are closed-form special
+cases.
 
 # References
 - Campbell, G. S. (1990). Derivation of an angle density function for
@@ -35,16 +35,12 @@ closed-form special cases.
 """
 function ellipsoidal_extinction_coefficient(zenith_angle, canopy_projection_ratio)
     χ = canopy_projection_ratio
-    polynomial_approx = 1.774 * (χ + 1.182)^(-0.733)
-    Λ = χ + polynomial_approx # Campbell eq. 14
     if isinf(χ)
         return 1.0
     elseif χ == 1.0
         return 1.0 / (2.0 * cos(zenith_angle))
-    elseif χ == 0.0
-        # limit of the general formula below as χ->0
-        return tan(zenith_angle) / polynomial_approx
     else
+        Λ = χ + 1.774 * (χ + 1.182)^(-0.733) # Campbell eq. 14
         return sqrt(χ^2 + tan(zenith_angle)^2) / Λ
     end
 end
@@ -85,9 +81,10 @@ function leaf_optics(plant_area_index, canopy_projection_ratio, leaf_reflectance
 
     ω = ρₗ + τₗ # scattered fraction
     α = 1.0 - ω # absorbed fraction
+    scattering_asymmetry = ρₗ - τₗ
 
     g = leaf_orientation_factor(canopy_projection_ratio)
-    β = 0.5 * (ω + g * (ρₗ - τₗ)) # effective diffuse backscatter coefficient
+    β = 0.5 * (ω + g * scattering_asymmetry) # effective diffuse backscatter coefficient
     λ = sqrt(α^2 + 2.0 * α * β) # diffuse attenuation rate
 
     τ = exp(-λ * PAI) # whole-canopy diffuse transmission
@@ -95,7 +92,7 @@ function leaf_optics(plant_area_index, canopy_projection_ratio, leaf_reflectance
     return (;
         leaf_scattering_coefficient = ω,
         leaf_absorptance = α,
-        leaf_scattering_asymmetry = ρₗ - τₗ,
+        leaf_scattering_asymmetry = scattering_asymmetry,
         leaf_orientation_factor = g,
         diffuse_backscatter_coefficient = β,
         diffuse_attenuation_rate = λ,
@@ -120,7 +117,7 @@ function diffuse_two_stream_optics(leaf_optics, ground_reflectance)
     β = diffuse_backscatter_coefficient
     λ = diffuse_attenuation_rate
     τ = diffuse_transmission_factor
-    ρg = max(ground_reflectance, 1.0e-4) # the two-stream solution divides by ground reflectance
+    ρg = ground_reflectance
 
     Bᵤ = α + β * (1.0 - 1.0 / ρg)
     B_d = α + β * (1.0 - ρg)
@@ -149,18 +146,13 @@ end
 
 """
     direct_two_stream_optics(plant_area_index, direct_beam_extinction_coefficient,
-                              ground_reflectance, leaf_optics, diffuse_optics)
+                              ground_reflectance, direct_ground_reflectance, leaf_optics, diffuse_optics)
 
 Two-stream coefficients for the *direct* beam as a function of solar zenith angle.
-
-Note: the classic Dickinson/Sellers direct-beam particular solution doesn't
-exactly satisfy the ground boundary condition (reflected upward flux =
-`ground_reflectance` × downward flux at canopy base) — max relative error
-in whole-canopy energy conservation is ~6e-4 across a zenith/reflectance
-sweep (the diffuse-only solution closes to floating-point precision); see
-`test/canopy_shortwave_test.jl`.
 """
-function direct_two_stream_optics(plant_area_index, direct_beam_extinction_coefficient, ground_reflectance, leaf_optics, diffuse_optics)
+function direct_two_stream_optics(plant_area_index, direct_beam_extinction_coefficient, ground_reflectance,
+    direct_ground_reflectance, leaf_optics, diffuse_optics,
+)
     (; leaf_scattering_coefficient, leaf_absorptance, leaf_scattering_asymmetry, leaf_orientation_factor,
        diffuse_backscatter_coefficient, diffuse_attenuation_rate, diffuse_transmission_factor) = leaf_optics
     (; upward_diffuse_boundary_term, downward_diffuse_boundary_term,
@@ -170,6 +162,7 @@ function direct_two_stream_optics(plant_area_index, direct_beam_extinction_coeff
     PAI = plant_area_index
     kᵦ = direct_beam_extinction_coefficient
     ρg = ground_reflectance
+    ρgᵦ = direct_ground_reflectance
 
     ω = leaf_scattering_coefficient
     α = leaf_absorptance
@@ -196,19 +189,20 @@ function direct_two_stream_optics(plant_area_index, direct_beam_extinction_coeff
     # Direct-beam transmission through the complete canopy.
     Tᵦ = exp(-kᵦ * PAI)
 
-    # Reflected direct-beam particular-solution coefficient.
+    # Reflected direct-beam particular-solution coefficient. At the ground the upward flux is
+    # ρg times the downward diffuse plus ρgᵦ times the unscattered beam (Sellers 1985).
     Cᵣ = -Sᵤ * (α + β - kᵦ) - β * S_d
     V₁ = Sᵤ - Cᵣ * (α + β + kᵦ) / Δ
-    V₂ = Sᵤ - β - (Cᵣ / Δ) * (Bᵤ + kᵦ)
+    V₂ = Sᵤ - β * ρgᵦ / ρg - (Cᵣ / Δ) * (Bᵤ + kᵦ)
 
     # Coefficients of the decaying and growing reflected solutions.
     R_decay = ((V₁ / τ) * (Bᵤ - λ) - (α + β - λ) * Tᵦ * V₂) / Nᵤ
     R_growth = -((V₁ * τ) * (Bᵤ + λ) - (α + β + λ) * Tᵦ * V₂) / Nᵤ
 
     # Transmitted direct-beam particular-solution coefficient.
-    Cₜ = S_d * (α + β + kᵦ) - β * Sᵤ
+    Cₜ = S_d * (α + β + kᵦ) + β * Sᵤ
 
-    V₃ = (S_d + β * ρg - (Cₜ / -Δ) * (B_d - kᵦ)) * Tᵦ
+    V₃ = (S_d + β * ρgᵦ - (Cₜ / -Δ) * (B_d - kᵦ)) * Tᵦ
 
     # Coefficients of the decaying and growing transmitted solutions.
     T_decay = -((Cₜ / (-Δ * τ)) * (B_d + λ) + V₃) / N_d
@@ -224,6 +218,20 @@ function direct_two_stream_optics(plant_area_index, direct_beam_extinction_coeff
         direct_transmitted_growth_coefficient = T_growth,
     )
 end
+
+"""
+    GroundShortwaveReflectance(; direct, diffuse)
+
+The ground's shortwave reflectance for the unscattered beam, `direct`, and for diffuse light, `diffuse`.
+"""
+@kwdef struct GroundShortwaveReflectance{D,F}
+    direct::D
+    diffuse::F
+end
+
+# A single reflectance is the same for the beam and diffuse light
+GroundShortwaveReflectance(reflectance::Real) = GroundShortwaveReflectance(reflectance, reflectance)
+GroundShortwaveReflectance(reflectance::GroundShortwaveReflectance) = reflectance
 
 """
     two_stream_flux_fractions(leaf_optics, diffuse_optics, direct_optics,
@@ -315,7 +323,10 @@ function canopy_shortwave!(buffers, radiation_model::TwoStreamRadiation, plant_a
 
     PAI = sum(plant_area_index)
     θ = zenith_angle
-    ρg = ground_reflectance
+    # The two-stream solution divides by the diffuse ground reflectance
+    reflectance = GroundShortwaveReflectance(ground_reflectance)
+    ρg = max(reflectance.diffuse, 1.0e-4)
+    direct_ground_reflectance = reflectance.direct
     Idir = direct_horizontal_irradiance
     Idiff = diffuse_horizontal_irradiance
     Iglobal = Idir + Idiff
@@ -337,6 +348,8 @@ function canopy_shortwave!(buffers, radiation_model::TwoStreamRadiation, plant_a
         return (;
             ground_absorbed_shortwave = 0.0u"W/m^2",
             net_absorbed_shortwave = 0.0u"W/m^2",
+            ground_direct_shortwave = 0.0u"W/m^2",
+            ground_diffuse_shortwave = 0.0u"W/m^2",
         )
     end
 
@@ -350,7 +363,7 @@ function canopy_shortwave!(buffers, radiation_model::TwoStreamRadiation, plant_a
     # convert direct horizontal irradiance to irradiance normal to the beam
     beam_normal_irradiance = has_direct_beam ? Idir / cos(θ) : 0.0u"W/m^2"
 
-    direct = direct_two_stream_optics(PAI, kᵦ, ρg, leaf, diffuse)
+    direct = direct_two_stream_optics(PAI, kᵦ, ρg, direct_ground_reflectance, leaf, diffuse)
 
     # total downward and upward shortwave fluxes at every layer
     for i in eachindex(layer_plant_area_index_boundaries)
@@ -372,8 +385,11 @@ function canopy_shortwave!(buffers, radiation_model::TwoStreamRadiation, plant_a
         sunlit_fraction[i] = fractions.direct_transmission
     end
 
-    ground_absorbed_shortwave = (1.0 - ρg) * F_d[n_layers + 1]
+    # The unscattered beam reaches the ground as direct shortwave, the rest as diffuse
+    ground_direct_shortwave = Idir * exp(-kᵦ * PAI)
+    ground_diffuse_shortwave = F_d[n_layers + 1] - ground_direct_shortwave
+    ground_absorbed_shortwave = (1.0 - ρg) * F_d[n_layers + 1] - (direct_ground_reflectance - ρg) * ground_direct_shortwave
     net_absorbed_shortwave = Iglobal - F_u[1]
 
-    return (; ground_absorbed_shortwave, net_absorbed_shortwave)
+    return (; ground_absorbed_shortwave, net_absorbed_shortwave, ground_direct_shortwave, ground_diffuse_shortwave)
 end
