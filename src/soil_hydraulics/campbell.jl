@@ -201,8 +201,6 @@ function infiltration_step!(buffers, soil_hydraulic_model::CampbellSoilHydraulic
     frozen_conductivity = soil_hydraulic_model.frozen_conductivity
 
     # Constants
-    water_molar_mass = 0.01801528u"kg/mol"
-    water_density = 1000.0u"kg/m^3"
     vapor_diffusivity = 2.4e-5u"m^2/s"
 
     # Convert to negative absolute value; fill positions 1..num_layers, extend boundary
@@ -435,11 +433,12 @@ end
         environment_instant, soil_temperatures, pool, standing_dew, standing_frost,
         condensation_model=GarrattSegalCondensation(), evaporation_model=BulkTransferEvaporation(),
         vapour_pressure_equation=GoffGratch(), snow_present=false, actual_soil_wetness,
-        sky_temperature, absorbed_solar_radiation, reference_height, ground_air=nothing)
+        sky_temperature, absorbed_solar_radiation, reference_height, ground_air=nothing, litter_vapor=no_litter_vapor())
 
 One-hour ground-surface dew/frost step, independent of soil moisture
 strategy (runs once per hour regardless of moisture-solver sub-stepping).
-Under a canopy, `ground_air` is the canopy's [`GroundAirExchange`](@ref).
+Under a canopy, `ground_air` is the canopy's [`GroundAirExchange`](@ref). Under litter, the soil
+exchanges vapor through the litter's [`LitterVapor`](@ref) network, `litter_vapor`.
 Frost is its own reservoir shielding the returned `evaporation_potential`;
 dew merges into `pool` with its standing balance tracked in parallel; frost
 melts into dew above 0°C.
@@ -456,7 +455,7 @@ function ground_condensation_step!(buffers, boundary_layer_model;
     vapour_pressure_equation=GoffGratch(),
     snow_present=false,
     actual_soil_wetness,
-    sky_temperature, absorbed_solar_radiation, reference_height, ground_air=nothing,
+    sky_temperature, absorbed_solar_radiation, reference_height, ground_air=nothing, litter_vapor=no_litter_vapor(),
 )
     atmospheric_pressure = environment_instant.atmospheric_pressure
     surface_temperature = soil_temperatures[1]
@@ -488,6 +487,12 @@ function ground_condensation_step!(buffers, boundary_layer_model;
         local_relative_humidity = clamp(relative_humidity, 0.0, 0.99)
         convective_heat_flux = ground_air.heat_conductance * (air_temperature - surface_temperature)
         mass_transfer_coefficient = ground_air.vapor_conductance
+    end
+    # The soil evaporates into the air through any litter over it; bare soil keeps the humidity above
+    if !iszero(litter_vapor.covered_fraction)
+        (; mass_transfer_coefficient, relative_humidity) = soil_vapor_exchange(litter_vapor, mass_transfer_coefficient,
+            air_temperature, relative_humidity, atmospheric_pressure, vapour_pressure_equation)
+        local_relative_humidity = clamp(relative_humidity, 0.0, 0.99)
     end
 
     # Drives evaporation_potential below, independent of condensation_model.

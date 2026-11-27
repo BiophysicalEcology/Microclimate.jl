@@ -79,6 +79,22 @@ end
     @test size(output.canopy.boundary_upward_longwave) == (size(output.soil_temperature, 1), 0)
 end
 
+@testset "Upward radiation leaves the top of the surface" begin
+    # Unshaded bare ground reflects its albedo of the shortwave and the rest of its emissivity of the longwave
+    bare_problem = example_microclimate_problem(; heights)
+    bare = solve(bare_problem)
+    emissivity = 0.96
+    sky_longwave = Microclimate.σ .* bare.sky_temperature .^ 4
+    ground_emission = Microclimate.σ .* emissivity .* bare.soil_temperature[:, 1] .^ 4
+    @test bare.upward_longwave ≈ (1 - emissivity) .* sky_longwave .+ ground_emission
+    @test bare.upward_shortwave ≈ only(unique(bare_problem.inputs.environment_daily.albedo)) .* bare.global_radiation
+
+    canopy_model = example_multilayer_canopy(; canopy_height = 1.0u"m", plant_area_index = 2.0)
+    canopy = solve(example_microclimate_problem(; heights, canopy_model))
+    @test canopy.upward_shortwave == canopy.canopy.boundary_upward_shortwave[:, 1]
+    @test canopy.upward_longwave == canopy.canopy.boundary_upward_longwave[:, 1]
+end
+
 @testset "MultilayerCanopy changes soil temperature relative to NoCanopy" begin
     canopy_model = example_multilayer_canopy(; canopy_height = 1.0u"m", plant_area_index = 3.0)
     canopy_output = solve(example_microclimate_problem(; heights, canopy_model))

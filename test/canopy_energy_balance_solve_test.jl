@@ -113,6 +113,7 @@ end
     gappy_inputs = canopy_inputs(gappy_model)
     gappy_result, gappy = solve_canopy(gappy_model, gappy_inputs)
     hour_conditions = Microclimate.canopy_hour_conditions(gappy, gappy_model, boundary_layer_model, gappy_inputs, gappy_result;
+        ground_shortwave = gappy_result,
         site, vapour_pressure_equation = Microclimate.GoffGratch(), soil_hydraulic_model = nothing)
     (; state, step, next_state) = gappy.convergence
     (; ground_temperature, inverse_obukhov_length) = Microclimate.unpack_canopy_state!(gappy, state)
@@ -132,10 +133,10 @@ end
     buffers = allocate(model)
     calls = Ref(0)
     # A soil that moves halfway towards 290 K, whatever the canopy does
-    function ground_temperature_after_hour(ground_temperature, ground_shortwave, ground_absorbed_longwave, ground_air)
+    function ground_temperature_after_hour(ground_temperature, ground_shortwave, ground_downward_longwave, ground_air)
         calls[] += 1
         @test ground_shortwave.ground_direct_shortwave + ground_shortwave.ground_diffuse_shortwave > 0.0u"W/m^2"
-        @test ground_absorbed_longwave > 0.0u"W/m^2"
+        @test ground_downward_longwave > 0.0u"W/m^2"
         @test ground_air.heat_conductance > 0.0u"W/m^2/K"
         return (ground_temperature + 290.0u"K") / 2
     end
@@ -223,7 +224,8 @@ end
     result = canopy_energy_balance!(buffers, model, limited_boundary_layer, inputs; site)
     (; state, hour_best_state, residual, tolerances) = buffers.convergence
     solved_stability = state[end]
-    hour_conditions = Microclimate.canopy_hour_conditions(buffers, model, limited_boundary_layer, inputs, result; keywords...)
+    hour_conditions = Microclimate.canopy_hour_conditions(buffers, model, limited_boundary_layer, inputs, result;
+        ground_shortwave = result, keywords...)
     # Start from the solved hour with the stability well off, as if the passes had stalled
     copyto!(hour_best_state, state)
     hour_best_state[end] = solved_stability + 0.05
@@ -241,7 +243,7 @@ end
     @test bracket_with(AndersonCanopyConvergence(; bracketing_maxiters = 1)) == Microclimate.SciMLBase.ReturnCode.Failure
     # Without finite limits there is nothing to bracket
     @test Microclimate.bracket_stability!(buffers, model, boundary_layer_model, inputs,
-        Microclimate.canopy_hour_conditions(buffers, model, boundary_layer_model, inputs, result; keywords...),
+        Microclimate.canopy_hour_conditions(buffers, model, boundary_layer_model, inputs, result; ground_shortwave = result, keywords...),
         model.convergence_model; site, vapour_pressure_equation = Microclimate.GoffGratch(),
         ground_temperature_after_hour = (ground_temperature, _, _) -> ground_temperature).return_code ==
         Microclimate.SciMLBase.ReturnCode.Failure

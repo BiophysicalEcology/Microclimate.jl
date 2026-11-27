@@ -146,6 +146,9 @@ canopy_shortwave!(buffers, model::MultilayerCanopy; kw...) =
 canopy_longwave!(buffers, model::MultilayerCanopy; kw...) =
     canopy_longwave!(buffers.longwave, model.longwave_model, model.leaf_parameters.leaf_emissivity; kw...)
 
+ground_longwave_conditions(buffers, model::MultilayerCanopy; kw...) =
+    ground_longwave_conditions(buffers.longwave, model.longwave_model, model.leaf_parameters.leaf_emissivity; kw...)
+
 canopy_incoming_longwave(model::MultilayerCanopy; kw...) = canopy_incoming_longwave(model.longwave_model; kw...)
 
 canopy_wind_profile!(buffers, model::MultilayerCanopy, boundary_layer_model; kw...) =
@@ -199,7 +202,7 @@ function reset_canopy_starting_state!(::MultilayerCanopy, buffers)
 end
 
 initial_ground_overrides(::MultilayerCanopy) = (;
-    ground_shortwave_transmission = (; direct = 0.0, diffuse = 0.0), ground_absorbed_longwave = 0.0u"W/m^2",
+    ground_shortwave_transmission = (; direct = 0.0, diffuse = 0.0), ground_downward_longwave = 0.0u"W/m^2",
     ground_air = GroundAirExchange(; air_temperature = 288.0u"K", air_relative_humidity = 0.5,
         wind_speed = 0.0u"m/s", height = 1.0u"m", heat_conductance = 0.0u"W/m^2/K", vapor_conductance = 0.0u"m/s"),
 )

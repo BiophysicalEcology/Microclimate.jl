@@ -34,7 +34,6 @@ substep_count(mode::DynamicSoilMoisture) = round(Int, uconvert(NoUnits, 1u"hr" /
 get_soil_wetness(::DynamicSoilMoisture, environment_instant, soil_wetness) = soil_wetness
 
 function initialise_soil_humidity!(::DynamicSoilMoisture, output, soil_water_potential, soil_temperatures)
-    water_molar_mass = 0.01801528u"kg/mol"
     output.soil_humidity[1, :] = clamp.(exp.(water_molar_mass .* soil_water_potential ./ (R .* soil_temperatures)), 0, 1)
 end
 function reset_day_soil_moisture!(::DynamicSoilMoisture, soil_moisture, initial_soil_moisture, day_index)

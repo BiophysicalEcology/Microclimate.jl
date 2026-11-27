@@ -97,7 +97,7 @@ function canopy_fixed_point!(next_state, step, state, buffers, model, boundary_l
     leaf_water_potential = ustrip(u"J/kg", inputs.leaf_water_potential)
     # A canopy that overshot has no ground residual either, and the soil isn't run for it
     ground_temperature_residual = if isfinite(canopy_scaled_residual(residual, tolerances))
-        ground_temperature - ground_temperature_after_hour(ground_temperature, result.longwave_result.ground_absorbed_longwave, result.ground_air)
+        ground_temperature - ground_temperature_after_hour(ground_temperature, result.longwave_result.ground_downward_longwave, result.ground_air)
     else
         NaN * ground_temperature
     end
@@ -150,13 +150,14 @@ end
 
 function converge_canopy!(buffers, model::MultilayerCanopy, boundary_layer_model, inputs::CanopyEnergyBalanceInputs,
     initial_wind, convergence_model::AndersonCanopyConvergence; site, vapour_pressure_equation, soil_hydraulic_model,
-    ground_temperature_after_hour::G,
+    ground_shortwave, ground_temperature_after_hour::G,
 ) where G
     (; state, best_state, hour_best_state, residual) = buffers.convergence
     (; on_failure) = convergence_model
     keywords = (; site, vapour_pressure_equation, soil_hydraulic_model)
     pass_keywords = (; site, vapour_pressure_equation, ground_temperature_after_hour)
-    hour_conditions = canopy_hour_conditions(buffers, model, boundary_layer_model, inputs, initial_wind; keywords...)
+    hour_conditions = canopy_hour_conditions(buffers, model, boundary_layer_model, inputs, initial_wind;
+        ground_shortwave, keywords...)
     canopy_starting_state!(state, buffers, inputs, initial_wind, hour_conditions.stability_limits; vapour_pressure_equation)
 
     passes = anderson_passes!(buffers, model, boundary_layer_model, inputs, hour_conditions, convergence_model;

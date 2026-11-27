@@ -50,8 +50,7 @@ end
                       leaf_temperature, ground, incoming_longwave)
 
 Layer index 1 is canopy top. Returns `(; ground_absorbed_longwave,
-net_absorbed_longwave)`. The ground absorbs its emissivity of the longwave
-reaching it, reflects the rest, and emits with its emissivity.
+net_absorbed_longwave, ground_downward_longwave)`.
 """
 function canopy_longwave!(buffers, model::LayeredRadiosityExchange, leaf_emissivity;
     leaf_temperature, ground, incoming_longwave,
@@ -63,10 +62,7 @@ function canopy_longwave!(buffers, model::LayeredRadiosityExchange, leaf_emissiv
     n = length(layer_transmission)
 
     τ_d = layer_transmission
-    f_d = backscatter_fraction
     εₗ = leaf_emissivity
-    εₛ = ground.emissivity
-    Tₛ = u"K"(ground.temperature)
 
     ρ = layer_reflectance
     τ = layer_effective_transmission
@@ -80,21 +76,11 @@ function canopy_longwave!(buffers, model::LayeredRadiosityExchange, leaf_emissiv
     Γ = response_gain
     S = effective_source
 
-    # optical coefficients of each canopy layer
-    for i in 1:n
-        interceptedᵢ = 1.0 - τ_d[i]
-        scatteredᵢ = (1.0 - εₗ) * interceptedᵢ
-        αᵢ = εₗ * interceptedᵢ
-        Tₗᵢ = u"K"(leaf_temperature[i]) # not broadcasting this avoids allocation
-        ρ[i] = f_d * scatteredᵢ
-        τ[i] = τ_d[i] + (1.0 - f_d) * scatteredᵢ
-        E[i] = αᵢ * σ * Tₗᵢ^4
-    end
+    radiosity_layer_optics!(buffers, leaf_emissivity, leaf_temperature)
 
     # ground-to-sky sweep
-    Eₛ = εₛ * σ * Tₛ^4  # ground emission 
-    R[n + 1] = 1.0 - εₛ
-    S[n + 1] = Eₛ
+    R[n + 1] = ground.longwave_reflectance
+    S[n + 1] = ground.emitted_longwave
     for i in n:-1:1
         Γ[i] = inv(1.0 - ρ[i] * R[i + 1])
         R[i] = ρ[i] + τ[i]^2 * Γ[i] * R[i + 1]
@@ -115,8 +101,40 @@ function canopy_longwave!(buffers, model::LayeredRadiosityExchange, leaf_emissiv
         A[i] = εₗ * (1.0 - τ_d[i]) * (L_d[i] + L_u[i + 1])
     end
 
-    ground_absorbed_longwave = εₛ * L_d[n + 1]
+    ground_absorbed_longwave = (1.0 - ground.longwave_reflectance) * L_d[n + 1]
     net_absorbed_longwave = L_d[1] - L_u[1]
 
-    return (; ground_absorbed_longwave, net_absorbed_longwave)
+    return (; ground_absorbed_longwave, net_absorbed_longwave, ground_downward_longwave=L_d[n + 1])
+end
+
+# The reflectance, transmission and emission of each canopy layer
+function radiosity_layer_optics!(buffers, leaf_emissivity, leaf_temperature)
+    (; layer_transmission, backscatter_fraction, layer_reflectance, layer_effective_transmission, layer_emission_source) = buffers
+    for i in eachindex(layer_transmission)
+        intercepted = 1.0 - layer_transmission[i]
+        scattered = (1.0 - leaf_emissivity) * intercepted
+        layer_reflectance[i] = backscatter_fraction * scattered
+        layer_effective_transmission[i] = layer_transmission[i] + (1.0 - backscatter_fraction) * scattered
+        layer_emission_source[i] = leaf_emissivity * intercepted * σ * u"K"(leaf_temperature[i])^4
+    end
+    return buffers
+end
+
+# The canopy over a black ground that emits nothing sends down `downward_longwave`. Going down
+# from the sky, each layer adds to the reflectance the canopy shows the ground.
+function ground_longwave_conditions(buffers, model::LayeredRadiosityExchange, leaf_emissivity;
+    leaf_temperature, incoming_longwave,
+)
+    (; layer_reflectance, layer_effective_transmission, layer_emission_source) = radiosity_layer_optics!(buffers,
+        leaf_emissivity, leaf_temperature)
+    downward_longwave = incoming_longwave
+    # Seen from below, the canopy above layer i reflects `reflectance` of the upward longwave
+    reflectance = 0.0
+    for i in eachindex(layer_reflectance)
+        gain = inv(1.0 - layer_reflectance[i] * reflectance)
+        # Downward out of layer i, with no upward longwave from below it
+        downward_longwave = layer_effective_transmission[i] * gain * (downward_longwave + reflectance * layer_emission_source[i]) + layer_emission_source[i]
+        reflectance = layer_reflectance[i] + layer_effective_transmission[i]^2 * gain * reflectance
+    end
+    return (; downward_longwave, longwave_return_fraction=reflectance)
 end

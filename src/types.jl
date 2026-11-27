@@ -87,19 +87,21 @@ The soil column:
 end
 
 """
-    SurfaceModel(; evaporation_model=BulkTransferEvaporation(),
+    SurfaceModel(; litter_model=NoLitter(), evaporation_model=BulkTransferEvaporation(),
                    condensation_model=GarrattSegalCondensation(),
                    max_surface_pool=1.0e4u"kg/m^2")
 
-Exchange of water at the ground surface:
+The ground surface:
 
+- `litter_model::AbstractLitterModel` — plant litter over the soil (`NoLitter()` default)
 - `evaporation_model` — surface latent flux
 - `condensation_model::AbstractCondensationModel` — ground dew/frost formation
   (`GarrattSegalCondensation()` default, `BulkTransferCondensation()`, or
   `NoCondensation()` to switch it off)
 - `max_surface_pool` — maximum water held on the soil surface; water above it is removed as `runoff`
 """
-@kwdef struct SurfaceModel{EVM,CDM,MSP}
+@kwdef struct SurfaceModel{LM<:AbstractLitterModel,EVM,CDM,MSP}
+    litter_model::LM = NoLitter()
     evaporation_model::EVM = BulkTransferEvaporation()
     condensation_model::CDM = GarrattSegalCondensation()
     max_surface_pool::MSP = 1.0e4u"kg/m^2"

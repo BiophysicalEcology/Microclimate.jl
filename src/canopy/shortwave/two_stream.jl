@@ -323,10 +323,6 @@ function canopy_shortwave!(buffers, radiation_model::TwoStreamRadiation, plant_a
 
     PAI = sum(plant_area_index)
     θ = zenith_angle
-    # The two-stream solution divides by the diffuse ground reflectance
-    reflectance = GroundShortwaveReflectance(ground.reflectance)
-    ρg = max(reflectance.diffuse, 1.0e-4)
-    direct_ground_reflectance = reflectance.direct
     Idir = direct_horizontal_irradiance
     Idiff = diffuse_horizontal_irradiance
     Iglobal = Idir + Idiff
@@ -352,6 +348,11 @@ function canopy_shortwave!(buffers, radiation_model::TwoStreamRadiation, plant_a
             ground_diffuse_shortwave = 0.0u"W/m^2",
         )
     end
+
+    # The two-stream solution divides by the diffuse ground reflectance
+    reflectance = GroundShortwaveReflectance(ground_reflectance(ground, cos(θ)))
+    ρg = max(reflectance.diffuse, 1.0e-4)
+    direct_ground_reflectance = reflectance.direct
 
     # two-stream optical coefficients
     leaf = buffers.leaf_optics

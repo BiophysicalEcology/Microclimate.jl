@@ -111,6 +111,10 @@ export AbstractShortwaveModel, AngstromMaxwellShortwave
 
 # Surface evaporation models
 export AbstractEvaporationModel, BulkTransferEvaporation
+export AbstractLitterModel, NoLitter, LitterLayer
+export AbstractLitterMoisture, DryLitter, WetLitter
+export AbstractLitterConductance, ShawLitterConductance, AbstractLitterWind, ShawLitterWind
+export AbstractLitterRadiation, GapLitterRadiation, ShawLitterRadiation
 
 # Dew/frost condensation models
 export AbstractCondensationModel, NoCondensation, BulkTransferCondensation, GarrattSegalCondensation, MonteithLeafCondensation
@@ -241,6 +245,9 @@ include("soil_balance/freezing/latent_heat.jl")
 include("soil_balance/freezing/isothermal.jl")
 include("soil_balance/energy/abstract.jl")
 include("soil_balance/energy/heat_transport_1d.jl")
+
+include("litter/abstract.jl")
+include("litter/layer.jl")
 
 # Apparent heat capacity (latent-heat treatment near phase change; used by snow)
 include("apparent_heat_capacity/abstract.jl")

@@ -99,15 +99,18 @@ Hourly output of `solve`/`solve!`, one row per `(day, hour)` step. Key fields:
   per-depth soil state, matrices of `(nsteps, length(depths))`
 - `ground_surface_water`, `runoff`, `ground_dew`, `ground_frost` — surface
   water balance
+- `litter_water_content` — water per dry mass held by a [`WetLitter`](@ref) litter layer
 - `snow_depth`, `snow_density`, `snow_temperature`, `snow_fall` — snow state
   (`snow_temperature` is `(nsteps, 0)` when `snow_model = NoSnow()`)
 - `profile::AtmosphericProfile` — air temperature/wind/humidity at each of
   `MicroModel.atmosphere.heights`
+- `upward_shortwave`, `upward_longwave` — radiation leaving the top of the surface: the
+  canopy top under a canopy, else the ground
 - `canopy::CanopyOutput` — per-layer canopy diagnostics (zero-column when
   `canopy_model = NoCanopy()`)
 - `solar_radiation` — the underlying `SolarRadiation.jl` output `NamedTuple`
 """
-@kwdef struct MicroResult{P,AT,WS,RH,CC,GS,DF,SkT,SoT,SM,SWP,SH,STC,SPH,SBD,SW,RO,SR,Pr,SF,SD,SDN,SNT,GHF,CB,GDW,GFR,GSD,GSF}
+@kwdef struct MicroResult{P,AT,WS,RH,CC,GS,DF,SkT,SoT,SM,SWP,SH,STC,SPH,SBD,SW,RO,SR,Pr,SF,SD,SDN,SNT,GHF,USW,ULW,CB,GDW,GFR,GSD,GSF,LWC}
     pressure::P
     reference_temperature::AT
     reference_wind_speed::WS
@@ -132,11 +135,14 @@ Hourly output of `solve`/`solve!`, one row per `(day, hour)` step. Key fields:
     snow_density::SDN
     snow_temperature::SNT  # nsteps × n_snow matrix; size (nsteps, 0) when NoSnow
     ground_heat_flux::GHF  # nsteps Vector, W/m^2, Fourier's law between the top two soil nodes, downward-positive
+    upward_shortwave::USW  # nsteps Vector, W/m^2, leaving the top of the surface
+    upward_longwave::ULW   # nsteps Vector, W/m^2, leaving the top of the surface
     canopy::CB
     ground_dew::GDW            # nsteps Vector, kg/m^2, dew formed this step (⊆ ground_surface_water)
     ground_frost::GFR          # nsteps Vector, kg/m^2, frost formed this step
     ground_standing_dew::GSD   # nsteps Vector, kg/m^2, standing balance (⊆ ground_surface_water)
     ground_standing_frost::GSF # nsteps Vector, kg/m^2, standing balance (ice, not in ground_surface_water)
+    litter_water_content::LWC  # nsteps Vector, water per dry mass held by the litter (zero without WetLitter)
 end
 function MicroResult(nsteps::Int, num_nodes::Int, nheights::Int, solar_radiation::NamedTuple, n_snow::Int=0, n_canopy_layers::Int=0)
     return MicroResult(;
@@ -164,11 +170,14 @@ function MicroResult(nsteps::Int, num_nodes::Int, nheights::Int, solar_radiation
         snow_density = zeros(typeof(1.0u"g/cm^3"), nsteps),
         snow_temperature = zeros(typeof(1.0u"K"), nsteps, n_snow),
         ground_heat_flux = zeros(typeof(1.0u"W/m^2"), nsteps),
+        upward_shortwave = zeros(typeof(1.0u"W/m^2"), nsteps),
+        upward_longwave = zeros(typeof(1.0u"W/m^2"), nsteps),
         canopy = CanopyOutput(nsteps, n_canopy_layers),
         ground_dew = zeros(typeof(1.0u"kg/m^2"), nsteps),
         ground_frost = zeros(typeof(1.0u"kg/m^2"), nsteps),
         ground_standing_dew = zeros(typeof(1.0u"kg/m^2"), nsteps),
         ground_standing_frost = zeros(typeof(1.0u"kg/m^2"), nsteps),
+        litter_water_content = zeros(Float64, nsteps),
     )
 end
 

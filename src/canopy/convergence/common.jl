@@ -64,19 +64,21 @@ canopy_convergence_error(convergence_model, return_code, inputs) =
     error(nameof(typeof(convergence_model)), " did not converge: ", return_code,
         " (reference temperature ", inputs.environment_instant.reference_temperature,
         ", wind ", inputs.environment_instant.reference_wind_speed,
-        ", ground temperature ", inputs.ground.temperature, ", zenith angle ", inputs.zenith_angle, ")")
+        ", ground temperature ", inputs.ground_temperature, ", zenith angle ", inputs.zenith_angle, ")")
 
 """
     canopy_hour_conditions(buffers, model::MultilayerCanopy, boundary_layer_model, inputs::CanopyEnergyBalanceInputs,
-        initial_wind; site, vapour_pressure_equation, soil_hydraulic_model)
+        initial_wind; ground_shortwave, site, vapour_pressure_equation, soil_hydraulic_model)
 
 What stays fixed while the canopy is solved for one hour, as `(; incoming_longwave, dry_conductance,
-stability_limits, canopy_top_air_temperature, canopy_top_relative_humidity)`. The canopy-top values are
-those when the hour starts. `stability_limits` are the most unstable and most stable inverse Obukhov
-lengths allowed, `(; unstable, stable)`.
+stability_limits, canopy_top_air_temperature, canopy_top_relative_humidity, ground_direct_shortwave,
+ground_diffuse_shortwave)`. The canopy-top values are those when the hour starts. `stability_limits`
+are the most unstable and most stable inverse Obukhov lengths allowed, `(; unstable, stable)`. The
+shortwave reaching the ground comes from `ground_shortwave`, the hour's [`canopy_shortwave!`](@ref) result.
 """
 canopy_hour_conditions(buffers, model::MultilayerCanopy, boundary_layer_model, inputs::CanopyEnergyBalanceInputs,
-    initial_wind; site, vapour_pressure_equation, soil_hydraulic_model) = (;
+    initial_wind; ground_shortwave, site, vapour_pressure_equation, soil_hydraulic_model) = (;
+    ground_shortwave.ground_direct_shortwave, ground_shortwave.ground_diffuse_shortwave,
     incoming_longwave=canopy_incoming_longwave(model; site, inputs.environment_instant, vapour_pressure_equation),
     dry_conductance=stomatal_conductance(model.stomatal_model, inputs.zenith_angle, inputs.leaf_water_potential,
         soil_hydraulic_model),
@@ -95,7 +97,7 @@ function canopy_starting_state!(state, buffers, inputs::CanopyEnergyBalanceInput
 )
     air = buffers.air_profile
     return pack_canopy_state!(state, buffers.leaf.leaf_temperature, air.air_temperature, air.vapor_density,
-        inputs.ground.temperature, limit_inverse_obukhov_length(initial_wind.inverse_obukhov_length, stability_limits))
+        inputs.ground_temperature, limit_inverse_obukhov_length(initial_wind.inverse_obukhov_length, stability_limits))
 end
 
 """

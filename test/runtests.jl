@@ -25,6 +25,7 @@ using Microclimate, Test, SafeTestsets
 @safetestset "rainfall entry mode" begin include("rainfall_entry_mode.jl") end
 @safetestset "frozen infiltration" begin include("frozen_infiltration_test.jl") end
 @safetestset "pedotransfer" begin include("pedotransfer_test.jl") end
+@safetestset "litter" begin include("litter_test.jl") end
 @safetestset "monthly simulation" begin include("micro_testrun_monthly.jl") end
 @safetestset "monthly simulation with snow" begin include("micro_testrun_monthly_snow.jl") end
 @safetestset "soil freezing" begin include("soil_freezing_test.jl") end

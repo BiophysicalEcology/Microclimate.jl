@@ -67,10 +67,9 @@ function canopy_leaf_area_index end
     canopy_shortwave!(buffers, model; zenith_angle, direct_horizontal_irradiance,
                        diffuse_horizontal_irradiance, ground)
 
-Shortwave absorbed by each layer over the [`GroundSurface`](@ref) `ground`, written to `buffers`. Returns at least
-`(; ground_absorbed_shortwave, net_absorbed_shortwave)`; the net value includes the ground.
-[`TwoStreamRadiation`](@ref) also returns `ground_direct_shortwave` and `ground_diffuse_shortwave`,
-which the soil takes.
+Shortwave absorbed by each layer over the [`Ground`](@ref) `ground`, written to `buffers`. Returns
+`(; ground_absorbed_shortwave, net_absorbed_shortwave, ground_direct_shortwave, ground_diffuse_shortwave)`;
+the net value includes the ground, and the last two reach it.
 """
 function canopy_shortwave! end
 
@@ -93,9 +92,18 @@ function canopy_wind_profile! end
     canopy_longwave!(buffers, model; leaf_temperature, ground, incoming_longwave)
 
 Longwave absorbed by each layer over the [`GroundSurface`](@ref) `ground`, written to `buffers`. Returns
-`(; ground_absorbed_longwave, net_absorbed_longwave)`; the net value includes the ground.
+`(; ground_absorbed_longwave, net_absorbed_longwave, ground_downward_longwave)`; the net value
+includes the ground, and the last reaches it.
 """
 function canopy_longwave! end
+
+"""
+    ground_longwave_conditions(buffers, model; leaf_temperature, incoming_longwave)
+
+The longwave reaching the ground when the ground sends none up, and the fraction of what it
+sends up that comes back down, as `(; downward_longwave, longwave_return_fraction)`.
+"""
+function ground_longwave_conditions end
 
 """
     canopy_incoming_longwave(model; site, environment_instant, vapour_pressure_equation)
