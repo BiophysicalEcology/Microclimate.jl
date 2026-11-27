@@ -64,7 +64,7 @@ canopy_convergence_error(convergence_model, return_code, inputs) =
     error(nameof(typeof(convergence_model)), " did not converge: ", return_code,
         " (reference temperature ", inputs.environment_instant.reference_temperature,
         ", wind ", inputs.environment_instant.reference_wind_speed,
-        ", ground temperature ", inputs.ground_temperature, ", zenith angle ", inputs.zenith_angle, ")")
+        ", ground temperature ", inputs.ground.temperature, ", zenith angle ", inputs.zenith_angle, ")")
 
 """
     canopy_hour_conditions(buffers, model::MultilayerCanopy, boundary_layer_model, inputs::CanopyEnergyBalanceInputs,
@@ -95,7 +95,7 @@ function canopy_starting_state!(state, buffers, inputs::CanopyEnergyBalanceInput
 )
     air = buffers.air_profile
     return pack_canopy_state!(state, buffers.leaf.leaf_temperature, air.air_temperature, air.vapor_density,
-        inputs.ground_temperature, limit_inverse_obukhov_length(initial_wind.inverse_obukhov_length, stability_limits))
+        inputs.ground.temperature, limit_inverse_obukhov_length(initial_wind.inverse_obukhov_length, stability_limits))
 end
 
 """
@@ -142,6 +142,5 @@ function canopy_solution!(residual, state, buffers, model::MultilayerCanopy, bou
             water_potential=0.0u"J/kg").transpiration_mass_flow / GROUND_AREA
     end
 
-    return result.longwave_result, iterations, result.canopy_top_air_temperature,
-        result.canopy_top_relative_humidity, result.friction_velocity, result.inverse_obukhov_length
+    return (; result..., iterations)
 end

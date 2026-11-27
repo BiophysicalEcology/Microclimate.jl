@@ -95,7 +95,7 @@ function canopy_fixed_point!(next_state, step, state, buffers, model, boundary_l
     leaf_water_potential = ustrip(u"J/kg", inputs.leaf_water_potential)
     # A canopy that overshot has no ground residual either, and the soil isn't run for it
     ground_temperature_residual = if isfinite(canopy_scaled_residual(residual, tolerances))
-        ground_temperature - ground_temperature_after_hour(ground_temperature, result.longwave_result.ground_absorbed_longwave)
+        ground_temperature - ground_temperature_after_hour(ground_temperature, result.longwave_result.ground_absorbed_longwave, result.ground_air)
     else
         NaN * ground_temperature
     end

@@ -21,3 +21,38 @@ function soil_energy_balance end
 Allocate the buffers for the energy ODE.
 """
 function allocate_soil_energy_balance end
+
+"""
+    GroundAirExchange(; air_temperature, air_relative_humidity, wind_speed, height,
+        heat_conductance, vapor_conductance)
+
+The air at `height` just above the ground, and how the ground exchanges heat and water
+vapor with it. A canopy gives this to the soil, and the soil uses these conductances in place of its own surface exchange.
+
+- Sensible heat flux up from the ground = `heat_conductance * (ground temperature - air_temperature)`.
+- Water vapor flux up from the ground = `vapor_conductance * (ground vapor density - air vapor density)`.
+"""
+@kwdef struct GroundAirExchange{AT,RH,WS,H,HC,VC}
+    air_temperature::AT
+    air_relative_humidity::RH
+    wind_speed::WS
+    height::H
+    heat_conductance::HC
+    vapor_conductance::VC
+end
+
+"""
+    GroundSurface(; temperature, emissivity, reflectance, wetness)
+
+The ground surface a canopy sees: its temperature, longwave emissivity, shortwave
+reflectance and wetness. The reflectance is one number, or a [`GroundShortwaveReflectance`](@ref)
+for the unscattered beam and diffuse light. The `wetness` is the fraction of the surface that
+evaporates, as the soil's own evaporation takes it: water vapor flux up from the ground =
+`wetness * vapor_conductance * (saturated vapor density at the ground - air vapor density)`.
+"""
+@kwdef struct GroundSurface{T,E,R,W}
+    temperature::T
+    emissivity::E
+    reflectance::R
+    wetness::W
+end
