@@ -107,6 +107,9 @@ Sturm M, Taras B, Liston GE, Derksen C, Jonas T, Lea J (2010) Estimating snow wa
 equivalent using snow depth data and climate classes. *Journal of Hydrometeorology*
 11(6): 1380–1394. [doi:10.1175/2010JHM1202.1](https://doi.org/10.1175/2010JHM1202.1)
 
+Walker HF, Ni P (2011) Anderson acceleration for fixed-point iterations. *SIAM Journal on
+Numerical Analysis* 49(4): 1715–1735.
+
 Westermann S, Boike J, Langer M, Schuler TV, Etzelmüller B (2011) Modelling the
 impact of wintertime rain events on the thermal regime of permafrost. *The
 Cryosphere* 5: 945–959.

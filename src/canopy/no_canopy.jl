@@ -8,9 +8,11 @@ Reproduces existing behaviour bit-for-bit.
 """
 struct NoCanopy <: AbstractCanopyModel end
 
-allocate_canopy(::NoCanopy, heights, boundary_layer_model) = nothing
+allocate_canopy(::NoCanopy, heights, boundary_layer_model; kw...) = nothing
 
 reset_canopy_scratch!(::NoCanopy, buffers) = nothing
+
+reset_canopy_starting_state!(::NoCanopy, buffers) = nothing
 
 snapshot_canopy_water!(::NoCanopy, buffers) = nothing
 
