@@ -129,7 +129,8 @@ function apply_canopy_overrides(model::MultilayerCanopy, buffers, soil_hour!::S;
     canopy_result = canopy_energy_balance!(buffers, model, boundary_layer_model, canopy_inputs;
         site, vapour_pressure_equation, soil_hydraulic_model,
         ground_temperature_after_hour=(_, ground_shortwave, ground_absorbed_longwave, ground_air) ->
-            soil_hour!(boundary(ground_shortwave, ground_absorbed_longwave, ground_air)).ground_temperature)
+            soil_hour!(model.convergence_model.ground_temperature_model,
+                boundary(ground_shortwave, ground_absorbed_longwave, ground_air)))
     return (; boundary(canopy_result, canopy_result.ground_absorbed_longwave, canopy_result.ground_air)...,
         canopy_source_temperature = buffers.leaf.leaf_temperature[1], canopy_result)
 end
@@ -248,7 +249,7 @@ function CommonSolve.init(mp::MicroProblem)
         allocate_profile(boundary_layer_model, heights),
         allocate_profile(boundary_layer_model, heights),
         allocate_soil_energy_balance(soil_energy_model, num_ode_nodes),
-        allocate_soil_properties(zeros(num_ode_nodes), soil_properties_model, soil_profile),
+        allocate_soil_properties(zeros(num_soil_nodes), soil_properties_model, soil_profile),
         allocate_phase_transition(soil_energy_model.freezing_model, num_soil_nodes),
         allocate_soil_water_balance(soil_hydraulic_model, num_soil_nodes),
         snow_scratch,
@@ -297,7 +298,9 @@ function CommonSolve.init(mp::MicroProblem)
 
     state = MicroState(soil_moisture, ∑phase, similar(∑phase))
 
-    return MicroCache(mp, output, state, buffers, forcing, ode_integrator, Val(num_soil_nodes))
+    ground_temperature_solver = allocate_ground_temperature(canopy_model, ode_integrator, ode_state)
+
+    return MicroCache(mp, output, state, buffers, forcing, ode_integrator, ground_temperature_solver, Val(num_soil_nodes))
 end
 
 """
@@ -459,6 +462,7 @@ function solve_soil!(cache::MicroCache)
     buffers = cache.buffers
     solar_radiation_out = buffers.solar_out
     ode_integrator = cache.ode_integrator
+    ground_temperature_solver = cache.ground_temperature_solver
     forcing = cache.forcing
 
     (; convergence, rainfall_schedule) = config
@@ -504,14 +508,7 @@ function solve_soil!(cache::MicroCache)
     ode_integrator.dt = first_soil_step(mp.model.soil.energy_model)
     SciMLBase.set_proposed_dt!(ode_integrator, ode_integrator.dt)
 
-    soil_prop_view = if n_snow > 0
-        (; bulk_thermal_conductivity = view(buffers.soil_properties.bulk_thermal_conductivity, n_snow+1:n_snow+num_soil_nodes),
-           bulk_heat_capacity = view(buffers.soil_properties.bulk_heat_capacity, n_snow+1:n_snow+num_soil_nodes),
-           bulk_density = view(buffers.soil_properties.bulk_density, n_snow+1:n_snow+num_soil_nodes))
-    else
-        buffers.soil_properties
-    end
-    update_soil_properties!(output, soil_prop_view, soil_properties_model;
+    update_soil_properties!(output, buffers.soil_properties, soil_properties_model;
         soil_temperature=soil_temperatures, soil_moisture, bulk_density, mineral_density,
         mineral_conductivity, mineral_heat_capacity,
         atmospheric_pressure=101325.0u"Pa", step=1
@@ -687,7 +684,7 @@ function solve_soil!(cache::MicroCache)
                     day_init_step, site, moisture_mode, soil_wetness, env_init,
                     longwave_model, vapour_pressure_equation)
                 output.sky_temperature[day_init_step] = longwave_sky.sky_temperature
-                update_soil_properties!(output, soil_prop_view, soil_properties_model;
+                update_soil_properties!(output, buffers.soil_properties, soil_properties_model;
                     soil_temperature=soil_temperatures, soil_moisture, bulk_density, mineral_density,
                     mineral_conductivity, mineral_heat_capacity,
                     atmospheric_pressure=output.pressure[day_init_step],
@@ -732,7 +729,7 @@ function solve_soil!(cache::MicroCache)
             snow_temperatures_hour_start = snow_temperatures
             ode_state = combine_ode_state(snow_temperatures, soil_temperatures, n_snow)
             ground = ground_surface_under_canopy(; ground_temperature, surface_emissivity, albedo, soil_wetness=effective_wetness)
-            (; overrides, soil_temperatures, snow_temperatures) = solve_canopy_soil_hour!(ode_integrator, 1, ode_state,
+            (; overrides, soil_temperatures, snow_temperatures) = solve_canopy_soil_hour!(ode_integrator, ground_temperature_solver, 1, ode_state,
                 canopy_model, buffers.canopy, snow_model;
                 snow_present=snow_present_step, canopy_source_temperature, ode_depths,
                 soil_wetness=effective_wetness, longwave_sky, albedo, Q_freeze, snow_state,
@@ -857,7 +854,7 @@ function solve_soil!(cache::MicroCache)
                     snow_temperatures_hour_start = snow_temperatures
                     ode_state = combine_ode_state(snow_temperatures, soil_temperatures, n_snow)
                     ground = ground_surface_under_canopy(; ground_temperature, surface_emissivity, albedo, soil_wetness=effective_wetness)
-                    (; overrides, soil_temperatures, snow_temperatures) = solve_canopy_soil_hour!(ode_integrator, i + 1, ode_state,
+                    (; overrides, soil_temperatures, snow_temperatures) = solve_canopy_soil_hour!(ode_integrator, ground_temperature_solver, i + 1, ode_state,
                         canopy_model, buffers.canopy, snow_model;
                         snow_present=snow_present_next, canopy_source_temperature, ode_depths,
                         soil_wetness=effective_wetness, longwave_sky, albedo, Q_freeze, snow_state,
@@ -960,7 +957,7 @@ function solve_soil!(cache::MicroCache)
                     write_canopy_output!(canopy_model, output, buffers.canopy, canopy_result, output_step)
                     update_soil_water!(output, soil_moisture, infil_out, output_step)
                     environment_instant = get_instant(environment_day, environment_hourly, output, soil_moisture, output_step)
-                    update_soil_properties!(output, soil_prop_view, soil_properties_model;
+                    update_soil_properties!(output, buffers.soil_properties, soil_properties_model;
                         soil_temperature=soil_temperatures, soil_moisture, bulk_density, mineral_density,
                         mineral_conductivity, mineral_heat_capacity,
                         atmospheric_pressure=environment_instant.atmospheric_pressure, step=output_step, vapour_pressure_equation
@@ -1119,32 +1116,108 @@ end
 ground_surface_under_canopy(; ground_temperature, surface_emissivity, albedo, soil_wetness) =
     GroundSurface(; temperature=ground_temperature, emissivity=surface_emissivity, reflectance=albedo, wetness=soil_wetness)
 
+# Integrates the soil over hour `hour_index` from `hour_state`
+function integrate_soil_hour!(integrator, hour_state, hour_index)
+    restart_soil_solver!(integrator, hour_state, (hour_index - 1) * 60.0u"minute")
+    return step_to_hour!(integrator, hour_index)
+end
+
+allocate_ground_temperature(::NoCanopy, integrator, hour_state) = nothing
+allocate_ground_temperature(model::MultilayerCanopy, integrator, hour_state) =
+    allocate_ground_temperature(model.convergence_model.ground_temperature_model, integrator, hour_state)
+allocate_ground_temperature(::IntegratedGroundTemperature, integrator, hour_state) = nothing
+allocate_ground_temperature(::HourStartGroundTemperature, integrator, hour_state) = nothing
+function allocate_ground_temperature(model::PredictedGroundTemperature{K}, integrator, hour_state) where K
+    hour = surface_node_hour(integrator, hour_state, 1, 1)
+    problem = NonlinearProblem{false}(surface_node_residual, predicted_start(SVector{K}, hour), hour)
+    return init(problem, model.solver; abstol=ustrip(u"K", model.tolerance))
+end
+
+ground_temperature(::IntegratedGroundTemperature, ::Nothing, integrator, hour_state, hour_index; surface_node) =
+    integrate_soil_hour!(integrator, hour_state, hour_index)[surface_node]
+
+ground_temperature(::HourStartGroundTemperature, ::Nothing, integrator, hour_state, hour_index; surface_node) =
+    hour_state[surface_node]
+
+function ground_temperature(::PredictedGroundTemperature{K}, solver, integrator, hour_state::SVector{N}, hour_index;
+    surface_node,
+) where {K,N}
+    first_active = first_active_node(integrator.p, hour_state, hour_index * 60.0u"minute")
+    if first_active + K - 1 > N
+        throw(ArgumentError(
+            "PredictedGroundTemperature predicts $K nodes, but only $(N - first_active + 1) are at or below the surface"))
+    end
+    hour = surface_node_hour(integrator, hour_state, first_active, hour_index)
+    SciMLBase.reinit!(solver, predicted_start(SVector{K}, hour); p=hour)
+    solution = solve!(solver)
+    if !SciMLBase.successful_retcode(solution)
+        error("PredictedGroundTemperature failed with $(solution.retcode) in hour $hour_index")
+    end
+    return with_predicted(solution.u .* u"K", hour)[surface_node]
+end
+
+surface_node_hour(integrator, hour_state, first_active, hour_index) =
+    (; inputs=integrator.p, hour_state, first_active, hour_end=hour_index * 60.0u"minute")
+
+# The predicted nodes' temperatures at the start of the hour, in kelvin
+predicted_start(::Type{SVector{K}}, (; hour_state, first_active)) where K =
+    SVector{K}(ntuple(i -> ustrip(u"K", hour_state[first_active + i - 1]), Val(K)))
+
+# The predicted nodes at `temperatures`, the nodes above the surface following it, and the
+# deeper nodes at the start of the hour
+function with_predicted(temperatures::SVector{K}, (; hour_state, first_active)) where K
+    N = length(hour_state)
+    return SVector{N}(ntuple(Val(N)) do node
+        if node < first_active
+            temperatures[1]
+        elseif node < first_active + K
+            temperatures[node - first_active + 1]
+        else
+            oftype(temperatures[1], hour_state[node])
+        end
+    end)
+end
+
+# One backward Euler step over the hour for the predicted nodes, in kelvin
+function surface_node_residual(temperatures_in_kelvin::SVector{K}, hour) where K
+    (; inputs, hour_state, first_active, hour_end) = hour
+    rates = soil_energy_balance(with_predicted(temperatures_in_kelvin .* u"K", hour), inputs, hour_end)
+    start = predicted_start(SVector{K}, hour)
+    return SVector{K}(ntuple(Val(K)) do i
+        temperatures_in_kelvin[i] - start[i] - ustrip(u"K", rates[first_active + i - 1] * 60.0u"minute")
+    end)
+end
+
 # Solves the canopy and the soil together for one hour. The canopy's solver asks `soil_hour!`
-# for the ground temperature on each pass, restarting the soil from the hour's start state.
+# for the ground temperature on each pass, from the hour's start state.
 # The soil then runs once more, with the canopy's solved boundary.
-function solve_canopy_soil_hour!(ode_integrator, hour_index, hour_ode_state,
+function solve_canopy_soil_hour!(ode_integrator, ground_temperature_solver, hour_index, hour_ode_state,
     canopy_model, canopy_buffers, snow_model;
     snow_present, ground, canopy_source_temperature, ode_depths, soil_wetness, longwave_sky, albedo, Q_freeze, snow_state,
     boundary_layer_model, site, vapour_pressure_equation, soil_hydraulic_model, environment_instant,
     rainfall, leaf_water_potential, direct_horizontal_irradiance, diffuse_horizontal_irradiance,
 )
-    function soil_hour!(ground_boundary)
+    function set_ground_boundary!(ground_boundary)
         set_hourly_inputs!(ode_integrator, HourlySoilEnergyInputs(;
             depths=ode_depths, environment_instant, soil_wetness, longwave_sky, albedo, surface_emissivity=ground.emissivity, Q_freeze, snow_state,
             ground_shortwave_transmission=ground_boundary.ground_shortwave_transmission,
             ground_absorbed_longwave=ground_boundary.ground_absorbed_longwave,
             ground_air=ground_boundary.ground_air,
         ))
-        restart_soil_solver!(ode_integrator, hour_ode_state, (hour_index - 1) * 60.0u"minute")
-        snow_temperatures, soil_temperatures = split_ode_state(snow_model, step_to_hour!(ode_integrator, hour_index))
-        return (; soil_temperatures, snow_temperatures, ground_temperature = snow_present ? snow_temperatures[1] : soil_temperatures[1])
+    end
+    surface_node = snow_present ? 1 : _n_snow(snow_model) + 1
+    function soil_hour!(ground_temperature_model, ground_boundary)
+        set_ground_boundary!(ground_boundary)
+        return ground_temperature(ground_temperature_model, ground_temperature_solver, ode_integrator, hour_ode_state, hour_index; surface_node)
     end
     overrides = apply_canopy_overrides(canopy_model, canopy_buffers, soil_hour!;
         boundary_layer_model, site, vapour_pressure_equation, soil_hydraulic_model, environment_instant,
         ground, canopy_source_temperature, rainfall, direct_horizontal_irradiance, diffuse_horizontal_irradiance,
         leaf_water_potential)
-    soil = soil_hour!(overrides)
-    return (; overrides, soil.soil_temperatures, soil.snow_temperatures)
+    set_ground_boundary!(overrides)
+    snow_temperatures, soil_temperatures = split_ode_state(snow_model,
+        integrate_soil_hour!(ode_integrator, hour_ode_state, hour_index))
+    return (; overrides, soil_temperatures, snow_temperatures)
 end
 
 function update_soil_properties!(output, soil_properties_buffers, soil_properties_model; step, kw...)

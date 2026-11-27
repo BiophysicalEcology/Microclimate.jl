@@ -34,6 +34,16 @@ heights = vcat(0.1:0.1:1.0, [2.0]) .* u"m"
     @test all(output.canopy.boundary_downward_shortwave[:, 1] .>= output.canopy.boundary_downward_shortwave[:, end])
 end
 
+@testset "$ground_temperature_model solves: finite, physically sane" for ground_temperature_model in
+        (PredictedGroundTemperature(), HourStartGroundTemperature())
+    canopy_model = example_multilayer_canopy(; canopy_height = 1.0u"m", plant_area_index = 2.0,
+        convergence_model = AndersonCanopyConvergence(; ground_temperature_model))
+    output = solve(example_microclimate_problem(; heights, canopy_model))
+    @test all(t -> 200.0u"K" < t < 340.0u"K", output.soil_temperature)
+    @test all(t -> 200.0u"K" < t < 340.0u"K", output.canopy.leaf_temperature)
+    @test all(>(0), output.canopy.iterations)
+end
+
 @testset "An implicit soil solver follows the default, with or without a canopy" begin
     implicit_soil = SoilHeatTransport1D(; ode_solver = ImplicitEuler(; autodiff = AutoFiniteDiff()),
         ode_kwargs = (; adaptive = false, dt = 60.0u"minute"))

@@ -313,13 +313,14 @@ reinit!(cache, new_inputs)
 output = solve!(cache)
 ```
 """
-mutable struct MicroCache{MP<:MicroProblem,O<:MicroResult,S<:MicroState,B<:MicroBuffers,F<:Forcing,I,Nsoil}
+mutable struct MicroCache{MP<:MicroProblem,O<:MicroResult,S<:MicroState,B<:MicroBuffers,F<:Forcing,I,G,Nsoil}
     problem::MP
     output::O
     state::S
     buffers::B
     forcing::F
     ode_integrator::I
+    ground_temperature_solver::G
     # Type-level soil-node count, used for `SVector(ntuple(f, Val(N_soil)))` in
     # the day loop so rebuilding the soil temperatures is type-stable.
     num_soil_nodes_val::Val{Nsoil}
