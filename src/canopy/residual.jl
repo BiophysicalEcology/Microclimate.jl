@@ -167,7 +167,7 @@ canopy_top_relative_humidity, friction_velocity, inverse_obukhov_length)`.
 function evaluate_canopy!(residual, inverse_obukhov_length, ground_temperature, buffers, model::MultilayerCanopy, boundary_layer_model,
     inputs::CanopyEnergyBalanceInputs, hour_conditions; site, vapour_pressure_equation,
 )
-    (; environment_instant, ground_emissivity, ground_relative_humidity, leaf_water_potential) = inputs
+    (; environment_instant, ground_emissivity, ground_wetness, leaf_water_potential) = inputs
     (; atmospheric_pressure, reference_temperature, reference_humidity) = environment_instant
     (; dry_conductance, stability_limits) = hour_conditions
     (; leaf_temperature, sensible_heat_flux, evaporation_mass_flux, absorbed_radiation, net_balance) = buffers.leaf
@@ -221,8 +221,13 @@ function evaluate_canopy!(residual, inverse_obukhov_length, ground_temperature, 
 
     reference_vapor_density = wet_air_properties(reference_temperature, reference_humidity, atmospheric_pressure;
         vapour_pressure_equation).vapour_density
-    ground_vapor_density = wet_air_properties(ground_temperature, ground_relative_humidity, atmospheric_pressure;
-        vapour_pressure_equation).vapour_density
+    # The soil evaporates from its wet fraction, ground_wetness·g·(ρsat(Tg) - ρ), into the lowest
+    # layer's vapor density ρ. Over the same conductance g that is a ground vapor density of ρ plus
+    # the wet fraction of its deficit, so the canopy air gains what the soil loses.
+    ground_saturation = wet_air_properties(ground_temperature, 1.0, atmospheric_pressure; vapour_pressure_equation).vapour_density
+    lowest_vapor_density = air.current_vapor_density[n_layers]
+    ground_vapor_density = lowest_vapor_density + ground_wetness * (ground_saturation - lowest_vapor_density)
+    ground_relative_humidity = ground_vapor_density / ground_saturation
     initial_top_vapor_density = wet_air_properties(hour_conditions.canopy_top_air_temperature, hour_conditions.canopy_top_relative_humidity,
         atmospheric_pressure; vapour_pressure_equation).vapour_density
     boundary = canopy_top_flux_boundary(boundary_layer_model, model.canopy_height, buffers.wind.displacement_height,

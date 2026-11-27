@@ -220,7 +220,8 @@ function _raupach_far_field!(::ExactRaupachFormulation, buffers, ground_temperat
 end
 
 # micropoint's far field: each layer's flux times the resistance from there to the top, heat and vapor
-# sharing the vapor resistance to the ground, with heat capacity at each layer's current temperature
+# sharing the vapor resistance to the ground, with heat capacity at each layer's current temperature.
+# The segment between a node and the one below it is the lower node's resistance.
 function _raupach_far_field!(::BulkRaupachFormulation, buffers, ground_temperature, ground_vapor_density,
     _ground_heat_resistance, ground_vapor_resistance, _volumetric_heat_capacity, layer_count; _...,
 )
@@ -233,7 +234,7 @@ function _raupach_far_field!(::BulkRaupachFormulation, buffers, ground_temperatu
     end
     resistance_to_ground[layer_count] = ground_vapor_resistance
     for layer in (layer_count - 1):-1:1
-        resistance_to_ground[layer] = resistance_to_ground[layer + 1] + layer_resistance[layer]
+        resistance_to_ground[layer] = resistance_to_ground[layer + 1] + layer_resistance[layer + 1]
     end
     for layer in 1:layer_count
         volumetric_heat_capacity = calc_air_volumetric_heat_capacity(current_air_temperature[layer])
@@ -288,7 +289,9 @@ function canopy_heat_vapor_transport!(buffers, model::RaupachLTheoryAirProfile, 
         velocity_std = mean_velocity_std + velocity_std_amplitude * cos(π * (1.0 - layer_heights[layer] / canopy_height))
         inverse_near_field_length[layer] = 1 / (velocity_std * lagrangian_timescale)
         eddy_diffusivity = velocity_std^2 * lagrangian_timescale
-        layer_resistance[layer] = layer_thickness[layer] / eddy_diffusivity
+        # The segment above the node, which the flux from the node and all below it crosses
+        height_above = layer == 1 ? canopy_height : layer_heights[layer - 1]
+        layer_resistance[layer] = (height_above - layer_heights[layer]) / eddy_diffusivity
         sensible_near_field_weight[layer] = sensible_heat_flux[layer] / velocity_std
         latent_near_field_weight[layer] = evaporation_mass_flux[layer] / velocity_std
     end
@@ -298,8 +301,11 @@ function canopy_heat_vapor_transport!(buffers, model::RaupachLTheoryAirProfile, 
     ground_friction_velocity = karman_constant * wind_speed[layer_count] / log(layer_heights[layer_count] / ground_roughness_height)
     kinematic_viscosity = dry_air_properties((canopy_top_air_temperature + ground_temperature) / 2, atmospheric_pressure).kinematic_viscosity
     sublayer_heat_resistance = 1.0 / (ground_friction_velocity * sublayer_stanton(ground_roughness_height, ground_friction_velocity, kinematic_viscosity))
-    ground_heat_resistance = layer_resistance[layer_count] + sublayer_heat_resistance
-    ground_vapor_resistance = layer_resistance[layer_count] + sublayer_heat_resistance / LEWIS_HEAT_TO_MASS_RATIO
+    # From the lowest node down to the ground, at the lowest node's diffusivity
+    lowest_velocity_std = 1 / (inverse_near_field_length[layer_count] * lagrangian_timescale)
+    ground_layer_resistance = layer_heights[layer_count] / (lowest_velocity_std^2 * lagrangian_timescale)
+    ground_heat_resistance = ground_layer_resistance + sublayer_heat_resistance
+    ground_vapor_resistance = ground_layer_resistance + sublayer_heat_resistance / LEWIS_HEAT_TO_MASS_RATIO
 
     # Fixed from the boundary temperatures rather than each layer's current temperature.
     # calc_air_volumetric_heat_capacity ∝ 1/T, so using the current value would amplify warming on every pass.

@@ -227,18 +227,18 @@ end
 
 """
     two_stream_flux_fractions(leaf_optics, diffuse_optics, direct_optics,
-                               direct_beam_extinction_coefficient, maximum_layer_reflectance,
-                               has_direct_beam, plant_area_index_above)
+                               direct_beam_extinction_coefficient, has_direct_beam, plant_area_index_above)
 
 Calculate upward and downward two-stream flux fractions at cumulative plant
 area index `plant_area_index_above`.
 
 Diffuse fluxes are expressed as fractions of incoming diffuse horizontal
 irradiance. Direct-beam-generated fluxes and direct transmission are expressed
-as fractions of incoming direct horizontal irradiance.
+as fractions of incoming direct horizontal irradiance. Each fraction is kept
+within 0 and 1, as rounding near the ground can push it just outside.
 """
 function two_stream_flux_fractions(leaf_optics, diffuse_optics, direct_optics,
-    direct_beam_extinction_coefficient, maximum_layer_reflectance, has_direct_beam, plant_area_index_above,
+    direct_beam_extinction_coefficient, has_direct_beam, plant_area_index_above,
 )
     (; diffuse_attenuation_rate) = leaf_optics
     (; diffuse_reflected_decay_coefficient, diffuse_reflected_growth_coefficient,
@@ -260,10 +260,10 @@ function two_stream_flux_fractions(leaf_optics, diffuse_optics, direct_optics,
         direct_transmission = exp(-direct_beam_extinction_coefficient * plant_area_index_above)
         direct_up = clamp((direct_reflected_beam_coefficient / direct_beam_solution_denominator) * direct_transmission +
             direct_reflected_decay_coefficient * diffuse_decay + direct_reflected_growth_coefficient * diffuse_growth,
-            0.0, maximum_layer_reflectance)
+            0.0, 1.0)
         direct_down = clamp(-(direct_transmitted_beam_coefficient / direct_beam_solution_denominator) * direct_transmission +
             direct_transmitted_decay_coefficient * diffuse_decay + direct_transmitted_growth_coefficient * diffuse_growth,
-            0.0, maximum_layer_reflectance)
+            0.0, 1.0)
     else
         direct_transmission = 0.0
         direct_up = 0.0
@@ -350,12 +350,11 @@ function canopy_shortwave!(buffers, radiation_model::TwoStreamRadiation, plant_a
     # convert direct horizontal irradiance to irradiance normal to the beam
     beam_normal_irradiance = has_direct_beam ? Idir / cos(θ) : 0.0u"W/m^2"
 
-    maximum_layer_reflectance = max(ρg, radiation_model.leaf_reflectance)
     direct = direct_two_stream_optics(PAI, kᵦ, ρg, leaf, diffuse)
 
     # total downward and upward shortwave fluxes at every layer
     for i in eachindex(layer_plant_area_index_boundaries)
-        fractions = two_stream_flux_fractions(leaf, diffuse, direct, kᵦ, maximum_layer_reflectance, has_direct_beam, layer_plant_area_index_boundaries[i])
+        fractions = two_stream_flux_fractions(leaf, diffuse, direct, kᵦ, has_direct_beam, layer_plant_area_index_boundaries[i])
         irradiances = two_stream_irradiances(fractions, Idir, Idiff)
         F_d[i] = irradiances.downward
         F_u[i] = irradiances.upward
@@ -364,7 +363,7 @@ function canopy_shortwave!(buffers, radiation_model::TwoStreamRadiation, plant_a
     for i in 1:n_layers
         # shortwave absorption is the flux convergence across layer i
         absorbed_shortwave[i] = (F_d[i] - F_d[i + 1]) + (F_u[i + 1] - F_u[i])
-        fractions = two_stream_flux_fractions(leaf, diffuse, direct, kᵦ, maximum_layer_reflectance, has_direct_beam, layer_plant_area_index_above[i])
+        fractions = two_stream_flux_fractions(leaf, diffuse, direct, kᵦ, has_direct_beam, layer_plant_area_index_above[i])
         downward_diffuse_shortwave[i] = fractions.diffuse_down * Idiff + fractions.direct_down * Idir
         upward_diffuse_shortwave[i] = fractions.diffuse_up * Idiff + fractions.direct_up * Idir
         # unscattered direct-beam irradiance normal to the solar beam

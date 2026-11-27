@@ -101,8 +101,9 @@ function canopy_ground_boundary(buffers, ground_absorbed_shortwave, ground_absor
         ground_incoming_longwave = ground_absorbed_longwave / ground_emissivity,
         ground_wind_speed = buffers.wind.wind_speed[end],
         ground_air_temperature = air.current_air_temperature[end],
-        ground_air_relative_humidity = layer_relative_humidity(air, length(air.current_air_temperature),
-            environment_instant.atmospheric_pressure, vapour_pressure_equation),
+        # Not capped at 1, so the soil sees the same vapor density as the canopy air
+        ground_air_relative_humidity = air.current_vapor_density[end] / wet_air_properties(air.current_air_temperature[end], 1.0,
+            environment_instant.atmospheric_pressure; vapour_pressure_equation).vapour_density,
         ground_reference_height = buffers.wind.ground_layer_height,
         # ground_reference_height is often too close to site.roughness_height for a log-law
         # inversion (surface_fluxes) to be valid, so the soil model uses the air-profile model's
@@ -116,7 +117,7 @@ end
 # canopy_source_temperature and (for diagnostics) the full canopy result.
 # NoCanopy passes everything through unchanged/nothing.
 function apply_canopy_overrides(::NoCanopy, buffers, soil_hour!;
-    boundary_layer_model, site, vapour_pressure_equation, soil_hydraulic_model, environment_instant, ground_temperature, ground_emissivity, ground_relative_humidity,
+    boundary_layer_model, site, vapour_pressure_equation, soil_hydraulic_model, environment_instant, ground_temperature, ground_emissivity, ground_wetness,
     canopy_source_temperature, rainfall, direct_horizontal_irradiance, diffuse_horizontal_irradiance, ground_reflectance,
     leaf_water_potential,
 )
@@ -132,14 +133,14 @@ function apply_canopy_overrides(::NoCanopy, buffers, soil_hour!;
 end
 
 function apply_canopy_overrides(model::MultilayerCanopy, buffers, soil_hour!::S;
-    boundary_layer_model, site, vapour_pressure_equation, soil_hydraulic_model, environment_instant, ground_temperature, ground_emissivity, ground_relative_humidity,
+    boundary_layer_model, site, vapour_pressure_equation, soil_hydraulic_model, environment_instant, ground_temperature, ground_emissivity, ground_wetness,
     canopy_source_temperature, rainfall, direct_horizontal_irradiance, diffuse_horizontal_irradiance, ground_reflectance,
     leaf_water_potential,
 ) where S
     canopy_inputs = CanopyEnergyBalanceInputs(model;
         environment_instant, zenith_angle = environment_instant.zenith_angle,
         direct_horizontal_irradiance, diffuse_horizontal_irradiance, ground_reflectance,
-        ground_temperature, ground_emissivity, ground_relative_humidity, canopy_source_temperature, rainfall, leaf_water_potential,
+        ground_temperature, ground_emissivity, ground_wetness, canopy_source_temperature, rainfall, leaf_water_potential,
     )
     boundary(ground_absorbed_shortwave, ground_absorbed_longwave) = canopy_ground_boundary(buffers, ground_absorbed_shortwave,
         ground_absorbed_longwave; environment_instant, vapour_pressure_equation, ground_emissivity,
@@ -755,10 +756,6 @@ function solve_soil!(cache::MicroCache)
                 soil_wetness=effective_wetness, longwave_sky, albedo, Q_freeze, snow_state,
                 boundary_layer_model, site, vapour_pressure_equation, soil_hydraulic_model, environment_instant,
                 ground_emissivity = environment_instant.surface_emissivity,
-                # Lagged soil-surface humidity (mirrors ground_temperature's soil_temperatures[1]
-                # lag); falls back to reference RH before any DynamicSoilMoisture
-                # update has run (PrescribedSoilMoisture never populates infil_out).
-                ground_relative_humidity = isnothing(infil_out) ? environment_instant.reference_humidity : infil_out.soil_humidity[1],
                 rainfall = rainfall_step, leaf_water_potential,
                 direct_horizontal_irradiance = output.global_radiation[step] * (1.0 - output.diffuse_fraction[step]),
                 diffuse_horizontal_irradiance = output.global_radiation[step] * output.diffuse_fraction[step],
@@ -891,10 +888,6 @@ function solve_soil!(cache::MicroCache)
                         soil_wetness=effective_wetness, longwave_sky, albedo, Q_freeze, snow_state,
                         boundary_layer_model, site, vapour_pressure_equation, soil_hydraulic_model, environment_instant,
                         ground_emissivity = environment_instant.surface_emissivity,
-                        # Lagged soil-surface humidity (mirrors ground_temperature's soil_temperatures[1]
-                        # lag); falls back to reference RH before any DynamicSoilMoisture
-                        # update has run (PrescribedSoilMoisture never populates infil_out).
-                        ground_relative_humidity = isnothing(infil_out) ? environment_instant.reference_humidity : infil_out.soil_humidity[1],
                         rainfall = rainfall_next, leaf_water_potential,
                         direct_horizontal_irradiance = output.global_radiation[next_step] * (1.0 - output.diffuse_fraction[next_step]),
                         diffuse_horizontal_irradiance = output.global_radiation[next_step] * output.diffuse_fraction[next_step],
@@ -1161,7 +1154,7 @@ function solve_canopy_soil_hour!(ode_integrator, hour_index, hour_ode_state,
     canopy_model, canopy_buffers, snow_model;
     snow_present, ground_temperature0, canopy_source_temperature, ode_depths, soil_wetness, longwave_sky, albedo, Q_freeze, snow_state,
     boundary_layer_model, site, vapour_pressure_equation, soil_hydraulic_model, environment_instant,
-    ground_emissivity, ground_relative_humidity, rainfall, leaf_water_potential,
+    ground_emissivity, rainfall, leaf_water_potential,
     direct_horizontal_irradiance, diffuse_horizontal_irradiance,
 )
     function soil_hour!(ground_boundary)
@@ -1180,7 +1173,8 @@ function solve_canopy_soil_hour!(ode_integrator, hour_index, hour_ode_state,
     end
     overrides = apply_canopy_overrides(canopy_model, canopy_buffers, soil_hour!;
         boundary_layer_model, site, vapour_pressure_equation, soil_hydraulic_model, environment_instant,
-        ground_temperature=ground_temperature0, ground_emissivity, ground_relative_humidity, canopy_source_temperature,
+        # The canopy takes the ground's vapor at the soil's own wet fraction (see evaluate_canopy!)
+        ground_temperature=ground_temperature0, ground_emissivity, ground_wetness=soil_wetness, canopy_source_temperature,
         rainfall, direct_horizontal_irradiance, diffuse_horizontal_irradiance,
         ground_reflectance=albedo, leaf_water_potential)
     soil = soil_hour!(overrides)
