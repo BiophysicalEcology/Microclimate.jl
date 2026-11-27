@@ -47,16 +47,14 @@ end
 
 """
     canopy_longwave!(buffers, model::LayeredRadiosityExchange, leaf_emissivity;
-                      leaf_temperature, ground_temperature, ground_emissivity,
-                      incoming_longwave)
+                      leaf_temperature, ground, incoming_longwave)
 
 Layer index 1 is canopy top. Returns `(; ground_absorbed_longwave,
-net_absorbed_longwave)`. The ground absorbs `ground_emissivity` of the longwave
-reaching it, reflects the rest, and emits with `ground_emissivity`.
+net_absorbed_longwave)`. The ground absorbs its emissivity of the longwave
+reaching it, reflects the rest, and emits with its emissivity.
 """
 function canopy_longwave!(buffers, model::LayeredRadiosityExchange, leaf_emissivity;
-    leaf_temperature, ground_temperature, ground_emissivity,
-    incoming_longwave,
+    leaf_temperature, ground, incoming_longwave,
 )
     (; layer_transmission, backscatter_fraction, boundary_downward_longwave, boundary_upward_longwave,
        absorbed_longwave, layer_reflectance, layer_effective_transmission, layer_emission_source,
@@ -67,8 +65,8 @@ function canopy_longwave!(buffers, model::LayeredRadiosityExchange, leaf_emissiv
     τ_d = layer_transmission
     f_d = backscatter_fraction
     εₗ = leaf_emissivity
-    εₛ = ground_emissivity
-    Tₛ = u"K"(ground_temperature)
+    εₛ = ground.emissivity
+    Tₛ = u"K"(ground.temperature)
 
     ρ = layer_reflectance
     τ = layer_effective_transmission

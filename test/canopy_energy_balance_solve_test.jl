@@ -41,6 +41,28 @@ end
     @test result.canopy_potential_transpiration >= sum(buffers.leaf.evaporation_mass_flux)
 end
 
+@testset "the heat leaving the canopy top is the heat the leaves and the ground give the air" begin
+    model = canopy()
+    result, buffers = solve_canopy(model, canopy_inputs(model))
+    (; heat_conductance) = result.ground_air
+    ground_sensible_heat_flux = heat_conductance * (290.0u"K" - last(buffers.air_profile.air_temperature))
+    @test result.ground_sensible_heat_flux ≈ ground_sensible_heat_flux atol = heat_conductance * model.convergence_model.air_temperature_tolerance
+    @test result.canopy_top_sensible_heat_flux ≈ sum(buffers.leaf.sensible_heat_flux) + ground_sensible_heat_flux atol =
+        heat_conductance * model.convergence_model.air_temperature_tolerance
+end
+
+@testset "every air profile, ground turbulence and ground sublayer model solves" begin
+    for ground_sublayer_model in (StantonGroundSublayer(), NoGroundSublayer()),
+            ground_turbulence_model in (ProfileGroundTurbulence(), GroundTurbulence()),
+            air_profile_model in (RaupachLTheoryAirProfile(; ground_turbulence_model, ground_sublayer_model),
+                KTheoryAirProfile(; ground_turbulence_model, ground_sublayer_model))
+        model = Microclimate.example_multilayer_canopy(; canopy_height, plant_area_index, air_profile_model)
+        result, buffers = solve_canopy(model, canopy_inputs(model))
+        @test residual_within_tolerance(buffers)
+        @test result.ground_air.heat_conductance > 0.0u"W/m^2/K"
+    end
+end
+
 @testset "new hourly inputs drive day -> night on the same buffers" begin
     model = canopy()
     buffers = allocate(model)
@@ -100,7 +122,7 @@ end
         gappy.air_profile.current_vapor_density, ground_temperature, inverse_obukhov_length)
     Microclimate.canopy_fixed_point!(next_state, step, state, gappy, gappy_model, boundary_layer_model, gappy_inputs, hour_conditions;
         site, vapour_pressure_equation = Microclimate.GoffGratch(),
-        ground_temperature_after_hour = (ground_temperature, _) -> ground_temperature)
+        ground_temperature_after_hour = (ground_temperature, _...) -> ground_temperature)
     Microclimate.unpack_canopy_state!(gappy, next_state)
     @test gappy.leaf.leaf_temperature[3] ≈ starting_air_temperature[3]
 end
@@ -110,10 +132,11 @@ end
     buffers = allocate(model)
     calls = Ref(0)
     # A soil that moves halfway towards 290 K, whatever the canopy does
-    function ground_temperature_after_hour(ground_temperature, ground_shortwave, ground_absorbed_longwave)
+    function ground_temperature_after_hour(ground_temperature, ground_shortwave, ground_absorbed_longwave, ground_air)
         calls[] += 1
         @test ground_shortwave.ground_direct_shortwave + ground_shortwave.ground_diffuse_shortwave > 0.0u"W/m^2"
         @test ground_absorbed_longwave > 0.0u"W/m^2"
+        @test ground_air.heat_conductance > 0.0u"W/m^2/K"
         return (ground_temperature + 290.0u"K") / 2
     end
     canopy_energy_balance!(buffers, model, boundary_layer_model, canopy_inputs(model; ground_temperature = 300.0u"K");
@@ -124,32 +147,38 @@ end
     @test isapprox(solved.ground_temperature, 290.0u"K"; atol = 0.2u"K")
     # A soil that never settles is an error, not an accepted hour
     @test_throws r"did not converge" canopy_energy_balance!(allocate(model), model, boundary_layer_model,
-        canopy_inputs(model); site, ground_temperature_after_hour = (ground_temperature, _, _) -> ground_temperature + 1.0u"K")
+        canopy_inputs(model); site, ground_temperature_after_hour = (ground_temperature, _, _, _) -> ground_temperature + 1.0u"K")
 end
 
-# An air profile that gives NaN on one call, the way a pass that overshoots does
-struct OvershootingAirProfile{M} <: Microclimate.AbstractCanopyAirProfileModel
+# An air profile that gives NaN through one pass, the way a pass that overshoots does
+struct OvershootingAirProfile{M,GTM,GSM} <: Microclimate.AbstractCanopyAirProfileModel
     air_profile_model::M
-    overshooting_call::Int
+    ground_turbulence_model::GTM
+    ground_sublayer_model::GSM
+    overshooting_pass::Int
     calls::Base.RefValue{Int}
 end
-OvershootingAirProfile(overshooting_call) = OvershootingAirProfile(KTheoryAirProfile(), overshooting_call, Ref(0))
+OvershootingAirProfile(overshooting_pass) =
+    OvershootingAirProfile(KTheoryAirProfile(), ProfileGroundTurbulence(), NoGroundSublayer(), overshooting_pass, Ref(0))
 Microclimate.allocate_air_profile(model::OvershootingAirProfile, arguments...) =
     Microclimate.allocate_air_profile(model.air_profile_model, arguments...)
+Microclimate.ground_turbulent_resistance(buffers, model::OvershootingAirProfile, arguments...; keywords...) =
+    Microclimate.ground_turbulent_resistance(buffers, model.air_profile_model, arguments...; keywords...)
 function Microclimate.canopy_heat_vapor_transport!(buffers, model::OvershootingAirProfile, arguments...; keywords...)
     Microclimate.canopy_heat_vapor_transport!(buffers, model.air_profile_model, arguments...; keywords...)
     model.calls[] += 1
-    model.calls[] == model.overshooting_call && fill!(buffers.air_temperature, NaN * u"K")
+    # A pass evaluates the canopy twice: with the lowest air nudged, then as it is
+    cld(model.calls[], 2) == model.overshooting_pass && fill!(buffers.air_temperature, NaN * u"K")
     return nothing
 end
 
 @testset "AndersonCanopyConvergence recovers from a pass that overshoots" begin
-    overshooting_canopy(overshooting_call) = Microclimate.example_multilayer_canopy(; canopy_height, plant_area_index,
-        air_profile_model = OvershootingAirProfile(overshooting_call))
+    overshooting_canopy(overshooting_pass) = Microclimate.example_multilayer_canopy(; canopy_height, plant_area_index,
+        air_profile_model = OvershootingAirProfile(overshooting_pass))
     # Later passes go back towards the last good state and carry on
     model = overshooting_canopy(2)
     result, buffers = solve_canopy(model, canopy_inputs(model))
-    @test model.air_profile_model.calls[] > 2
+    @test cld(model.air_profile_model.calls[], 2) > 2
     @test residual_within_tolerance(buffers)
     clean_model = Microclimate.example_multilayer_canopy(; canopy_height, plant_area_index,
         air_profile_model = KTheoryAirProfile())
@@ -200,20 +229,20 @@ end
     hour_best_state[end] = solved_stability + 0.05
     bracketed = Microclimate.bracket_stability!(buffers, model, limited_boundary_layer, inputs, hour_conditions,
         model.convergence_model; site, vapour_pressure_equation = Microclimate.GoffGratch(),
-        ground_temperature_after_hour = (ground_temperature, _) -> ground_temperature)
+        ground_temperature_after_hour = (ground_temperature, _, _) -> ground_temperature)
     @test bracketed.return_code == Microclimate.SciMLBase.ReturnCode.Success
     @test abs(state[end] - solved_stability) < tolerances.inverse_obukhov_length
     @test residual_within_tolerance(buffers)
     # Bracketing has its own pass cap, separate from the passes before it
     bracket_with(convergence_model) = Microclimate.bracket_stability!(buffers, model, limited_boundary_layer, inputs,
         hour_conditions, convergence_model; site, vapour_pressure_equation = Microclimate.GoffGratch(),
-        ground_temperature_after_hour = (ground_temperature, _) -> ground_temperature).return_code
+        ground_temperature_after_hour = (ground_temperature, _, _) -> ground_temperature).return_code
     @test bracket_with(AndersonCanopyConvergence(; maxiters = 1)) == Microclimate.SciMLBase.ReturnCode.Success
     @test bracket_with(AndersonCanopyConvergence(; bracketing_maxiters = 1)) == Microclimate.SciMLBase.ReturnCode.Failure
     # Without finite limits there is nothing to bracket
     @test Microclimate.bracket_stability!(buffers, model, boundary_layer_model, inputs,
         Microclimate.canopy_hour_conditions(buffers, model, boundary_layer_model, inputs, result; keywords...),
         model.convergence_model; site, vapour_pressure_equation = Microclimate.GoffGratch(),
-        ground_temperature_after_hour = (ground_temperature, _) -> ground_temperature).return_code ==
+        ground_temperature_after_hour = (ground_temperature, _, _) -> ground_temperature).return_code ==
         Microclimate.SciMLBase.ReturnCode.Failure
 end

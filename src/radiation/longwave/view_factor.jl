@@ -119,6 +119,7 @@ function precompute_longwave_sky(atmospheric_radiation_model::AbstractAtmospheri
 
     return (;
         incoming_longwave,
+        open_downward_longwave = downward.open_ground,
         outgoing_coeff,
         ground_shade_term,
         sky_temperature=u"K"(sky_temperature),
