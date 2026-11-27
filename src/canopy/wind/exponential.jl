@@ -7,9 +7,7 @@ canopy top: `wind_speed(cumulative_plant_area_index) = canopy_top_wind_speed *
 exp(-attenuation_coefficient * cumulative_plant_area_index / total_plant_area_index)`.
 `attenuation_coefficient = max_attenuation_coefficient * (1 - exp(-total_plant_area_index))`
 saturates at `max_attenuation_coefficient` for a dense canopy and vanishes
-for a sparse one -- unlike [`MixingLengthCanopyWindAttenuation`](@ref)'s shelter-factor
-form, which over-attenuates wind at low total plant area index (see its own
-docstring).
+for a sparse one.
 
 # References
 - Nikolov, N., & Zeller, K. (2003). Modeling coupled interactions of carbon,

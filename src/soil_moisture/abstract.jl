@@ -15,7 +15,7 @@ Surface wetness (0–1) at the current step: prescribed from
 function get_soil_wetness end
 
 """
-    initialise_soil_humidity!(strategy, output, soil_water_potential, T0)
+    initialise_soil_humidity!(strategy, output, soil_water_potential, soil_temperatures)
 
 Populate the initial soil-humidity row of `output` from the first-hour soil
 water potential and temperature.

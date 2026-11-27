@@ -1,14 +1,8 @@
 """
     AbstractCanopyWindModel
 
-How a canopy resolves the in-canopy wind-speed profile below canopy top
-(above canopy top is always the shared `AbstractBoundaryLayerModel`, e.g.
-`MoninObukhov`, extended with the canopy's displacement height and
-roughness length).
-
-Concrete variants implement [`allocate_wind`](@ref) and
-[`canopy_wind_profile!`](@ref). Currently: [`ExponentialCanopyWindAttenuation`](@ref)
-(default), [`MixingLengthCanopyWindAttenuation`](@ref).
+How wind decays below the canopy top; above it is the boundary-layer model. See
+[`ExponentialCanopyWindAttenuation`](@ref) (default) and [`MixingLengthCanopyWindAttenuation`](@ref).
 """
 abstract type AbstractCanopyWindModel end
 

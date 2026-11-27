@@ -1,19 +1,10 @@
 """
     LayeredRainInterception(; leaf_water_storage_capacity=0.1u"kg/m^2")
 
-Per-layer rain interception: extinction at a rain-fall angle
-(`atan(wind_speed / raindrop_fall_velocity)`, drop velocity from uncited eq.
-`3.78 * rainfall^0.067`, matching micropoint's `rainintercept`
-exactly) using the same leaf-angle machinery as direct-beam shortwave
-([`ellipsoidal_extinction_coefficient`](@ref)); `wind_speed` is supplied by
-the caller, not read from a model here. Storage capacity scales with each
-layer's own PAI (mass per unit leaf area, 0.1 kg/m² ~ 0.1 mm film); drip
-(whatever exceeds capacity) is passed to the next layer as ordinary
-incident rain, not a distinct (larger, near-vertical) drop stream. Wetness
-([`wet_canopy_fraction`](@ref)) is a linear fractional-saturation blend.
-
-Rain-fall angle assumes drops track local wind instantaneously -- a
-trajectory approximation, not a physical drop model.
+Rain falls at angle `atan(wind_speed / drop_speed)`, with drop speed `3.78·rainfall^0.067`,
+and each layer catches it like a direct beam ([`ellipsoidal_extinction_coefficient`](@ref)).
+Each layer stores up to `leaf_water_storage_capacity` times its plant area index; the rest
+drips to the layer below.
 """
 @kwdef struct LayeredRainInterception{C} <: AbstractStorageInterception
     leaf_water_storage_capacity::C = 0.1u"kg/m^2"

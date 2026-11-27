@@ -1,30 +1,20 @@
 """
     MixingLengthCanopyWindAttenuation(; thermal_roughness_model=ScalarRoughnessRatio(),
-                            shelter_floor=0.003, shelter_pai_coefficient=0.1,
-                            mixing_length_coefficient=2.0, mixing_length_pai_coefficient=0.25)
+                            shelter_floor=0.003, shelter_plant_area_coefficient=0.1,
+                            mixing_length_coefficient=2.0, mixing_length_plant_area_coefficient=0.25)
 
-Wind speed below canopy top decays from the canopy-top value via a
-structural attenuation-shape profile (Massman/Katul-style mixing-length
-argument); above and at canopy top, wind is the shared
-`AbstractBoundaryLayerModel` (e.g. `MoninObukhov`) evaluated with the
-canopy's displacement height and roughness length.
-
-`thermal_roughness_model` overrides the shared `boundary_layer_model`'s own
-`thermal_roughness_model` for this canopy-top evaluation specifically (bare-
-ground/soil surface fluxes elsewhere keep using the `boundary_layer_model`'s
-own setting). Defaults to `ScalarRoughnessRatio()`.
-
-`shelter_floor`/`shelter_pai_coefficient`/`mixing_length_coefficient`/
-`mixing_length_pai_coefficient` are the empirical shelter-factor/mixing-
-length constants in `_element_attenuation`/[`canopy_roughness_length`](@ref).
-Can over-attenuate wind at low total PAI -- tune per site if so.
+Below the canopy top, wind decays by a mixing-length shape; at and above it, the
+boundary-layer model runs with the canopy's displacement height and roughness length.
+`thermal_roughness_model` replaces the boundary-layer model's for the canopy top only.
+The other keywords are empirical shelter and mixing-length constants. May
+over-attenuate wind at low plant area index.
 """
 @kwdef struct MixingLengthCanopyWindAttenuation{TRM,SF,SPC,MLC,MLPC} <: AbstractCanopyWindModel
     thermal_roughness_model::TRM = ScalarRoughnessRatio()
     shelter_floor::SF = 0.003
-    shelter_pai_coefficient::SPC = 0.1
+    shelter_plant_area_coefficient::SPC = 0.1
     mixing_length_coefficient::MLC = 2.0
-    mixing_length_pai_coefficient::MLPC = 0.25
+    mixing_length_plant_area_coefficient::MLPC = 0.25
 end
 
 """
@@ -39,22 +29,21 @@ index (structural, computed once).
   area index. *Boundary-Layer Meteorology*, 71(1-2), 211-216.
 """
 function zero_plane_displacement(canopy_height, plant_area_index)
-    pai = max(plant_area_index, 0.001)  # numerical floor, not a physical parameter
-    return (1.0 - (1.0 - exp(-sqrt(7.5 * pai))) / sqrt(7.5 * pai)) * canopy_height
+    # The floor keeps the expression finite as the plant area index goes to zero
+    raupach_term = sqrt(7.5 * max(plant_area_index, 0.001))
+    return (1.0 - (1.0 - exp(-raupach_term)) / raupach_term) * canopy_height
 end
 
 """
     canopy_roughness_length(canopy_height, plant_area_index, displacement_height, karman_constant;
-                             shelter_floor=0.003, shelter_pai_coefficient=0.1)
+                             shelter_floor=0.003, shelter_plant_area_coefficient=0.1)
 
-Neutral roughness length from canopy structure. Atmospheric stability is
-applied separately by `atmospheric_surface_profile!`'s own Monin-Obukhov
-machinery, not folded in here.
+Neutral roughness length from canopy structure.
 """
 function canopy_roughness_length(canopy_height, plant_area_index, displacement_height, karman_constant;
-    shelter_floor=0.003, shelter_pai_coefficient=0.1,
+    shelter_floor=0.003, shelter_plant_area_coefficient=0.1,
 )
-    canopy_element_shelter = sqrt(shelter_floor + shelter_pai_coefficient * plant_area_index)
+    canopy_element_shelter = sqrt(shelter_floor + shelter_plant_area_coefficient * plant_area_index)
     canopy_depth = canopy_height - displacement_height
     roughness = canopy_depth * exp(-karman_constant / canopy_element_shelter)
     return clamp(roughness, 0.0005u"m", 0.9 * canopy_depth)  # free/tunable floor and ceiling, uncited
@@ -64,38 +53,34 @@ end
 # mixing-length argument): larger local plant area density -> more
 # attenuation per unit height.
 function _element_attenuation(element_plant_area_index, canopy_height,
-    shelter_floor, shelter_pai_coefficient, mixing_length_coefficient, mixing_length_pai_coefficient,
+    shelter_floor, shelter_plant_area_coefficient, mixing_length_coefficient, mixing_length_plant_area_coefficient,
 )
-    element_shelter = sqrt(shelter_floor + shelter_pai_coefficient * element_plant_area_index)
+    element_shelter = sqrt(shelter_floor + shelter_plant_area_coefficient * element_plant_area_index)
     area_density = element_plant_area_index / canopy_height
-    mixing_length = mixing_length_coefficient * element_shelter^3 / (mixing_length_pai_coefficient * area_density)
+    mixing_length = mixing_length_coefficient * element_shelter^3 / (mixing_length_plant_area_coefficient * area_density)
     return element_shelter * canopy_height / mixing_length
 end
 
 """
     wind_attenuation_profile(layer_plant_area_index, canopy_height, plant_area_index_total, karman_constant;
-                              shelter_floor=0.003, shelter_pai_coefficient=0.1,
-                              mixing_length_coefficient=2.0, mixing_length_pai_coefficient=0.25)
+                              shelter_floor=0.003, shelter_plant_area_coefficient=0.1,
+                              mixing_length_coefficient=2.0, mixing_length_plant_area_coefficient=0.25)
 
-Shape function giving each layer's wind speed as a fraction of the
-canopy-top wind speed (structural, computed once). `layer_plant_area_index`
-is ordered top-to-bottom (index 1 = canopy top), matching the radiation
-layer convention. Requires at least 10 layers; the bottom tenth uses a
-local log-law rather than the shelter recurrence, to avoid the wind speed
-collapsing to zero.
+Each layer's wind speed as a fraction of the canopy-top wind, top-to-bottom. Needs at
+least 10 layers; the bottom tenth uses a log law so wind doesn't reach zero.
 """
 function wind_attenuation_profile(layer_plant_area_index, canopy_height, plant_area_index_total, karman_constant;
-    shelter_floor=0.003, shelter_pai_coefficient=0.1, mixing_length_coefficient=2.0, mixing_length_pai_coefficient=0.25,
+    shelter_floor=0.003, shelter_plant_area_coefficient=0.1, mixing_length_coefficient=2.0, mixing_length_plant_area_coefficient=0.25,
 )
     n = length(layer_plant_area_index)
     n >= 10 || throw(ArgumentError("wind_attenuation_profile requires at least 10 canopy layers"))
 
     # internally bottom-to-top (index n = canopy top = unattenuated)
     whole_canopy_attenuation = _element_attenuation(plant_area_index_total, canopy_height,
-        shelter_floor, shelter_pai_coefficient, mixing_length_coefficient, mixing_length_pai_coefficient)
-    layer_attenuation = [_element_attenuation(pai, canopy_height,
-        shelter_floor, shelter_pai_coefficient, mixing_length_coefficient, mixing_length_pai_coefficient)
-        for pai in Iterators.reverse(layer_plant_area_index)]
+        shelter_floor, shelter_plant_area_coefficient, mixing_length_coefficient, mixing_length_plant_area_coefficient)
+    layer_attenuation = [_element_attenuation(element_plant_area_index, canopy_height,
+        shelter_floor, shelter_plant_area_coefficient, mixing_length_coefficient, mixing_length_plant_area_coefficient)
+        for element_plant_area_index in Iterators.reverse(layer_plant_area_index)]
     layer_attenuation_sum = sum(layer_attenuation)
     # zero total PAI (leafless canopy): every element is already 0, no attenuation to rescale
     if !iszero(layer_attenuation_sum)
@@ -122,8 +107,8 @@ function _apply_near_ground_loglaw!(relative_wind, canopy_height, karman_constan
     ground_roughness = canopy_height / (20.0 * n_ground_layers)
     friction_scale = karman_constant * relative_wind[n_ground_layers] / log(canopy_height / (10.0 * ground_roughness))
     for i in 1:n_ground_layers
-        z = i * canopy_height / (10.0 * n_ground_layers)
-        relative_wind[i] = (friction_scale / karman_constant) * log(z / ground_roughness)
+        height = i * canopy_height / (10.0 * n_ground_layers)
+        relative_wind[i] = (friction_scale / karman_constant) * log(height / ground_roughness)
     end
     return relative_wind
 end
@@ -133,16 +118,16 @@ function allocate_wind(model::MixingLengthCanopyWindAttenuation, canopy_height, 
     (; layer_plant_area_index) = canopy_layer_geometry(plant_area_index, n_layers)
     total_plant_area_index = sum(plant_area_index)
 
-    (; shelter_floor, shelter_pai_coefficient, mixing_length_coefficient, mixing_length_pai_coefficient) = model
+    (; shelter_floor, shelter_plant_area_coefficient, mixing_length_coefficient, mixing_length_plant_area_coefficient) = model
 
     displacement_height = zero_plane_displacement(canopy_height, total_plant_area_index)
     roughness_length = canopy_roughness_length(
         canopy_height, total_plant_area_index, displacement_height, boundary_layer_model.karman_constant;
-        shelter_floor, shelter_pai_coefficient,
+        shelter_floor, shelter_plant_area_coefficient,
     )
     wind_attenuation = wind_attenuation_profile(
         layer_plant_area_index, canopy_height, total_plant_area_index, boundary_layer_model.karman_constant;
-        shelter_floor, shelter_pai_coefficient, mixing_length_coefficient, mixing_length_pai_coefficient,
+        shelter_floor, shelter_plant_area_coefficient, mixing_length_coefficient, mixing_length_plant_area_coefficient,
     )
     # Ground-most layer's height above the soil surface — not every
     # air_profile_model buffer stores this (KTheoryAirProfile doesn't), so
@@ -192,7 +177,7 @@ end
 
 """
     canopy_top_flux_boundary(boundary_layer_model, canopy_height, displacement_height, reference_height,
-                              friction_velocity, inverse_obukhov_length, total_sensible_flux, total_latent_flux,
+                              friction_velocity, inverse_obukhov_length, total_sensible_flux, total_vapor_flux,
                               ground_temperature, ground_vapor_density, reference_temperature,
                               reference_vapor_density, previous_top_temperature, previous_top_vapor_density;
                               max_resistance=2000.0u"s/m")
@@ -202,16 +187,14 @@ The air temperature and vapor density at the top of the canopy.
 Heat and vapor reach the canopy top from the leaves and the ground, and leave it towards
 the reference height. Balancing these gives the canopy-top value directly, without iteration.
 
-In calm air the resistances grow without limit, so `max_resistance` caps them at a typical
-literature ceiling (Thom 1975; Monteith & Unsworth 2013). Calm air above a dense canopy can
-also take longer than an hour to reach that balance, so the result moves from the previous
-value towards the balance only as far as the air could in an hour.
+`max_resistance` caps resistances in calm air. The result moves from the previous value
+towards the balance only as far as the air could in an hour.
 
 Returns `(; top_temperature, top_vapor_density, sensible_flux)`, where `sensible_flux` is
 the upward heat flux from the canopy top to the reference height.
 """
 function canopy_top_flux_boundary(boundary_layer_model, canopy_height, displacement_height, reference_height,
-    friction_velocity, inverse_obukhov_length, total_sensible_flux, total_latent_flux,
+    friction_velocity, inverse_obukhov_length, total_sensible_flux, total_vapor_flux,
     ground_temperature, ground_vapor_density, reference_temperature, reference_vapor_density,
     previous_top_temperature, previous_top_vapor_density;
     max_resistance=2000.0u"s/m",
@@ -219,22 +202,21 @@ function canopy_top_flux_boundary(boundary_layer_model, canopy_height, displacem
     (; karman_constant) = boundary_layer_model
     top_depth = max(canopy_height - displacement_height, 1.0e-3u"m")
     reference_depth = max(reference_height - displacement_height, 1.0e-3u"m")
-    heat_correction(depth) = calc_ψ_h(boundary_layer_model,
-        stability_parameter(InverseObukhovLength(), depth, inverse_obukhov_length))
+    heat_correction(depth) = heat_stability_correction(boundary_layer_model,
+        stability_parameter_at_height(InverseObukhovLength(), depth, inverse_obukhov_length))
 
     ground_resistance = min(canopy_height / (karman_constant * friction_velocity * top_depth), max_resistance)
     top_resistance = min((log(reference_depth / top_depth) - heat_correction(reference_depth) + heat_correction(top_depth)) /
         (karman_constant * friction_velocity), max_resistance)
     resistance_ratio = top_resistance / ground_resistance
 
-    # Fixed from the reference and ground temperatures, not the unknown canopy-top
-    # temperature, which keeps the balance linear
-    volumetric_heat_capacity = calc_ρ_cp((reference_temperature + ground_temperature) / 2)
+    # From the reference and ground temperatures, not the unknown canopy-top temperature, which keeps the balance linear
+    volumetric_heat_capacity = calc_air_volumetric_heat_capacity((reference_temperature + ground_temperature) / 2)
 
-    # Solving T_top = T_reference + (H + (ρcp/R_ground)(T_ground - T_top)) R_top/ρcp for T_top; vapor likewise
+    # The canopy-top temperature where the flux to the reference height balances the canopy's and the ground's; vapor likewise
     balanced_temperature = (reference_temperature + total_sensible_flux * top_resistance / volumetric_heat_capacity +
         resistance_ratio * ground_temperature) / (1.0 + resistance_ratio)
-    balanced_vapor_density = (reference_vapor_density + total_latent_flux * top_resistance +
+    balanced_vapor_density = (reference_vapor_density + total_vapor_flux * top_resistance +
         resistance_ratio * ground_vapor_density) / (1.0 + resistance_ratio)
 
     residence_time = top_depth * top_resistance
