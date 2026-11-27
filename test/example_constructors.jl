@@ -1,6 +1,8 @@
 using Microclimate
 using Unitful
 using Test
+using ADTypes: AutoFiniteDiff
+using OrdinaryDiffEqSDIRK: ImplicitEuler
 
 @testset "example_* constructors build" begin
     @test example_site() isa Site
@@ -49,6 +51,13 @@ end
     reinit!(cache, model, problem.inputs)
     reused = solve!(cache)
     fresh = solve(MicroProblem(model, problem.inputs; days = problem.days))
-    @test reused.soil_temperature ≈ fresh.soil_temperature rtol=1e-4
+    @test reused.soil_temperature == fresh.soil_temperature
     @test reused.global_radiation ≈ fresh.global_radiation
+end
+
+@testset "An implicit soil solver follows the default" begin
+    implicit_soil = SoilHeatTransport1D(; ode_solver = ImplicitEuler(; autodiff = AutoFiniteDiff()),
+        ode_kwargs = (; adaptive = false, dt = 60.0u"minute"))
+    surface_temperature(soil_energy_model) = solve(example_microclimate_problem(; soil_energy_model)).soil_temperature[:, 1]
+    @test isapprox(surface_temperature(implicit_soil), surface_temperature(SoilHeatTransport1D()); rtol = 2e-3)
 end

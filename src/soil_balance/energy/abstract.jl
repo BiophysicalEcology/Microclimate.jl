@@ -18,7 +18,6 @@ function soil_energy_balance end
 """
     allocate_soil_energy_balance(model, num_nodes)
 
-Allocate per-layer scratch buffers (`layer_depths`, `heat_capacity`,
-`thermal_conductance`, warm-started Obukhov length) for the energy ODE.
+Allocate the buffers for the energy ODE.
 """
 function allocate_soil_energy_balance end

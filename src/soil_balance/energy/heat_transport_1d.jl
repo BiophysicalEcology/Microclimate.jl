@@ -1,6 +1,6 @@
 """
     SoilHeatTransport1D(; ode_solver=Tsit5(),
-                          ode_kwargs=(; reltol=1e-6u"K", abstol=1e-3u"K"),
+                          ode_kwargs=(; reltol=1e-6, abstol=1e-3u"K"),
                           maximum_surface_temperature=85.0u"°C",
                           freezing_model=PhaseTransitionLatentHeat())
 
@@ -14,8 +14,8 @@ deep soil temperature (Dirichlet BC).
 Solver tuning lives here, not on `MicroConfig`, because each
 `SoilHeatTransportModel` chooses its own integration strategy:
 
-- `ode_solver` — any SciML algorithm (`Tsit5()`, `RK4()`, …)
-- `ode_kwargs` — NamedTuple of kwargs forwarded to the integrator
+- `ode_solver` — any SciML algorithm (`Tsit5()`, `RK4()`, …), explicit or implicit.
+- `ode_kwargs` — NamedTuple of kwargs forwarded to the integrator, such as `dt=60u"minute"`
 - `maximum_surface_temperature` — surface-temperature safety clamp
   (Fortran microinput[74])
 - `freezing_model` — soil ice/water phase-transition correction applied to
@@ -23,7 +23,7 @@ Solver tuning lives here, not on `MicroConfig`, because each
 """
 @kwdef struct SoilHeatTransport1D{SOS,SOK,MSF,FM} <: SoilHeatTransportModel
     ode_solver::SOS = Tsit5()
-    ode_kwargs::SOK = (; reltol=1e-6u"K", abstol=1e-3u"K")
+    ode_kwargs::SOK = (; reltol=1e-6, abstol=1e-3u"K")
     maximum_surface_temperature::MSF = 85.0u"°C"
     freezing_model::FM = PhaseTransitionLatentHeat()
 end
@@ -88,31 +88,72 @@ function set_hourly_inputs!(integrator, hourly::HourlySoilEnergyInputs)
     return integrator
 end
 
-@inline function _first_active_node(heat_capacity, N)
-    j = 1
-    while j < N && iszero(heat_capacity[j])
-        j += 1
-    end
-    return j
+# The surface: the first node with any heat capacity
+first_active_node(heat_capacity::SVector{N}) where N = something(findfirst(!iszero, heat_capacity), N)
+
+# The surface node of the column at `temperatures` and `time`. Snow nodes above the snow
+# surface have no heat capacity.
+function first_active_node(p::SoilEnergyInputs, temperatures, time)
+    (; atmospheric_pressure) = interpolate_forcings(p.forcing, time)
+    properties = node_properties(p.model.snow, p, temperatures, atmospheric_pressure, p.model.vapour_pressure_equation)
+    return first_active_node(soil_layers(properties, p.hourly.depths, _n_snow(p.model.snow)).heat_capacity)
 end
 
-# Dispatched soil-properties recompute. Methods for the no-snow case here; the
-# SnowModel{N} method lives in snow/snow_model.jl (after SnowModel is defined).
-# Both `::Nothing` and `::NoSnow` use the same fall-through; the SnowModel branch
-# uses Val(N) so SVector sizes are compile-time.
-@inline function _recompute_soil_snow_properties_no_snow!(p, soil_temperature,
-    atmospheric_pressure, vapour_pressure_equation)
+# The thermal properties of soil node `node` at `temperature`
+function soil_node_properties(p, node, temperature, atmospheric_pressure, vapour_pressure_equation)
     (; properties_model, profile) = p.model.soil
-    soil_properties!(p.buffers.soil_properties, properties_model;
-        soil_temperature, soil_moisture=p.soil_moisture,
-        bulk_density=profile.bulk_density, mineral_density=profile.mineral_density,
-        mineral_conductivity=profile.mineral_conductivity, mineral_heat_capacity=profile.mineral_heat_capacity,
-        atmospheric_pressure, vapour_pressure_equation,
+    properties = soil_properties(maybegetindex(properties_model, node);
+        atmospheric_pressure, soil_temperature=temperature, soil_moisture=p.soil_moisture[node],
+        bulk_density=profile.bulk_density[node], mineral_density=profile.mineral_density[node],
+        mineral_conductivity=profile.mineral_conductivity[node], mineral_heat_capacity=profile.mineral_heat_capacity[node],
+        vapour_pressure_equation,
     )
-    return nothing
+    return (;
+        bulk_thermal_conductivity=uconvert(u"W/m/K", properties.bulk_thermal_conductivity),
+        bulk_heat_capacity=uconvert(u"J/kg/K", properties.bulk_heat_capacity),
+        bulk_density=uconvert(unit(eltype(profile.mineral_density)), properties.bulk_density),
+    )
 end
-@inline _recompute_soil_snow_properties!(::Nothing, p, st, ap, vpe) =
-    _recompute_soil_snow_properties_no_snow!(p, st, ap, vpe)
+
+# Every soil node's thermal properties at `temperature`
+soil_column_properties(p, temperature::SVector{N}, atmospheric_pressure, vapour_pressure_equation) where N =
+    SVector(ntuple(node -> soil_node_properties(p, node, temperature[node], atmospheric_pressure, vapour_pressure_equation), Val(N)))
+
+# Each node's heat capacity per area, and its thermal conductance to the node below
+function soil_layers(properties::SVector{N}, depths, n_snow) where N
+    depth(i) = i <= N ? uconvert(u"cm", depths[i]) : 0.0u"cm"
+    heat_capacity = SVector(ntuple(Val(N)) do i
+        volumetric_heat_capacity = properties[i].bulk_density * properties[i].bulk_heat_capacity
+        capacity = if i == 1
+            volumetric_heat_capacity * depth(2) / 2.0
+        # A snow node at depth 0, with snow below it, is the surface and holds the whole
+        # distance to the next node
+        elseif i <= n_snow && iszero(depth(i)) && !iszero(depth(i + 1))
+            volumetric_heat_capacity * depth(i + 1)
+        else
+            volumetric_heat_capacity * (depth(i + 1) - depth(i - 1)) / 2.0
+        end
+        uconvert(u"J/K/m^2", capacity)
+    end)
+    thermal_conductance = SVector(ntuple(Val(N)) do i
+        conductivity = properties[i].bulk_thermal_conductivity
+        conductance = if i == 1
+            iszero(depth(2)) ? zero(conductivity / oneunit(depth(2))) : conductivity / depth(2)
+        else
+            spacing = depth(i + 1) - depth(i)
+            previous_spacing = depth(i) - depth(i - 1)
+            # Nodes at the same depth, at the snow-soil interface, use the spacing above
+            # them, so the snow stays coupled to the soil
+            if iszero(spacing)
+                iszero(previous_spacing) ? zero(conductivity / oneunit(spacing)) : conductivity / previous_spacing
+            else
+                conductivity / spacing
+            end
+        end
+        uconvert(u"W/K/m^2", conductance)
+    end)
+    return (; heat_capacity, thermal_conductance)
+end
 
 # Compile-time snow node count for an ODE's `p.model.snow`. The `::SnowModel{N}`
 # method is in snow/snow_model.jl; both ::Nothing and ::NoSnow return 0.
@@ -165,11 +206,8 @@ function ground_heat_vapor_flux(evaporation_model, ground_heat_conductance, grou
 end
 
 function allocate_soil_energy_balance(::SoilHeatTransport1D, num_nodes::Int)
-    layer_depths = fill(0.0u"cm", num_nodes + 1)
-    heat_capacity = fill(1.0u"J/K/m^2", num_nodes)
-    thermal_conductance = fill(1.0u"W/K/m^2", num_nodes)
-    obukhov_length_prev = Ref(-0.3u"m")  # warm-start across hourly ODE solves
-    return (; layer_depths, heat_capacity, thermal_conductance, obukhov_length_prev)
+    obukhov_length_prev = Ref(INITIAL_OBUKHOV_LENGTH)  # warm-start across hourly ODE solves
+    return (; obukhov_length_prev)
 end
 
 # SciML ODE rhs. Dispatches the actual physics on `p.model.soil.energy_model`.
@@ -189,7 +227,6 @@ function soil_energy_balance(model::SoilHeatTransport1D,
     snow_model = p.model.snow
     (; depths, environment_instant, soil_wetness, longwave_sky, albedo, Q_freeze) = hourly
     maximum_surface_temperature = model.maximum_surface_temperature
-    (; layer_depths, heat_capacity, thermal_conductance) = buffers.soil_energy_balance
     (; shade) = environment_instant
     # Get environmental data at time t
     (; atmospheric_pressure, air_temperature, wind_speed, zenith_angle, solar_radiation, cloud_cover, relative_humidity, slope_zenith_angle, diffuse_fraction) = interpolate_forcings(forcing, t)
@@ -205,60 +242,11 @@ function soil_energy_balance(model::SoilHeatTransport1D,
     T_hi = u"K"(maximum_surface_temperature)
     soil_temperature = clamped_temperature = map(t -> clamp(t, T_lo, T_hi), temperature_state)::U
 
-    # Recompute soil/snow properties at current temperatures on every ODE sub-step,
-    # matching Fortran DSUB.f lines 274-337 which calls SOILPROPS on every evaluation.
-    # Dispatch on snow_model type so N_snow is compile-time (no runtime ntuple).
-    _recompute_soil_snow_properties!(snow_model, p, soil_temperature,
-        atmospheric_pressure, vapour_pressure_equation)
-    n_snow = _n_snow(snow_model)
-    (; bulk_thermal_conductivity, bulk_heat_capacity, bulk_density) = buffers.soil_properties
-
-
-    # set boundary condition of deep soil temperature
-    layer_depths[1:N] = depths
-    # Compute soil layer properties (guard zero depths for inactive snow nodes)
-    for i in 1:N
-        volumetric_heat_capacity = bulk_density[i] * bulk_heat_capacity[i]
-        if i == 1
-            d2 = layer_depths[2]
-            heat_capacity[i] = volumetric_heat_capacity * d2 / 2.0
-            thermal_conductance[i] = iszero(d2) ? zero(bulk_thermal_conductivity[1] / oneunit(d2)) : bulk_thermal_conductivity[1] / d2
-        else
-            Δd = layer_depths[i+1] - layer_depths[i]
-            # Fortran DSUB.f special case: when a snow node sits at depth 0 with snow
-            # active (depp(i) < 1e-8 and maxsnode1 > 0), the heat capacity uses the
-            # full distance to the next node rather than the centered half-cell.
-            # This is the first active snow node acting as the surface.
-            # Guard: only applies to snow nodes (i <= n_snow). When snow model is active
-            # but no snow exists, the first soil node is at depth 0 and must NOT trigger
-            # this — its heat capacity uses the normal half-cell formula.
-            if i <= n_snow && iszero(layer_depths[i]) && !iszero(layer_depths[i+1])
-                heat_capacity[i] = volumetric_heat_capacity * layer_depths[i+1]
-            else
-                heat_capacity[i] = volumetric_heat_capacity * (layer_depths[i+1] - layer_depths[i-1]) / 2.0
-            end
-            # Co-located nodes (Δd = 0) occur at the snow-soil interface: the last active
-            # snow node and the soil surface node share the same depth (= snow depth).
-            # Fortran DSUB.f computes C = k/0 = ∞, which forces the stiff ODE solver to
-            # keep the two co-located nodes at the same temperature (perfect thermal coupling).
-            # Julia guards against /0 with zero conductance, which completely decouples
-            # the snow bottom from the soil surface — breaking the snow insulation effect.
-            # Fix: when Δd = 0, use the conductance of the preceding interval so the
-            # snow-soil interface maintains thermal coupling (approximates Fortran's ∞).
-            prev_Δd = layer_depths[i] - layer_depths[i-1]
-            thermal_conductance[i] = if iszero(Δd)
-                iszero(prev_Δd) ? zero(bulk_thermal_conductivity[i] / oneunit(Δd)) : bulk_thermal_conductivity[i] / prev_Δd
-            else
-                bulk_thermal_conductivity[i] / Δd
-            end
-        end
-    end
-
-    # Find first active node (first with nonzero heat capacity).
-    # Extracted to a helper so `j` is not both mutated and captured by the
-    # ntuple do-block below — that combination boxes `j` and propagates
-    # ::Any through every downstream computation.
-    j = _first_active_node(heat_capacity, N)
+    # Soil and snow properties at the current temperatures, on every evaluation, as the Fortran
+    # (DSUB.f lines 274-337) does
+    properties = node_properties(snow_model, p, soil_temperature, atmospheric_pressure, vapour_pressure_equation)
+    (; heat_capacity, thermal_conductance) = soil_layers(properties, depths, _n_snow(snow_model))
+    j = first_active_node(heat_capacity)
 
     # Solar radiation. Split into direct + diffuse so that self-shadowed
     # slopes still receive the diffuse sky component. Scaling the entire
@@ -297,16 +285,15 @@ function soil_energy_balance(model::SoilHeatTransport1D,
     Q_infrared = incoming_longwave - outgoing_coeff * (u"K"(soil_temperature[j]))^4 - ground_shade_term
 
     # Conduction from first active node to the node below it
-    # Fortran DSUB.f lines 483-487: on day 1 hour 1, uses T(1) instead of T(j).
-    # t == 0 minute corresponds to the very first ODE evaluation of the simulation.
-    conduction_ref = (t == 0.0u"minute" && j > 1) ? soil_temperature[1] : soil_temperature[j]
-    Q_conduction = j < N ? thermal_conductance[j] * (soil_temperature[j+1] - conduction_ref) : 0.0u"W/m^2"
+    # Fortran DSUB.f lines 483-487 uses T(1) here on the first call. We always use the
+    # surface node, so that only neighbouring nodes enter each derivative.
+    Q_conduction = j < N ? thermal_conductance[j] * (soil_temperature[j+1] - soil_temperature[j]) : 0.0u"W/m^2"
 
     # Convection and evaporation using first active node as surface
     # Fortran DSUB.f lines 551-561: temperature safety guards before convection
     surface_temperature = soil_temperature[j]
     if abs(u"°C"(surface_temperature)) > 100u"°C"
-        surface_temperature = air_temperature + 1.0u"K"  # DSUB.f line 557
+        surface_temperature = oftype(surface_temperature, air_temperature + 1.0u"K")  # DSUB.f line 557
     end
     if surface_temperature == air_temperature
         surface_temperature = surface_temperature + 0.1u"K"  # DSUB.f line 561: prevent divide-by-zero
@@ -332,23 +319,27 @@ function soil_energy_balance(model::SoilHeatTransport1D,
     # QFREZE: snow melt energy correction, matching Fortran DSUB.f line 567
     surface_dtdt = u"K/minute"((Q_solar + Q_infrared + Q_conduction + convective_heat_flux + Q_freeze - Q_evaporation) / heat_capacity[j])
 
-    # Build derivative vector: inactive nodes follow surface, active nodes use conduction.
-    # Fortran DSUB.f:591-606 runs DO 10 I=2,N. T(N) is pinned to TDS at every RHS call
+    # Build derivative vector: the surface node takes the surface balance, active nodes use
+    # conduction. Inactive snow nodes above the surface hold still, so that each row only
+    # depends on its neighbours, as the solver's tridiagonal Jacobian needs. step_to_hour!
+    # gives them the surface temperature afterwards. Fortran DSUB.f:591-606 runs DO 10 I=2,N. T(N) is pinned to TDS at every RHS call
     # (DSUB.f:579), so any DTDT(N) the integrator computes is overwritten next step —
     # effectively a Dirichlet BC. Julia matches that by holding `dt[N] = 0`; T(N) is set
     # once per hour to `environment_instant.deep_soil_temperature` and stays there for
     # the integration interval.
     dt = SVector{N}(ntuple(Val{N}()) do i
-        if i <= j
-            # Inactive nodes (i < j) follow surface; node j IS the surface
+        if i < j
+            zero(surface_dtdt)
+        elseif i == j
             surface_dtdt
         elseif i == N
             # Lower boundary: pinned at TDS (Dirichlet). Matches Fortran DSUB.f:579.
-            0.0u"K/minute"
+            zero(surface_dtdt)
+        elseif iszero(heat_capacity[i])
+            zero(surface_dtdt)
         else
             # Internal conduction
-            iszero(heat_capacity[i]) ? 0.0u"K/minute" :
-                u"K/minute"((thermal_conductance[i-1] * (soil_temperature[i-1] - soil_temperature[i]) + thermal_conductance[i] * (soil_temperature[i+1] - soil_temperature[i])) / heat_capacity[i])
+            u"K/minute"((thermal_conductance[i-1] * (soil_temperature[i-1] - soil_temperature[i]) + thermal_conductance[i] * (soil_temperature[i+1] - soil_temperature[i])) / heat_capacity[i])
         end
     end)
 

@@ -503,6 +503,11 @@ function solve_soil!(cache::MicroCache)
     snow_state = initial_snow_state(snow_model, initial_snow_depth, initial_snow_density)
     reset_snow_scratch!(snow_model, buffers.snow)
     reset_canopy_scratch!(canopy_model, buffers.canopy)
+    buffers.condensation_profile.obukhov_length_prev[] = INITIAL_OBUKHOV_LENGTH
+    buffers.air_profile.obukhov_length_prev[] = INITIAL_OBUKHOV_LENGTH
+    buffers.soil_energy_balance.obukhov_length_prev[] = INITIAL_OBUKHOV_LENGTH
+    ode_integrator.dt = first_soil_step(mp.model.soil.energy_model)
+    SciMLBase.set_proposed_dt!(ode_integrator, ode_integrator.dt)
 
     soil_prop_view = if n_snow > 0
         (; bulk_thermal_conductivity = view(buffers.soil_properties.bulk_thermal_conductivity, n_snow+1:n_snow+num_soil_nodes),
@@ -888,11 +893,7 @@ function solve_soil!(cache::MicroCache)
                         ground_heat_conductance, ground_vapor_conductance) = overrides
                 end
                 T0_ode = combine_ode_state(T_snow, T0, n_snow)
-                # Direct field write bypasses any custom setproperty! interposing
-                # an SVector copy. The integrator's `.u` field is concretely
-                # typed `SVector{N,T}` so this is a plain memory write.
-                setfield!(ode_integrator, :u, T0_ode)
-                SciMLBase.u_modified!(ode_integrator, true)
+                set_soil_temperatures!(ode_integrator, T0_ode)
 
                 init_surface_fluxes!(boundary_layer_model, buffers, forcing, site, heights, T0, i)
                 # Fortran OSUB.f: soil moisture runs only on final iteration (after line 353 guard)
@@ -1053,56 +1054,99 @@ function solve_air!(cache::MicroCache)
     end
 end
 
-function allocate_ode_integrator(model::SoilHeatTransport1D, T0, inputs_proto)
-    # Full-day integration (0-1440 min), matching Fortran SFODE which integrates
-    # continuously. Hourly bookkeeping is done via step!/add_tstop! in the day loop.
-    tspan = (0.0u"minute", 1440.0u"minute")
-    prob = ODEProblem{false}(soil_energy_balance, T0, tspan, inputs_proto)
-    return SciMLBase.init(prob, model.ode_solver;
-        save_everystep=false, save_start=false, save_end=false, model.ode_kwargs...)
+# The soil solver works on one vector of plain numbers, in these units, so any SciML solver
+# can use it. Only the functions below know that.
+const SOIL_STATE_UNITS = (; temperature=u"K", time=u"minute")
+
+in_soil_state_units(value::Unitful.Temperature) = ustrip(SOIL_STATE_UNITS.temperature, value)
+in_soil_state_units(value::Unitful.Time) = ustrip(SOIL_STATE_UNITS.time, value)
+in_soil_state_units(value::Unitful.Quantity) =
+    throw(ArgumentError("the soil solver takes temperatures and times in units, not $(unit(value))"))
+in_soil_state_units(value) = value
+
+# The solver's options: temperatures there are tolerances, differences rather than absolute
+# temperatures, so 1e-3 °C is 1e-3 K
+soil_solver_option(value::Unitful.Temperature) = ustrip(SOIL_STATE_UNITS.temperature, value - zero(value))
+soil_solver_option(value) = in_soil_state_units(value)
+
+# What the solver calls: `soil_energy_balance`, with plain numbers going in and coming out
+struct SoilStateEquation{N} end
+
+soil_temperatures(::SoilStateEquation{N}, state) where N = map(temperature -> temperature * SOIL_STATE_UNITS.temperature, SVector{N}(state))
+
+function (equation::SoilStateEquation)(warming_rate, state, inputs, time)
+    rates = soil_energy_balance(soil_temperatures(equation, state), inputs, time * SOIL_STATE_UNITS.time)
+    warming_rate .= map(rate -> ustrip(SOIL_STATE_UNITS.temperature / SOIL_STATE_UNITS.time, rate), rates)
+    return nothing
 end
 
-# Reset integrator state for a fresh pass through the (0..1440 min) day.
-# Multi-step solvers (Adams family) need their f-history rebuilt via
-# `reinit!`'s cache pass; single-step Runge–Kutta solvers (Tsit5, RK4, …)
-# recompute their stage cache every step anyway, so we skip `reinit_cache`
-# and avoid the ~440 B/call allocation. `integrator.alg` has a concrete
-# type at the call site, so the compiler constant-folds the branch.
-function _maybe_reinit_integrator!(integrator, u_new, t0=zero(integrator.t); reset_dt=true)
-    if ismultistep(integrator.alg)
-        SciMLBase.reinit!(integrator, u_new;
-            t0, erase_sol=false, reset_dt,
-        )
-    else
-        SciMLBase.reinit!(integrator, u_new;
-            t0, erase_sol=false, reset_dt,
-            reinit_cache=false,
-        )
-    end
+function allocate_ode_integrator(model::SoilHeatTransport1D, T0::SVector{N}, inputs_proto) where N
+    equation = SoilStateEquation{N}()
+    # Each node only touches its neighbours, so implicit solvers can find their Jacobian
+    # from three evaluations, and solve it quickly
+    function_with_structure = ODEFunction{true,SciMLBase.FullSpecialize}(equation;
+        jac_prototype=Tridiagonal(zeros(N - 1), zeros(N), zeros(N - 1)), colorvec=[mod1(node, 3) for node in 1:N])
+    # Full-day integration (0-1440 min), matching Fortran SFODE which integrates
+    # continuously. Hourly bookkeeping is done via step!/add_tstop! in the day loop.
+    day = (0.0, in_soil_state_units(1440.0u"minute"))
+    problem = ODEProblem{true,SciMLBase.FullSpecialize}(function_with_structure, collect(map(in_soil_state_units, T0)), day, inputs_proto)
+    return SciMLBase.init(problem, model.ode_solver;
+        save_everystep=false, save_start=false, save_end=false, dt=first_soil_step(model), map(soil_solver_option, model.ode_kwargs)...)
+end
+
+# The soil solver's first step, the same for every solve so that results never depend on an earlier one
+first_soil_step(model::SoilHeatTransport1D) = in_soil_state_units(get(model.ode_kwargs, :dt, 0.1u"minute"))
+
+# Restarts the soil solver from `temperatures` at `time`; only multistep solvers rebuild their history.
+# It starts from the same first step every time, not from wherever the last solve's step ended,
+# so a solve depends only on its own state.
+function restart_soil_solver!(integrator, temperatures, time)
+    SciMLBase.reinit!(integrator, map(in_soil_state_units, temperatures);
+        t0=in_soil_state_units(time), erase_sol=false, reset_dt=false, reinit_cache=ismultistep(integrator.alg))
+    integrator.dt = first_soil_step(integrator.p.model.soil.energy_model)
+    SciMLBase.set_proposed_dt!(integrator, integrator.dt)
+    # The stored derivative belongs to the previous state and forcing
+    SciMLBase.derivative_discontinuity!(integrator, true)
     return integrator
 end
 
-# Step the integrator to an exact hour boundary and return the state.
+# Replaces the temperatures in the soil solver, without restarting it
+function set_soil_temperatures!(integrator, temperatures)
+    integrator.u .= map(in_soil_state_units, temperatures)
+    SciMLBase.derivative_discontinuity!(integrator, true)
+    return integrator
+end
+
+# Step the integrator to an exact hour boundary and return the temperatures.
 # Fortran DSUB.f:551 clamps T(I) in-place at every derivative call. Our
 # `soil_energy_balance` only clamps the local copy used for derivatives, so
 # fixed-step solvers (e.g. ABM43) can let the integrator state drift outside
 # physical bounds. We re-clamp the state after every internal step here so
 # any solver — adaptive or fixed-step — stays in [-81°C, max_surface_T].
 function step_to_hour!(integrator, hour_index)
-    target_t = hour_index * 60.0u"minute"
+    target_t = in_soil_state_units(hour_index * 60.0u"minute")
     SciMLBase.add_tstop!(integrator, target_t)
-    T_lo = u"K"(-81.0u"°C")
-    T_hi = u"K"(integrator.p.model.soil.energy_model.maximum_surface_temperature)
-    while integrator.t < target_t - 1e-10u"minute"
+    T_lo = in_soil_state_units(-81.0u"°C")
+    T_hi = in_soil_state_units(integrator.p.model.soil.energy_model.maximum_surface_temperature)
+    while integrator.t < target_t - 1e-10
         SciMLBase.step!(integrator)
-        u_clamped = map(t -> clamp(t, T_lo, T_hi), integrator.u)
-        if u_clamped !== integrator.u
-            setfield!(integrator, :u, u_clamped)
-            setfield!(integrator, :uprev, u_clamped)
-            SciMLBase.u_modified!(integrator, true)
+        return_code = SciMLBase.check_error(integrator)
+        if !SciMLBase.successful_retcode(return_code)
+            error("Soil solver failed with $return_code at $(integrator.t * SOIL_STATE_UNITS.time)")
+        end
+        if any(temperature -> !(T_lo <= temperature <= T_hi), integrator.u)
+            clamp!(integrator.u, T_lo, T_hi)
+            copyto!(integrator.uprev, integrator.u)
+            SciMLBase.derivative_discontinuity!(integrator, true)
         end
     end
-    return integrator.u
+    # Snow nodes above the snow surface hold still in the solver. They take the surface
+    # temperature here. No derivative depends on them, so the solver state stays valid.
+    surface = first_active_node(integrator.p, soil_temperatures(integrator.f.f, integrator.u), integrator.t * SOIL_STATE_UNITS.time)
+    for node in 1:surface-1
+        integrator.u[node] = integrator.u[surface]
+    end
+    return soil_temperatures(integrator.f.f, integrator.u)
 end
 
 # Iterates canopy_energy_balance! and the soil-heat ODE to a jointly
@@ -1139,7 +1183,7 @@ function converge_canopy_soil_hour!(ode_integrator, hour_index, hour_T0_ode, csc
             ground_reference_height=overrides.ground_reference_height,
             ground_heat_conductance=overrides.ground_heat_conductance, ground_vapor_conductance=overrides.ground_vapor_conductance,
         ))
-        _maybe_reinit_integrator!(ode_integrator, hour_T0_ode, (hour_index - 1) * 60.0u"minute"; reset_dt=false)
+        restart_soil_solver!(ode_integrator, hour_T0_ode, (hour_index - 1) * 60.0u"minute")
         T_result = step_to_hour!(ode_integrator, hour_index)
         T_snow, T0 = split_ode_state(snow_model, T_result)
         new_ground_temperature = snow_present ? T_snow[1] : T0[1]
