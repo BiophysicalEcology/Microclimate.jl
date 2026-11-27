@@ -785,6 +785,10 @@ heat_gradient_stability_factor(boundary_layer_model::MoninObukhov, stability_par
     heat_gradient_stability_factor(boundary_layer_model.unstable_stability, stability_parameter) :
     heat_gradient_stability_factor(boundary_layer_model.stable_stability, stability_parameter)
 
+# The range bulk_richardson_stability_parameter searches, NicheMapR's bound on the stability parameter, and its precision
+const MAX_STABILITY_PARAMETER = 10.0
+const STABILITY_PARAMETER_TOLERANCE = 1e-12
+
 momentum_stability_correction(model::PaulsonDyer, stability_parameter) =
     momentum_stability_correction(paulson_x(stability_parameter, model.momentum_dyer_constant))
 heat_stability_correction(model::PaulsonDyer, stability_parameter) =
@@ -850,6 +854,33 @@ function heat_gradient_stability_factor(model::ChengBrutsaert, stability_paramet
     # power, whose derivative is infinite at neutral, so automatic differentiation stays finite there
     return 1 + heat_scale * (stability_parameter + stability_parameter^heat_exponent * power_sum^(1 / heat_exponent - 1)) /
         log_argument
+end
+
+"""
+    bulk_richardson_stability_parameter(boundary_layer_model::MoninObukhov, richardson_number, height, roughness_length)
+
+The stability parameter `ζ = z/L` at `height` with bulk Richardson number
+`Ri = ζ·(ln(z/z₀) - ψ_h(ζ) + ψ_h(ζ·z₀/z)) / (ln(z/z₀) - ψ_m(ζ) + ψ_m(ζ·z₀/z))²` between
+`roughness_length` and `height`, for heat and momentum with the same roughness length.
+It is found within `±MAX_STABILITY_PARAMETER`, and capped there.
+
+# References
+- Launiainen, J. (1995). Derivation of the relationship between the Obukhov stability parameter
+  and the bulk Richardson number for flux-profile studies. *Boundary-Layer Meteorology*, 76, 165-179.
+"""
+function bulk_richardson_stability_parameter(boundary_layer_model, richardson_number, height, roughness_length)
+    neutral_log = uconvert(NoUnits, log(height / roughness_length))
+    roughness_ratio = uconvert(NoUnits, roughness_length / height)
+    bulk_richardson(stability) = stability *
+        (neutral_log - heat_stability_correction(boundary_layer_model, stability) +
+            heat_stability_correction(boundary_layer_model, stability * roughness_ratio)) /
+        (neutral_log - momentum_stability_correction(boundary_layer_model, stability) +
+            momentum_stability_correction(boundary_layer_model, stability * roughness_ratio))^2
+    richardson_number <= bulk_richardson(-MAX_STABILITY_PARAMETER) && return -MAX_STABILITY_PARAMETER
+    richardson_number >= bulk_richardson(MAX_STABILITY_PARAMETER) && return MAX_STABILITY_PARAMETER
+    excess(stability, _) = bulk_richardson(stability) - richardson_number
+    problem = IntervalNonlinearProblem{false}(excess, (-MAX_STABILITY_PARAMETER, MAX_STABILITY_PARAMETER))
+    return solve(problem, ITP(); abstol=STABILITY_PARAMETER_TOLERANCE).u
 end
 
 

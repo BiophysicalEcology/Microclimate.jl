@@ -147,7 +147,7 @@ end
 
 @testset "the longwave at the ground is linear in what the ground sends up" begin
     leaf_temperature = collect(range(280.0u"K", 293.0u"K"; length=n_layers))
-    for longwave_model in (LayeredLongwaveExchange(), LayeredRadiosityExchange()), emissivity in (0.9, 0.97)
+    for longwave_model in (LayeredLongwaveExchange(), LayeredRadiosityExchange(), BlackBodyLongwaveExchange()), emissivity in (0.9, 0.97)
         longwave_buffers = Microclimate.allocate_longwave(longwave_model, plant_area_index, n_layers, canopy_projection_ratio)
         incoming_longwave = canopy_incoming_longwave(longwave_model; site, environment_instant=environment)
         (; downward_longwave, longwave_return_fraction) = Microclimate.ground_longwave_conditions(longwave_buffers,
@@ -170,4 +170,35 @@ end
     shade = 0.3
     @test Microclimate.ground_longwave_terms(emission, shade, nothing) == (emission, 1 - shade)
     @test Microclimate.ground_longwave_terms(emission, shade, 2 * emission) == (2 * emission, 1.0)
+end
+
+@testset "BlackBodyLongwaveExchange" begin
+    black_body_model = BlackBodyLongwaveExchange()
+    black_body_buffers = Microclimate.allocate_longwave(black_body_model, plant_area_index, n_layers, canopy_projection_ratio)
+    leaf_temperature = collect(range(280.0u"K", 293.0u"K"; length=n_layers))
+    incoming_longwave = canopy_incoming_longwave(black_body_model; site, environment_instant=environment)
+    ground_temperature = 285.0u"K"
+    grey_ground = bare_ground_surface(; temperature=ground_temperature, emissivity=0.95)
+    result = Microclimate.canopy_longwave!(black_body_buffers, black_body_model, leaf_emissivity;
+        leaf_temperature, ground=grey_ground, incoming_longwave)
+
+    # micropoint's longwavemodelCpp, written out: each layer passes on what it transmits and sends black-body leaf longwave, over the ground's own surface longwave
+    transmission = exp.(-fill(plant_area_index / n_layers, n_layers))
+    leaf_flux = Microclimate.σ .* leaf_temperature .^ 4
+    downward = accumulate((flux, i) -> transmission[i] * flux + (1 - transmission[i]) * leaf_flux[i], 1:n_layers; init=incoming_longwave)
+    upward = reverse(accumulate((flux, i) -> transmission[i] * flux + (1 - transmission[i]) * leaf_flux[i], n_layers:-1:1;
+        init=grey_ground.emitted_longwave + grey_ground.longwave_reflectance * last(downward)))
+    @test black_body_buffers.boundary_downward_longwave[2:end] ≈ downward
+    @test black_body_buffers.boundary_upward_longwave[1:n_layers] ≈ upward
+    @test result.ground_absorbed_longwave ≈ (1 - grey_ground.longwave_reflectance) * last(downward)
+
+    # With black leaves and a black ground it is LayeredLongwaveExchange
+    layered_model = LayeredLongwaveExchange()
+    layered_buffers = Microclimate.allocate_longwave(layered_model, plant_area_index, n_layers, canopy_projection_ratio)
+    black_ground = bare_ground_surface(; temperature=ground_temperature, emissivity=1.0)
+    Microclimate.canopy_longwave!(black_body_buffers, black_body_model, 1.0; leaf_temperature, ground=black_ground, incoming_longwave)
+    Microclimate.canopy_longwave!(layered_buffers, layered_model, 1.0; leaf_temperature, ground=black_ground, incoming_longwave)
+    @test black_body_buffers.boundary_upward_longwave ≈ layered_buffers.boundary_upward_longwave
+    @test black_body_buffers.boundary_downward_longwave ≈ layered_buffers.boundary_downward_longwave
+    @test black_body_buffers.absorbed_longwave ≈ layered_buffers.absorbed_longwave
 end
