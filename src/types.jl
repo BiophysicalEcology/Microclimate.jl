@@ -1,5 +1,6 @@
 """
-    SoilProfile(; bulk_density, mineral_density, mineral_conductivity, mineral_heat_capacity, hydraulics)
+    SoilProfile(; bulk_density, mineral_density, mineral_conductivity, mineral_heat_capacity,
+                  de_vries_shape_factor, hydraulics)
 
 Per-depth soil column profile read by the soil properties model (thermal)
 and the soil hydraulic model. Sized to match `MicroModel.soil.depths`.
@@ -8,22 +9,26 @@ and the soil hydraulic model. Sized to match `MicroModel.soil.depths`.
 - `mineral_density` — soil mineral density (kg/m³) at each depth node
 - `mineral_conductivity` — soil mineral thermal conductivity (W/m/K) at each depth node
 - `mineral_heat_capacity` — soil mineral specific heat (J/kg/K) at each depth node
+- `de_vries_shape_factor` — de Vries mixing-model shape factor of the soil particles at
+  each depth node: 0.1 for mineral soils, 0.33 for organic soils
 - `hydraulics` — per-depth hydraulic parameters (e.g. `CampbellHydraulicProfile`)
   matched to the chosen `soil_hydraulic_model`
 """
-@kwdef struct SoilProfile{BD,MD,MC,MHC,H}
+@kwdef struct SoilProfile{BD,MD,MC,MHC,SF,H}
     bulk_density::BD
     mineral_density::MD
     mineral_conductivity::MC
     mineral_heat_capacity::MHC
+    de_vries_shape_factor::SF
     hydraulics::H
 end
 
 function example_soil_profile(depths=DEFAULT_DEPTHS;
     bulk_density = 1.3u"Mg/m^3",
     mineral_density = 2.560u"Mg/m^3",
-    mineral_conductivity = 1.25u"W/m/K",
+    mineral_conductivity = 2.5u"W/m/K", # NicheMapR micro_global default (Thcond)
     mineral_heat_capacity = 870.0u"J/kg/K",
+    de_vries_shape_factor = 0.1, # mineral soil
     hydraulics = example_campbell_hydraulic_profile(depths),
 )
     per_depth(value) = value isa AbstractVector ? value : fill(value, length(depths))
@@ -32,6 +37,7 @@ function example_soil_profile(depths=DEFAULT_DEPTHS;
         mineral_density = per_depth(mineral_density),
         mineral_conductivity = per_depth(mineral_conductivity),
         mineral_heat_capacity = per_depth(mineral_heat_capacity),
+        de_vries_shape_factor = per_depth(de_vries_shape_factor),
         hydraulics,
     )
 end

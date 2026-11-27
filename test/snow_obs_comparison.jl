@@ -94,7 +94,6 @@ boundary_layer_model = MoninObukhov(; karman_constant=0.4, unstable_stability=Ni
 
 # ── Soil models ──────────────────────────────────────────────────────────────
 soil_properties_model = CampbelldeVriesSoilProperties(;
-    de_vries_shape_factor = DE_VRIES_SHAPE_FACTOR,
     recirculation_power   = 4.0,
     return_flow_threshold = 0.162,
 )
@@ -104,6 +103,7 @@ soil_profile = SoilProfile(;
     mineral_density       = fill(MINERAL_DENSITY, length(DEPTHS)),
     mineral_conductivity  = fill(MINERAL_CONDUCTIVITY, length(DEPTHS)),
     mineral_heat_capacity = fill(MINERAL_HEAT_CAPACITY, length(DEPTHS)),
+    de_vries_shape_factor = fill(DE_VRIES_SHAPE_FACTOR, length(DEPTHS)),
     hydraulics      = CampbellHydraulicProfile(;
         air_entry_water_potential        = fill(AIR_ENTRY_POTENTIAL, length(DEPTHS)),
         saturated_hydraulic_conductivity = fill(SAT_HYDRAULIC_COND, length(DEPTHS)),
